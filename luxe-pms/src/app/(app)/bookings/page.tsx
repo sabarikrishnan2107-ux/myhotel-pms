@@ -14,6 +14,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { RESERVATIONS, GUESTS, ROOMS } from "@/lib/mock-data";
 import { money, formatDate, cn } from "@/lib/utils";
+import { apiGet, apiPut } from "@/lib/api";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
 import type { Reservation, PaymentStatus, BookingSource } from "@/lib/types";
 
@@ -68,10 +69,20 @@ export default function BookingsPage() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2800); };
 
-  // Combine mock data with local overrides for rendering
+  // Reservations from Postgres (falls back to seeds if the API is down).
+  const [bookings, setBookings] = React.useState<Reservation[]>(RESERVATIONS);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Reservation[]>("/bookings")
+      .then(rows => { if (!cancelled) setBookings(rows); })
+      .catch(() => { if (!cancelled) showToast("⚠ Backend offline — showing local data"); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Combine live bookings with local overrides for rendering
   const effective = React.useMemo(() => {
-    return RESERVATIONS.map(r => ({ ...r, ...(overrides[r.id] ?? {}) }));
-  }, [overrides]);
+    return bookings.map(r => ({ ...r, ...(overrides[r.id] ?? {}) }));
+  }, [bookings, overrides]);
 
   const guest = React.useMemo(() => {
     if (!selected) return null;
@@ -114,7 +125,7 @@ export default function BookingsPage() {
     revenue: effective.filter(r => !cancelledIds.has(r.id)).reduce((t, r) => t + r.total, 0),
   };
 
-  const sources = Array.from(new Set(RESERVATIONS.map(r => r.source)));
+  const sources = Array.from(new Set(bookings.map(r => r.source)));
   const activeFilters = (sourceFilter !== "all" ? 1 : 0) + (stateFilter !== "all" ? 1 : 0) + (paymentFilter !== "all" ? 1 : 0);
   const clearFilters = () => { setSourceFilter("all"); setStateFilter("all"); setPaymentFilter("all"); };
 
@@ -124,6 +135,7 @@ export default function BookingsPage() {
     setModifiedIds(m => new Set([...m, r.id]));
     setModifyTarget(null);
     showToast(`Booking ${r.bookingNo} updated`);
+    apiPut(`/bookings/${r.id}`, patch).catch(() => showToast("⚠ Save failed — backend offline"));
   };
   const handleCancel = (r: Reservation, _reason: string, _refund: number) => {
     setCancelledIds(c => new Set([...c, r.id]));
@@ -153,7 +165,7 @@ export default function BookingsPage() {
         <div>
           <h1 className="text-2xl font-display font-medium tracking-tight">Bookings</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            {filtered.length} of {RESERVATIONS.length} reservations · all sources, all statuses
+            {filtered.length} of {bookings.length} reservations · all sources, all statuses
           </p>
           <p className="text-[11px] text-subtle-foreground mt-1 inline-flex items-center gap-1">
             <MousePointerClick className="h-3 w-3" />

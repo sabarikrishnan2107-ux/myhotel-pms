@@ -14,6 +14,8 @@ import { Avatar } from "@/components/ui/avatar";
 import { Input, Label } from "@/components/ui/input";
 import { RESERVATIONS, GUESTS, SAMPLE_FOLIO_CHARGES, SAMPLE_PAYMENTS } from "@/lib/mock-data";
 import { cn, money, formatDate, formatDateLong, formatTime } from "@/lib/utils";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
+import type { Reservation } from "@/lib/types";
 
 export default function CheckoutPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -377,7 +379,31 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
             </Button>
           </div>
 
-          <Button onClick={() => setDone(true)} size="lg" variant="success" className="w-full">
+          <Button
+            onClick={() => {
+              setDone(true);
+              // Record the settlement payment and mark the booking paid in Postgres.
+              const settle = Math.max(0, balance);
+              if (settle > 0) {
+                apiPost("/folio-payments", {
+                  bookingNo: reservation.bookingNo,
+                  date: new Date().toISOString().slice(0, 10),
+                  mode: paymentMode,
+                  amount: settle,
+                  reference: "Checkout settlement",
+                }).catch(() => {});
+              }
+              apiGet<Reservation[]>("/bookings")
+                .then(list => {
+                  const bk = list.find(b => b.bookingNo === reservation.bookingNo);
+                  if (bk) apiPut(`/bookings/${(bk as { id: number | string }).id}`, { paymentStatus: "paid", advance: reservation.total, balance: 0 });
+                })
+                .catch(() => {});
+            }}
+            size="lg"
+            variant="success"
+            className="w-full"
+          >
             <CheckCircle2 className="h-5 w-5" />Complete Checkout
           </Button>
         </Card>

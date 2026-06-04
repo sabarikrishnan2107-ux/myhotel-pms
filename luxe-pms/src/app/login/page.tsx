@@ -13,6 +13,8 @@ export default function LoginPage() {
   const [show, setShow] = React.useState(false);
   const [email, setEmail] = React.useState("admin@hotel.com");
   const [password, setPassword] = React.useState("");
+  const [code, setCode] = React.useState("");
+  const [needCode, setNeedCode] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
 
@@ -26,7 +28,12 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await login(email, password);
+      const result = await login(email, password, needCode ? code : undefined);
+      if (result.twoFactorRequired) {
+        setNeedCode(true);
+        setLoading(false);
+        return;
+      }
       router.replace("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
@@ -135,13 +142,29 @@ export default function LoginPage() {
                 </div>
               </div>
 
+              {needCode && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="twofa">Authenticator code</Label>
+                  <Input
+                    id="twofa"
+                    inputMode="numeric"
+                    value={code}
+                    onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="000000"
+                    autoFocus
+                    className="h-11 text-lg tabular font-mono tracking-[0.3em] text-center"
+                  />
+                  <p className="text-[11px] text-muted-foreground">Enter the 6-digit code from your authenticator app.</p>
+                </div>
+              )}
+
               <div className="flex items-center gap-2 text-sm">
                 <input type="checkbox" id="remember" defaultChecked className="h-4 w-4 rounded border-border text-brand focus:ring-ring" />
                 <Label htmlFor="remember" className="text-muted-foreground font-normal">Remember this device for 30 days</Label>
               </div>
 
-              <Button type="submit" size="lg" className="w-full" disabled={loading}>
-                {loading ? "Signing in…" : "Sign in"}
+              <Button type="submit" size="lg" className="w-full" disabled={loading || (needCode && code.length !== 6)}>
+                {loading ? "Signing in…" : needCode ? "Verify & sign in" : "Sign in"}
                 {!loading && <ArrowRight className="h-4 w-4" />}
               </Button>
 

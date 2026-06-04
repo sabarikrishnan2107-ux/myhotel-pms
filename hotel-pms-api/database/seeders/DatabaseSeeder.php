@@ -19,6 +19,8 @@ class DatabaseSeeder extends Seeder
             AdminUserSeeder::class,
             PropertySettingSeeder::class,
             SetupDataSeeder::class,
+            GuestBookingSeeder::class,
+            FolioSeeder::class,
         ]);
     }
 }

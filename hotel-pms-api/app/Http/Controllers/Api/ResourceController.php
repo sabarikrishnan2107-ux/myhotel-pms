@@ -4,9 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Agent;
+use App\Models\Booking;
 use App\Models\FbPackage;
 use App\Models\Floor;
+use App\Models\FolioCharge;
+use App\Models\FolioPayment;
 use App\Models\GstSlab;
+use App\Models\Guest;
 use App\Models\HallPackage;
 use App\Models\Holiday;
 use App\Models\NotificationTemplate;
@@ -38,7 +42,14 @@ class ResourceController extends Controller
         'notification-templates' => NotificationTemplate::class,
         'roles'                  => Role::class,
         'webhooks'               => Webhook::class,
+        'guests'                 => Guest::class,
+        'bookings'               => Booking::class,
+        'folio-charges'          => FolioCharge::class,
+        'folio-payments'         => FolioPayment::class,
     ];
+
+    /** Resources that can be filtered by ?bookingNo= on index. */
+    private const FILTER_BY_BOOKING = ['folio-charges', 'folio-payments'];
 
     /** Resource slugs, for the route constraint. */
     public static function resources(): array
@@ -110,6 +121,30 @@ class ResourceController extends Controller
         'webhooks' => [
             'url' => 'string|max:1000', 'events' => 'string|max:1000|nullable', 'status' => 'string|max:50',
         ],
+        'guests' => [
+            'name' => 'string|max:255', 'phone' => 'string|max:50|nullable', 'email' => 'email|max:255|nullable',
+            'nationality' => 'string|max:100|nullable', 'idType' => 'string|max:50|nullable', 'idNumber' => 'string|max:100|nullable',
+            'vip' => 'boolean', 'blacklist' => 'boolean', 'lifetimeNights' => 'integer|min:0', 'lifetimeSpend' => 'integer|min:0',
+            'lastStay' => 'string|max:50|nullable', 'address' => 'string|max:500|nullable', 'birthday' => 'string|max:50|nullable',
+            'anniversary' => 'string|max:50|nullable', 'preferences' => 'array', 'allergies' => 'string|max:500|nullable',
+            'internalNotes' => 'string|max:2000|nullable', 'blacklistReason' => 'string|max:500|nullable', 'loyaltyPoints' => 'integer|min:0',
+        ],
+        'bookings' => [
+            'bookingNo' => 'string|max:50', 'guestName' => 'string|max:255', 'roomNumber' => 'string|max:50|nullable',
+            'roomType' => 'string|max:50|nullable', 'source' => 'string|max:50', 'checkIn' => 'string|max:50|nullable',
+            'checkOut' => 'string|max:50|nullable', 'nights' => 'integer|min:0', 'adults' => 'integer|min:1', 'children' => 'integer|min:0',
+            'paymentStatus' => 'string|max:50', 'ratePlan' => 'string|max:50', 'total' => 'integer|min:0',
+            'advance' => 'integer|min:0', 'balance' => 'integer', 'vip' => 'boolean',
+        ],
+        'folio-charges' => [
+            'bookingNo' => 'string|max:50', 'date' => 'string|max:50', 'description' => 'string|max:500',
+            'type' => 'string|max:50', 'qty' => 'integer', 'rate' => 'integer', 'tax' => 'integer',
+            'amount' => 'integer', 'paidBy' => 'string|max:50',
+        ],
+        'folio-payments' => [
+            'bookingNo' => 'string|max:50', 'date' => 'string|max:50', 'mode' => 'string|max:100',
+            'reference' => 'string|max:255|nullable', 'amount' => 'integer',
+        ],
     ];
 
     /** Fields that must be present (and non-empty) when creating a row. */
@@ -119,6 +154,8 @@ class ResourceController extends Controller
         'hall-packages' => ['name'], 'agents' => ['name'], 'gst-slabs' => ['label'],
         'payment-methods' => ['name', 'code'], 'notification-templates' => ['event'],
         'roles' => ['name'], 'webhooks' => ['url'],
+        'guests' => ['name'], 'bookings' => ['guestName'],
+        'folio-charges' => ['bookingNo', 'description'], 'folio-payments' => ['bookingNo'],
     ];
 
     private function model(string $resource): string
@@ -142,9 +179,15 @@ class ResourceController extends Controller
         return $data;
     }
 
-    public function index(string $resource)
+    public function index(string $resource, Request $request)
     {
-        return $this->model($resource)::orderBy('id')->get();
+        $query = $this->model($resource)::query();
+
+        if (in_array($resource, self::FILTER_BY_BOOKING, true) && $request->filled('bookingNo')) {
+            $query->where('bookingNo', $request->query('bookingNo'));
+        }
+
+        return $query->orderBy('id')->get();
     }
 
     public function store(string $resource, Request $request)

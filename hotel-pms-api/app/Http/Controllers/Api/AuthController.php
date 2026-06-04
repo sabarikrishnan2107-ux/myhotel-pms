@@ -19,6 +19,7 @@ class AuthController extends Controller
         $data = $request->validate([
             'email'    => ['required', 'email'],
             'password' => ['required', 'string'],
+            'code'     => ['sometimes', 'nullable', 'string'],
         ]);
 
         $user = User::where('email', $data['email'])->first();
@@ -27,6 +28,18 @@ class AuthController extends Controller
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
+        }
+
+        // If 2FA is on, require a valid authenticator code before issuing a token.
+        if ($user->two_factor_enabled) {
+            if (empty($data['code'])) {
+                return response()->json(['two_factor_required' => true]);
+            }
+            if (! $user->two_factor_secret || ! Totp::verify($user->two_factor_secret, $data['code'])) {
+                throw ValidationException::withMessages([
+                    'code' => ['That code is invalid or expired.'],
+                ]);
+            }
         }
 
         $token = $user->createToken('web')->plainTextToken;

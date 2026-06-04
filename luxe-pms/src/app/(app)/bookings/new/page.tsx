@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { GUESTS, ROOMS } from "@/lib/mock-data";
 import { cn, money } from "@/lib/utils";
+import { apiPost } from "@/lib/api";
 import { NewGuestForm, type NewGuestData } from "@/components/guests/new-guest-form";
 
 // Dynamic pricing — weekday / weekend / holiday multipliers (read from Master Setup in production)
@@ -838,31 +839,63 @@ export default function BookingWizardPage() {
                 className="flex-1"
                 variant="success"
                 disabled={submitting || !selectedGuestDisplay || !selectedRoom}
-                onClick={() => {
+                onClick={async () => {
                   setSubmitting(true);
                   // Deterministic-ish booking number (no Date.now() to avoid hydration drift if rendered server-side)
                   const seed = (selectedGuestDisplay?.name ?? "X").length * 137 + (selectedRoom?.length ?? 1) * 53 + nights * 7;
                   const bookingNo = `BK${100400 + (seed % 9000)}`;
-                  setTimeout(() => {
-                    setConfirmed({
+                  const roomNumber = ROOMS.find(r => r.id === selectedRoom)?.number ?? "";
+                  // Persist the booking (and the guest, if a brand-new one was entered).
+                  try {
+                    if (newGuest && step1Mode === "create") {
+                      await apiPost("/guests", {
+                        name: selectedGuestDisplay!.name,
+                        phone: selectedGuestDisplay!.phone ?? "",
+                        email: newGuest.email ?? "",
+                        nationality: newGuest.nationality ?? "",
+                        idType: newGuest.idType ?? "",
+                        idNumber: newGuest.idNumber ?? "",
+                      }).catch(() => {});
+                    }
+                    await apiPost("/bookings", {
                       bookingNo,
                       guestName: selectedGuestDisplay!.name,
-                      guestPhone: selectedGuestDisplay!.phone,
-                      roomNumber: ROOMS.find(r => r.id === selectedRoom)?.number ?? "—",
+                      roomNumber,
                       roomType,
+                      source: "Walk-in",
                       checkIn,
                       checkOut,
                       nights,
-                      pax: `${adults}A${children ? ` + ${children}C` : ""}`,
-                      total,
-                      advance,
-                      balance: total - advance,
-                      paymentMode: paymentPct === 0 ? "Pay at hotel" : paymentMode,
-                      channels,
-                      createdAt: new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }),
+                      adults,
+                      children,
+                      paymentStatus: paymentPct === 0 ? "unpaid" : paymentPct === 100 ? "paid" : "partial",
+                      ratePlan,
+                      total: Math.round(total),
+                      advance: Math.round(advance),
+                      balance: Math.round(total - advance),
+                      vip: false,
                     });
-                    setSubmitting(false);
-                  }, 700);
+                  } catch {
+                    /* show the confirmation anyway; the booking just didn't persist */
+                  }
+                  setConfirmed({
+                    bookingNo,
+                    guestName: selectedGuestDisplay!.name,
+                    guestPhone: selectedGuestDisplay!.phone,
+                    roomNumber: roomNumber || "—",
+                    roomType,
+                    checkIn,
+                    checkOut,
+                    nights,
+                    pax: `${adults}A${children ? ` + ${children}C` : ""}`,
+                    total,
+                    advance,
+                    balance: total - advance,
+                    paymentMode: paymentPct === 0 ? "Pay at hotel" : paymentMode,
+                    channels,
+                    createdAt: new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }),
+                  });
+                  setSubmitting(false);
                 }}
               >
                 {submitting ? (

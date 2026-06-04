@@ -17,6 +17,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Input, Label, Select } from "@/components/ui/input";
 import { RESERVATIONS, GUESTS, SAMPLE_FOLIO_CHARGES, SAMPLE_PAYMENTS } from "@/lib/mock-data";
 import { cn, money, formatDate, formatDateLong, formatTime } from "@/lib/utils";
+import { apiGet, apiPost } from "@/lib/api";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: FileBarChart },
@@ -80,6 +81,17 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
   const [extraAdjustments, setExtraAdjustments] = React.useState<typeof ADJUSTMENTS>([]);
   const [internalNotes, setInternalNotes] = React.useState(NOTES.internal);
   const [noteDraft, setNoteDraft] = React.useState("");
+
+  // Load this booking's folio (charges + payments) from Postgres.
+  React.useEffect(() => {
+    let cancelled = false;
+    const q = `?bookingNo=${encodeURIComponent(id)}`;
+    apiGet<typeof SAMPLE_FOLIO_CHARGES>(`/folio-charges${q}`)
+      .then(rows => { if (!cancelled) setCharges(rows); }).catch(() => {});
+    apiGet<typeof SAMPLE_PAYMENTS>(`/folio-payments${q}`)
+      .then(rows => { if (!cancelled) setPayments(rows); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [id]);
 
   const liveCharges = charges.filter(c => !voidedIds.has(c.id));
   const chargesSubtotal = liveCharges.reduce((s, c) => s + (c.amount - c.tax), 0);
@@ -708,18 +720,20 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
       {showPrint && <PrintModal onClose={() => setShowPrint(false)} onPrint={() => { setShowPrint(false); window.print(); }} reservation={reservation} grandTotal={grandTotal} paymentsTotal={paymentsTotal} balance={balance} chargesSubtotal={chargesSubtotal} chargesTax={chargesTax} />}
       {showEmail && <EmailModal onClose={() => setShowEmail(false)} onSend={() => { setShowEmail(false); showToast("Invoice email sent to guest"); }} reservation={reservation} guestEmail={guest?.email ?? ""} grandTotal={grandTotal} />}
       {showAddCharge && <AddChargeModal onClose={() => setShowAddCharge(false)} onSave={(c) => {
-        const newId = `c-${Date.now().toString(36)}`;
-        const newCharge = { id: newId, date: new Date().toISOString().slice(0, 10), ...c } as typeof SAMPLE_FOLIO_CHARGES[number];
-        setCharges(prev => [...prev, newCharge]);
+        const payload = { bookingNo: id, date: new Date().toISOString().slice(0, 10), ...c };
         setShowAddCharge(false);
         showToast(`Charge added: ${c.description} · ${money(c.amount)}`);
+        apiPost<typeof SAMPLE_FOLIO_CHARGES[number]>("/folio-charges", payload)
+          .then(created => setCharges(prev => [...prev, created]))
+          .catch(() => showToast("⚠ Save failed — backend offline"));
       }} />}
       {showPay && <PaymentModal onClose={() => setShowPay(false)} onSave={(amt, mode, reference) => {
-        const newId = `p-${Date.now().toString(36)}`;
-        const newPayment = { id: newId, date: new Date().toISOString().slice(0, 10), mode, amount: amt, reference: reference || "—" } as typeof SAMPLE_PAYMENTS[number];
-        setPayments(prev => [...prev, newPayment]);
+        const payload = { bookingNo: id, date: new Date().toISOString().slice(0, 10), mode, amount: amt, reference: reference || "—" };
         setShowPay(false);
         showToast(`Payment of ${money(amt)} via ${mode} recorded`);
+        apiPost<typeof SAMPLE_PAYMENTS[number]>("/folio-payments", payload)
+          .then(created => setPayments(prev => [...prev, created]))
+          .catch(() => showToast("⚠ Save failed — backend offline"));
       }} balance={balance} />}
       {showDiscount && <DiscountModal onClose={() => setShowDiscount(false)} chargesTotal={chargesTotal} onSave={(reason, amount, approver) => {
         setExtraAdjustments(prev => [...prev, {
@@ -734,11 +748,12 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
         showToast(`Discount applied: ${money(amount)} off · ${reason}`);
       }} />}
       {showRefund && <RefundModal onClose={() => setShowRefund(false)} paymentsTotal={paymentsTotal} balance={balance} onSave={(amount, mode, reason, approver) => {
-        const newId = `p-${Date.now().toString(36)}`;
-        const refundPayment = { id: newId, date: new Date().toISOString().slice(0, 10), mode: `${mode} (Refund)`, amount: -Math.abs(amount), reference: `Refund · ${reason} · ${approver}` } as unknown as typeof SAMPLE_PAYMENTS[number];
-        setPayments(prev => [...prev, refundPayment]);
+        const payload = { bookingNo: id, date: new Date().toISOString().slice(0, 10), mode: `${mode} (Refund)`, amount: -Math.abs(amount), reference: `Refund · ${reason} · ${approver}` };
         setShowRefund(false);
         showToast(`Refund issued: ${money(amount)} via ${mode}`);
+        apiPost<typeof SAMPLE_PAYMENTS[number]>("/folio-payments", payload)
+          .then(created => setPayments(prev => [...prev, created]))
+          .catch(() => showToast("⚠ Save failed — backend offline"));
       }} />}
       {showQR && <QRCodeModal onClose={() => setShowQR(false)} irn={eInvoiceIrn} ackNo={eInvoiceAckNo} invoiceNo={`INV-${reservation.bookingNo}`} />}
       {showEditSplits && <EditSplitsModal onClose={() => setShowEditSplits(false)} onSave={() => { setShowEditSplits(false); showToast("Split rules saved"); }} />}

@@ -15,6 +15,7 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { GUESTS, RESERVATIONS } from "@/lib/mock-data";
 import type { Guest } from "@/lib/types";
 import { money, formatDate, cn } from "@/lib/utils";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
 
 // ========================= EXTENDED TYPE =========================
 type GuestExt = Guest & {
@@ -91,6 +92,15 @@ export default function GuestsPage() {
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
+  // Load guests from Postgres on mount (falls back to seeds if the API is down).
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<GuestExt[]>("/guests")
+      .then(rows => { if (!cancelled) setGuests(rows.map(r => ({ ...r, preferences: r.preferences ?? undefined }))); })
+      .catch(() => { if (!cancelled) showToast("⚠ Backend offline — showing local data"); });
+    return () => { cancelled = true; };
+  }, []);
+
   const nationalities = Array.from(new Set(guests.map(g => g.nationality))).sort();
 
   const filtered = React.useMemo(() => {
@@ -122,30 +132,42 @@ export default function GuestsPage() {
   const birthdayToday = guests.filter(g => g.birthday?.slice(5, 10) === TODAY_MD);
   const anniversariesToday = guests.filter(g => g.anniversary?.slice(5, 10) === TODAY_MD);
 
-  const handleSave = (data: GuestExt) => {
-    if (editGuest === "new") {
-      const newId = `g-${Date.now().toString(36).slice(-6)}`;
-      setGuests(prev => [{ ...data, id: newId, lifetimeNights: 0, lifetimeSpend: 0 }, ...prev]);
-      showToast(`Guest ${data.name} added to registry`);
-    } else if (editGuest && typeof editGuest === "object") {
-      setGuests(prev => prev.map(g => g.id === editGuest.id ? { ...g, ...data, id: g.id } : g));
-      showToast(`Profile updated for ${data.name}`);
-    }
+  const handleSave = async (data: GuestExt) => {
+    const target = editGuest;
     setEditGuest(null);
+    if (target === "new") {
+      const payload = { ...data, lifetimeNights: 0, lifetimeSpend: 0 };
+      try {
+        const created = await apiPost<GuestExt>("/guests", payload);
+        setGuests(prev => [created, ...prev]);
+        showToast(`Guest ${data.name} added to registry`);
+      } catch {
+        showToast("⚠ Save failed — backend offline");
+      }
+    } else if (target && typeof target === "object") {
+      const merged = { ...target, ...data, id: target.id };
+      setGuests(prev => prev.map(g => g.id === target.id ? merged : g)); // optimistic
+      try {
+        await apiPut(`/guests/${target.id}`, merged);
+        showToast(`Profile updated for ${data.name}`);
+      } catch {
+        showToast("⚠ Save failed — backend offline");
+      }
+    }
   };
 
-  const handleBlacklist = (g: GuestExt, reason: string, notes: string) => {
-    setGuests(prev => prev.map(x => x.id === g.id ? {
-      ...x, blacklist: true,
-      blacklistReason: `${reason}${notes ? ` · ${notes}` : ""}`,
-    } : x));
+  const handleBlacklist = async (g: GuestExt, reason: string, notes: string) => {
+    const blacklistReason = `${reason}${notes ? ` · ${notes}` : ""}`;
+    setGuests(prev => prev.map(x => x.id === g.id ? { ...x, blacklist: true, blacklistReason } : x));
     setBlacklistFor(null);
     showToast(`${g.name} blacklisted · ${reason}`);
+    try { await apiPut(`/guests/${g.id}`, { blacklist: true, blacklistReason }); } catch { showToast("⚠ Save failed — backend offline"); }
   };
 
-  const handleUnblacklist = (g: GuestExt) => {
+  const handleUnblacklist = async (g: GuestExt) => {
     setGuests(prev => prev.map(x => x.id === g.id ? { ...x, blacklist: false, blacklistReason: undefined } : x));
     showToast(`${g.name} restored — blacklist removed`);
+    try { await apiPut(`/guests/${g.id}`, { blacklist: false, blacklistReason: null }); } catch { showToast("⚠ Save failed — backend offline"); }
   };
 
   return (

@@ -29,19 +29,26 @@ function handleUnauthorized(res: Response) {
 }
 
 // ---- Auth ----
-export async function login(email: string, password: string): Promise<{ name: string; email: string }> {
+// Returns { twoFactorRequired: true } when the account has 2FA on and no code
+// was supplied; otherwise stores the token and returns the user.
+export async function login(
+  email: string,
+  password: string,
+  code?: string,
+): Promise<{ twoFactorRequired?: true; user?: { name: string; email: string } }> {
   const res = await fetch(`${API_BASE}/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, ...(code ? { code } : {}) }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.message || "Login failed");
   }
   const data = await res.json();
+  if (data.two_factor_required) return { twoFactorRequired: true };
   setToken(data.token);
-  return data.user;
+  return { user: data.user };
 }
 
 export async function logout(): Promise<void> {
