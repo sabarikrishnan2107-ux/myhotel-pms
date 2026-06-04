@@ -14,7 +14,9 @@ import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { REPORT_CATEGORIES } from "@/lib/mock-data-ext";
 import { RESERVATIONS, ROOMS, GUESTS } from "@/lib/mock-data";
+import type { Reservation, Room, Guest } from "@/lib/types";
 import { money, formatDate, cn } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Legend } from "recharts";
 
 interface Column { key: string; label: string; align?: "left" | "right"; render?: (v: unknown) => React.ReactNode; }
@@ -34,8 +36,11 @@ function findReport(id: string) {
   return null;
 }
 
-// Build report-specific sample data
-function buildReportData(name: string): ReportShape {
+// Build report data from live reservations / rooms / guests.
+function buildReportData(name: string, ctx: { reservations: Reservation[]; rooms: Room[]; guests: Guest[] }): ReportShape {
+  const RESERVATIONS = ctx.reservations;
+  const ROOMS = ctx.rooms;
+  const GUESTS = ctx.guests;
   // Operations reports
   if (name.includes("Reservation")) {
     return {
@@ -599,6 +604,18 @@ export default function ReportViewerPage({ params }: { params: Promise<{ id: str
   const [generatedAt, setGeneratedAt] = React.useState<string>("");
   React.useEffect(() => { setGeneratedAt(new Date().toLocaleString()); }, []);
 
+  // Live data for the reports (falls back to seeds if the API is down).
+  const [reservations, setReservations] = React.useState<Reservation[]>(RESERVATIONS);
+  const [rooms, setRooms] = React.useState<Room[]>(ROOMS);
+  const [guests, setGuests] = React.useState<Guest[]>(GUESTS);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Reservation[]>("/bookings").then(r => { if (!cancelled) setReservations(r); }).catch(() => {});
+    apiGet<Room[]>("/room-board").then(r => { if (!cancelled) setRooms(r); }).catch(() => {});
+    apiGet<Guest[]>("/guests").then(r => { if (!cancelled) setGuests(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   if (!report) {
     return (
       <div className="p-8 max-w-3xl mx-auto">
@@ -608,7 +625,7 @@ export default function ReportViewerPage({ params }: { params: Promise<{ id: str
     );
   }
 
-  const data = buildReportData(report.name);
+  const data = buildReportData(report.name, { reservations, rooms, guests });
   const filteredRows = search
     ? data.rows.filter(r => Object.values(r).some(v => String(v ?? "").toLowerCase().includes(search.toLowerCase())))
     : data.rows;
