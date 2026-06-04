@@ -15,6 +15,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { ROOMS, RESERVATIONS, GUESTS } from "@/lib/mock-data";
 import type { Room, RoomStatus, Reservation, Guest } from "@/lib/types";
 import { cn, formatTime, money } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
 
 // Status filter metadata — semantic color for each chip
@@ -83,6 +84,14 @@ export default function RackPage() {
   const [actionDialog, setActionDialog] = React.useState<{ kind: ActionKind; room: Room } | null>(null);
   const [toast, setToast] = React.useState<string | null>(null);
 
+  // Live room board from Postgres: real occupancy (from bookings) + housekeeping status.
+  const [rooms, setRooms] = React.useState<Room[]>(ROOMS);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Room[]>("/room-board").then(r => { if (!cancelled) setRooms(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2600); };
 
   const openGuestFor = (room: Room) => {
@@ -92,7 +101,7 @@ export default function RackPage() {
 
   const openAction = (kind: ActionKind, room: Room) => setActionDialog({ kind, room });
 
-  const filtered = ROOMS.filter(r => {
+  const filtered = rooms.filter(r => {
     if (filter !== "all" && r.status !== filter) return false;
     if (floor !== "all" && r.floor !== Number(floor)) return false;
     if (type !== "all" && r.type !== type) return false;
@@ -109,11 +118,11 @@ export default function RackPage() {
   }, {});
 
   const counts = STATUS_FILTERS.reduce<Record<string, number>>((acc, f) => {
-    acc[f.value] = f.value === "all" ? ROOMS.length : ROOMS.filter(r => r.status === f.value).length;
+    acc[f.value] = f.value === "all" ? rooms.length : rooms.filter(r => r.status === f.value).length;
     return acc;
   }, {});
 
-  const occRate = Math.round(((counts.occupied ?? 0) + (counts["checkout-pending"] ?? 0)) / ROOMS.length * 100);
+  const occRate = Math.round(((counts.occupied ?? 0) + (counts["checkout-pending"] ?? 0)) / rooms.length * 100);
 
   const activeFilterCount = (filter !== "all" ? 1 : 0) + (floor !== "all" ? 1 : 0) + (type !== "all" ? 1 : 0) + (search ? 1 : 0) + (advVIPOnly ? 1 : 0) + (advHasGuestOnly ? 1 : 0) + (advRateMin > 0 ? 1 : 0);
 
@@ -124,7 +133,7 @@ export default function RackPage() {
         <div>
           <h1 className="text-2xl font-display font-medium tracking-tight">Room Rack</h1>
           <p className="text-muted-foreground text-sm mt-1 inline-flex items-center gap-1">
-            <span>{filtered.length} of {ROOMS.length} rooms · Live status across all floors</span>
+            <span>{filtered.length} of {rooms.length} rooms · Live status across all floors</span>
           </p>
           <p className="text-[11px] text-subtle-foreground mt-1 inline-flex items-center gap-1">
             <MousePointerClick className="h-3 w-3" />
@@ -139,12 +148,12 @@ export default function RackPage() {
 
       {/* KPI bar — at-a-glance occupancy */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-        <KPI label="Occupancy" value={`${occRate}%`} icon={Building2} accent="brand" sub={`${(counts.occupied ?? 0) + (counts["checkout-pending"] ?? 0)} / ${ROOMS.length}`} />
+        <KPI label="Occupancy" value={`${occRate}%`} icon={Building2} accent="brand" sub={`${(counts.occupied ?? 0) + (counts["checkout-pending"] ?? 0)} / ${rooms.length}`} />
         <KPI label="Available" value={counts.available ?? 0} icon={CheckCircle2} accent="success" sub="Ready to sell" />
         <KPI label="Occupied" value={counts.occupied ?? 0} icon={Users} accent="accent" sub="In-house" />
         <KPI label="Arriving" value={counts.reserved ?? 0} icon={LogIn} accent="info" sub="Reserved today" />
         <KPI label="Dirty / OOO" value={(counts.dirty ?? 0) + (counts.maintenance ?? 0)} icon={Wrench} accent="warning" sub="Not ready" />
-        <KPI label="Avg rate" value={money(Math.round(ROOMS.reduce((t, r) => t + r.rate, 0) / ROOMS.length))} icon={CreditCard} accent="neutral" sub="per night" />
+        <KPI label="Avg rate" value={money(Math.round(rooms.reduce((t, r) => t + r.rate, 0) / rooms.length))} icon={CreditCard} accent="neutral" sub="per night" />
       </div>
 
       {/* Status filter chips */}

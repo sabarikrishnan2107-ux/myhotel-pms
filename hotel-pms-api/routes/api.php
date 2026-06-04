@@ -33,8 +33,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/property', [PropertyController::class, 'show']);
     Route::put('/property', [PropertyController::class, 'update']);
 
-    // Dashboard KPIs (aggregated from real data)
+    // Dashboard KPIs + live room board (aggregated from real data)
     Route::get('/stats', [StatsController::class, 'index']);
+    Route::get('/room-board', [StatsController::class, 'roomBoard']);
 
     // Image uploads (logos, brand assets)
     Route::post('/upload', [UploadController::class, 'store']);

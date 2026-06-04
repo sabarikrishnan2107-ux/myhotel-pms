@@ -64,4 +64,45 @@ class StatsController extends Controller
             'sourceMix'  => $sourceMix,
         ]);
     }
+
+    /**
+     * GET /api/room-board — each configured room enriched with live occupancy
+     * (from in-house bookings) and its housekeeping status.
+     */
+    public function roomBoard()
+    {
+        $today = date('Y-m-d');
+
+        $inHouse = Booking::where('status', '!=', 'cancelled')
+            ->where(fn ($q) => $q->where('status', 'checked-in')
+                ->orWhere(fn ($q2) => $q2->where('checkIn', '<=', $today)->where('checkOut', '>', $today)))
+            ->get()
+            ->keyBy('roomNumber');
+
+        $rooms = Room::orderBy('floor')->orderBy('number')->get()->map(function ($r) use ($inHouse) {
+            $bk = $inHouse->get($r->number);
+            $hk = $r->hkStatus ?: 'clean';
+            $status = $bk
+                ? 'occupied'
+                : ($hk === 'dirty' ? 'dirty' : ($hk === 'cleaning' ? 'cleaning' : ($r->status === 'out-of-order' ? 'maintenance' : 'available')));
+
+            return [
+                'id'            => $r->id,
+                'number'        => $r->number,
+                'floor'         => (int) $r->floor,
+                'type'          => $r->category,
+                'status'        => $status,
+                'hkStatus'      => $hk,
+                'guestName'     => $bk->guestName ?? null,
+                'source'        => $bk->source ?? null,
+                'checkIn'       => $bk->checkIn ?? null,
+                'checkOut'      => $bk->checkOut ?? null,
+                'paymentStatus' => $bk->paymentStatus ?? null,
+                'vip'           => (bool) ($bk->vip ?? false),
+                'rate'          => (int) $r->baseTariff,
+            ];
+        });
+
+        return response()->json($rooms);
+    }
 }

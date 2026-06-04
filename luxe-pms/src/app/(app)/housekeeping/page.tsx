@@ -16,6 +16,8 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { AIInsight } from "@/components/ui/ai-insight";
 import { ROOMS } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
+import type { Room } from "@/lib/types";
 
 type HKStatus = "dirty" | "cleaning" | "inspected" | "ready" | "maintenance";
 const HK_TONES: Record<HKStatus, "warning" | "info" | "accent" | "success" | "danger"> = {
@@ -106,6 +108,28 @@ export default function HousekeepingPage() {
   const [manageLost, setManageLost] = React.useState<typeof LOST_ITEMS[number] | null>(null);
   const [inspectionItems, setInspectionItems] = React.useState<Set<number>>(new Set(Array.from({ length: 12 }, (_, i) => i)));
 
+  // Build the housekeeping board from the real room board (live hk status).
+  const [tasks, setTasks] = React.useState(TASKS);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Room[]>("/room-board").then(board => {
+      if (cancelled) return;
+      setTasks(board.map((r, i) => ({
+        id: `tk-${r.id}`,
+        room: r.number,
+        floor: r.floor,
+        type: r.type,
+        status: (r.status === "maintenance" ? "maintenance" : r.hkStatus === "clean" ? "ready" : r.hkStatus) as HKStatus,
+        assignee: r.hkStatus === "cleaning" || r.hkStatus === "inspected" ? HOUSEKEEPERS[i % 3].name : null,
+        startedAt: r.hkStatus === "cleaning" ? "13:42" : null,
+        eta: r.hkStatus === "cleaning" ? `${15 + (i % 20)} min` : null,
+        aiPredicted: 25 + (i % 30),
+        priority: "low" as const,
+      })));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // Close per-row menus when clicking outside
   React.useEffect(() => {
     if (!taskMenuFor) return;
@@ -124,13 +148,13 @@ export default function HousekeepingPage() {
 
   const boardFiltered = React.useMemo(() => {
     const needle = boardSearch.trim().toLowerCase();
-    return TASKS.filter(t => {
+    return tasks.filter(t => {
       if (needle && !`${t.room} ${t.assignee ?? ""} ${t.type}`.toLowerCase().includes(needle)) return false;
       if (boardStatus !== "all" && t.status !== boardStatus) return false;
       if (boardFloor !== "all" && String(t.floor) !== boardFloor) return false;
       return true;
     });
-  }, [boardSearch, boardStatus, boardFloor]);
+  }, [tasks, boardSearch, boardStatus, boardFloor]);
 
   const boardSorted = React.useMemo(() => {
     const dir = boardSortDir === "asc" ? 1 : -1;
@@ -146,9 +170,9 @@ export default function HousekeepingPage() {
     });
   }, [boardFiltered, boardSortKey, boardSortDir]);
 
-  const floors = Array.from(new Set(TASKS.map(t => t.floor))).sort((a, b) => a - b);
+  const floors = Array.from(new Set(tasks.map(t => t.floor))).sort((a, b) => a - b);
 
-  const filtered = TASKS.filter(t => {
+  const filtered = tasks.filter(t => {
     if (search && !`${t.room} ${t.assignee ?? ""}`.toLowerCase().includes(search.toLowerCase())) return false;
     if (statusFilter !== "all" && t.status !== statusFilter) return false;
     return true;
@@ -157,7 +181,7 @@ export default function HousekeepingPage() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
   const counts = LANES.reduce<Record<HKStatus, number>>((acc, l) => {
-    acc[l.id] = TASKS.filter(t => t.status === l.id).length;
+    acc[l.id] = tasks.filter(t => t.status === l.id).length;
     return acc;
   }, { dirty: 0, cleaning: 0, inspected: 0, ready: 0, maintenance: 0 });
 
@@ -177,7 +201,7 @@ export default function HousekeepingPage() {
           </Button>
           <Button onClick={() => {
             // Pick first dirty task to assign
-            const t = TASKS.find(x => x.status === "dirty");
+            const t = tasks.find(x => x.status === "dirty");
             if (t) setAssignModal({ taskId: t.id, room: t.room });
             else showToast("No dirty rooms to assign right now");
           }}>
@@ -285,7 +309,7 @@ export default function HousekeepingPage() {
 
           {/* Count banner */}
           <div className="text-xs text-muted-foreground">
-            Showing <span className="font-medium text-foreground">{boardSorted.length}</span> of {TASKS.length} rooms
+            Showing <span className="font-medium text-foreground">{boardSorted.length}</span> of {tasks.length} rooms
           </div>
 
           {/* Empty */}

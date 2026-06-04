@@ -73,7 +73,7 @@ class ResourceController extends Controller
             'sizeSqft' => 'integer|min:0', 'view' => 'string|max:50', 'baseTariff' => 'integer|min:0',
             'extraBedAllowed' => 'boolean', 'extraBedRate' => 'integer|min:0', 'connectingRoom' => 'string|max:50',
             'extension' => 'string|max:50', 'wifiSsid' => 'string|max:100', 'smoking' => 'boolean',
-            'accessible' => 'boolean', 'amenities' => 'array', 'status' => 'string|max:50',
+            'accessible' => 'boolean', 'amenities' => 'array', 'status' => 'string|max:50', 'hkStatus' => 'string|max:50',
         ],
         'rate-plans' => [
             'code' => 'string|max:50', 'name' => 'string|max:255', 'inclBreakfast' => 'boolean',
