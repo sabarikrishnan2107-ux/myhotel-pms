@@ -1,0 +1,394 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================================================
+   LUXE PMS — Design Tokens
+   No hard-coded colors anywhere in the app. Use tokens only.
+   ============================================================ */
+
+@layer base {
+  :root {
+    /* ============ Luxury Hotel SaaS — Light ============
+       Ivory background · Deep navy primary · Premium gold accent
+       Designed to feel like a $10,000 enterprise hotel PMS */
+
+    /* Surfaces — Ivory base, pure white cards */
+    --background: 40 27% 97%;        /* #FAF8F4 ivory */
+    --surface: 0 0% 100%;            /* #FFFFFF white card */
+    --surface-elevated: 0 0% 100%;
+    --surface-sunken: 40 22% 95%;
+
+    /* Text — Charcoal & muted gray */
+    --foreground: 220 18% 17%;       /* #1F2937 charcoal */
+    --muted-foreground: 220 9% 46%;  /* #6B7280 muted */
+    --subtle-foreground: 220 8% 60%;
+
+    /* Borders — Warm soft beige */
+    --border: 35 27% 87%;            /* #E8E2D8 soft border */
+    --border-strong: 35 22% 78%;
+    --ring: 218 78% 18%;             /* navy focus ring */
+
+    /* Brand — Primary Navy (#071B36) — used for buttons, links, headings */
+    --brand: 218 78% 12%;
+    --brand-foreground: 40 27% 97%;          /* ivory text on navy */
+    --brand-soft: 220 30% 94%;
+    --brand-soft-foreground: 218 78% 18%;
+
+    /* Accent — Premium Gold (#C38A1E) — for highlights, active states, VIP */
+    --accent: 40 74% 44%;
+    --accent-foreground: 0 0% 100%;
+    --accent-soft: 40 80% 93%;
+
+    /* Status tokens — clean semantic palette with soft tinted backgrounds */
+    /* Available · Success Green #16A34A */
+    --status-available: 142 76% 36%;
+    --status-available-soft: 142 70% 94%;
+
+    /* Reserved · Navy blue (premium professional) */
+    --status-reserved: 218 60% 36%;
+    --status-reserved-soft: 218 40% 94%;
+
+    /* Occupied · Premium Gold (paying guest = premium) */
+    --status-occupied: 40 74% 44%;
+    --status-occupied-soft: 40 80% 93%;
+
+    /* Dirty · Warning Amber #F59E0B */
+    --status-dirty: 38 92% 50%;
+    --status-dirty-soft: 38 95% 93%;
+
+    /* Cleaning · Sky blue */
+    --status-cleaning: 200 80% 48%;
+    --status-cleaning-soft: 200 85% 94%;
+
+    /* Inspected · Teal */
+    --status-inspected: 178 60% 40%;
+    --status-inspected-soft: 178 50% 93%;
+
+    /* Ready · Success Green (deeper) */
+    --status-ready: 142 76% 36%;
+    --status-ready-soft: 142 70% 94%;
+
+    /* Maintenance · Soft Orange #F97316 */
+    --status-maintenance: 22 92% 50%;
+    --status-maintenance-soft: 22 95% 93%;
+
+    /* Blocked · Slate gray */
+    --status-blocked: 220 9% 46%;
+    --status-blocked-soft: 220 14% 94%;
+
+    /* Checkout Pending · Soft Pink-Red #EC4899 */
+    --status-checkout-pending: 333 71% 51%;
+    --status-checkout-pending-soft: 333 75% 95%;
+
+    /* Semantic */
+    --success: 142 76% 36%;      /* #16A34A */
+    --success-soft: 142 70% 94%;
+    --warning: 38 92% 50%;       /* #F59E0B */
+    --warning-soft: 38 95% 93%;
+    --danger: 347 77% 50%;       /* #E11D48 */
+    --danger-soft: 347 80% 95%;
+    --info: 218 60% 36%;         /* navy info */
+    --info-soft: 218 40% 94%;
+
+    /* Refined radii — premium but not overly rounded */
+    --radius-sm: 0.375rem;
+    --radius-md: 0.625rem;
+    --radius-lg: 0.875rem;
+    --radius-xl: 1.125rem;
+
+    /* Sidebar specials — always dark navy regardless of theme */
+    --sidebar-bg: 218 78% 12%;          /* #071B36 primary navy */
+    --sidebar-bg-elevated: 217 73% 16%; /* #0B2447 secondary navy */
+    --sidebar-fg: 40 27% 97%;           /* ivory text */
+    --sidebar-muted: 218 20% 65%;       /* muted ivory */
+    --sidebar-border: 218 40% 22%;
+    --sidebar-active: 40 74% 44%;       /* gold accent */
+    --sidebar-active-bg: 40 60% 18%;    /* dark gold tint */
+  }
+
+  .dark {
+    /* ============ Luxury Hotel SaaS — Dark ============
+       Deep navy base · luxe gold accent · same hospitality DNA */
+
+    --background: 218 78% 7%;            /* even deeper navy */
+    --surface: 218 60% 11%;
+    --surface-elevated: 218 50% 14%;
+    --surface-sunken: 218 78% 5%;
+
+    --foreground: 40 27% 94%;
+    --muted-foreground: 218 12% 65%;
+    --subtle-foreground: 218 10% 48%;
+
+    --border: 218 35% 22%;
+    --border-strong: 218 30% 32%;
+    --ring: 40 74% 55%;
+
+    /* Brand on dark — lighter navy so it's still visible as button */
+    --brand: 40 74% 55%;          /* gold becomes primary on dark for contrast */
+    --brand-foreground: 218 78% 10%;
+    --brand-soft: 40 50% 22%;
+    --brand-soft-foreground: 40 80% 80%;
+
+    /* Accent — gold (brighter on dark) */
+    --accent: 40 80% 60%;
+    --accent-foreground: 218 78% 10%;
+    --accent-soft: 40 50% 22%;
+
+    --status-available: 142 65% 50%;
+    --status-available-soft: 142 40% 18%;
+    --status-reserved: 218 70% 65%;
+    --status-reserved-soft: 218 40% 22%;
+    --status-occupied: 40 80% 55%;
+    --status-occupied-soft: 40 50% 22%;
+    --status-dirty: 38 92% 60%;
+    --status-dirty-soft: 38 60% 22%;
+    --status-cleaning: 200 80% 60%;
+    --status-cleaning-soft: 200 50% 22%;
+    --status-inspected: 178 60% 50%;
+    --status-inspected-soft: 178 40% 20%;
+    --status-ready: 142 65% 50%;
+    --status-ready-soft: 142 40% 18%;
+    --status-maintenance: 22 92% 60%;
+    --status-maintenance-soft: 22 60% 22%;
+    --status-blocked: 220 9% 60%;
+    --status-blocked-soft: 220 12% 22%;
+    --status-checkout-pending: 333 75% 62%;
+    --status-checkout-pending-soft: 333 50% 22%;
+
+    --success: 142 65% 50%;
+    --success-soft: 142 40% 18%;
+    --warning: 38 92% 60%;
+    --warning-soft: 38 60% 22%;
+    --danger: 347 75% 60%;
+    --danger-soft: 347 50% 22%;
+    --info: 218 70% 65%;
+    --info-soft: 218 40% 22%;
+
+    /* Sidebar — stays deep navy in both modes (it's the brand frame) */
+    --sidebar-bg: 218 80% 6%;
+    --sidebar-bg-elevated: 218 70% 10%;
+    --sidebar-fg: 40 27% 96%;
+    --sidebar-muted: 218 18% 62%;
+    --sidebar-border: 218 50% 18%;
+    --sidebar-active: 40 80% 55%;
+    --sidebar-active-bg: 40 60% 16%;
+  }
+
+  html, body {
+    color: hsl(var(--foreground));
+    font-feature-settings: "cv11", "ss01", "ss03";
+  }
+
+  /* Clean ivory background — no iridescent wash. Premium hospitality clarity. */
+  body {
+    font-family: var(--font-sans, system-ui, -apple-system, "Inter", "Segoe UI", Roboto, sans-serif);
+    background-color: hsl(var(--background));
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-surface: hsl(var(--surface));
+  --color-surface-elevated: hsl(var(--surface-elevated));
+  --color-surface-sunken: hsl(var(--surface-sunken));
+
+  --color-foreground: hsl(var(--foreground));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-subtle-foreground: hsl(var(--subtle-foreground));
+
+  --color-border: hsl(var(--border));
+  --color-border-strong: hsl(var(--border-strong));
+  --color-ring: hsl(var(--ring));
+
+  --color-brand: hsl(var(--brand));
+  --color-brand-foreground: hsl(var(--brand-foreground));
+  --color-brand-soft: hsl(var(--brand-soft));
+  --color-brand-soft-foreground: hsl(var(--brand-soft-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-accent-soft: hsl(var(--accent-soft));
+
+  --color-status-available: hsl(var(--status-available));
+  --color-status-available-soft: hsl(var(--status-available-soft));
+  --color-status-reserved: hsl(var(--status-reserved));
+  --color-status-reserved-soft: hsl(var(--status-reserved-soft));
+  --color-status-occupied: hsl(var(--status-occupied));
+  --color-status-occupied-soft: hsl(var(--status-occupied-soft));
+  --color-status-dirty: hsl(var(--status-dirty));
+  --color-status-dirty-soft: hsl(var(--status-dirty-soft));
+  --color-status-cleaning: hsl(var(--status-cleaning));
+  --color-status-cleaning-soft: hsl(var(--status-cleaning-soft));
+  --color-status-inspected: hsl(var(--status-inspected));
+  --color-status-inspected-soft: hsl(var(--status-inspected-soft));
+  --color-status-ready: hsl(var(--status-ready));
+  --color-status-ready-soft: hsl(var(--status-ready-soft));
+  --color-status-maintenance: hsl(var(--status-maintenance));
+  --color-status-maintenance-soft: hsl(var(--status-maintenance-soft));
+  --color-status-blocked: hsl(var(--status-blocked));
+  --color-status-blocked-soft: hsl(var(--status-blocked-soft));
+  --color-status-checkout-pending: hsl(var(--status-checkout-pending));
+  --color-status-checkout-pending-soft: hsl(var(--status-checkout-pending-soft));
+
+  --color-success: hsl(var(--success));
+  --color-success-soft: hsl(var(--success-soft));
+  --color-warning: hsl(var(--warning));
+  --color-warning-soft: hsl(var(--warning-soft));
+  --color-danger: hsl(var(--danger));
+  --color-danger-soft: hsl(var(--danger-soft));
+  --color-info: hsl(var(--info));
+  --color-info-soft: hsl(var(--info-soft));
+
+  /* Sidebar palette (always dark navy frame) */
+  --color-sidebar-bg: hsl(var(--sidebar-bg));
+  --color-sidebar-bg-elevated: hsl(var(--sidebar-bg-elevated));
+  --color-sidebar-fg: hsl(var(--sidebar-fg));
+  --color-sidebar-muted: hsl(var(--sidebar-muted));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-active: hsl(var(--sidebar-active));
+  --color-sidebar-active-bg: hsl(var(--sidebar-active-bg));
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+}
+
+/* ============ Apple Liquid Glass utilities ============ */
+
+/* Translucent frosted-glass surface, used by Card by default + opt-in elsewhere */
+.glass-surface {
+  background: rgb(var(--glass-tint) / 0.72);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-color: hsl(var(--glass-border) / 0.6);
+}
+.dark .glass-surface {
+  background: rgb(var(--glass-tint) / 0.55);
+}
+
+/* Lighter, more translucent variant used for hero strips & overlays */
+.glass-pane {
+  background: rgb(var(--glass-tint) / 0.5);
+  backdrop-filter: saturate(160%) blur(28px);
+  -webkit-backdrop-filter: saturate(160%) blur(28px);
+  border: 1px solid hsl(var(--glass-border) / 0.7);
+}
+.dark .glass-pane {
+  background: rgb(var(--glass-tint) / 0.4);
+}
+
+/* Apple iridescent accent — multi-color gradient used on hero panels */
+.iridescent {
+  background:
+    radial-gradient(at 20% 0%, hsl(283 70% 60% / 0.12) 0px, transparent 50%),
+    radial-gradient(at 80% 0%, hsl(177 100% 45% / 0.10) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, hsl(348 100% 60% / 0.08) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, hsl(241 75% 60% / 0.08) 0px, transparent 50%);
+}
+.dark .iridescent {
+  background:
+    radial-gradient(at 20% 0%, hsl(283 85% 65% / 0.22) 0px, transparent 50%),
+    radial-gradient(at 80% 0%, hsl(177 80% 55% / 0.16) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, hsl(348 100% 65% / 0.14) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, hsl(241 80% 65% / 0.14) 0px, transparent 50%);
+}
+
+/* Subtle inner top highlight (Apple panels have a soft "light hit" from above) */
+.glass-highlight {
+  position: relative;
+}
+.glass-highlight::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent,
+    hsl(0 0% 100% / 0.6),
+    transparent);
+  pointer-events: none;
+}
+.dark .glass-highlight::before {
+  background: linear-gradient(90deg,
+    transparent,
+    hsl(0 0% 100% / 0.12),
+    transparent);
+}
+
+@layer base {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border-strong));
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+    background-clip: padding-box;
+    border: 2px solid transparent;
+  }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-in {
+  animation: fade-in-up 0.25s ease-out;
+}
+
+/* Page-level enter animation — slightly slower & gentler than .animate-in for a calmer transition */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-page-in {
+  animation: page-in 0.32s cubic-bezier(0.2, 0.65, 0.3, 1);
+}
+
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .animate-in, .animate-page-in {
+    animation: none;
+  }
+}
+
+/* ============ Print stylesheet ============
+   Hides chrome (sidebar, top bar, action bars) and produces a clean folio. */
+@media print {
+  /* Hide everything that's not the folio root */
+  body * { visibility: hidden; }
+  #folio-root, #folio-root * { visibility: visible; }
+  #folio-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  /* Hide UI elements within the folio that don't belong on the invoice */
+  .no-print { display: none !important; }
+  /* Force light theme + remove shadows */
+  :root { --background: 0 0% 100%; --surface: 0 0% 100%; --foreground: 0 0% 0%; }
+  .shadow-soft, .shadow-soft-md, .shadow-soft-lg, .shadow-xs, .shadow-md, .shadow-lg, .shadow-xl {
+    box-shadow: none !important;
+  }
+  /* Force borders to print clean */
+  .border, .border-b, .border-t, .border-l, .border-r {
+    border-color: #ddd !important;
+  }
+  a { color: inherit !important; text-decoration: none !important; }
+  @page { margin: 14mm; }
+}

@@ -1,0 +1,22 @@
+# Monorepo root safety net (subfolders also have their own .gitignore)
+
+# Dependencies & build output
+**/node_modules/
+**/vendor/
+luxe-pms/.next/
+hotel-pms-api/storage/*.key
+
+# Secrets / local env — NEVER commit
+**/.env
+**/.env.local
+**/.env.*.local
+**/.env.backup
+**/.env.production
+
+# Laravel local sqlite (we use Postgres)
+hotel-pms-api/database/*.sqlite
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
