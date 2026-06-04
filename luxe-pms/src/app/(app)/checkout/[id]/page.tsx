@@ -396,7 +396,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
               apiGet<Reservation[]>("/bookings")
                 .then(list => {
                   const bk = list.find(b => b.bookingNo === reservation.bookingNo);
-                  if (bk) apiPut(`/bookings/${(bk as { id: number | string }).id}`, { paymentStatus: "paid", advance: reservation.total, balance: 0 });
+                  if (bk) apiPut(`/bookings/${(bk as { id: number | string }).id}`, { paymentStatus: "paid", advance: reservation.total, balance: 0, status: "checked-out" });
                 })
                 .catch(() => {});
             }}

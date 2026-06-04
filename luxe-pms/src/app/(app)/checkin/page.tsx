@@ -22,6 +22,16 @@ import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
 import { RESERVATIONS, GUESTS, ROOMS } from "@/lib/mock-data";
 import type { Reservation, PaymentStatus, BookingSource, Guest } from "@/lib/types";
 import { cn, money, formatTime } from "@/lib/utils";
+import { apiGet, apiPut } from "@/lib/api";
+
+// Mark a booking checked-in in Postgres (looked up by its bookingNo).
+async function persistCheckIn(bookingNo: string) {
+  try {
+    const list = await apiGet<{ id: number; bookingNo: string }[]>("/bookings");
+    const bk = list.find(b => b.bookingNo === bookingNo);
+    if (bk) await apiPut(`/bookings/${bk.id}`, { status: "checked-in" });
+  } catch { /* offline — UI still reflects the check-in locally */ }
+}
 
 // Use first 12 reservations as "expected arrivals today" pool
 const ARRIVALS = RESERVATIONS.slice(0, 12);
@@ -494,6 +504,7 @@ export default function CheckinPage() {
             setCheckingIn(null);
             setToast(msg);
             setTimeout(() => setToast(null), 3000);
+            persistCheckIn(res.bookingNo);
           }}
         />
       )}

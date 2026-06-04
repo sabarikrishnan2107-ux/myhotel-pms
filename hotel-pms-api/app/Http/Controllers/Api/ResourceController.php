@@ -134,7 +134,7 @@ class ResourceController extends Controller
             'roomType' => 'string|max:50|nullable', 'source' => 'string|max:50', 'checkIn' => 'string|max:50|nullable',
             'checkOut' => 'string|max:50|nullable', 'nights' => 'integer|min:0', 'adults' => 'integer|min:1', 'children' => 'integer|min:0',
             'paymentStatus' => 'string|max:50', 'ratePlan' => 'string|max:50', 'total' => 'integer|min:0',
-            'advance' => 'integer|min:0', 'balance' => 'integer', 'vip' => 'boolean',
+            'advance' => 'integer|min:0', 'balance' => 'integer', 'vip' => 'boolean', 'status' => 'string|max:50',
         ],
         'folio-charges' => [
             'bookingNo' => 'string|max:50', 'date' => 'string|max:50', 'description' => 'string|max:500',

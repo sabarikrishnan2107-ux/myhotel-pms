@@ -19,11 +19,15 @@ class StatsController extends Controller
         $today = date('Y-m-d');
 
         $totalRooms = max(1, Room::count());
-        $inHouse = Booking::where('checkIn', '<=', $today)->where('checkOut', '>', $today)->count();
+        // In-house = explicitly checked-in, or (for un-actioned bookings) within their stay dates.
+        $inHouse = Booking::where('status', 'checked-in')
+            ->orWhere(fn ($q) => $q->whereIn('status', ['confirmed', ''])
+                ->where('checkIn', '<=', $today)->where('checkOut', '>', $today))
+            ->count();
         $occupied = min($inHouse, $totalRooms);
 
-        $arrivals = Booking::where('checkIn', $today)->orderBy('roomNumber')->get();
-        $departures = Booking::where('checkOut', $today)->orderBy('roomNumber')->get();
+        $arrivals = Booking::where('checkIn', $today)->where('status', '!=', 'cancelled')->orderBy('roomNumber')->get();
+        $departures = Booking::where('checkOut', $today)->where('status', '!=', 'cancelled')->orderBy('roomNumber')->get();
 
         $sourceMix = Booking::query()
             ->selectRaw('source, count(*) as bookings, coalesce(sum(total),0) as revenue')

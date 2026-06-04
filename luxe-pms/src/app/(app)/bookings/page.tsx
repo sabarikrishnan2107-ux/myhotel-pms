@@ -141,6 +141,7 @@ export default function BookingsPage() {
     setCancelledIds(c => new Set([...c, r.id]));
     setCancelTarget(null);
     showToast(`Booking ${r.bookingNo} cancelled · ${money(_refund)} refund processed`);
+    apiPut(`/bookings/${r.id}`, { status: "cancelled" }).catch(() => showToast("⚠ Save failed — backend offline"));
   };
   const handlePrintConfirmation = (r: Reservation) => {
     showToast(`Confirmation for ${r.bookingNo} sent to printer`);
