@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { ROOMS, RESERVATIONS, GUESTS } from "@/lib/mock-data";
 import type { PaymentStatus, Reservation, Guest } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
 
 const CELL_W = 80;
@@ -77,10 +78,20 @@ const PAYMENT_BAR: Record<PaymentStatus, string> = {
 export default function CalendarPage() {
   const router = useRouter();
   const [startDate, setStartDate] = React.useState(() => {
-    const d = new Date("2026-05-22");
+    const d = new Date("2026-06-02");
     return d;
   });
   const [selected, setSelected] = React.useState<{ guest: Guest; reservation: Reservation } | null>(null);
+
+  // Live reservations + rooms from Postgres (fall back to seeds if offline).
+  const [bookings, setBookings] = React.useState<Reservation[]>(RESERVATIONS);
+  const [rooms, setRooms] = React.useState(ROOMS);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Reservation[]>("/bookings").then(r => { if (!cancelled) setBookings(r); }).catch(() => {});
+    apiGet<typeof ROOMS>("/room-board").then(r => { if (!cancelled) setRooms(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // Toolbar state — was previously hard-coded
   const [roomTypeFilter, setRoomTypeFilter] = React.useState<string>("all");
@@ -94,9 +105,12 @@ export default function CalendarPage() {
   const [sourceFilter, setSourceFilter] = React.useState<string>("all");
 
   const openGuestForBlock = (b: CalBlock) => {
-    // Find a matching real reservation by guest name (fall back to first)
+    // Resolve the real reservation this block came from (by DB id, then name).
+    const realId = b.id.startsWith("bk-") ? b.id.slice(3) : null;
     const reservation =
-      RESERVATIONS.find(r => r.guestName === b.guestName) ?? RESERVATIONS[0];
+      bookings.find(r => String((r as { id: unknown }).id) === realId) ??
+      bookings.find(r => r.guestName === b.guestName) ??
+      RESERVATIONS[0];
     const guest =
       GUESTS.find(g => g.name === b.guestName) ?? {
         id: `g-${b.guestName.replace(/\s+/g, "-").toLowerCase()}`,
@@ -147,53 +161,43 @@ export default function CalendarPage() {
     });
   }, [startDate]);
 
-  // Build initial blocks once
-  const initialBlocks: CalBlock[] = React.useMemo(() => {
-    const out: CalBlock[] = [];
-    const sources = ["Walk-in", "Website", "OTA: Booking.com", "Agent", "Corporate"];
-    const payments: PaymentStatus[] = ["paid", "partial", "unpaid"];
-    let counter = 0;
-    ROOMS.forEach((room, idx) => {
-      const seed = idx * 7 + 11;
-      const startCol = seed % (DAYS - 3);
-      const nights = 1 + (seed % 4);
-      const res = RESERVATIONS[idx % RESERVATIONS.length];
-      out.push({
-        id: `b${counter++}`,
-        roomNumber: room.number,
-        guestName: res?.guestName ?? "Guest",
-        source: sources[idx % sources.length],
+  // Build calendar blocks from real reservations, positioned by their actual
+  // check-in date relative to the visible window.
+  const DAY_MS = 86400000;
+  const realBlocks: CalBlock[] = React.useMemo(() => {
+    const base = new Date(startDate); base.setHours(0, 0, 0, 0);
+    return bookings.flatMap(b => {
+      if ((b as { status?: string }).status === "cancelled") return [];
+      const ci = new Date(b.checkIn);
+      if (isNaN(ci.getTime())) return [];
+      ci.setHours(0, 0, 0, 0);
+      const startCol = Math.round((ci.getTime() - base.getTime()) / DAY_MS);
+      const co = new Date(b.checkOut);
+      const nights = b.nights || (isNaN(co.getTime()) ? 1 : Math.max(1, Math.round((co.getTime() - ci.getTime()) / DAY_MS)));
+      return [{
+        id: `bk-${b.id}`,
+        roomNumber: b.roomNumber,
+        guestName: b.guestName,
+        source: b.source,
         startCol,
         nights,
-        paymentStatus: payments[idx % payments.length],
-        vip: idx % 11 === 0,
-      });
-      const nextStart = startCol + nights + 1;
-      if (idx % 3 === 0 && nextStart + 1 < DAYS) {
-        const nights2 = 1 + (seed % 3);
-        out.push({
-          id: `b${counter++}`,
-          roomNumber: room.number,
-          guestName: RESERVATIONS[(idx + 5) % RESERVATIONS.length]?.guestName ?? "Guest",
-          source: sources[(idx + 2) % sources.length],
-          startCol: nextStart,
-          nights: Math.min(nights2, DAYS - nextStart - 1),
-          paymentStatus: payments[(idx + 1) % payments.length],
-          vip: false,
-        });
-      }
+        paymentStatus: b.paymentStatus,
+        vip: b.vip,
+      }];
     });
-    return out;
-  }, []);
+  }, [bookings, startDate, DAY_MS]);
 
-  const [blocks, setBlocks] = React.useState<CalBlock[]>(initialBlocks);
+  const [blocks, setBlocks] = React.useState<CalBlock[]>(realBlocks);
+  // Reseed the board whenever the reservations or the visible window change.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing derived state from the API
+  React.useEffect(() => { setBlocks(realBlocks); }, [realBlocks]);
   const [drag, setDrag] = React.useState<DragState | null>(null);
   const [toast, setToast] = React.useState<string | null>(null);
   const sortedRooms = React.useMemo(() => {
-    let rooms = [...ROOMS].sort((a, b) => Number(b.number) - Number(a.number));
-    if (roomTypeFilter !== "all") rooms = rooms.filter(r => r.type === roomTypeFilter);
-    return rooms;
-  }, [roomTypeFilter]);
+    let list = [...rooms].sort((a, b) => (Number(b.number) || 0) - (Number(a.number) || 0));
+    if (roomTypeFilter !== "all") list = list.filter(r => r.type === roomTypeFilter);
+    return list;
+  }, [rooms, roomTypeFilter]);
 
   // Apply payment / source / vip filters to visible blocks
   const visibleBlocks = React.useMemo(() => {
