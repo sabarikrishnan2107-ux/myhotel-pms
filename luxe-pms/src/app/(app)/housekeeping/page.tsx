@@ -16,7 +16,7 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { AIInsight } from "@/components/ui/ai-insight";
 import { ROOMS } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
-import { apiGet } from "@/lib/api";
+import { apiGet, apiPut } from "@/lib/api";
 import type { Room } from "@/lib/types";
 
 type HKStatus = "dirty" | "cleaning" | "inspected" | "ready" | "maintenance";
@@ -129,6 +129,15 @@ export default function HousekeepingPage() {
     }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  // Mark a room Ready (clean) — updates the board and persists hk status.
+  const markReady = (t: { id: string; room: string }) => {
+    const roomId = t.id.startsWith("tk-") ? t.id.slice(3) : null;
+    setTasks(prev => prev.map(x => x.id === t.id ? { ...x, status: "ready" as HKStatus } : x));
+    setTaskMenuFor(null);
+    showToast(`Room ${t.room} marked Ready`);
+    if (roomId) apiPut(`/rooms/${roomId}`, { hkStatus: "clean" }).catch(() => showToast("⚠ Save failed — backend offline"));
+  };
 
   // Close per-row menus when clicking outside
   React.useEffect(() => {
@@ -457,7 +466,7 @@ export default function HousekeepingPage() {
                             onToggle={() => setTaskMenuFor(taskMenuFor === t.id ? null : t.id)}
                             onAssign={() => { setAssignModal({ taskId: t.id, room: t.room }); setTaskMenuFor(null); }}
                             onMessage={() => { showToast(`WhatsApp sent to ${t.assignee ?? "unassigned"}`); setTaskMenuFor(null); }}
-                            onMarkReady={() => { showToast(`Room ${t.room} marked Ready`); setTaskMenuFor(null); }}
+                            onMarkReady={() => markReady(t)}
                             onReportIssue={() => { showToast(`Maintenance ticket created for Room ${t.room}`); setTaskMenuFor(null); }}
                           />
                         </td>
@@ -530,7 +539,7 @@ export default function HousekeepingPage() {
                         onToggle={() => setTaskMenuFor(taskMenuFor === t.id ? null : t.id)}
                         onAssign={() => { setAssignModal({ taskId: t.id, room: t.room }); setTaskMenuFor(null); }}
                         onMessage={() => { showToast(`WhatsApp sent to ${t.assignee ?? "unassigned"}`); setTaskMenuFor(null); }}
-                        onMarkReady={() => { showToast(`Room ${t.room} marked Ready`); setTaskMenuFor(null); }}
+                        onMarkReady={() => markReady(t)}
                         onReportIssue={() => { showToast(`Maintenance ticket created for Room ${t.room}`); setTaskMenuFor(null); }}
                       />
                     </td>

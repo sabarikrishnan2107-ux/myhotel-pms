@@ -17,7 +17,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Input, Label, Select } from "@/components/ui/input";
 import { RESERVATIONS, GUESTS, SAMPLE_FOLIO_CHARGES, SAMPLE_PAYMENTS } from "@/lib/mock-data";
 import { cn, money, formatDate, formatDateLong, formatTime } from "@/lib/utils";
-import { apiGet, apiPost } from "@/lib/api";
+import { apiGet, apiPost, apiDelete } from "@/lib/api";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: FileBarChart },
@@ -736,16 +736,20 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
           .catch(() => showToast("⚠ Save failed — backend offline"));
       }} balance={balance} />}
       {showDiscount && <DiscountModal onClose={() => setShowDiscount(false)} chargesTotal={chargesTotal} onSave={(reason, amount, approver) => {
-        setExtraAdjustments(prev => [...prev, {
-          id: `adj-${Date.now().toString(36)}`,
-          date: new Date().toISOString().slice(0, 10),
-          type: "Discount" as const,
-          desc: reason,
-          amount: -Math.abs(amount),
-          approver,
-        }]);
         setShowDiscount(false);
         showToast(`Discount applied: ${money(amount)} off · ${reason}`);
+        // Persist as a negative folio line item so it survives a reload.
+        apiPost<typeof SAMPLE_FOLIO_CHARGES[number]>("/folio-charges", {
+          bookingNo: id,
+          date: new Date().toISOString().slice(0, 10),
+          description: `Discount — ${reason} (${approver})`,
+          type: "Discount",
+          qty: 1,
+          rate: -Math.abs(amount),
+          tax: 0,
+          amount: -Math.abs(amount),
+          paidBy: "Guest",
+        }).then(created => setCharges(prev => [...prev, created])).catch(() => showToast("⚠ Save failed — backend offline"));
       }} />}
       {showRefund && <RefundModal onClose={() => setShowRefund(false)} paymentsTotal={paymentsTotal} balance={balance} onSave={(amount, mode, reason, approver) => {
         const payload = { bookingNo: id, date: new Date().toISOString().slice(0, 10), mode: `${mode} (Refund)`, amount: -Math.abs(amount), reference: `Refund · ${reason} · ${approver}` };
@@ -759,9 +763,11 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
       {showEditSplits && <EditSplitsModal onClose={() => setShowEditSplits(false)} onSave={() => { setShowEditSplits(false); showToast("Split rules saved"); }} />}
       {editingRule && <RuleEditModal rule={editingRule} onClose={() => setEditingRule(null)} onSave={() => { setEditingRule(null); showToast(`Routing rule updated`); }} />}
       {voidCharge && <VoidChargeModal charge={voidCharge} onClose={() => setVoidCharge(null)} onConfirm={(reason) => {
-        setVoidedIds(prev => new Set([...prev, voidCharge.id]));
+        const vc = voidCharge;
+        setVoidedIds(prev => new Set([...prev, vc.id]));
         setVoidCharge(null);
-        showToast(`Charge voided: ${voidCharge.description} · ${reason}`);
+        showToast(`Charge voided: ${vc.description} · ${reason}`);
+        apiDelete(`/folio-charges/${vc.id}`).catch(() => showToast("⚠ Save failed — backend offline"));
       }} />}
 
       {/* Toast */}

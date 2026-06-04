@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { Plus, Search, Truck, Wallet, Phone, FileText, LayoutGrid, List, CheckCircle2 } from "lucide-react";
+import { Plus, Search, Truck, Wallet, Phone, FileText, LayoutGrid, List, CheckCircle2, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { VENDORS } from "@/lib/mock-data-ext";
 import { money, cn } from "@/lib/utils";
-import { apiGet } from "@/lib/api";
+import { apiGet, apiPost } from "@/lib/api";
 
 const TABS = [
   { id: "all", label: "All" },
@@ -24,6 +24,9 @@ export default function VendorsPage() {
   const [q, setQ] = React.useState("");
 
   const [vendors, setVendors] = React.useState(VENDORS);
+  const [addOpen, setAddOpen] = React.useState(false);
+  const [toast, setToast] = React.useState<string | null>(null);
+  const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
   React.useEffect(() => {
     let cancelled = false;
     apiGet<typeof VENDORS>("/vendors").then(r => { if (!cancelled) setVendors(r); }).catch(() => {});
@@ -51,7 +54,7 @@ export default function VendorsPage() {
           <h1 className="text-2xl font-display font-medium tracking-tight">Vendors</h1>
           <p className="text-muted-foreground text-sm mt-1">Suppliers, purchases, accounts payable</p>
         </div>
-        <Button><Plus className="h-4 w-4" />New Vendor</Button>
+        <Button onClick={() => setAddOpen(true)}><Plus className="h-4 w-4" />New Vendor</Button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -212,6 +215,54 @@ export default function VendorsPage() {
           </table>
         </Card>
       )}
+
+      {addOpen && <AddVendorModal onClose={() => setAddOpen(false)} onSave={(v) => {
+        setAddOpen(false);
+        showToast(`Vendor "${v.name}" added`);
+        apiPost<typeof VENDORS[number]>("/vendors", v)
+          .then(created => setVendors(prev => [created, ...prev]))
+          .catch(() => showToast("⚠ Save failed — backend offline"));
+      }} />}
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-foreground text-background rounded-lg px-4 py-3 text-sm shadow-2xl animate-in slide-in-from-bottom-2 inline-flex items-center gap-2.5 ring-1 ring-foreground/20">
+          <CheckCircle2 className="h-3.5 w-3.5" /><span className="font-medium">{toast}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddVendorModal({ onClose, onSave }: { onClose: () => void; onSave: (v: { name: string; contact: string; phone: string; terms: string; outstanding: number; lastInvoice: string }) => void }) {
+  const [name, setName] = React.useState("");
+  const [contact, setContact] = React.useState("");
+  const [phone, setPhone] = React.useState("");
+  const [terms, setTerms] = React.useState("Net 30");
+  React.useEffect(() => { document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = ""; }; }, []);
+  return (
+    <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-surface rounded-xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
+          <h3 className="font-semibold">New vendor</h3>
+          <button type="button" onClick={onClose} className="h-7 w-7 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div className="space-y-1.5"><label className="text-sm font-medium">Vendor name</label><Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Pearl Textiles" autoFocus /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5"><label className="text-sm font-medium">Contact</label><Input value={contact} onChange={e => setContact(e.target.value)} placeholder="Mr. Bansal" /></div>
+            <div className="space-y-1.5"><label className="text-sm font-medium">Phone</label><Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+971 4 …" /></div>
+          </div>
+          <div className="space-y-1.5"><label className="text-sm font-medium">Payment terms</label>
+            <select value={terms} onChange={e => setTerms(e.target.value)} className="w-full h-9 rounded-md border border-border bg-surface px-3 text-sm">
+              <option>Net 7</option><option>Net 15</option><option>Net 30</option><option>Net 45</option><option>Net 60</option>
+            </select>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-3 border-t border-border bg-surface-sunken/30">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button disabled={!name.trim()} onClick={() => onSave({ name: name.trim(), contact, phone, terms, outstanding: 0, lastInvoice: "—" })}>Add vendor</Button>
+        </div>
+      </div>
     </div>
   );
 }
