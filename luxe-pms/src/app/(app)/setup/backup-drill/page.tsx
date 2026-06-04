@@ -170,8 +170,9 @@ export default function BackupDrillPage() {
       timers.push(t);
     };
 
-    // Step 1: provisioning (1.4s)
-    setCurrentStep(1);
+    // Step 1: provisioning (1.4s) — deferred so we don't setState synchronously in the effect
+    const startT = setTimeout(() => { if (!cancelled) setCurrentStep(1); }, 0);
+    timers.push(startT);
     finishStep(1, 1400);
 
     // Step 2: download — animate bar from 0→100 over ~2.8s

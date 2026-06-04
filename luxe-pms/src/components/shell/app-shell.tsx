@@ -1,14 +1,31 @@
 "use client";
 import * as React from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./top-bar";
 import { RouteProgress } from "./route-progress";
 import { NotificationsProvider } from "@/components/notifications/store";
+import { getToken } from "@/lib/api";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+
+  // Auth gate: bounce to /login when there's no token (client-only check).
+  const [authed, setAuthed] = React.useState<boolean | null>(null);
+  React.useEffect(() => {
+    const ok = !!getToken();
+    if (!ok) router.replace("/login");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- token only exists client-side
+    setAuthed(ok);
+  }, [router]);
+
+  if (authed !== true) {
+    // Avoid flashing the app before the auth check resolves.
+    return <div className="min-h-svh bg-background" />;
+  }
+
   return (
     <NotificationsProvider>
       <div className="flex min-h-svh bg-background">

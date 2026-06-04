@@ -1,0 +1,172 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\Agent;
+use App\Models\FbPackage;
+use App\Models\Floor;
+use App\Models\GstSlab;
+use App\Models\HallPackage;
+use App\Models\Holiday;
+use App\Models\NotificationTemplate;
+use App\Models\PaymentMethod;
+use App\Models\RatePlan;
+use App\Models\Role;
+use App\Models\Room;
+use App\Models\Season;
+use App\Models\Webhook;
+use Illuminate\Http\Request;
+
+/**
+ * Generic list CRUD for every Setup & Settings list section.
+ * Each resource maps to an Eloquent model; the URL slug is the key.
+ */
+class ResourceController extends Controller
+{
+    private const MODELS = [
+        'floors'                 => Floor::class,
+        'rooms'                  => Room::class,
+        'rate-plans'             => RatePlan::class,
+        'seasons'                => Season::class,
+        'holidays'               => Holiday::class,
+        'fb-packages'            => FbPackage::class,
+        'hall-packages'          => HallPackage::class,
+        'agents'                 => Agent::class,
+        'gst-slabs'              => GstSlab::class,
+        'payment-methods'        => PaymentMethod::class,
+        'notification-templates' => NotificationTemplate::class,
+        'roles'                  => Role::class,
+        'webhooks'               => Webhook::class,
+    ];
+
+    /** Resource slugs, for the route constraint. */
+    public static function resources(): array
+    {
+        return array_keys(self::MODELS);
+    }
+
+    /**
+     * Validation rules per resource. Fields use `sometimes` so partial
+     * updates (PATCH-style) work, but required-on-create is enforced below.
+     */
+    private const RULES = [
+        'floors' => [
+            'name' => 'string|max:255', 'number' => 'integer', 'amenities' => 'array',
+            'smokingAllowed' => 'boolean', 'vipFloor' => 'boolean', 'hasElevator' => 'boolean',
+            'housekeepingZone' => 'string|max:255', 'status' => 'string|max:50',
+        ],
+        'rooms' => [
+            'number' => 'string|max:50', 'category' => 'string|max:50', 'floor' => 'integer',
+            'bedConfig' => 'string|max:50', 'maxAdults' => 'integer|min:1', 'maxChildren' => 'integer|min:0',
+            'sizeSqft' => 'integer|min:0', 'view' => 'string|max:50', 'baseTariff' => 'integer|min:0',
+            'extraBedAllowed' => 'boolean', 'extraBedRate' => 'integer|min:0', 'connectingRoom' => 'string|max:50',
+            'extension' => 'string|max:50', 'wifiSsid' => 'string|max:100', 'smoking' => 'boolean',
+            'accessible' => 'boolean', 'amenities' => 'array', 'status' => 'string|max:50',
+        ],
+        'rate-plans' => [
+            'code' => 'string|max:50', 'name' => 'string|max:255', 'inclBreakfast' => 'boolean',
+            'inclLunch' => 'boolean', 'inclDinner' => 'boolean', 'discountPct' => 'integer|min:0|max:100',
+            'refundable' => 'boolean', 'active' => 'boolean',
+        ],
+        'seasons' => [
+            'name' => 'string|max:255', 'from' => 'string|max:50', 'to' => 'string|max:50',
+            'multiplier' => 'numeric|min:0', 'active' => 'boolean',
+        ],
+        'holidays' => [
+            'name' => 'string|max:255', 'date' => 'string|max:50', 'kind' => 'string|max:50',
+            'surchargePct' => 'integer|min:0|max:100',
+        ],
+        'fb-packages' => [
+            'name' => 'string|max:255', 'type' => 'string|max:50', 'pax' => 'integer|min:1',
+            'price' => 'integer|min:0', 'gst' => 'integer|min:0|max:100', 'active' => 'boolean',
+        ],
+        'hall-packages' => [
+            'name' => 'string|max:255', 'capacity' => 'integer|min:0', 'hourly' => 'integer|min:0',
+            'halfDay' => 'integer|min:0', 'fullDay' => 'integer|min:0', 'setupFee' => 'integer|min:0',
+            'gst' => 'integer|min:0|max:100', 'active' => 'boolean',
+        ],
+        'agents' => [
+            'type' => 'string|max:50', 'name' => 'string|max:255', 'contact' => 'string|max:255|nullable',
+            'phone' => 'string|max:50|nullable', 'email' => 'email|max:255|nullable', 'gstin' => 'string|max:50|nullable',
+            'creditLimit' => 'integer|min:0', 'commissionPct' => 'integer|min:0|max:100',
+            'creditTerms' => 'string|max:50', 'active' => 'boolean',
+        ],
+        'gst-slabs' => [
+            'label' => 'string|max:255', 'from' => 'integer|min:0', 'to' => 'integer|nullable',
+            'rate' => 'integer|min:0|max:100',
+        ],
+        'payment-methods' => [
+            'name' => 'string|max:255', 'code' => 'string|max:50', 'type' => 'string|max:50',
+            'feePct' => 'numeric|min:0', 'settlement' => 'string|max:255|nullable', 'active' => 'boolean',
+        ],
+        'notification-templates' => [
+            'event' => 'string|max:255', 'channel' => 'string|max:50', 'language' => 'string|max:50',
+            'active' => 'boolean',
+        ],
+        'roles' => [
+            'name' => 'string|max:255', 'users' => 'integer|min:0', 'permissions' => 'array', 'active' => 'boolean',
+        ],
+        'webhooks' => [
+            'url' => 'string|max:1000', 'events' => 'string|max:1000|nullable', 'status' => 'string|max:50',
+        ],
+    ];
+
+    /** Fields that must be present (and non-empty) when creating a row. */
+    private const REQUIRED_ON_CREATE = [
+        'floors' => ['name'], 'rooms' => ['number'], 'rate-plans' => ['code', 'name'],
+        'seasons' => ['name'], 'holidays' => ['name'], 'fb-packages' => ['name'],
+        'hall-packages' => ['name'], 'agents' => ['name'], 'gst-slabs' => ['label'],
+        'payment-methods' => ['name', 'code'], 'notification-templates' => ['event'],
+        'roles' => ['name'], 'webhooks' => ['url'],
+    ];
+
+    private function model(string $resource): string
+    {
+        abort_unless(isset(self::MODELS[$resource]), 404, "Unknown resource: {$resource}");
+
+        return self::MODELS[$resource];
+    }
+
+    private function validated(string $resource, Request $request, bool $creating): array
+    {
+        $rules = [];
+        foreach (self::RULES[$resource] ?? [] as $field => $rule) {
+            $required = $creating && in_array($field, self::REQUIRED_ON_CREATE[$resource] ?? [], true);
+            $rules[$field] = ($required ? 'required|' : 'sometimes|') . $rule;
+        }
+
+        $data = $request->validate($rules);
+        unset($data['id'], $data['created_at'], $data['updated_at']);
+
+        return $data;
+    }
+
+    public function index(string $resource)
+    {
+        return $this->model($resource)::orderBy('id')->get();
+    }
+
+    public function store(string $resource, Request $request)
+    {
+        $this->model($resource); // 404 if unknown
+        $row = $this->model($resource)::create($this->validated($resource, $request, true));
+
+        return response()->json($row, 201);
+    }
+
+    public function update(string $resource, Request $request, $id)
+    {
+        $row = $this->model($resource)::findOrFail($id);
+        $row->update($this->validated($resource, $request, false));
+
+        return response()->json($row);
+    }
+
+    public function destroy(string $resource, $id)
+    {
+        $this->model($resource)::findOrFail($id)->delete();
+
+        return response()->noContent();
+    }
+}

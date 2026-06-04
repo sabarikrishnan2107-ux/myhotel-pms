@@ -14,8 +14,13 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
-import { apiGet, apiPut } from "@/lib/api";
-import { PreferencesPanel, SecurityPanel, NotificationChannelsPanel, WebhooksPanel } from "./personal-panels";
+import { apiGet, apiPut, apiPost, apiUpload, apiDownload, syncList } from "@/lib/api";
+import { PreferencesPanel, SecurityPanel, NotificationChannelsPanel, WebhooksPanel, useSettingsPersistence } from "./personal-panels";
+
+// Monotonic counter for client-side temp ids on newly-added rows (replaced by
+// the real DB id once the create round-trips). Pure & collision-free.
+let __tempSeq = 0;
+const tempSeq = () => ++__tempSeq;
 
 // Maps the Property & Branch field-grid labels to the Laravel API columns.
 // This is the section now backed by Postgres (via hotel-pms-api).
@@ -461,6 +466,74 @@ export function SetupView() {
     return () => { cancelled = true; };
   }, []);
 
+  // Load every list section from Postgres on mount. Falls back to seeds if offline.
+  const [loading, setLoading] = React.useState(true);
+  React.useEffect(() => {
+    let cancelled = false;
+    const loads = [
+      apiGet<Floor[]>("/floors").then(r => { if (!cancelled) setFloors(r); }),
+      apiGet<Room[]>("/rooms").then(r => { if (!cancelled) setRooms(r); }),
+      apiGet<RatePlan[]>("/rate-plans").then(r => { if (!cancelled) setRatePlans(r); }),
+      apiGet<Season[]>("/seasons").then(r => { if (!cancelled) setSeasons(r); }),
+      apiGet<Holiday[]>("/holidays").then(r => { if (!cancelled) setHolidays(r); }),
+      apiGet<FBPackage[]>("/fb-packages").then(r => { if (!cancelled) setFbPkgs(r); }),
+      apiGet<HallPackage[]>("/hall-packages").then(r => { if (!cancelled) setHallPkgs(r); }),
+      apiGet<AgentRec[]>("/agents").then(r => { if (!cancelled) setAgents(r); }),
+      apiGet<GSTSlab[]>("/gst-slabs").then(r => { if (!cancelled) setGstSlabs(r); }),
+      apiGet<PaymentMethod[]>("/payment-methods").then(r => { if (!cancelled) setPaymentMethods(r); }),
+      apiGet<Template[]>("/notification-templates").then(r => { if (!cancelled) setTemplates(r); }),
+      apiGet<Array<Omit<Role, "permissions"> & { permissions: string[] }>>("/roles")
+        .then(r => { if (!cancelled) setRoles(r.map(x => ({ ...x, permissions: new Set<string>(x.permissions ?? []) }))); }),
+    ];
+    Promise.allSettled(loads).then(results => {
+      if (cancelled) return;
+      setLoading(false);
+      if (results.some(x => x.status === "rejected")) showToast("⚠ Backend offline — showing local defaults");
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Load persisted setup progress (which sections are marked complete).
+  const progressLoaded = React.useRef(false);
+  React.useEffect(() => {
+    apiGet<{ completed?: string[] }>("/settings/setup-progress")
+      .then(v => { if (v?.completed?.length) setCompleted(new Set(v.completed as SectionId[])); })
+      .catch(() => {})
+      .finally(() => { progressLoaded.current = true; });
+  }, []);
+  // Save progress whenever it changes (after the initial load).
+  React.useEffect(() => {
+    if (!progressLoaded.current) return;
+    apiPut("/settings/setup-progress", { completed: Array.from(completed) }).catch(() => {});
+  }, [completed]);
+
+  // Optimistically update local state immediately, then debounce the DB sync so
+  // typing into a field saves once (~600ms after you stop), not per keystroke.
+  const debounceRef = React.useRef<Record<string, { timer: ReturnType<typeof setTimeout>; prev: unknown[] }>>({});
+  function persistList<T extends { id: unknown }>(resource: string, prev: T[], next: T[], setter: (v: T[]) => void) {
+    setter(next); // immediate, responsive UI
+    const store = debounceRef.current;
+    if (!store[resource]) store[resource] = { timer: setTimeout(() => {}, 0), prev }; // capture server-truth at burst start
+    const entry = store[resource];
+    clearTimeout(entry.timer);
+    entry.timer = setTimeout(() => {
+      const startPrev = entry.prev as T[];
+      delete store[resource];
+      syncList(resource, startPrev, next)
+        .then(setter)
+        .catch(() => showToast("⚠ Save failed — backend offline"));
+    }, 600);
+  }
+
+  // Roles carry permissions as a Set client-side; convert to/from arrays for the API.
+  const persistRoles = (next: Role[]) => {
+    setRoles(next);
+    const toApi = (r: Role) => ({ ...r, permissions: Array.from(r.permissions) });
+    syncList("roles", roles.map(toApi), next.map(toApi))
+      .then(rows => setRoles(rows.map(x => ({ ...x, permissions: new Set<string>(x.permissions ?? []) }))))
+      .catch(() => showToast("⚠ Save failed — backend offline"));
+  };
+
   const cur = SECTIONS.find(s => s.id === active)!;
   const isEditing = editingId === active;
   const done = completed.size;
@@ -554,6 +627,11 @@ export function SetupView() {
               <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-semibold">Configuration</p>
               <h1 className="text-3xl font-display font-medium tracking-tight">Configuration</h1>
               <p className="text-sm text-muted-foreground mt-0.5">Setup &amp; settings in one place — everything the app reads from.</p>
+              {loading && (
+                <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1.5">
+                  <RefreshCw className="h-3 w-3 animate-spin" /> Loading from database…
+                </p>
+              )}
             </div>
           </div>
 
@@ -704,39 +782,39 @@ export function SetupView() {
             {active === "channels" && <NotificationChannelsPanel />}
             {active === "webhooks" && <WebhooksPanel />}
             {active === "floors" && (
-              <FloorsManager floors={floors} rooms={rooms} onChange={setFloors} onToast={showToast}
+              <FloorsManager floors={floors} rooms={rooms} onChange={next => persistList("floors", floors, next, setFloors)} onToast={showToast}
                 onMarkComplete={() => setCompleted(c => new Set([...c, "floors"]))} />
             )}
             {active === "rooms" && (
-              <RoomsManager rooms={rooms} floors={floors} onChange={setRooms} onToast={showToast}
+              <RoomsManager rooms={rooms} floors={floors} onChange={next => persistList("rooms", rooms, next, setRooms)} onToast={showToast}
                 onMarkComplete={() => setCompleted(c => new Set([...c, "rooms"]))} />
             )}
             {active === "pricing" && (
-              <RatePlansManager plans={ratePlans} onChange={setRatePlans} onToast={showToast}
+              <RatePlansManager plans={ratePlans} onChange={next => persistList("rate-plans", ratePlans, next, setRatePlans)} onToast={showToast}
                 onMarkComplete={() => setCompleted(c => new Set([...c, "pricing"]))} />
             )}
             {active === "seasons" && (
-              <SeasonsManager seasons={seasons} holidays={holidays} onSeasonsChange={setSeasons} onHolidaysChange={setHolidays} onToast={showToast}
+              <SeasonsManager seasons={seasons} holidays={holidays} onSeasonsChange={next => persistList("seasons", seasons, next, setSeasons)} onHolidaysChange={next => persistList("holidays", holidays, next, setHolidays)} onToast={showToast}
                 onMarkComplete={() => setCompleted(c => new Set([...c, "seasons"]))} />
             )}
             {active === "food" && (
-              <FoodHallManager fb={fbPkgs} halls={hallPkgs} onFbChange={setFbPkgs} onHallsChange={setHallPkgs} onToast={showToast}
+              <FoodHallManager fb={fbPkgs} halls={hallPkgs} onFbChange={next => persistList("fb-packages", fbPkgs, next, setFbPkgs)} onHallsChange={next => persistList("hall-packages", hallPkgs, next, setHallPkgs)} onToast={showToast}
                 onMarkComplete={() => setCompleted(c => new Set([...c, "food"]))} />
             )}
             {active === "agents" && (
-              <AgentsManager agents={agents} onChange={setAgents} onToast={showToast}
+              <AgentsManager agents={agents} onChange={next => persistList("agents", agents, next, setAgents)} onToast={showToast}
                 onMarkComplete={() => setCompleted(c => new Set([...c, "agents"]))} />
             )}
             {active === "tax" && (
-              <TaxManager slabs={gstSlabs} methods={paymentMethods} onSlabsChange={setGstSlabs} onMethodsChange={setPaymentMethods} onToast={showToast}
+              <TaxManager slabs={gstSlabs} methods={paymentMethods} onSlabsChange={next => persistList("gst-slabs", gstSlabs, next, setGstSlabs)} onMethodsChange={next => persistList("payment-methods", paymentMethods, next, setPaymentMethods)} onToast={showToast}
                 onMarkComplete={() => setCompleted(c => new Set([...c, "tax"]))} />
             )}
             {active === "templates" && (
-              <TemplatesManager templates={templates} onChange={setTemplates} onToast={showToast}
+              <TemplatesManager templates={templates} onChange={next => persistList("notification-templates", templates, next, setTemplates)} onToast={showToast}
                 onMarkComplete={() => setCompleted(c => new Set([...c, "templates"]))} />
             )}
             {active === "roles" && (
-              <RolesManager roles={roles} onChange={setRoles} onToast={showToast}
+              <RolesManager roles={roles} onChange={persistRoles} onToast={showToast}
                 onMarkComplete={() => setCompleted(c => new Set([...c, "roles"]))} />
             )}
             {active === "branding" && (
@@ -891,7 +969,7 @@ function FloorsManager({
   };
   const addFloor = () => {
     const nextNum = (floors.reduce((m, f) => Math.max(m, f.number), 0)) + 1;
-    const id = `fl${Date.now() % 100000}`;
+    const id = `fl${tempSeq()}`;
     onChange([...floors, {
       id, number: nextNum,
       name: nextNum === 0 ? "Ground" : `${nextNum}${nextNum % 10 === 1 ? "st" : nextNum % 10 === 2 ? "nd" : nextNum % 10 === 3 ? "rd" : "th"}`,
@@ -1103,7 +1181,7 @@ function RoomsManager({
     const r = rooms.find(x => x.id === id);
     if (!r) return;
     const newNum = `${r.number}-A`;
-    onChange([...rooms, { ...r, id: `r-${newNum}-${Date.now() % 1000}`, number: newNum }]);
+    onChange([...rooms, { ...r, id: `r-${newNum}-${tempSeq()}`, number: newNum }]);
     onToast(`Duplicated as Room ${newNum}`);
   };
 
@@ -1114,7 +1192,7 @@ function RoomsManager({
   }, [rooms]);
 
   const newRoomTemplate = (): Room => ({
-    id: `r-new-${Date.now() % 100000}`,
+    id: `r-new-${tempSeq()}`,
     number: "", category: "Deluxe", floor: floors[0]?.number ?? 1,
     bedConfig: "1 King", maxAdults: 2, maxChildren: 1, sizeSqft: 320,
     view: "City", baseTariff: 8500, extraBedAllowed: true, extraBedRate: 1500,
@@ -1306,7 +1384,7 @@ function BulkRoomModal({ floors, existingNumbers, template, onClose, onCreate }:
   const submit = () => {
     const newRooms: Room[] = generated.map((number, i) => ({
       ...template,
-      id: `r-bulk-${Date.now()}-${i}`,
+      id: `r-bulk-${tempSeq()}-${i}`,
       number, floor, category, bedConfig, baseTariff,
     }));
     onCreate(newRooms);
@@ -1595,7 +1673,7 @@ function RatePlansManager({ plans, onChange, onToast, onMarkComplete }: {
 }) {
   const upd = (id: string, patch: Partial<RatePlan>) => onChange(plans.map(p => p.id === id ? { ...p, ...patch } : p));
   const add = () => {
-    const id = `rp${Date.now() % 1000}`;
+    const id = `rp${tempSeq()}`;
     onChange([...plans, { id, code: "NEW", name: "New rate plan", inclBreakfast: false, inclLunch: false, inclDinner: false, discountPct: 0, refundable: true, active: true }]);
     onToast("Rate plan added");
   };
@@ -1671,8 +1749,8 @@ function SeasonsManager({ seasons, holidays, onSeasonsChange, onHolidaysChange, 
 }) {
   const updSeason = (id: string, patch: Partial<Season>) => onSeasonsChange(seasons.map(s => s.id === id ? { ...s, ...patch } : s));
   const updHoliday = (id: string, patch: Partial<Holiday>) => onHolidaysChange(holidays.map(h => h.id === id ? { ...h, ...patch } : h));
-  const addSeason = () => { onSeasonsChange([...seasons, { id: `se${Date.now() % 1000}`, name: "New season", from: "2026-12-01", to: "2026-12-31", multiplier: 1.2, active: true }]); onToast("Season added"); };
-  const addHoliday = () => { onHolidaysChange([...holidays, { id: `h${Date.now() % 1000}`, name: "New holiday", date: "2026-12-25", kind: "national", surchargePct: 10 }]); onToast("Holiday added"); };
+  const addSeason = () => { onSeasonsChange([...seasons, { id: `se${tempSeq()}`, name: "New season", from: "2026-12-01", to: "2026-12-31", multiplier: 1.2, active: true }]); onToast("Season added"); };
+  const addHoliday = () => { onHolidaysChange([...holidays, { id: `h${tempSeq()}`, name: "New holiday", date: "2026-12-25", kind: "national", surchargePct: 10 }]); onToast("Holiday added"); };
 
   return (
     <div className="space-y-5">
@@ -1790,7 +1868,7 @@ function FoodHallManager({ fb, halls, onFbChange, onHallsChange, onToast, onMark
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">F&B packages (per person)</p>
-          <Button size="sm" onClick={() => { onFbChange([...fb, { id: `fb${Date.now() % 1000}`, name: "New F&B package", type: "Buffet", pax: 1, price: 500, gst: 5, active: true }]); onToast("F&B package added"); }}><Plus className="h-3.5 w-3.5" />Add</Button>
+          <Button size="sm" onClick={() => { onFbChange([...fb, { id: `fb${tempSeq()}`, name: "New F&B package", type: "Buffet", pax: 1, price: 500, gst: 5, active: true }]); onToast("F&B package added"); }}><Plus className="h-3.5 w-3.5" />Add</Button>
         </div>
         <div className="rounded-md border border-border overflow-hidden">
           <table className="w-full text-sm">
@@ -1827,7 +1905,7 @@ function FoodHallManager({ fb, halls, onFbChange, onHallsChange, onToast, onMark
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Hall / venue packages</p>
-          <Button size="sm" onClick={() => { onHallsChange([...halls, { id: `hp${Date.now() % 1000}`, name: "New hall", capacity: 100, hourly: 2500, halfDay: 10000, fullDay: 18000, setupFee: 1500, gst: 18, active: true }]); onToast("Hall package added"); }}><Plus className="h-3.5 w-3.5" />Add</Button>
+          <Button size="sm" onClick={() => { onHallsChange([...halls, { id: `hp${tempSeq()}`, name: "New hall", capacity: 100, hourly: 2500, halfDay: 10000, fullDay: 18000, setupFee: 1500, gst: 18, active: true }]); onToast("Hall package added"); }}><Plus className="h-3.5 w-3.5" />Add</Button>
         </div>
         <div className="rounded-md border border-border overflow-hidden overflow-x-auto">
           <table className="w-full text-sm">
@@ -1885,7 +1963,7 @@ function AgentsManager({ agents, onChange, onToast, onMarkComplete }: {
       </div>
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">B2B accounts that route bookings to your property. Commission & credit limits enforced at booking.</p>
-        <Button size="sm" onClick={() => { onChange([...agents, { id: `ag${Date.now() % 1000}`, type: "Agent", name: "New account", contact: "", phone: "", email: "", gstin: "", creditLimit: 100000, commissionPct: 10, creditTerms: "Net 30", active: true }]); onToast("Account added"); }}><Plus className="h-3.5 w-3.5" />Add account</Button>
+        <Button size="sm" onClick={() => { onChange([...agents, { id: `ag${tempSeq()}`, type: "Agent", name: "New account", contact: "", phone: "", email: "", gstin: "", creditLimit: 100000, commissionPct: 10, creditTerms: "Net 30", active: true }]); onToast("Account added"); }}><Plus className="h-3.5 w-3.5" />Add account</Button>
       </div>
       <div className="rounded-md border border-border overflow-hidden overflow-x-auto">
         <table className="w-full text-sm">
@@ -1984,7 +2062,7 @@ function TaxManager({ slabs, methods, onSlabsChange, onMethodsChange, onToast, o
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Payment methods</p>
-          <Button size="sm" onClick={() => { onMethodsChange([...methods, { id: `pm${Date.now() % 1000}`, name: "New method", code: "NEW", type: "Online", feePct: 0, settlement: "Cash drawer", active: true }]); onToast("Payment method added"); }}><Plus className="h-3.5 w-3.5" />Add method</Button>
+          <Button size="sm" onClick={() => { onMethodsChange([...methods, { id: `pm${tempSeq()}`, name: "New method", code: "NEW", type: "Online", feePct: 0, settlement: "Cash drawer", active: true }]); onToast("Payment method added"); }}><Plus className="h-3.5 w-3.5" />Add method</Button>
         </div>
         <div className="rounded-md border border-border overflow-hidden overflow-x-auto">
           <table className="w-full text-sm">
@@ -2052,7 +2130,7 @@ function TemplatesManager({ templates, onChange, onToast, onMarkComplete }: {
       </div>
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">Pre-approved guest messages — body editing is per-channel (WhatsApp BSP approval may be required).</p>
-        <Button size="sm" onClick={() => { onChange([...templates, { id: `t${Date.now() % 1000}`, event: "New event", channel: "Email", language: "English", active: false }]); onToast("Template added"); }}><Plus className="h-3.5 w-3.5" />Add template</Button>
+        <Button size="sm" onClick={() => { onChange([...templates, { id: `t${tempSeq()}`, event: "New event", channel: "Email", language: "English", active: false }]); onToast("Template added"); }}><Plus className="h-3.5 w-3.5" />Add template</Button>
       </div>
       <div className="rounded-md border border-border overflow-hidden">
         <table className="w-full text-sm">
@@ -2204,7 +2282,7 @@ function RolesManager({ roles, onChange, onToast, onMarkComplete }: {
           <div className="flex items-center justify-between">
             <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Roles</p>
             <Button size="sm" onClick={() => {
-              const id = `ro${Date.now() % 1000}`;
+              const id = `ro${tempSeq()}`;
               onChange([...roles, { id, name: "New role", users: 0, permissions: new Set(), active: true }]);
               setActiveRoleId(id);
               onToast("Role added");
@@ -2347,8 +2425,8 @@ function Field2({ label, children }: { label: string; children: React.ReactNode 
 // BRANDING & ASSETS MANAGER
 // ============================================================
 function BrandingManager({ onToast, onMarkComplete }: { onToast: (m: string) => void; onMarkComplete: () => void }) {
-  const [logoUrl, setLogoUrl] = React.useState("/brand/pearl-marina-logo.png");
-  const [faviconUrl, setFaviconUrl] = React.useState("/brand/favicon.ico");
+  const [logoUrl, setLogoUrl] = React.useState("");
+  const [faviconUrl, setFaviconUrl] = React.useState("");
   const [brandColor, setBrandColor] = React.useState("#0a1633");
   const [accentColor, setAccentColor] = React.useState("#b08855");
   const [letterhead, setLetterhead] = React.useState("THE PEARL MARINA\nMG Road, Bandra West, Mumbai 400050\nGSTIN 27AAACR5055K1Z5 · PAN AAACR5055K");
@@ -2356,13 +2434,40 @@ function BrandingManager({ onToast, onMarkComplete }: { onToast: (m: string) => 
   const [invoiceFooter, setInvoiceFooter] = React.useState("Subject to Mumbai jurisdiction. Goods/Services once sold will not be taken back. This is a computer generated invoice.");
   const [fontPair, setFontPair] = React.useState("PT Serif + Inter");
 
-  const onFile = (kind: "logo" | "favicon") => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const save = useSettingsPersistence(
+    "branding",
+    { logoUrl, faviconUrl, brandColor, accentColor, letterhead, emailSig, invoiceFooter, fontPair },
+    v => {
+      if (v.logoUrl !== undefined) setLogoUrl(v.logoUrl);
+      if (v.faviconUrl !== undefined) setFaviconUrl(v.faviconUrl);
+      if (v.brandColor !== undefined) setBrandColor(v.brandColor);
+      if (v.accentColor !== undefined) setAccentColor(v.accentColor);
+      if (v.letterhead !== undefined) setLetterhead(v.letterhead);
+      if (v.emailSig !== undefined) setEmailSig(v.emailSig);
+      if (v.invoiceFooter !== undefined) setInvoiceFooter(v.invoiceFooter);
+      if (v.fontPair !== undefined) setFontPair(v.fontPair);
+    },
+  );
+
+  const onFile = (kind: "logo" | "favicon") => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    if (kind === "logo") setLogoUrl(url);
-    else setFaviconUrl(url);
-    onToast(`${kind === "logo" ? "Logo" : "Favicon"} updated · ${file.name}`);
+    onToast(`Uploading ${file.name}…`);
+    try {
+      const { url } = await apiUpload(file);
+      if (kind === "logo") setLogoUrl(url); else setFaviconUrl(url);
+      // Persist immediately so the uploaded image survives a page reload.
+      await apiPut("/settings/branding", {
+        logoUrl: kind === "logo" ? url : logoUrl,
+        faviconUrl: kind === "favicon" ? url : faviconUrl,
+        brandColor, accentColor, letterhead, emailSig, invoiceFooter, fontPair,
+      });
+      onToast(`${kind === "logo" ? "Logo" : "Favicon"} uploaded & saved ✓`);
+    } catch {
+      onToast("⚠ Upload failed — is the backend running?");
+    } finally {
+      e.target.value = ""; // allow re-uploading the same file
+    }
   };
 
   return (
@@ -2374,13 +2479,9 @@ function BrandingManager({ onToast, onMarkComplete }: { onToast: (m: string) => 
         <Card className="p-4">
           <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-2 inline-flex items-center gap-1"><ImageIcon className="h-3 w-3" />Property logo</p>
           <div className="rounded-md bg-linear-to-br from-surface-sunken to-surface-elevated p-6 flex items-center justify-center border border-dashed border-border min-h-[120px]">
-            {logoUrl && !logoUrl.startsWith("blob:") ? (
-              <div className="text-center">
-                <div className="h-16 w-32 bg-foreground text-background rounded-md flex items-center justify-center font-display text-sm font-medium">PEARL MARINA</div>
-                <p className="text-[10px] text-muted-foreground tabular mt-2 font-mono">{logoUrl.split("/").pop()}</p>
-              </div>
-            ) : logoUrl ? (
-              <img src={logoUrl} alt="Logo" className="max-h-24 object-contain" />
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt="Property logo" className="max-h-24 max-w-full object-contain" />
             ) : (
               <div className="text-center text-muted-foreground">
                 <ImageIcon className="h-8 w-8 mx-auto mb-1" />
@@ -2403,7 +2504,12 @@ function BrandingManager({ onToast, onMarkComplete }: { onToast: (m: string) => 
         <Card className="p-4">
           <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-2 inline-flex items-center gap-1"><ImageIcon className="h-3 w-3" />Favicon</p>
           <div className="rounded-md bg-linear-to-br from-surface-sunken to-surface-elevated p-6 flex items-center justify-center border border-dashed border-border min-h-[120px]">
-            <div className="h-12 w-12 rounded-md bg-brand text-brand-foreground flex items-center justify-center font-bold text-xl">P</div>
+            {faviconUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={faviconUrl} alt="Favicon" className="h-12 w-12 object-contain rounded-md" />
+            ) : (
+              <div className="h-12 w-12 rounded-md bg-brand text-brand-foreground flex items-center justify-center font-bold text-xl">P</div>
+            )}
           </div>
           <div className="flex gap-2 mt-3">
             <label className="flex-1 h-9 rounded-md border border-border hover:bg-surface-sunken inline-flex items-center justify-center gap-1.5 text-xs font-medium cursor-pointer transition-colors">
@@ -2476,7 +2582,7 @@ function BrandingManager({ onToast, onMarkComplete }: { onToast: (m: string) => 
       </Card>
 
       <div className="flex items-center justify-end pt-3 border-t border-border">
-        <Button variant="success" onClick={() => { onMarkComplete(); onToast("Branding & assets saved"); }}><Save className="h-4 w-4" />Save branding</Button>
+        <Button variant="success" onClick={() => { save(onToast); onMarkComplete(); }}><Save className="h-4 w-4" />Save branding</Button>
       </div>
     </div>
   );
@@ -2506,6 +2612,12 @@ const SEED_INTEGRATIONS: Integration[] = [
 function IntegrationsManager({ onToast, onMarkComplete }: { onToast: (m: string) => void; onMarkComplete: () => void }) {
   const [integrations, setIntegrations] = React.useState(SEED_INTEGRATIONS);
   const [configFor, setConfigFor] = React.useState<Integration | null>(null);
+
+  const save = useSettingsPersistence(
+    "integrations",
+    { integrations },
+    v => { if (v.integrations !== undefined) setIntegrations(v.integrations); },
+  );
 
   const toggle = (id: string) => setIntegrations(prev => prev.map(i => i.id === id
     ? { ...i, connected: !i.connected, status: !i.connected ? "live" : "off" as Integration["status"] }
@@ -2569,10 +2681,17 @@ function IntegrationsManager({ onToast, onMarkComplete }: { onToast: (m: string)
       ))}
 
       <div className="flex items-center justify-end pt-3 border-t border-border">
-        <Button variant="success" onClick={() => { onMarkComplete(); onToast("Integration settings saved"); }}><Save className="h-4 w-4" />Save</Button>
+        <Button variant="success" onClick={() => { save(onToast); onMarkComplete(); }}><Save className="h-4 w-4" />Save</Button>
       </div>
 
-      {configFor && <IntegrationConfigModal integration={configFor} onClose={() => setConfigFor(null)} onSave={() => { setConfigFor(null); onToast(`${configFor.name} credentials updated`); }} onTest={() => onToast(`Test successful · ${configFor.name}`)} />}
+      {configFor && <IntegrationConfigModal integration={configFor} onClose={() => setConfigFor(null)} onSave={() => {
+        const updated = integrations.map(i => i.id === configFor.id ? { ...i, connected: true, status: "live" as Integration["status"] } : i);
+        setIntegrations(updated);
+        apiPut("/settings/integrations", { integrations: updated })
+          .then(() => onToast(`${configFor.name} connected & saved ✓`))
+          .catch(() => onToast("⚠ Save failed — backend offline"));
+        setConfigFor(null);
+      }} onTest={() => onToast(`Test successful · ${configFor.name}`)} />}
     </div>
   );
 }
@@ -2696,30 +2815,95 @@ function BackupManager({ onToast, onMarkComplete }: { onToast: (m: string) => vo
   const [localEnabled, setLocalEnabled] = React.useState(true);
   const [encryption, setEncryption] = React.useState(true);
 
-  const lastBackup = SEED_BACKUPS[0];
+  const save = useSettingsPersistence(
+    "backup",
+    { autoBackup, backupTime, retainDays, s3Enabled, localEnabled, encryption },
+    v => {
+      if (v.autoBackup !== undefined) setAutoBackup(v.autoBackup);
+      if (v.backupTime !== undefined) setBackupTime(v.backupTime);
+      if (v.retainDays !== undefined) setRetainDays(v.retainDays);
+      if (v.s3Enabled !== undefined) setS3Enabled(v.s3Enabled);
+      if (v.localEnabled !== undefined) setLocalEnabled(v.localEnabled);
+      if (v.encryption !== undefined) setEncryption(v.encryption);
+    },
+  );
+
+  // Real backups from the API (pg_dump files).
+  type BackupFile = { name: string; size: number; created_at: string };
+  const [backups, setBackups] = React.useState<BackupFile[]>([]);
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => { apiGet<BackupFile[]>("/backups").then(setBackups).catch(() => {}); }, []);
+  const fmtSize = (b: number) => (b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`);
+  const fmtWhen = (iso: string) => { const d = new Date(iso); return isNaN(d.getTime()) ? iso : d.toLocaleString(); };
+  const lastBackup = backups[0];
+
+  const runBackup = async () => {
+    setBusy(true); onToast("Running backup…");
+    try { const meta = await apiPost<BackupFile>("/backups", {}); setBackups(b => [meta, ...b]); onToast("Backup created ✓"); }
+    catch { onToast("⚠ Backup failed — is the backend running?"); }
+    finally { setBusy(false); }
+  };
+  const downloadBackup = async (name: string) => {
+    try { await apiDownload(`/backups/${name}/download`, name); }
+    catch { onToast("⚠ Download failed"); }
+  };
+  const restoreBackup = async (name: string) => {
+    if (!window.confirm(`Restore the database from ${name}?\n\nThis OVERWRITES all current data.`)) return;
+    setBusy(true); onToast("Restoring database…");
+    try { await apiPost(`/backups/${name}/restore`, {}); onToast("Database restored ✓ — reload to see changes"); }
+    catch { onToast("⚠ Restore failed"); }
+    finally { setBusy(false); }
+  };
 
   return (
     <div className="space-y-5">
       {/* Last backup hero */}
-      <Card className={cn("p-4 border-l-4 border-l-success bg-success-soft/10")}>
+      <Card className={cn("p-4 border-l-4", lastBackup ? "border-l-success bg-success-soft/10" : "border-l-warning bg-warning-soft/10")}>
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
-            <span className="h-10 w-10 rounded-md bg-success-soft text-success inline-flex items-center justify-center"><CheckCircle2 className="h-5 w-5" /></span>
+            <span className={cn("h-10 w-10 rounded-md inline-flex items-center justify-center", lastBackup ? "bg-success-soft text-success" : "bg-warning-soft text-warning")}>
+              {lastBackup ? <CheckCircle2 className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+            </span>
             <div>
-              <p className="font-semibold">Last backup · {lastBackup.at}</p>
-              <p className="text-xs text-muted-foreground">{lastBackup.size} · {lastBackup.duration} · {lastBackup.destination}</p>
+              <p className="font-semibold">{lastBackup ? `Last backup · ${fmtWhen(lastBackup.created_at)}` : "No backups yet"}</p>
+              <p className="text-xs text-muted-foreground">{lastBackup ? `${fmtSize(lastBackup.size)} · pg_dump · local` : "Run a backup to create your first snapshot"}</p>
             </div>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => onToast("Backup downloading · 248 MB encrypted bundle")}>
-              <Cloud className="h-3.5 w-3.5" />Download
-            </Button>
-            <Button size="sm" onClick={() => onToast("Manual backup queued · running in background")}>
-              <RefreshCw className="h-3.5 w-3.5" />Run now
+            {lastBackup && (
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => downloadBackup(lastBackup.name)}>
+                <Cloud className="h-3.5 w-3.5" />Download
+              </Button>
+            )}
+            <Button size="sm" disabled={busy} onClick={runBackup}>
+              <RefreshCw className={cn("h-3.5 w-3.5", busy && "animate-spin")} />{busy ? "Running…" : "Run now"}
             </Button>
           </div>
         </div>
       </Card>
+
+      {/* Backups list (real files) */}
+      {backups.length > 0 && (
+        <Card className="p-0 overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-border bg-surface-sunken/30 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Saved backups ({backups.length})
+          </div>
+          <div className="divide-y divide-border max-h-64 overflow-y-auto">
+            {backups.map(bk => (
+              <div key={bk.name} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm font-mono truncate">{bk.name}</p>
+                  <p className="text-[11px] text-muted-foreground">{fmtSize(bk.size)} · {fmtWhen(bk.created_at)}</p>
+                </div>
+                <div className="flex gap-1.5 shrink-0">
+                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => downloadBackup(bk.name)}><Cloud className="h-3.5 w-3.5" />Download</Button>
+                  <Button variant="outline" size="sm" disabled={busy} onClick={() => restoreBackup(bk.name)}><RefreshCw className="h-3.5 w-3.5" />Restore</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Backup config */}
       <Card className="p-4 space-y-4">
@@ -2844,7 +3028,7 @@ function BackupManager({ onToast, onMarkComplete }: { onToast: (m: string) => vo
       </Card>
 
       <div className="flex items-center justify-end pt-3 border-t border-border">
-        <Button variant="success" onClick={() => { onMarkComplete(); onToast("Backup & audit settings saved"); }}><Save className="h-4 w-4" />Save</Button>
+        <Button variant="success" onClick={() => { save(onToast); onMarkComplete(); }}><Save className="h-4 w-4" />Save</Button>
       </div>
     </div>
   );

@@ -16,6 +16,9 @@ hotel-pms-api/storage/*.key
 # Laravel local sqlite (we use Postgres)
 hotel-pms-api/database/*.sqlite
 
+# User-uploaded images (logos, brand assets) — runtime data, not source
+hotel-pms-api/public/uploads/
+
 # OS / editor
 .DS_Store
 Thumbs.db

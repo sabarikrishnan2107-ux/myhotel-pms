@@ -1,13 +1,39 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { Sparkles, ArrowRight, ShieldCheck, Eye, EyeOff } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Sparkles, ArrowRight, ShieldCheck, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/shell/theme-toggle";
+import { login, getToken } from "@/lib/api";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [show, setShow] = React.useState(false);
+  const [email, setEmail] = React.useState("admin@hotel.com");
+  const [password, setPassword] = React.useState("");
+  const [error, setError] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(false);
+
+  // Already signed in? Skip the form.
+  React.useEffect(() => {
+    if (getToken()) router.replace("/dashboard");
+  }, [router]);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      await login(email, password);
+      router.replace("/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-svh grid lg:grid-cols-2 bg-background">
       {/* Left — branding panel */}
@@ -78,10 +104,17 @@ export default function LoginPage() {
               Sign in to continue to <span className="font-medium text-foreground">The Pearl Marina</span>.
             </p>
 
-            <form className="mt-8 space-y-5" action="/dashboard">
+            <form className="mt-8 space-y-5" onSubmit={onSubmit}>
+              {error && (
+                <div className="flex items-center gap-2 rounded-md border border-danger/30 bg-danger-soft/40 px-3 py-2 text-sm text-danger">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
               <div className="space-y-1.5">
                 <Label htmlFor="email">Email or username</Label>
-                <Input id="email" type="email" defaultValue="khalid@pearlmarina.com" autoComplete="email" />
+                <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" required />
               </div>
 
               <div className="space-y-1.5">
@@ -90,7 +123,7 @@ export default function LoginPage() {
                   <Link href="#" className="text-xs text-brand hover:underline">Forgot?</Link>
                 </div>
                 <div className="relative">
-                  <Input id="password" type={show ? "text" : "password"} defaultValue="••••••••" autoComplete="current-password" className="pr-10" />
+                  <Input id="password" type={show ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" className="pr-10" required />
                   <button
                     type="button"
                     onClick={() => setShow(!show)}
@@ -107,10 +140,14 @@ export default function LoginPage() {
                 <Label htmlFor="remember" className="text-muted-foreground font-normal">Remember this device for 30 days</Label>
               </div>
 
-              <Button type="submit" size="lg" className="w-full">
-                Sign in
-                <ArrowRight className="h-4 w-4" />
+              <Button type="submit" size="lg" className="w-full" disabled={loading}>
+                {loading ? "Signing in…" : "Sign in"}
+                {!loading && <ArrowRight className="h-4 w-4" />}
               </Button>
+
+              <p className="text-center text-[11px] text-muted-foreground">
+                Demo login — <span className="font-mono text-foreground">admin@hotel.com</span> / <span className="font-mono text-foreground">password123</span>
+              </p>
 
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>

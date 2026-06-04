@@ -1,11 +1,13 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { Bot, ChevronDown, Menu, Plus, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Bot, ChevronDown, Menu, Plus, Search, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "./theme-toggle";
 import { Avatar } from "@/components/ui/avatar";
 import { NotificationBell } from "@/components/notifications/bell-dropdown";
+import { logout } from "@/lib/api";
 
 interface TopBarProps {
   onOpenSidebar: () => void;
@@ -13,6 +15,12 @@ interface TopBarProps {
 
 export function TopBar({ onOpenSidebar }: TopBarProps) {
   const searchRef = React.useRef<HTMLInputElement>(null);
+  const router = useRouter();
+
+  const onLogout = async () => {
+    await logout();
+    router.replace("/login");
+  };
 
   // ⌘K / Ctrl+K → focus search · Esc → blur
   React.useEffect(() => {
@@ -88,6 +96,15 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
             <span className="text-xs font-medium">Khalid R.</span>
             <span className="text-[10px] text-muted-foreground">Reception · Shift #4218</span>
           </span>
+        </button>
+
+        <button
+          onClick={onLogout}
+          className="h-9 w-9 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Sign out"
+          title="Sign out"
+        >
+          <LogOut className="h-4 w-4" />
         </button>
       </div>
     </header>

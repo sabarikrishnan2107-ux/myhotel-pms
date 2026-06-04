@@ -3,13 +3,36 @@ import * as React from "react";
 import {
   ShieldCheck, Webhook,
   CheckCircle2, Languages, Clock, Keyboard, Lock,
-  Smartphone, X, Copy, Trash2, Save, Eye,
+  Smartphone, X, Copy, Trash2, Save, Eye, AlertCircle,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { apiGet, apiPut, apiPost, syncList } from "@/lib/api";
+
+// Loads a single-row settings section from Postgres on mount, and returns a
+// save() that persists the current values. `hydrate` applies a loaded blob.
+export function useSettingsPersistence<T extends Record<string, unknown>>(
+  key: string,
+  current: T,
+  hydrate: (v: Partial<T>) => void,
+) {
+  const hydrateRef = React.useRef(hydrate);
+  React.useEffect(() => { hydrateRef.current = hydrate; });
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Partial<T>>(`/settings/${key}`)
+      .then(v => { if (!cancelled && v && Object.keys(v).length) hydrateRef.current(v); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [key]);
+  return (showToast: (m: string) => void) =>
+    apiPut(`/settings/${key}`, current)
+      .then(() => showToast("Saved to database ✓"))
+      .catch(() => showToast("⚠ Save failed — backend offline"));
+}
 
 const SHORTCUTS = [
   { keys: ["⌘", "K"], action: "Global search" },
@@ -50,6 +73,23 @@ export function PreferencesPanel() {
   const [reducedMotion, setReducedMotion] = React.useState(false);
   const [textSize, setTextSize] = React.useState(100);
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
+
+  const save = useSettingsPersistence(
+    "preferences",
+    { language, timezone, dateFormat, timeFormat, density, theme, landing, highContrast, reducedMotion, textSize },
+    v => {
+      if (v.language !== undefined) setLanguage(v.language);
+      if (v.timezone !== undefined) setTimezone(v.timezone);
+      if (v.dateFormat !== undefined) setDateFormat(v.dateFormat);
+      if (v.timeFormat !== undefined) setTimeFormat(v.timeFormat);
+      if (v.density !== undefined) setDensity(v.density);
+      if (v.theme !== undefined) setTheme(v.theme);
+      if (v.landing !== undefined) setLanding(v.landing);
+      if (v.highContrast !== undefined) setHighContrast(v.highContrast);
+      if (v.reducedMotion !== undefined) setReducedMotion(v.reducedMotion);
+      if (v.textSize !== undefined) setTextSize(v.textSize);
+    },
+  );
 
   return (
     <Card className="p-6 space-y-5">
@@ -136,7 +176,7 @@ export function PreferencesPanel() {
         <Button variant="outline" onClick={() => setShortcutsOpen(true)}><Keyboard className="h-3.5 w-3.5" />View all shortcuts</Button>
       </Field2>
 
-      <SaveBar onCancel={() => showToast("Preferences reverted")} onSave={() => showToast("Preferences saved")} />
+      <SaveBar onCancel={() => showToast("Preferences reverted")} onSave={() => save(showToast)} />
 
       {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
       {ToastEl}
@@ -154,6 +194,18 @@ export function SecurityPanel() {
   const [policy, setPolicy] = React.useState("Strong (12 + symbol)");
   const [changePassOpen, setChangePassOpen] = React.useState(false);
   const [twoFaOpen, setTwoFaOpen] = React.useState(false);
+
+  const save = useSettingsPersistence(
+    "security",
+    { require2fa, sso, sessionMin, lockoutAfter, policy },
+    v => {
+      if (v.require2fa !== undefined) setRequire2fa(v.require2fa);
+      if (v.sso !== undefined) setSso(v.sso);
+      if (v.sessionMin !== undefined) setSessionMin(v.sessionMin);
+      if (v.lockoutAfter !== undefined) setLockoutAfter(v.lockoutAfter);
+      if (v.policy !== undefined) setPolicy(v.policy);
+    },
+  );
 
   return (
     <Card className="p-6 space-y-5">
@@ -195,7 +247,7 @@ export function SecurityPanel() {
           <option>Enterprise (16 + symbol + rotated 90d)</option>
         </Select>
       </Field2>
-      <SaveBar onCancel={() => showToast("Security settings reverted")} onSave={() => showToast("Security settings saved")} />
+      <SaveBar onCancel={() => showToast("Security settings reverted")} onSave={() => save(showToast)} />
 
       {changePassOpen && <ChangePasswordModal onClose={() => setChangePassOpen(false)} onSave={() => { setChangePassOpen(false); showToast("Password changed · you stay signed in"); }} />}
       {twoFaOpen && <TwoFAModal onClose={() => setTwoFaOpen(false)} onSave={() => { setTwoFaOpen(false); showToast("2FA enabled · authenticator app linked"); }} />}
@@ -214,6 +266,19 @@ export function NotificationChannelsPanel() {
   const [quietStart, setQuietStart] = React.useState("22:00");
   const [quietEnd, setQuietEnd] = React.useState("07:00");
 
+  const save = useSettingsPersistence(
+    "channels",
+    { emailOn, waOn, tgOn, smsOn, quietStart, quietEnd },
+    v => {
+      if (v.emailOn !== undefined) setEmailOn(v.emailOn);
+      if (v.waOn !== undefined) setWaOn(v.waOn);
+      if (v.tgOn !== undefined) setTgOn(v.tgOn);
+      if (v.smsOn !== undefined) setSmsOn(v.smsOn);
+      if (v.quietStart !== undefined) setQuietStart(v.quietStart);
+      if (v.quietEnd !== undefined) setQuietEnd(v.quietEnd);
+    },
+  );
+
   return (
     <Card className="p-6 space-y-4">
       <div>
@@ -231,20 +296,36 @@ export function NotificationChannelsPanel() {
         </div>
         <p className="text-xs text-muted-foreground">No notifications sent during quiet hours except urgent alerts.</p>
       </div>
-      <SaveBar onCancel={() => showToast("Notifications reverted")} onSave={() => showToast("Notification preferences saved")} />
+      <SaveBar onCancel={() => showToast("Notifications reverted")} onSave={() => save(showToast)} />
       {ToastEl}
     </Card>
   );
 }
 
 // ============== WEBHOOKS ==============
+type Wh = { id: number | string; url: string; events: string; status: string };
+
 export function WebhooksPanel() {
   const { showToast, ToastEl } = useToast();
-  const [webhooks, setWebhooks] = React.useState([
-    { id: "w1", url: "https://hooks.zapier.com/...", events: "booking.created, payment.received", status: "active" as const },
-    { id: "w2", url: "https://my-bi.example.com/wh", events: "night_audit.completed", status: "active" as const },
+  const [webhooks, setWebhooks] = React.useState<Wh[]>([
+    { id: "w1", url: "https://hooks.zapier.com/...", events: "booking.created, payment.received", status: "active" },
+    { id: "w2", url: "https://my-bi.example.com/wh", events: "night_audit.completed", status: "active" },
   ]);
   const [newWebhookOpen, setNewWebhookOpen] = React.useState(false);
+
+  // Load from Postgres on mount; persist each add/remove back to the DB.
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Wh[]>("/webhooks").then(r => { if (!cancelled) setWebhooks(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const persist = (next: Wh[]) => {
+    setWebhooks(next);
+    syncList("webhooks", webhooks, next)
+      .then(setWebhooks)
+      .catch(() => showToast("⚠ Save failed — backend offline"));
+  };
 
   return (
     <Card className="p-6 space-y-3">
@@ -267,7 +348,7 @@ export function WebhooksPanel() {
               <button type="button" onClick={() => { navigator.clipboard?.writeText(w.url); showToast("Webhook URL copied"); }} className="h-7 w-7 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center text-muted-foreground" title="Copy URL">
                 <Copy className="h-3 w-3" />
               </button>
-              <button type="button" onClick={() => { setWebhooks(prev => prev.filter(x => x.id !== w.id)); showToast("Webhook removed"); }} className="h-7 w-7 rounded-md hover:bg-danger-soft hover:text-danger inline-flex items-center justify-center text-muted-foreground">
+              <button type="button" onClick={() => { persist(webhooks.filter(x => x.id !== w.id)); showToast("Webhook removed"); }} className="h-7 w-7 rounded-md hover:bg-danger-soft hover:text-danger inline-flex items-center justify-center text-muted-foreground">
                 <Trash2 className="h-3 w-3" />
               </button>
             </div>
@@ -276,7 +357,7 @@ export function WebhooksPanel() {
         </div>
       ))}
       {newWebhookOpen && <NewWebhookModal onClose={() => setNewWebhookOpen(false)} onSave={(url, events) => {
-        setWebhooks(prev => [...prev, { id: `w-${prev.length + 1}`, url, events, status: "active" }]);
+        persist([...webhooks, { id: `new-${webhooks.length + 1}`, url, events, status: "active" }]);
         setNewWebhookOpen(false);
         showToast("Webhook added");
       }} />}
@@ -321,8 +402,22 @@ function ChangePasswordModal({ onClose, onSave }: { onClose: () => void; onSave:
   const [current, setCurrent] = React.useState("");
   const [newP, setNewP] = React.useState("");
   const [confirmP, setConfirmP] = React.useState("");
+  const [error, setError] = React.useState<string | null>(null);
+  const [saving, setSaving] = React.useState(false);
   const valid = current.length > 0 && newP.length >= 12 && newP === confirmP;
   React.useEffect(() => { document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = ""; }; }, []);
+
+  const submit = async () => {
+    setError(null);
+    setSaving(true);
+    try {
+      await apiPost("/change-password", { current_password: current, new_password: newP });
+      onSave();
+    } catch {
+      setError("Current password is incorrect (or the new one is too short).");
+      setSaving(false);
+    }
+  };
   return (
     <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-surface rounded-xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
@@ -344,10 +439,11 @@ function ChangePasswordModal({ onClose, onSave }: { onClose: () => void; onSave:
             <p className={/[^a-zA-Z0-9]/.test(newP) ? "text-success" : ""}>• Symbol</p>
             <p className={newP === confirmP && newP.length > 0 ? "text-success" : ""}>• Passwords match</p>
           </div>
+          {error && <p className="text-xs text-danger flex items-center gap-1.5"><AlertCircle className="h-3.5 w-3.5" />{error}</p>}
         </div>
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-border bg-surface-sunken/30">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={onSave} disabled={!valid}>Update password</Button>
+          <Button onClick={submit} disabled={!valid || saving}>{saving ? "Updating…" : "Update password"}</Button>
         </div>
       </div>
     </div>
@@ -356,7 +452,29 @@ function ChangePasswordModal({ onClose, onSave }: { onClose: () => void; onSave:
 
 function TwoFAModal({ onClose, onSave }: { onClose: () => void; onSave: () => void }) {
   const [code, setCode] = React.useState("");
+  const [secret, setSecret] = React.useState("");
+  const [error, setError] = React.useState<string | null>(null);
+  const [saving, setSaving] = React.useState(false);
   React.useEffect(() => { document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = ""; }; }, []);
+
+  // Ask the backend for a fresh secret to set up against.
+  React.useEffect(() => {
+    apiPost<{ secret: string; otpauth: string }>("/2fa/setup", {})
+      .then(r => setSecret(r.secret))
+      .catch(() => setError("Couldn't start 2FA setup — is the backend running?"));
+  }, []);
+
+  const enable = async () => {
+    setError(null);
+    setSaving(true);
+    try {
+      await apiPost("/2fa/enable", { code });
+      onSave();
+    } catch {
+      setError("That code is invalid or expired. Check your authenticator app.");
+      setSaving(false);
+    }
+  };
   return (
     <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-surface rounded-xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
@@ -380,18 +498,19 @@ function TwoFAModal({ onClose, onSave }: { onClose: () => void; onSave: () => vo
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Secret key</p>
-              <p className="font-mono tabular text-sm break-all">JBSWY3DPEHPK3PXP</p>
+              <p className="font-mono tabular text-sm break-all">{secret || "loading…"}</p>
               <p className="text-[10px] text-muted-foreground mt-1">Algorithm: SHA-1 · digits: 6 · period: 30s</p>
             </div>
           </div>
           <Field2 label="Enter the 6-digit code from your app">
             <Input value={code} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} className="h-10 text-lg tabular font-mono tracking-wider text-center" placeholder="000000" />
           </Field2>
+          {error && <p className="text-xs text-danger flex items-center gap-1.5"><AlertCircle className="h-3.5 w-3.5" />{error}</p>}
         </div>
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-border bg-surface-sunken/30">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="success" onClick={onSave} disabled={code.length !== 6}>
-            <ShieldCheck className="h-3.5 w-3.5" />Enable 2FA
+          <Button variant="success" onClick={enable} disabled={code.length !== 6 || saving}>
+            <ShieldCheck className="h-3.5 w-3.5" />{saving ? "Verifying…" : "Enable 2FA"}
           </Button>
         </div>
       </div>
