@@ -1,0 +1,63 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\Booking;
+use App\Models\FolioPayment;
+use App\Models\Guest;
+use App\Models\Room;
+
+/**
+ * Live dashboard KPIs aggregated from the real Postgres data
+ * (rooms, bookings, guests, folio).
+ */
+class StatsController extends Controller
+{
+    public function index()
+    {
+        $today = date('Y-m-d');
+
+        $totalRooms = max(1, Room::count());
+        $inHouse = Booking::where('checkIn', '<=', $today)->where('checkOut', '>', $today)->count();
+        $occupied = min($inHouse, $totalRooms);
+
+        $arrivals = Booking::where('checkIn', $today)->orderBy('roomNumber')->get();
+        $departures = Booking::where('checkOut', $today)->orderBy('roomNumber')->get();
+
+        $sourceMix = Booking::query()
+            ->selectRaw('source, count(*) as bookings, coalesce(sum(total),0) as revenue')
+            ->groupBy('source')
+            ->orderByDesc('revenue')
+            ->get();
+
+        return response()->json([
+            'today' => $today,
+            'rooms' => [
+                'total'        => $totalRooms,
+                'occupied'     => $occupied,
+                'available'    => max(0, $totalRooms - $occupied),
+                'occupancyPct' => (int) round($occupied / $totalRooms * 100),
+            ],
+            'bookings' => [
+                'total'            => Booking::count(),
+                'inHouse'          => $inHouse,
+                'arrivalsToday'    => $arrivals->count(),
+                'departuresToday'  => $departures->count(),
+            ],
+            'guests' => [
+                'total' => Guest::count(),
+                'vip'   => Guest::where('vip', true)->count(),
+            ],
+            'revenue' => [
+                'totalBooked'     => (int) Booking::sum('total'),
+                'collected'       => (int) Booking::sum('advance'),
+                'outstanding'     => (int) Booking::sum('balance'),
+                'folioPayments'   => (int) FolioPayment::sum('amount'),
+            ],
+            'arrivals'   => $arrivals,
+            'departures' => $departures,
+            'sourceMix'  => $sourceMix,
+        ]);
+    }
+}

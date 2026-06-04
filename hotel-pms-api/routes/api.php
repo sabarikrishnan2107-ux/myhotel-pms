@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\BackupController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\ResourceController;
 use App\Http\Controllers\Api\SettingsController;
+use App\Http\Controllers\Api\StatsController;
 use App\Http\Controllers\Api\UploadController;
 use Illuminate\Support\Facades\Route;
 
@@ -31,6 +32,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // Setup & Settings : Property & Branch (dedicated table)
     Route::get('/property', [PropertyController::class, 'show']);
     Route::put('/property', [PropertyController::class, 'update']);
+
+    // Dashboard KPIs (aggregated from real data)
+    Route::get('/stats', [StatsController::class, 'index']);
 
     // Image uploads (logos, brand assets)
     Route::post('/upload', [UploadController::class, 'store']);

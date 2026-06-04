@@ -16,6 +16,7 @@ import { OccupancyGauge } from "@/components/ui/occupancy-gauge";
 import { FloorHeatmap } from "@/components/ui/floor-heatmap";
 import { GoalProgress } from "@/components/ui/goal-progress";
 import { money, pct, formatTime, cn } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
 import {
   DASHBOARD_KPIS, TODAY_ARRIVALS, TODAY_DEPARTURES, REVENUE_TREND,
   OCCUPANCY_FORECAST, SOURCE_MIX, ALERTS, ROOMS, GUESTS,
@@ -79,8 +80,31 @@ const ACTIVITY: { id: string; at: string; actor: string; verb: string; target: s
   { id: "a7", at: "48 min ago", actor: "OTA: Booking.com", verb: "new reservation", target: "BDC-44218 · 3N", tone: "info" as const },
 ];
 
+type DashStats = {
+  rooms: { total: number; occupied: number; available: number; occupancyPct: number };
+  bookings: { total: number; inHouse: number; arrivalsToday: number; departuresToday: number };
+  guests: { total: number; vip: number };
+  revenue: { totalBooked: number; collected: number; outstanding: number; folioPayments: number };
+  arrivals: Reservation[];
+  departures: Reservation[];
+  sourceMix: { source: string; bookings: number; revenue: number }[];
+};
+
 export default function DashboardPage() {
-  const k = DASHBOARD_KPIS;
+  const [stats, setStats] = React.useState<DashStats | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<DashStats>("/stats").then(s => { if (!cancelled) setStats(s); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Real KPIs from Postgres when available, falling back to mock for decorative widgets.
+  const k = stats
+    ? { ...DASHBOARD_KPIS, occupancyPct: stats.rooms.occupancyPct, occupied: stats.rooms.occupied, totalRooms: stats.rooms.total, available: stats.rooms.available }
+    : DASHBOARD_KPIS;
+  const arrivals = stats?.arrivals ?? TODAY_ARRIVALS;
+  const departures = stats?.departures ?? TODAY_DEPARTURES;
+
   const [now, setNow] = React.useState<string>("");
   const [greeting, setGreeting] = React.useState<string>("Good afternoon");
   const [selectedRes, setSelectedRes] = React.useState<Reservation | null>(null);
@@ -113,8 +137,13 @@ export default function DashboardPage() {
     setGreeting(h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : h < 21 ? "Good evening" : "Working late");
   }, []);
 
-  const arrivalsBalance = TODAY_ARRIVALS.reduce((s, r) => s + r.balance, 0);
-  const vipArrivals = TODAY_ARRIVALS.filter(r => r.vip).length;
+  const arrivalsBalance = arrivals.reduce((s, r) => s + r.balance, 0);
+  const vipArrivals = arrivals.filter(r => r.vip).length;
+
+  // Booking-source mix from real data (falls back to mock).
+  const topSources = stats?.sourceMix?.length
+    ? stats.sourceMix.map(s => ({ name: s.source, revenue: s.revenue, bookings: s.bookings }))
+    : TOP_SOURCES;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-7">
@@ -145,8 +174,8 @@ export default function DashboardPage() {
                 </h1>
                 <p className="mt-2 text-muted-foreground leading-relaxed max-w-xl">
                   Today is shaping up well — <span className="font-medium text-foreground">{k.occupancyPct}% occupancy</span>,{" "}
-                  <span className="font-medium text-foreground">{TODAY_ARRIVALS.length} arrivals</span> &amp;{" "}
-                  <span className="font-medium text-foreground">{TODAY_DEPARTURES.length} departures</span>.
+                  <span className="font-medium text-foreground">{arrivals.length} arrivals</span> &amp;{" "}
+                  <span className="font-medium text-foreground">{departures.length} departures</span>.
                   Net profit so far <span className="text-success font-semibold">{money(k.todayProfit)}</span>.
                 </p>
               </div>
@@ -418,8 +447,8 @@ export default function DashboardPage() {
             </div>
           </div>
           <ol className="space-y-2.5">
-            {TOP_SOURCES.map((s, i) => {
-              const maxRev = TOP_SOURCES[0].revenue;
+            {topSources.map((s, i) => {
+              const maxRev = topSources[0].revenue;
               return (
                 <li key={s.name} className="group">
                   <div className="flex items-center justify-between gap-3 mb-1">
@@ -465,7 +494,7 @@ export default function DashboardPage() {
           <div className="flex-1">
             <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-semibold">Pre-arrival Preparation</p>
             <h3 className="text-lg font-semibold mt-0.5">
-              {vipArrivals} VIP arrival{vipArrivals === 1 ? "" : "s"} · {TODAY_ARRIVALS.length} total
+              {vipArrivals} VIP arrival{vipArrivals === 1 ? "" : "s"} · {arrivals.length} total
             </h3>
             <p className="text-sm text-muted-foreground mt-1">
               Balance to collect on arrival: <span className="font-semibold text-foreground tabular">{money(arrivalsBalance)}</span>.
@@ -622,7 +651,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="px-0 pb-2">
             <ul className="divide-y divide-border">
-              {TODAY_ARRIVALS.map(r => (
+              {arrivals.map(r => (
                 <li
                   key={r.id}
                   onDoubleClick={() => setSelectedRes(r)}
@@ -678,7 +707,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="px-0 pb-2">
             <ul className="divide-y divide-border">
-              {TODAY_DEPARTURES.map(r => (
+              {departures.map(r => (
                 <li key={r.id} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-sunken transition-colors">
                   <Avatar name={r.guestName} size={36} vip={r.vip} />
                   <div className="flex-1 min-w-0">
