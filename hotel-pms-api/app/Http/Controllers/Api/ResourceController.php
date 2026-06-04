@@ -13,12 +13,15 @@ use App\Models\GstSlab;
 use App\Models\Guest;
 use App\Models\HallPackage;
 use App\Models\Holiday;
+use App\Models\InventoryItem;
 use App\Models\NotificationTemplate;
 use App\Models\PaymentMethod;
 use App\Models\RatePlan;
 use App\Models\Role;
 use App\Models\Room;
 use App\Models\Season;
+use App\Models\Staff;
+use App\Models\Vendor;
 use App\Models\Webhook;
 use Illuminate\Http\Request;
 
@@ -46,6 +49,9 @@ class ResourceController extends Controller
         'bookings'               => Booking::class,
         'folio-charges'          => FolioCharge::class,
         'folio-payments'         => FolioPayment::class,
+        'staff'                  => Staff::class,
+        'vendors'                => Vendor::class,
+        'inventory-items'        => InventoryItem::class,
     ];
 
     /** Resources that can be filtered by ?bookingNo= on index. */
@@ -145,6 +151,20 @@ class ResourceController extends Controller
             'bookingNo' => 'string|max:50', 'date' => 'string|max:50', 'mode' => 'string|max:100',
             'reference' => 'string|max:255|nullable', 'amount' => 'integer',
         ],
+        'staff' => [
+            'name' => 'string|max:255', 'role' => 'string|max:100', 'dept' => 'string|max:100',
+            'phone' => 'string|max:50|nullable', 'email' => 'email|max:255|nullable', 'joined' => 'string|max:50',
+            'salary' => 'integer|min:0', 'active' => 'boolean',
+        ],
+        'vendors' => [
+            'name' => 'string|max:255', 'contact' => 'string|max:255|nullable', 'phone' => 'string|max:50|nullable',
+            'terms' => 'string|max:50', 'outstanding' => 'integer', 'lastInvoice' => 'string|max:50|nullable',
+        ],
+        'inventory-items' => [
+            'name' => 'string|max:255', 'cat' => 'string|max:100', 'vendor' => 'string|max:255|nullable',
+            'qty' => 'integer|min:0', 'min' => 'integer|min:0', 'unit' => 'string|max:50',
+            'lastPurchase' => 'string|max:50|nullable', 'price' => 'numeric|min:0',
+        ],
     ];
 
     /** Fields that must be present (and non-empty) when creating a row. */
@@ -156,6 +176,7 @@ class ResourceController extends Controller
         'roles' => ['name'], 'webhooks' => ['url'],
         'guests' => ['name'], 'bookings' => ['guestName'],
         'folio-charges' => ['bookingNo', 'description'], 'folio-payments' => ['bookingNo'],
+        'staff' => ['name'], 'vendors' => ['name'], 'inventory-items' => ['name'],
     ];
 
     private function model(string $resource): string

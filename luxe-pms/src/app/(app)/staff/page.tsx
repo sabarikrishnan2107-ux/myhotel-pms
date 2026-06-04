@@ -13,6 +13,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { STAFF } from "@/lib/mock-data-ext";
 import { money, cn } from "@/lib/utils";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
 
 type Staff = typeof STAFF[number];
 
@@ -26,6 +27,12 @@ export default function StaffPage() {
   const [actionFor, setActionFor] = React.useState<string | null>(null);
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
+
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Staff[]>("/staff").then(r => { if (!cancelled) setStaff(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const depts = Array.from(new Set(staff.map(s => s.dept)));
 
@@ -47,6 +54,7 @@ export default function StaffPage() {
     if (!s) return;
     setStaff(prev => prev.map(x => x.id === id ? { ...x, active: !x.active } : x));
     showToast(`${s.name} ${s.active ? "deactivated" : "reactivated"}`);
+    apiPut(`/staff/${id}`, { active: !s.active }).catch(() => showToast("⚠ Save failed — backend offline"));
   };
 
   return (
@@ -189,10 +197,12 @@ export default function StaffPage() {
       </Card>
 
       {addOpen && <AddStaffModal onClose={() => setAddOpen(false)} onSave={(s) => {
-        const newId = `s-${Date.now().toString(36).slice(-6)}`;
-        setStaff(prev => [{ ...s, id: newId, joined: new Date().toISOString().slice(0, 10), active: true }, ...prev]);
+        const payload = { ...s, joined: new Date().toISOString().slice(0, 10), active: true };
         setAddOpen(false);
         showToast(`${s.name} added to ${s.dept}`);
+        apiPost<Staff>("/staff", payload)
+          .then(created => setStaff(prev => [created, ...prev]))
+          .catch(() => showToast("⚠ Save failed — backend offline"));
       }} departments={depts} />}
       {detail && <StaffDetailDrawer staff={detail} onClose={() => setDetail(null)} onToggleActive={() => { toggleActive(detail.id); setDetail(null); }} onToast={showToast} />}
 

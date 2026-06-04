@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { KPICard } from "@/components/ui/kpi-card";
 import { INVENTORY_ITEMS } from "@/lib/mock-data-ext";
 import { money, cn } from "@/lib/utils";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 
 const TABS = [
   { id: "items", label: "Items", icon: Boxes },
@@ -469,38 +470,51 @@ export default function InventoryPage() {
     return true;
   });
 
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Item[]>("/inventory-items").then(r => { if (!cancelled) setItems(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   const lowStock = items.filter(i => i.qty < i.min);
   const totalValue = items.reduce((s, i) => s + i.qty * i.price, 0);
 
   const handleAdjust = (delta: number, type: Movement["type"], reason: string) => {
     if (!adjustItem) return;
-    setItems(prev => prev.map(it => it.id === adjustItem.id ? { ...it, qty: Math.max(0, it.qty + delta) } : it));
+    const newQty = Math.max(0, adjustItem.qty + delta);
+    setItems(prev => prev.map(it => it.id === adjustItem.id ? { ...it, qty: newQty } : it));
     setMovements(prev => [
       { id: `m${Date.now()}`, time: "Just now", itemName: adjustItem.name, type, qty: delta, reason, by: "Khalid R." },
       ...prev,
     ]);
+    const adjusted = adjustItem;
     setAdjustItem(null);
-    showToast(`${adjustItem.name}: ${delta > 0 ? "+" : ""}${delta} ${adjustItem.unit}`);
+    showToast(`${adjusted.name}: ${delta > 0 ? "+" : ""}${delta} ${adjusted.unit}`);
+    apiPut(`/inventory-items/${adjusted.id}`, { qty: newQty }).catch(() => showToast("⚠ Save failed — backend offline"));
   };
 
   const handleAddItem = (data: Omit<Item, "id">) => {
-    const newItem: Item = { ...data, id: `i${Date.now()}` };
-    setItems(prev => [...prev, newItem]);
     setShowAdd(false);
-    showToast(`Added "${newItem.name}" to inventory`);
+    showToast(`Added "${data.name}" to inventory`);
+    apiPost<Item>("/inventory-items", data)
+      .then(created => setItems(prev => [...prev, created]))
+      .catch(() => showToast("⚠ Save failed — backend offline"));
   };
 
   const handleEditItem = (data: Omit<Item, "id">) => {
     if (!editItem) return;
-    setItems(prev => prev.map(x => x.id === editItem.id ? { ...x, ...data } : x));
+    const id = editItem.id;
+    setItems(prev => prev.map(x => x.id === id ? { ...x, ...data } : x));
     setEditItem(null);
     showToast(`Updated "${data.name}"`);
+    apiPut(`/inventory-items/${id}`, data).catch(() => showToast("⚠ Save failed — backend offline"));
   };
 
   const handleDeleteItem = (item: Item) => {
     if (!window.confirm(`Delete "${item.name}" from inventory? This cannot be undone.`)) return;
     setItems(prev => prev.filter(x => x.id !== item.id));
     showToast(`Deleted "${item.name}"`);
+    apiDelete(`/inventory-items/${item.id}`).catch(() => showToast("⚠ Save failed — backend offline"));
   };
 
   const generateReorder = () => {

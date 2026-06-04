@@ -21,6 +21,7 @@ class DatabaseSeeder extends Seeder
             SetupDataSeeder::class,
             GuestBookingSeeder::class,
             FolioSeeder::class,
+            ErpSeeder::class,
         ]);
     }
 }

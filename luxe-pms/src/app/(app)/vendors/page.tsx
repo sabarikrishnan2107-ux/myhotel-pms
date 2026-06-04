@@ -9,6 +9,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { VENDORS } from "@/lib/mock-data-ext";
 import { money, cn } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
 
 const TABS = [
   { id: "all", label: "All" },
@@ -22,18 +23,25 @@ export default function VendorsPage() {
   const [view, setView] = React.useState<"cards" | "list">("cards");
   const [q, setQ] = React.useState("");
 
-  const filtered = VENDORS.filter(v => {
+  const [vendors, setVendors] = React.useState(VENDORS);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<typeof VENDORS>("/vendors").then(r => { if (!cancelled) setVendors(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const filtered = vendors.filter(v => {
     if (q && !`${v.name} ${v.contact} ${v.phone}`.toLowerCase().includes(q.toLowerCase())) return false;
     if (tab === "outstanding" && v.outstanding === 0) return false;
     if (tab === "settled" && v.outstanding > 0) return false;
     return true;
   });
 
-  const outstanding = VENDORS.reduce((s, v) => s + v.outstanding, 0);
+  const outstanding = vendors.reduce((s, v) => s + v.outstanding, 0);
   const counts = {
-    all: VENDORS.length,
-    outstanding: VENDORS.filter(v => v.outstanding > 0).length,
-    settled: VENDORS.filter(v => v.outstanding === 0).length,
+    all: vendors.length,
+    outstanding: vendors.filter(v => v.outstanding > 0).length,
+    settled: vendors.filter(v => v.outstanding === 0).length,
   };
 
   return (
@@ -47,7 +55,7 @@ export default function VendorsPage() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPICard label="Vendors" value={VENDORS.length} icon={Truck} accent="brand" />
+        <KPICard label="Vendors" value={vendors.length} icon={Truck} accent="brand" />
         <KPICard label="Outstanding" value={money(outstanding)} icon={Wallet} accent="warning" />
         <KPICard label="Due This Week" value={money(8400)} icon={FileText} accent="info" />
         <KPICard label="Paid This Month" value={money(42100)} icon={Wallet} accent="success" />
@@ -112,7 +120,7 @@ export default function VendorsPage() {
       </Card>
 
       <div className="text-xs text-muted-foreground">
-        Showing <span className="font-medium text-foreground">{filtered.length}</span> of {VENDORS.length} vendors
+        Showing <span className="font-medium text-foreground">{filtered.length}</span> of {vendors.length} vendors
       </div>
 
       {filtered.length === 0 ? (

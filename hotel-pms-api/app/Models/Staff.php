@@ -1,0 +1,8 @@
+<?php
+namespace App\Models;
+use Illuminate\Database\Eloquent\Model;
+class Staff extends Model {
+    protected $table = 'staff';
+    protected $guarded = ['id'];
+    protected $casts = ['active'=>'boolean','salary'=>'integer'];
+}
