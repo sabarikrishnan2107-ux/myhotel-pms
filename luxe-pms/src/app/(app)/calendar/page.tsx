@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { ROOMS, RESERVATIONS, GUESTS } from "@/lib/mock-data";
 import type { PaymentStatus, Reservation, Guest } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { apiGet } from "@/lib/api";
+import { apiGet, apiPut } from "@/lib/api";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
 
 const CELL_W = 80;
@@ -327,6 +327,23 @@ export default function CalendarPage() {
         setTimeout(() => setToast(null), 2500);
       } else {
         setBlocks(bs => bs.map(b => b.id === id ? { ...b, ...preview } : b));
+
+        // Persist the reschedule onto the underlying booking.
+        const toISO = (offsetDays: number) => {
+          const d = new Date(startDate); d.setHours(0, 0, 0, 0);
+          d.setDate(d.getDate() + offsetDays);
+          return d.toISOString().slice(0, 10);
+        };
+        const checkIn = toISO(preview.startCol);
+        const checkOut = toISO(preview.startCol + preview.nights);
+        const bookingId = id.replace(/^bk-/, "");
+        const patch = { checkIn, checkOut, roomNumber: preview.roomNumber, nights: preview.nights };
+        setBookings(bs => bs.map(b => String(b.id) === bookingId ? { ...b, ...patch } : b));
+        apiPut(`/bookings/${bookingId}`, patch).catch(() => {
+          setToast("⚠ Save failed — backend offline");
+          setTimeout(() => setToast(null), 2500);
+        });
+
         const action = drag.mode === "move"
           ? (preview.roomNumber !== drag.initial.roomNumber ? `Moved to Room ${preview.roomNumber}` : `Rescheduled · ${preview.nights}N`)
           : drag.mode === "resize-left" ? `Extended check-in earlier · ${preview.nights}N` : `Stay updated to ${preview.nights} night${preview.nights === 1 ? "" : "s"}`;
