@@ -324,12 +324,53 @@ function buildReportData(name: string, ctx: { reservations: Reservation[]; rooms
   }
   // Sales
   if (name.includes("Source-wise")) {
+    // Group real reservations by booking source into channel buckets.
+    const bucketOf = (s: string) => {
+      const x = (s || "").toLowerCase();
+      if (x.includes("booking.com")) return "Booking.com";
+      if (x.includes("agoda")) return "Agoda";
+      if (x.includes("expedia")) return "Expedia";
+      if (x.includes("makemytrip") || x.includes("goibibo") || x.includes("ota")) return "Other OTA";
+      if (x.includes("website")) return "Website";
+      if (x.includes("corporate")) return "Corporate";
+      if (x.includes("agent")) return "Travel Agent";
+      if (x.includes("walk") || x.includes("phone") || x.includes("direct")) return "Direct / Walk-in";
+      return s || "Other";
+    };
+    const categoryOf = (bucket: string) =>
+      bucket === "Website" || bucket === "Direct / Walk-in" ? "direct"
+        : bucket === "Corporate" || bucket === "Travel Agent" ? "agent" : "ota";
+
+    const groups: Record<string, { bookings: number; revenue: number; nights: number }> = {};
+    let totalRev = 0;
+    for (const r of RESERVATIONS) {
+      if ((r as { status?: string }).status === "cancelled") continue;
+      const bucket = bucketOf(r.source);
+      (groups[bucket] ??= { bookings: 0, revenue: 0, nights: 0 });
+      groups[bucket].bookings += 1;
+      groups[bucket].revenue += r.total ?? 0;
+      groups[bucket].nights += r.nights ?? 1;
+      totalRev += r.total ?? 0;
+    }
+
+    const rows = Object.entries(groups)
+      .map(([source, g]) => ({
+        source, bookings: g.bookings, revenue: g.revenue,
+        adr: g.nights ? Math.round(g.revenue / g.nights) : 0,
+        share: totalRev ? `${Math.round((g.revenue / totalRev) * 100)}%` : "0%",
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    const catRev = { direct: 0, ota: 0, agent: 0 };
+    for (const [bucket, g] of Object.entries(groups)) catRev[categoryOf(bucket)] += g.revenue;
+    const pctOf = (v: number) => (totalRev ? `${Math.round((v / totalRev) * 100)}%` : "0%");
+
     return {
       kpis: [
-        { label: "Direct + Website", value: "50%" },
-        { label: "OTA", value: "30%" },
-        { label: "Agent / Corporate", value: "20%" },
-        { label: "Best Channel", value: "Direct" },
+        { label: "Direct + Website", value: pctOf(catRev.direct) },
+        { label: "OTA", value: pctOf(catRev.ota) },
+        { label: "Agent / Corporate", value: pctOf(catRev.agent) },
+        { label: "Best Channel", value: rows[0]?.source ?? "—" },
       ],
       columns: [
         { key: "source", label: "Source" },
@@ -338,14 +379,7 @@ function buildReportData(name: string, ctx: { reservations: Reservation[]; rooms
         { key: "adr", label: "ADR", align: "right", render: v => money(v as number) },
         { key: "share", label: "Share", align: "right" },
       ],
-      rows: [
-        { source: "Direct / Walk-in", bookings: 84, revenue: 65800, adr: 783, share: "28%" },
-        { source: "Website", bookings: 66, revenue: 49200, adr: 745, share: "22%" },
-        { source: "Booking.com", bookings: 54, revenue: 38100, adr: 706, share: "18%" },
-        { source: "Agoda", bookings: 36, revenue: 24200, adr: 672, share: "12%" },
-        { source: "Corporate", bookings: 33, revenue: 26400, adr: 800, share: "11%" },
-        { source: "Travel Agent", bookings: 27, revenue: 21100, adr: 781, share: "9%" },
-      ],
+      rows,
       chart: "revenue",
     };
   }
