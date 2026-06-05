@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Building2, Calendar, Users, UtensilsCrossed, Sparkles,
   ChevronLeft, Send, Plus, Minus, CheckCircle2, User, Phone, Mail,
@@ -12,6 +13,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { HALLS } from "@/lib/mock-data-ext";
 import { cn, money } from "@/lib/utils";
+import { apiPost } from "@/lib/api";
 
 const EVENT_TYPES = ["Wedding", "Engagement", "Conference", "Corporate Meeting", "Birthday", "Anniversary", "Product Launch", "Other"];
 
@@ -70,6 +72,23 @@ export default function NewHallBookingPage() {
   const advance = Math.round((total * advancePct) / 100);
 
   const requiredOk = !!(customer && phone && eventDate && startTime && endTime && pax > 0 && pkg);
+
+  const router = useRouter();
+  const [saving, setSaving] = React.useState(false);
+
+  const save = (status: "confirmed" | "pending") => {
+    if (saving || !requiredOk) return;
+    setSaving(true);
+    apiPost("/hall-bookings", {
+      customer, phone, hall: hall.name, date: eventDate,
+      start: startTime, end: endTime, guests: pax,
+      package: pkg?.name ?? eventType,
+      advance: Math.round(advance), total: Math.round(total),
+      status, notes,
+    })
+      .then(() => router.push("/halls"))
+      .catch(() => setSaving(false));
+  };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto">
@@ -325,12 +344,10 @@ export default function NewHallBookingPage() {
           </div>
 
           <div className="border-t border-border pt-4 space-y-2">
-            <Link href="/halls" className={cn(!requiredOk && "pointer-events-none")}>
-              <Button className="w-full" size="lg" variant="success" disabled={!requiredOk}>
-                <Send className="h-4 w-4" />Confirm & Send Quote
-              </Button>
-            </Link>
-            <Button className="w-full" variant="outline" disabled={!requiredOk}>
+            <Button className="w-full" size="lg" variant="success" disabled={!requiredOk || saving} onClick={() => save("confirmed")}>
+              <Send className="h-4 w-4" />{saving ? "Saving…" : "Confirm & Send Quote"}
+            </Button>
+            <Button className="w-full" variant="outline" disabled={!requiredOk || saving} onClick={() => save("pending")}>
               Save as Tentative<ArrowRight className="h-4 w-4" />
             </Button>
             {!requiredOk && (

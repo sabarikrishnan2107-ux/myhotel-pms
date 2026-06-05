@@ -15,6 +15,7 @@ use App\Models\FolioPayment;
 use App\Models\FbOrder;
 use App\Models\FoundItem;
 use App\Models\GstSlab;
+use App\Models\HallBooking;
 use App\Models\MaintenanceTicket;
 use App\Models\Guest;
 use App\Models\HallPackage;
@@ -68,6 +69,7 @@ class ResourceController extends Controller
         'loyalty-members'        => LoyaltyMember::class,
         'account-entries'        => AccountEntry::class,
         'app-users'              => AppUser::class,
+        'hall-bookings'          => HallBooking::class,
     ];
 
     /** Resources that can be filtered by ?bookingNo= on index. */
@@ -212,6 +214,12 @@ class ResourceController extends Controller
             'foundBy' => 'string|max:100|nullable', 'storageLocation' => 'string|max:255|nullable',
             'condition' => 'string|max:50', 'description' => 'string|max:2000|nullable', 'timeline' => 'array',
         ],
+        'hall-bookings' => [
+            'customer' => 'string|max:255', 'phone' => 'string|max:50|nullable', 'hall' => 'string|max:255',
+            'date' => 'string|max:50', 'start' => 'string|max:50', 'end' => 'string|max:50',
+            'guests' => 'integer|min:0', 'package' => 'string|max:255|nullable', 'advance' => 'integer|min:0',
+            'total' => 'integer|min:0', 'status' => 'string|max:50', 'notes' => 'string|max:2000|nullable',
+        ],
         'app-users' => [
             'name' => 'string|max:255', 'email' => 'email|max:255', 'role' => 'string|max:50',
             'status' => 'string|max:50', 'last' => 'string|max:100|nullable', 'twoFA' => 'boolean',
@@ -252,6 +260,7 @@ class ResourceController extends Controller
         'loyalty-members' => ['name'],
         'account-entries' => ['category', 'description'],
         'app-users' => ['name', 'email'],
+        'hall-bookings' => ['customer'],
     ];
 
     private function model(string $resource): string

@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { KPICard } from "@/components/ui/kpi-card";
 import { HALLS, HALL_BOOKINGS } from "@/lib/mock-data-ext";
 import { money, cn, formatDate } from "@/lib/utils";
+import { apiGet, apiPut } from "@/lib/api";
 
 type Hall = typeof HALLS[number];
 type HallStatus = "confirmed" | "pending" | "in-progress" | "cancelled";
@@ -39,6 +40,14 @@ export default function HallsPage() {
   const [statusFilter, setStatusFilter] = React.useState<"all" | HallBooking["status"] | "cancelled">("all");
   const [actionMenuFor, setActionMenuFor] = React.useState<string | null>(null);
 
+  // Bookings load from the database; cancel/modify layer over them and persist.
+  const [bookings, setBookings] = React.useState<HallBooking[]>([]);
+  React.useEffect(() => {
+    apiGet<HallBooking[]>("/hall-bookings")
+      .then(rows => setBookings(rows.map(b => ({ ...b, id: String(b.id) }))))
+      .catch(() => {});
+  }, []);
+
   // Local mutations
   const [cancelledIds, setCancelledIds] = React.useState<Set<string>>(new Set());
   const [overrides, setOverrides] = React.useState<Record<string, HallOverride>>({});
@@ -50,7 +59,7 @@ export default function HallsPage() {
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2800); };
 
   const effective = React.useMemo(() => {
-    return HALL_BOOKINGS.map(b => {
+    return bookings.map(b => {
       const ov = overrides[b.id] ?? {};
       return {
         ...b,
@@ -58,7 +67,7 @@ export default function HallsPage() {
         status: cancelledIds.has(b.id) ? "cancelled" as const : (ov.status ?? b.status),
       };
     });
-  }, [overrides, cancelledIds]);
+  }, [bookings, overrides, cancelledIds]);
 
   const list = effective.filter(b => {
     if (search && !`${b.customer} ${b.hall} ${b.package} ${b.phone}`.toLowerCase().includes(search.toLowerCase())) return false;
@@ -73,11 +82,13 @@ export default function HallsPage() {
 
   const handleModify = (b: HallBooking, patch: HallOverride) => {
     setOverrides(o => ({ ...o, [b.id]: { ...(o[b.id] ?? {}), ...patch } }));
+    apiPut(`/hall-bookings/${b.id}`, patch).catch(() => showToast("Could not save changes"));
     setModifyTarget(null);
     showToast(`${b.customer} updated`);
   };
   const handleCancel = (b: HallBooking, reason: string, refund: number) => {
     setCancelledIds(c => new Set([...c, b.id]));
+    apiPut(`/hall-bookings/${b.id}`, { status: "cancelled" }).catch(() => showToast("Could not cancel"));
     setCancelTarget(null);
     showToast(`${b.customer} cancelled · ${money(refund)} refund processed (${reason})`);
   };

@@ -27,6 +27,7 @@ class DatabaseSeeder extends Seeder
             LoyaltySeeder::class,
             AccountSeeder::class,
             AppUserRosterSeeder::class,
+            HallBookingSeeder::class,
         ]);
     }
 }
