@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AccountEntry;
 use App\Models\Agent;
+use App\Models\AppUser;
 use App\Models\Booking;
 use App\Models\Enquiry;
 use App\Models\FbPackage;
@@ -66,6 +67,7 @@ class ResourceController extends Controller
         'found-items'            => FoundItem::class,
         'loyalty-members'        => LoyaltyMember::class,
         'account-entries'        => AccountEntry::class,
+        'app-users'              => AppUser::class,
     ];
 
     /** Resources that can be filtered by ?bookingNo= on index. */
@@ -210,6 +212,11 @@ class ResourceController extends Controller
             'foundBy' => 'string|max:100|nullable', 'storageLocation' => 'string|max:255|nullable',
             'condition' => 'string|max:50', 'description' => 'string|max:2000|nullable', 'timeline' => 'array',
         ],
+        'app-users' => [
+            'name' => 'string|max:255', 'email' => 'email|max:255', 'role' => 'string|max:50',
+            'status' => 'string|max:50', 'last' => 'string|max:100|nullable', 'twoFA' => 'boolean',
+            'phone' => 'string|max:50|nullable', 'joinedAt' => 'string|max:50|nullable',
+        ],
         'account-entries' => [
             'date' => 'string|max:50', 'type' => 'string|max:50', 'category' => 'string|max:255',
             'description' => 'string|max:500', 'amount' => 'integer', 'mode' => 'string|max:50',
@@ -244,6 +251,7 @@ class ResourceController extends Controller
         'maintenance-tickets' => ['title'], 'enquiries' => ['name'], 'found-items' => ['name'],
         'loyalty-members' => ['name'],
         'account-entries' => ['category', 'description'],
+        'app-users' => ['name', 'email'],
     ];
 
     private function model(string $resource): string

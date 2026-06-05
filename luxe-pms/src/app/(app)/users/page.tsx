@@ -14,6 +14,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { USERS } from "@/lib/mock-data-ext";
 import { cn } from "@/lib/utils";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
 
 type Role = "Owner" | "Manager" | "Reception" | "Accounts" | "Housekeeping" | "Restaurant";
 
@@ -36,27 +37,35 @@ type UserExt = Omit<SeededUser, "status"> & {
   loginHistory?: { at: string; ip: string; device: string; success: boolean }[];
 };
 
-const seedExt: UserExt[] = USERS.map((u, i) => ({
-  ...u,
-  phone: `+91 9${(98765 + i * 137).toString().slice(-4)} ${(43210 + i * 79).toString().slice(-5)}`,
-  joinedAt: `${["12 Mar 2024", "18 Jun 2024", "5 Aug 2024", "22 Jan 2025", "10 Apr 2025", "3 Feb 2025", "1 Jan 2020", "9 Sep 2024"][i] || "2024"}`,
-  lastLoginAt: u.last,
-  lastLoginIp: `10.0.0.${10 + i * 3}`,
-  lastLoginDevice: ["MacBook Pro · Chrome", "iPad · Safari", "iPhone · Mobile Safari", "Windows · Edge", "Mac · Firefox", "Android · Chrome", "Manager iPhone", "Reception Terminal"][i],
-  sessions: i < 3
-    ? [{ id: `s-${u.id}-1`, device: "MacBook Pro · Chrome", ip: `10.0.0.${10 + i * 3}`, location: "Mumbai, IN", active: true, startedAt: "47 min ago" }]
-    : i < 5
-      ? [{ id: `s-${u.id}-1`, device: "iPad · Safari", ip: `10.0.0.${10 + i * 3}`, location: "Mumbai, IN", active: true, startedAt: "2h ago" }]
-      : [],
-  loginHistory: [
-    { at: u.last, ip: `10.0.0.${10 + i * 3}`, device: ["MacBook Pro · Chrome", "iPad · Safari", "iPhone"][i % 3], success: true },
-    { at: "Yesterday 18:42", ip: `10.0.0.${10 + i * 3}`, device: "MacBook Pro · Chrome", success: true },
-    { at: "2 days ago 09:14", ip: `10.0.0.${10 + i * 3}`, device: "MacBook Pro · Chrome", success: i !== 7 },
-  ],
-}));
+/** Enrich a core account row (from DB or mock) with display-only session/activity data. */
+function enrich(u: SeededUser & { phone?: string; joinedAt?: string }, i: number): UserExt {
+  return {
+    ...u,
+    phone: u.phone || `+91 9${(98765 + i * 137).toString().slice(-4)} ${(43210 + i * 79).toString().slice(-5)}`,
+    joinedAt: u.joinedAt || `${["12 Mar 2024", "18 Jun 2024", "5 Aug 2024", "22 Jan 2025", "10 Apr 2025", "3 Feb 2025", "1 Jan 2020", "9 Sep 2024"][i] || "2024"}`,
+    lastLoginAt: u.last,
+    lastLoginIp: `10.0.0.${10 + i * 3}`,
+    lastLoginDevice: ["MacBook Pro · Chrome", "iPad · Safari", "iPhone · Mobile Safari", "Windows · Edge", "Mac · Firefox", "Android · Chrome", "Manager iPhone", "Reception Terminal"][i % 8],
+    sessions: i < 3
+      ? [{ id: `s-${u.id}-1`, device: "MacBook Pro · Chrome", ip: `10.0.0.${10 + i * 3}`, location: "Mumbai, IN", active: true, startedAt: "47 min ago" }]
+      : i < 5
+        ? [{ id: `s-${u.id}-1`, device: "iPad · Safari", ip: `10.0.0.${10 + i * 3}`, location: "Mumbai, IN", active: true, startedAt: "2h ago" }]
+        : [],
+    loginHistory: [
+      { at: u.last, ip: `10.0.0.${10 + i * 3}`, device: ["MacBook Pro · Chrome", "iPad · Safari", "iPhone"][i % 3], success: true },
+      { at: "Yesterday 18:42", ip: `10.0.0.${10 + i * 3}`, device: "MacBook Pro · Chrome", success: true },
+      { at: "2 days ago 09:14", ip: `10.0.0.${10 + i * 3}`, device: "MacBook Pro · Chrome", success: i !== 7 },
+    ],
+  };
+}
 
 export default function UsersPage() {
-  const [users, setUsers] = React.useState<UserExt[]>(seedExt);
+  const [users, setUsers] = React.useState<UserExt[]>([]);
+  React.useEffect(() => {
+    apiGet<(SeededUser & { phone?: string; joinedAt?: string })[]>("/app-users")
+      .then(rows => setUsers(rows.map((r, i) => enrich({ ...r, id: String(r.id) }, i))))
+      .catch(() => {});
+  }, []);
   const [search, setSearch] = React.useState("");
   const [roleFilter, setRoleFilter] = React.useState<"all" | Role>("all");
   const [statusFilter, setStatusFilter] = React.useState<"all" | Status>("all");
@@ -83,8 +92,12 @@ export default function UsersPage() {
   const sessionsNow = users.reduce((t, u) => t + (u.sessions?.filter(s => s.active).length || 0), 0);
   const noMfa = users.filter(u => u.status === "active" && !u.twoFA).length;
 
-  const update = (id: string, patch: Partial<UserExt>) =>
+  const DB_FIELDS = ["name", "email", "role", "status", "last", "twoFA", "phone", "joinedAt"];
+  const update = (id: string, patch: Partial<UserExt>) => {
     setUsers(prev => prev.map(u => u.id === id ? { ...u, ...patch } : u));
+    const dbPatch = Object.fromEntries(Object.entries(patch).filter(([k]) => DB_FIELDS.includes(k)));
+    if (Object.keys(dbPatch).length) apiPut(`/app-users/${id}`, dbPatch).catch(() => {});
+  };
 
   const handleSuspend = (u: UserExt) => {
     update(u.id, { status: u.status === "active" ? "disabled" : "active" });
@@ -101,15 +114,14 @@ export default function UsersPage() {
   const handleReset = (u: UserExt) => setResetUser(u);
 
   const handleInvite = (data: { name: string; email: string; role: Role; phone: string; sendEmail: boolean; sendWhatsApp: boolean }) => {
-    const newUser: UserExt = {
-      id: `u-${Date.now().toString(36).slice(-6)}`,
+    const draft = {
       name: data.name, email: data.email, role: data.role,
       status: "active", last: "Pending first login", twoFA: false,
-      phone: data.phone,
-      joinedAt: new Date().toISOString().slice(0, 10),
-      sessions: [], loginHistory: [],
+      phone: data.phone, joinedAt: new Date().toISOString().slice(0, 10),
     };
-    setUsers(prev => [newUser, ...prev]);
+    apiPost<SeededUser>("/app-users", draft)
+      .then(row => setUsers(prev => [enrich({ ...row, id: String(row.id) }, prev.length), ...prev]))
+      .catch(() => showToast("Could not save user"));
     setInviteOpen(false);
     const channels = [data.sendEmail && "Email", data.sendWhatsApp && "WhatsApp"].filter(Boolean).join(" + ");
     showToast(`Invite sent to ${data.name} via ${channels || "Email"}`);
@@ -117,6 +129,8 @@ export default function UsersPage() {
 
   const handleEditSave = (u: UserExt) => {
     setUsers(prev => prev.map(x => x.id === u.id ? u : x));
+    const dbPatch = Object.fromEntries(Object.entries(u).filter(([k]) => DB_FIELDS.includes(k)));
+    apiPut(`/app-users/${u.id}`, dbPatch).catch(() => showToast("Could not save changes"));
     setEditUser(null);
     showToast(`${u.name} updated`);
   };
@@ -152,9 +166,10 @@ export default function UsersPage() {
             <p className="text-sm"><strong>{noMfa} active user{noMfa === 1 ? "" : "s"}</strong> still without 2FA. Enforce MFA to harden access.</p>
           </div>
           <Button size="sm" variant="outline" onClick={() => {
-            const newCount = users.filter(u => u.status === "active" && !u.twoFA).length;
+            const toEnforce = users.filter(u => u.status === "active" && !u.twoFA);
             setUsers(prev => prev.map(u => u.status === "active" ? { ...u, twoFA: true } : u));
-            showToast(`MFA enforced on ${newCount} users · they'll set up on next login`);
+            toEnforce.forEach(u => apiPut(`/app-users/${u.id}`, { twoFA: true }).catch(() => {}));
+            showToast(`MFA enforced on ${toEnforce.length} users · they'll set up on next login`);
           }}>
             <ShieldCheck className="h-3.5 w-3.5" />Enforce MFA on all
           </Button>
