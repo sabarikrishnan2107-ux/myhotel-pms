@@ -55,7 +55,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
-import { apiGet } from "@/lib/api";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
 
 type Status = "Waiting" | "Notified" | "Claimed" | "Returned" | "Storage" | "Disposed" | "Donated";
 type Category =
@@ -1122,6 +1122,17 @@ export default function FoundItemsTab({ onToast }: { onToast: (m: string) => voi
           item={selected}
           onClose={() => setSelected(null)}
           onAction={(label) => {
+            const statusMap: Record<string, Status> = {
+              "Notification sent to guest": "Notified",
+              "Moved to storage": "Storage",
+              "Marked as claimed": "Claimed",
+              "Item disposed": "Disposed",
+            };
+            const next = statusMap[label];
+            if (next) {
+              setItems(prev => prev.map(i => i.id === selected.id ? { ...i, status: next } : i));
+              apiPut(`/found-items/${selected.id}`, { status: next }).catch(() => onToast("⚠ Save failed — backend offline"));
+            }
             onToast(`${label} · ${selected.id}`);
             setSelected(null);
           }}
@@ -1132,9 +1143,14 @@ export default function FoundItemsTab({ onToast }: { onToast: (m: string) => voi
       {registerOpen && (
         <RegisterModal
           onClose={() => setRegisterOpen(false)}
-          onSubmit={() => {
-            const next = `LF/2026/04${22 + items.length - SEED.length}`;
-            onToast(`Item registered · ID generated ${next}`);
+          onSubmit={(payload) => {
+            const draft = { qty: 1, daysHeld: 0, timeline: [], foundDate: new Date().toISOString().slice(0, 10), ...payload };
+            apiPost<FoundItem>("/found-items", draft)
+              .then(created => {
+                setItems(prev => [{ ...created, timeline: created.timeline ?? [] }, ...prev]);
+                onToast(`Item registered · ${created.name}`);
+              })
+              .catch(() => onToast("⚠ Save failed — backend offline"));
             setRegisterOpen(false);
           }}
         />
@@ -1335,11 +1351,15 @@ const SECTIONS = [
 
 type SectionId = (typeof SECTIONS)[number]["id"];
 
-function RegisterModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: () => void }) {
+function RegisterModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (payload: Partial<FoundItem>) => void }) {
   const [section, setSection] = React.useState<SectionId>("item");
   const [category, setCategory] = React.useState<Category>("Mobile phone");
   const [condition, setCondition] = React.useState<Condition>("Good");
   const [hvi, setHvi] = React.useState(false);
+  const [name, setName] = React.useState("");
+  const [value, setValue] = React.useState(0);
+  const [foundLocation, setFoundLocation] = React.useState("");
+  const [foundBy, setFoundBy] = React.useState("");
 
   return (
     <div
@@ -1417,7 +1437,7 @@ function RegisterModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (
                     </Select>
                   </FieldInput>
                   <FieldInput label="Item name">
-                    <Input placeholder="e.g. iPhone 15 Pro 256GB" />
+                    <Input placeholder="e.g. iPhone 15 Pro 256GB" value={name} onChange={(e) => setName(e.target.value)} />
                   </FieldInput>
                   <FieldInput label="Brand">
                     <Input placeholder="e.g. Apple / Hidesign / Welspun" />
@@ -1434,7 +1454,7 @@ function RegisterModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (
                   <FieldInput label="Estimated value (INR)">
                     <div className="relative">
                       <IndianRupee className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                      <Input type="number" placeholder="0" className="pl-8 tabular" />
+                      <Input type="number" placeholder="0" className="pl-8 tabular" value={value || ""} onChange={(e) => setValue(Number(e.target.value))} />
                     </div>
                   </FieldInput>
                   <FieldInput label="Condition">
@@ -1481,7 +1501,7 @@ function RegisterModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (
                     <Input type="time" />
                   </FieldInput>
                   <FieldInput label="Found by (staff name)">
-                    <Input placeholder="e.g. Anjali Iyer" />
+                    <Input placeholder="e.g. Anjali Iyer" value={foundBy} onChange={(e) => setFoundBy(e.target.value)} />
                   </FieldInput>
                   <FieldInput label="Staff ID">
                     <Input placeholder="HK-204" className="tabular" />
@@ -1507,7 +1527,7 @@ function RegisterModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (
                     </Select>
                   </FieldInput>
                   <FieldInput label="Room / Floor / Area" full>
-                    <Input placeholder="e.g. Room 412 - 4th floor / Lobby / Crystal Banquet" />
+                    <Input placeholder="e.g. Room 412 - 4th floor / Lobby / Crystal Banquet" value={foundLocation} onChange={(e) => setFoundLocation(e.target.value)} />
                   </FieldInput>
                 </div>
               </div>
@@ -1644,10 +1664,10 @@ function RegisterModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (
             <Button size="sm" variant="ghost" onClick={onClose}>
               Cancel
             </Button>
-            <Button size="sm" variant="outline" onClick={onSubmit}>
+            <Button size="sm" variant="outline" onClick={() => onSubmit({ name, category, condition, hvi, value, foundLocation, foundBy, status: "Storage" })}>
               <Save className="size-4" /> Save draft
             </Button>
-            <Button size="sm" onClick={onSubmit}>
+            <Button size="sm" disabled={!name.trim()} onClick={() => onSubmit({ name, category, condition, hvi, value, foundLocation, foundBy, status: "Waiting" })}>
               <CheckCircle2 className="size-4" /> Register item
             </Button>
           </div>

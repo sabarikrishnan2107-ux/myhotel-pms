@@ -15,7 +15,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { MAINTENANCE_TICKETS, TECHNICIANS, type Priority, type TicketStatus } from "@/lib/mock-data-ext";
 import { cn, money, formatDate } from "@/lib/utils";
-import { apiGet, apiPost } from "@/lib/api";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
 
 type Ticket = typeof MAINTENANCE_TICKETS[number];
 let __mtkt = 2402;
@@ -24,6 +24,7 @@ const nextTicketCode = () => `M-${++__mtkt}`;
 const PRIORITY_TONE = { low: "neutral", medium: "info", high: "warning", urgent: "danger" } as const;
 const STATUS_TONE = { open: "warning", assigned: "info", "in-progress": "brand", resolved: "success" } as const;
 const STATUS_LABEL: Record<TicketStatus, string> = { open: "Open", assigned: "Assigned", "in-progress": "In Progress", resolved: "Resolved" };
+const NEXT_STATUS: Record<TicketStatus, TicketStatus> = { open: "assigned", assigned: "in-progress", "in-progress": "resolved", resolved: "resolved" };
 const PRIORITY_RANK: Record<Priority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
 const STATUS_RANK: Record<TicketStatus, number> = { open: 0, assigned: 1, "in-progress": 2, resolved: 3 };
 
@@ -161,6 +162,24 @@ export default function MaintenancePage() {
     apiGet<Ticket[]>("/maintenance-tickets").then(r => { if (!cancelled) setTickets(r); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  // Persist a ticket patch (assign / status change) optimistically.
+  const persistTicket = (id: Ticket["id"], patch: Partial<Ticket>) => {
+    setTickets(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
+    apiPut(`/maintenance-tickets/${id}`, patch).catch(() => showToast("⚠ Save failed — backend offline"));
+  };
+  const assignTicket = (t: Ticket, name: string) => {
+    persistTicket(t.id, { assignee: name, status: t.status === "open" ? "assigned" : t.status });
+    showToast(`${t.code} assigned to ${name}`);
+  };
+  const STATUS_ORDER: TicketStatus[] = ["open", "assigned", "in-progress", "resolved"];
+  const advanceTicket = (t: Ticket) => {
+    const i = STATUS_ORDER.indexOf(t.status);
+    if (i < 0 || i >= STATUS_ORDER.length - 1) return;
+    const next = STATUS_ORDER[i + 1];
+    persistTicket(t.id, { status: next });
+    showToast(`${t.code} → ${STATUS_LABEL[next]}`);
+  };
 
   const urgent = tickets.filter(t => t.priority === "urgent" && t.status !== "resolved").length;
 
@@ -345,9 +364,9 @@ export default function MaintenancePage() {
       )}
 
       {/* Body */}
-      {sorted.length > 0 && view === "cards" && <BoardView tickets={sorted} onAssignFor={setAssignFor} />}
+      {sorted.length > 0 && view === "cards" && <BoardView tickets={sorted} onAssignFor={setAssignFor} onAdvance={advanceTicket} />}
       {sorted.length > 0 && view === "list" && (
-        <ListView tickets={sorted} sortKey={sortKey} sortDir={sortDir} onSort={onSort} onAssignFor={setAssignFor} />
+        <ListView tickets={sorted} sortKey={sortKey} sortDir={sortDir} onSort={onSort} onAssignFor={setAssignFor} onAdvance={advanceTicket} />
       )}
         </div>
       )}
@@ -381,7 +400,7 @@ export default function MaintenancePage() {
         <QuickAssignModal
           ticket={assignFor}
           onClose={() => setAssignFor(null)}
-          onAssign={(name) => { setAssignFor(null); showToast(`${assignFor.code} assigned to ${name}`); }}
+          onAssign={(name) => { assignTicket(assignFor, name); setAssignFor(null); }}
         />
       )}
 
@@ -415,7 +434,7 @@ export default function MaintenancePage() {
 }
 
 // ============ KANBAN BOARD VIEW ============
-function BoardView({ tickets, onAssignFor }: { tickets: typeof MAINTENANCE_TICKETS; onAssignFor: (t: typeof MAINTENANCE_TICKETS[number]) => void }) {
+function BoardView({ tickets, onAssignFor, onAdvance }: { tickets: typeof MAINTENANCE_TICKETS; onAssignFor: (t: typeof MAINTENANCE_TICKETS[number]) => void; onAdvance: (t: typeof MAINTENANCE_TICKETS[number]) => void }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
       {LANES.map(lane => {
@@ -449,6 +468,11 @@ function BoardView({ tickets, onAssignFor }: { tickets: typeof MAINTENANCE_TICKE
                       <User className="h-3 w-3" />Assign technician
                     </button>
                   )}
+                  {t.status !== "resolved" && (
+                    <button onClick={() => onAdvance(t)} className="mt-2 w-full text-xs font-medium rounded-md border border-border py-1.5 hover:bg-brand hover:text-brand-foreground hover:border-brand transition-colors inline-flex items-center justify-center gap-1">
+                      Move to {STATUS_LABEL[NEXT_STATUS[t.status]]} <ChevronRight className="h-3 w-3" />
+                    </button>
+                  )}
                 </Card>
               ))}
               {laneTickets.length === 0 && (
@@ -464,13 +488,14 @@ function BoardView({ tickets, onAssignFor }: { tickets: typeof MAINTENANCE_TICKE
 
 // ============ LIST VIEW ============
 function ListView({
-  tickets, sortKey, sortDir, onSort, onAssignFor,
+  tickets, sortKey, sortDir, onSort, onAssignFor, onAdvance,
 }: {
   tickets: typeof MAINTENANCE_TICKETS;
   sortKey: SortKey;
   sortDir: SortDir;
   onSort: (k: SortKey) => void;
   onAssignFor: (t: typeof MAINTENANCE_TICKETS[number]) => void;
+  onAdvance: (t: typeof MAINTENANCE_TICKETS[number]) => void;
 }) {
   return (
     <Card className="p-0 overflow-hidden">
@@ -532,14 +557,26 @@ function ListView({
                   </td>
                   <td className="px-4 py-3 align-top text-muted-foreground text-xs tabular">{t.reported}</td>
                   <td className="px-4 py-3 align-top text-right">
-                    <button
-                      type="button"
-                      className="h-8 px-2 rounded-md border border-border hover:bg-brand hover:text-brand-foreground hover:border-brand inline-flex items-center justify-center text-muted-foreground text-xs gap-1 transition-colors"
-                      title="View ticket"
-                    >
-                      Details
-                      <ChevronRight className="h-3 w-3" />
-                    </button>
+                    <div className="inline-flex items-center gap-1.5 justify-end">
+                      {t.status !== "resolved" && (
+                        <button
+                          type="button"
+                          onClick={() => onAdvance(t)}
+                          className="h-8 px-2 rounded-md border border-border hover:bg-brand hover:text-brand-foreground hover:border-brand inline-flex items-center justify-center text-xs gap-1 transition-colors"
+                          title={`Move to ${STATUS_LABEL[NEXT_STATUS[t.status]]}`}
+                        >
+                          → {STATUS_LABEL[NEXT_STATUS[t.status]]}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="h-8 px-2 rounded-md border border-border hover:bg-brand hover:text-brand-foreground hover:border-brand inline-flex items-center justify-center text-muted-foreground text-xs gap-1 transition-colors"
+                        title="View ticket"
+                      >
+                        Details
+                        <ChevronRight className="h-3 w-3" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
