@@ -1465,7 +1465,7 @@ export default function AccountsPage() {
       {tab === "bank" && <BankReconcileTab onToast={showToast} />}
       {tab === "payable" && <PayablesTab onToast={showToast} />}
       {tab === "receivable" && <ReceivablesTab onToast={showToast} />}
-      {tab === "pnl" && <PnlBsTab />}
+      {tab === "pnl" && <PnlBsTab entries={entries} />}
       {tab === "journal" && <JournalTab onToast={showToast} />}
       {tab === "cashier" && <CashierTab onToast={showToast} />}
 
@@ -2424,8 +2424,33 @@ function ReceivablesTab({ onToast }: { onToast: (m: string) => void }) {
 }
 
 // ===================== P&L + BALANCE SHEET TAB =====================
-function PnlBsTab() {
+function PnlStat({ label, value, tone, big }: { label: string; value: string; tone?: "success" | "warning" | "brand" | "danger"; big?: boolean }) {
+  return (
+    <div className="rounded-md border border-border p-3">
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</p>
+      <p className={cn("mt-1 tabular font-semibold", big ? "text-xl" : "text-base",
+        tone === "success" && "text-success", tone === "warning" && "text-warning",
+        tone === "brand" && "text-brand", tone === "danger" && "text-danger")}>{value}</p>
+    </div>
+  );
+}
+
+function PnlBsTab({ entries }: { entries: Entry[] }) {
   const [subtab, setSubtab] = React.useState<"pnl" | "bs">("pnl");
+
+  // Actual P&L computed from the real day-book entries.
+  const sumType = (t: EntryType) => entries.filter(e => e.type === t).reduce((s, e) => s + e.amount, 0);
+  const byCategory = (t: EntryType) => {
+    const m: Record<string, number> = {};
+    for (const e of entries.filter(x => x.type === t)) m[e.category] = (m[e.category] ?? 0) + e.amount;
+    return Object.entries(m).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
+  };
+  const actualIncome = sumType("income");
+  const actualRefunds = sumType("refund");
+  const actualExpense = sumType("expense");
+  const actualNet = actualIncome - actualRefunds - actualExpense;
+  const incomeRows = byCategory("income");
+  const expenseRows = byCategory("expense");
 
   const totalRevenue = PNL_REVENUE.reduce((t, r) => t + r.rooms + r.fb + r.banquet + r.spa + r.other, 0);
   const totalDirect = PNL_DIRECT_COSTS.reduce((t, r) => t + r.rooms + r.fb + r.banquet + r.spa + r.other, 0);
@@ -2452,10 +2477,58 @@ function PnlBsTab() {
       </div>
 
       {subtab === "pnl" && (
+        <Card className="p-5 border-brand/30">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="font-display text-lg">Actual P&amp;L · from day-book</h3>
+              <p className="text-xs text-muted-foreground">Computed live from posted entries · {entries.length} transactions</p>
+            </div>
+            <Badge tone={actualNet >= 0 ? "success" : "danger"}>{actualNet >= 0 ? "Profit" : "Loss"}</Badge>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <PnlStat label="Revenue" value={money(actualIncome)} tone="success" />
+            <PnlStat label="Refunds" value={`- ${money(actualRefunds)}`} tone="warning" />
+            <PnlStat label="Expenses" value={`- ${money(actualExpense)}`} tone="warning" />
+            <PnlStat label="Net Profit" value={money(actualNet)} tone={actualNet >= 0 ? "brand" : "danger"} big />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Income by category</p>
+              <table className="w-full text-sm">
+                <tbody>
+                  {incomeRows.map(r => (
+                    <tr key={r.category} className="border-b border-border/40">
+                      <td className="py-1.5">{r.category}</td>
+                      <td className="py-1.5 text-right tabular text-success">{money(r.amount)}</td>
+                    </tr>
+                  ))}
+                  {incomeRows.length === 0 && <tr><td className="py-3 text-muted-foreground text-xs">No income entries yet.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Expenses by category</p>
+              <table className="w-full text-sm">
+                <tbody>
+                  {expenseRows.map(r => (
+                    <tr key={r.category} className="border-b border-border/40">
+                      <td className="py-1.5">{r.category}</td>
+                      <td className="py-1.5 text-right tabular text-warning">{money(r.amount)}</td>
+                    </tr>
+                  ))}
+                  {expenseRows.length === 0 && <tr><td className="py-3 text-muted-foreground text-xs">No expense entries yet.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {subtab === "pnl" && (
         <Card className="p-5">
           <div className="text-center mb-4">
-            <h3 className="font-display text-xl">Profit &amp; Loss Statement</h3>
-            <p className="text-xs text-muted-foreground">For the month ended May 2026 · MYHOTEL — The Pearl Marina</p>
+            <h3 className="font-display text-xl">Departmental P&amp;L Statement</h3>
+            <p className="text-xs text-muted-foreground">Budgeted departmental view · May 2026 · MYHOTEL — The Pearl Marina</p>
           </div>
           <table className="w-full text-sm">
             <thead className="border-y-2 border-foreground">
