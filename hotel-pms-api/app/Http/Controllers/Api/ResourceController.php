@@ -8,6 +8,7 @@ use App\Models\Agent;
 use App\Models\AuditLog;
 use App\Models\AppUser;
 use App\Models\Booking;
+use App\Models\ComplianceLicense;
 use App\Models\Enquiry;
 use App\Models\FbPackage;
 use App\Models\Floor;
@@ -73,6 +74,7 @@ class ResourceController extends Controller
         'app-users'              => AppUser::class,
         'hall-bookings'          => HallBooking::class,
         'group-bookings'         => GroupBooking::class,
+        'compliance-licenses'    => ComplianceLicense::class,
     ];
 
     /** Resources that can be filtered by ?bookingNo= on index. */
@@ -217,6 +219,12 @@ class ResourceController extends Controller
             'foundBy' => 'string|max:100|nullable', 'storageLocation' => 'string|max:255|nullable',
             'condition' => 'string|max:50', 'description' => 'string|max:2000|nullable', 'timeline' => 'array',
         ],
+        'compliance-licenses' => [
+            'name' => 'string|max:255', 'authority' => 'string|max:255', 'number' => 'string|max:100|nullable',
+            'issueDate' => 'string|max:50|nullable', 'expiryDate' => 'string|max:50|nullable',
+            'daysToExpiry' => 'integer', 'fee' => 'integer|min:0', 'status' => 'string|max:50',
+            'documents' => 'array', 'reminders' => 'array',
+        ],
         'group-bookings' => [
             'code' => 'string|max:50', 'name' => 'string|max:255', 'type' => 'string|max:50',
             'contactName' => 'string|max:255', 'contactPhone' => 'string|max:50|nullable', 'contactEmail' => 'email|max:255|nullable',
@@ -274,6 +282,7 @@ class ResourceController extends Controller
         'app-users' => ['name', 'email'],
         'hall-bookings' => ['customer'],
         'group-bookings' => ['name'],
+        'compliance-licenses' => ['name', 'authority'],
     ];
 
     private function model(string $resource): string

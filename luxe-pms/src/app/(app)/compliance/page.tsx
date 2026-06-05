@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 
 // ============================================================
 // TYPES + SEED
@@ -100,7 +101,12 @@ const EINVOICES_SEED: EInvoice[] = [
 // ============================================================
 export default function CompliancePage() {
   const [tab, setTab] = React.useState<ComplianceTab>("overview");
-  const [licenses, setLicenses] = React.useState<License[]>(LICENSES_SEED);
+  const [licenses, setLicenses] = React.useState<License[]>([]);
+  React.useEffect(() => {
+    apiGet<License[]>("/compliance-licenses")
+      .then(rows => setLicenses(rows.map(l => ({ ...l, id: String(l.id), documents: l.documents ?? [], reminders: l.reminders ?? [] }))))
+      .catch(() => {});
+  }, []);
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
@@ -651,7 +657,7 @@ function LicensesTab({ licenses, setLicenses, onToast }: {
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {l.status === "expired" && (
-                    <Button size="sm" onClick={() => { setLicenses(prev => prev.map(x => x.id === l.id ? { ...x, status: "in_renewal" } : x)); onToast("Renewal initiated · added to action list"); }}>
+                    <Button size="sm" onClick={() => { setLicenses(prev => prev.map(x => x.id === l.id ? { ...x, status: "in_renewal" } : x)); apiPut(`/compliance-licenses/${l.id}`, { status: "in_renewal" }).catch(() => onToast("Could not save")); onToast("Renewal initiated · added to action list"); }}>
                       <RefreshCw className="h-3 w-3" />Start renewal
                     </Button>
                   )}
@@ -664,7 +670,7 @@ function LicensesTab({ licenses, setLicenses, onToast }: {
                     <Upload className="h-3 w-3" />Upload doc
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => setEditing(l)}><Pencil className="h-3 w-3" /></Button>
-                  <Button size="sm" variant="ghost" onClick={() => { setLicenses(prev => prev.filter(x => x.id !== l.id)); onToast("License removed"); }}><Trash2 className="h-3 w-3 text-danger" /></Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setLicenses(prev => prev.filter(x => x.id !== l.id)); apiDelete(`/compliance-licenses/${l.id}`).catch(() => onToast("Could not delete")); onToast("License removed"); }}><Trash2 className="h-3 w-3 text-danger" /></Button>
                 </div>
               </div>
             </Card>
@@ -702,8 +708,17 @@ function LicensesTab({ licenses, setLicenses, onToast }: {
       )}
 
       {/* Add license modal */}
-      {showAdd && <LicenseEditModal license={null} onClose={() => setShowAdd(false)} onSave={(l) => { setLicenses(prev => [...prev, { ...l, id: "l" + (prev.length + 1) }]); setShowAdd(false); onToast("License added · reminders set"); }} />}
-      {editing && <LicenseEditModal license={editing} onClose={() => setEditing(null)} onSave={(l) => { setLicenses(prev => prev.map(x => x.id === l.id ? l : x)); setEditing(null); onToast("License updated"); }} />}
+      {showAdd && <LicenseEditModal license={null} onClose={() => setShowAdd(false)} onSave={(l) => {
+        apiPost<License>("/compliance-licenses", l)
+          .then(row => setLicenses(prev => [...prev, { ...row, id: String(row.id), documents: row.documents ?? [], reminders: row.reminders ?? [] }]))
+          .catch(() => onToast("Could not save license"));
+        setShowAdd(false); onToast("License added · reminders set");
+      }} />}
+      {editing && <LicenseEditModal license={editing} onClose={() => setEditing(null)} onSave={(l) => {
+        setLicenses(prev => prev.map(x => x.id === l.id ? l : x));
+        apiPut(`/compliance-licenses/${l.id}`, l).catch(() => onToast("Could not save changes"));
+        setEditing(null); onToast("License updated");
+      }} />}
     </div>
   );
 }
