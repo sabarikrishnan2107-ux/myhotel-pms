@@ -6,8 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { SHIFT } from "@/lib/mock-data-ext";
 import { money, cn } from "@/lib/utils";
+import { apiGet, apiPost } from "@/lib/api";
+
+type Shift = {
+  id: number; number: number; cashier: string; startedAt: string; endsAt: string;
+  opening: number; refunds: number; expenses: number; status: string;
+  cash: number; card: number; upi: number; online: number;
+};
+const EMPTY_SHIFT: Shift = {
+  id: 0, number: 0, cashier: "—", startedAt: "—", endsAt: "—",
+  opening: 0, refunds: 0, expenses: 0, status: "open", cash: 0, card: 0, upi: 0, online: 0,
+};
 
 const MODES = [
   { key: "cash", label: "Cash", icon: Banknote, tone: "success" as const },
@@ -17,10 +27,40 @@ const MODES = [
 ];
 
 export default function CashierPage() {
-  const [physical, setPhysical] = React.useState(SHIFT.opening + SHIFT.cash - SHIFT.refunds - SHIFT.expenses + 50);
-  const expected = SHIFT.opening + SHIFT.cash - SHIFT.refunds - SHIFT.expenses;
+  const [shift, setShift] = React.useState<Shift>(EMPTY_SHIFT);
+  const [physical, setPhysical] = React.useState(0);
+  const [remarks, setRemarks] = React.useState("");
+  const [handover, setHandover] = React.useState("");
+  const [closing, setClosing] = React.useState(false);
+  const [toast, setToast] = React.useState<string | null>(null);
+  const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2800); };
+
+  React.useEffect(() => {
+    apiGet<Shift>("/shift/current")
+      .then(s => {
+        setShift(s);
+        setPhysical(s.opening + s.cash - s.refunds - s.expenses);
+      })
+      .catch(() => {});
+  }, []);
+
+  const expected = shift.opening + shift.cash - shift.refunds - shift.expenses;
   const variance = physical - expected;
-  const totalCollected = SHIFT.cash + SHIFT.card + SHIFT.upi + SHIFT.online;
+  const totalCollected = shift.cash + shift.card + shift.upi + shift.online;
+  const closed = shift.status === "closed";
+
+  const closeShift = () => {
+    if (closing || closed) return;
+    setClosing(true);
+    apiPost<Shift>("/shift/close", {
+      physicalCount: physical, variance,
+      varianceRemarks: remarks || null, handoverNotes: handover || null,
+      refunds: shift.refunds, expenses: shift.expenses,
+    })
+      .then(s => { setShift(s); showToast(`Shift #${s.number} closed · ${variance === 0 ? "balanced" : variance > 0 ? `excess ${money(variance)}` : `short ${money(Math.abs(variance))}`}`); })
+      .catch(() => showToast("Could not close shift"))
+      .finally(() => setClosing(false));
+  };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
@@ -28,10 +68,10 @@ export default function CashierPage() {
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-display font-medium tracking-tight">Cashier Shift Closing</h1>
-            <Badge tone="info">Shift #{SHIFT.number} · Open</Badge>
+            <Badge tone={closed ? "neutral" : "info"}>Shift #{shift.number} · {closed ? "Closed" : "Open"}</Badge>
             <Badge tone="success"><ClipboardCheck className="h-3 w-3" />Pre-checks done</Badge>
           </div>
-          <p className="text-muted-foreground text-sm mt-1">{SHIFT.cashier} · {SHIFT.startedAt} → {SHIFT.endsAt}</p>
+          <p className="text-muted-foreground text-sm mt-1">{shift.cashier} · {shift.startedAt} → {shift.endsAt}</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline"><Receipt className="h-4 w-4" />View Receipts</Button>
@@ -43,7 +83,7 @@ export default function CashierPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {MODES.map(m => {
           const Icon = m.icon;
-          const amount = SHIFT[m.key as keyof typeof SHIFT] as number;
+          const amount = shift[m.key as keyof Shift] as number;
           return (
             <Card key={m.key} className="p-4">
               <div className="flex items-start justify-between gap-2">
@@ -72,17 +112,17 @@ export default function CashierPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Opening Cash" value={money(SHIFT.opening)} muted />
-            <Field label="Cash Collected" value={`+ ${money(SHIFT.cash)}`} tone="success" />
-            <Field label="Refunds Paid" value={`- ${money(SHIFT.refunds)}`} tone="warning" />
-            <Field label="Expenses Paid" value={`- ${money(SHIFT.expenses)}`} tone="warning" />
+            <Field label="Opening Cash" value={money(shift.opening)} muted />
+            <Field label="Cash Collected" value={`+ ${money(shift.cash)}`} tone="success" />
+            <Field label="Refunds Paid" value={`- ${money(shift.refunds)}`} tone="warning" />
+            <Field label="Expenses Paid" value={`- ${money(shift.expenses)}`} tone="warning" />
           </div>
 
           <div className="border-t border-border pt-4 grid grid-cols-2 gap-3">
             <Field label="Expected in Drawer" value={money(expected)} tone="brand" big />
             <div className="space-y-1.5">
               <Label htmlFor="physical">Physical Count *</Label>
-              <Input id="physical" type="number" value={physical} onChange={e => setPhysical(Number(e.target.value))} className="h-11 text-lg tabular font-semibold" />
+              <Input id="physical" type="number" value={physical} disabled={closed} onChange={e => setPhysical(Number(e.target.value))} className="h-11 text-lg tabular font-semibold" />
             </div>
           </div>
 
@@ -107,8 +147,9 @@ export default function CashierPage() {
             <div className="space-y-1.5">
               <Label>Variance Remarks</Label>
               <textarea
+                value={remarks} onChange={e => setRemarks(e.target.value)} disabled={closed}
                 placeholder="Explain the difference (rounding, undisputed tip, etc.)"
-                className="w-full h-20 px-3 py-2 rounded-md border border-border bg-surface text-sm placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 outline-hidden resize-none"
+                className="w-full h-20 px-3 py-2 rounded-md border border-border bg-surface text-sm placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 outline-hidden resize-none disabled:opacity-60"
               />
             </div>
           )}
@@ -122,39 +163,48 @@ export default function CashierPage() {
           </div>
 
           <dl className="space-y-2 text-sm">
-            <SummaryRow label="Cash" v={money(SHIFT.cash)} />
-            <SummaryRow label="Card" v={money(SHIFT.card)} />
-            <SummaryRow label="UPI" v={money(SHIFT.upi)} />
-            <SummaryRow label="Online" v={money(SHIFT.online)} />
+            <SummaryRow label="Cash" v={money(shift.cash)} />
+            <SummaryRow label="Card" v={money(shift.card)} />
+            <SummaryRow label="UPI" v={money(shift.upi)} />
+            <SummaryRow label="Online" v={money(shift.online)} />
             <div className="border-t border-border pt-2 mt-2">
               <SummaryRow label={<span className="font-semibold">Total Collected</span>} v={<span className="font-semibold tabular text-base">{money(totalCollected)}</span>} />
             </div>
-            <SummaryRow label="Refunds" v={`- ${money(SHIFT.refunds)}`} tone="warning" />
-            <SummaryRow label="Expenses" v={`- ${money(SHIFT.expenses)}`} tone="warning" />
+            <SummaryRow label="Refunds" v={`- ${money(shift.refunds)}`} tone="warning" />
+            <SummaryRow label="Expenses" v={`- ${money(shift.expenses)}`} tone="warning" />
           </dl>
 
           <div className="pt-3 border-t border-border space-y-2">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Hand-over Notes</p>
             <textarea
+              value={handover} onChange={e => setHandover(e.target.value)} disabled={closed}
               placeholder="For incoming cashier…"
-              className="w-full h-16 px-3 py-2 rounded-md border border-border bg-surface text-xs placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 outline-hidden resize-none"
+              className="w-full h-16 px-3 py-2 rounded-md border border-border bg-surface text-xs placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 outline-hidden resize-none disabled:opacity-60"
             />
           </div>
 
-          <Button size="lg" className="w-full" variant={Math.abs(variance) > 100 ? "danger" : "success"}>
+          <Button size="lg" className="w-full" disabled={closing || closed}
+            variant={closed ? "outline" : Math.abs(variance) > 100 ? "danger" : "success"}
+            onClick={closeShift}>
             <Send className="h-4 w-4" />
-            {Math.abs(variance) > 100 ? "Submit for Manager Approval" : "Close Shift"}
+            {closed ? "Shift Closed" : closing ? "Closing…" : Math.abs(variance) > 100 ? "Submit for Manager Approval" : "Close Shift"}
           </Button>
 
           <div className="pt-3 border-t border-border flex items-center gap-2">
-            <Avatar name={SHIFT.cashier} size={28} />
+            <Avatar name={shift.cashier} size={28} />
             <div className="text-xs">
-              <p className="font-medium">{SHIFT.cashier}</p>
-              <p className="text-muted-foreground">Shift {SHIFT.startedAt} — {SHIFT.endsAt}</p>
+              <p className="font-medium">{shift.cashier}</p>
+              <p className="text-muted-foreground">Shift {shift.startedAt} — {shift.endsAt}</p>
             </div>
           </div>
         </Card>
       </div>
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-md bg-foreground text-background px-4 py-2.5 text-sm font-medium shadow-lg">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
