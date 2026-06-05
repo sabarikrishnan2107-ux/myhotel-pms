@@ -1,0 +1,31 @@
+<?php
+
+namespace Database\Seeders;
+
+use App\Models\LoyaltyMember;
+use Illuminate\Database\Seeder;
+
+class LoyaltySeeder extends Seeder
+{
+    public function run(): void
+    {
+        if (LoyaltyMember::count() > 0) {
+            return;
+        }
+
+        foreach ([
+            ['membershipId' => 'LM-2023-1001', 'name' => 'Sanjana Reddy', 'phone' => '+91 98201 12345', 'email' => 'sanjana.reddy@example.com', 'dob' => '1985-08-12', 'anniversary' => '2010-12-04', 'address' => 'Banjara Hills, Hyderabad', 'nationality' => 'India', 'idType' => 'Aadhaar', 'idNumber' => '5621 8923 4156', 'joinedAt' => '2023-03-14', 'tier' => 'Diamond', 'pointsBalance' => 18420, 'lifetimePoints' => 142000, 'lifetimeStays' => 24, 'lifetimeNights' => 56, 'lifetimeSpend' => 685000, 'lastStayDate' => '2026-05-08', 'upcomingBooking' => ['bookingNo' => 'BK100258', 'date' => '2026-06-12'], 'preferences' => ['High floor', 'Sea view', 'Welcome champagne', 'Vegetarian breakfast'], 'staffNotes' => 'Brand ambassador potential · always brings family + extended group', 'consentMarketing' => true],
+            ['membershipId' => 'LM-2023-1042', 'name' => 'Anjali Iyer', 'phone' => '+91 99876 54321', 'email' => 'anjali.iyer@example.com', 'dob' => '1988-06-01', 'anniversary' => '2015-02-14', 'address' => 'Bandra West, Mumbai', 'nationality' => 'India', 'idType' => 'Aadhaar', 'idNumber' => '8841 3324 7821', 'joinedAt' => '2023-08-20', 'tier' => 'Platinum', 'pointsBalance' => 8200, 'lifetimePoints' => 56800, 'lifetimeStays' => 14, 'lifetimeNights' => 31, 'lifetimeSpend' => 312000, 'lastStayDate' => '2026-05-18', 'preferences' => ['Quiet room', 'Welcome drink'], 'staffNotes' => 'Prefers late checkout · usually requests 1pm', 'consentMarketing' => true],
+            ['membershipId' => 'LM-2024-2118', 'name' => 'Sarah Whitfield', 'phone' => '+91 97412 33212', 'email' => 'sarah.whitfield@example.com', 'dob' => '1990-11-22', 'address' => 'London (UK) · visiting Mumbai monthly', 'nationality' => 'UK', 'idType' => 'Passport', 'idNumber' => 'GB7723041', 'joinedAt' => '2024-01-12', 'tier' => 'Platinum', 'pointsBalance' => 6480, 'lifetimePoints' => 42000, 'lifetimeStays' => 11, 'lifetimeNights' => 22, 'lifetimeSpend' => 234000, 'lastStayDate' => '2026-05-12', 'upcomingBooking' => ['bookingNo' => 'BK100231', 'date' => '2026-06-04'], 'preferences' => ['Twin bed', 'Vegan menu'], 'consentMarketing' => true],
+            ['membershipId' => 'LM-2024-2350', 'name' => 'Karan Mehta', 'phone' => '+91 98765 43210', 'email' => 'karan.mehta@example.com', 'dob' => '1992-04-18', 'anniversary' => '2019-11-09', 'address' => 'Andheri East, Mumbai', 'nationality' => 'India', 'idType' => 'Aadhaar', 'idNumber' => '3389 2210 6645', 'joinedAt' => '2024-03-22', 'tier' => 'Gold', 'pointsBalance' => 4200, 'lifetimePoints' => 18200, 'lifetimeStays' => 8, 'lifetimeNights' => 16, 'lifetimeSpend' => 96400, 'lastStayDate' => '2026-04-21', 'preferences' => ['Anniversary cake', 'Jacuzzi suite'], 'consentMarketing' => true],
+            ['membershipId' => 'LM-2024-2412', 'name' => 'Vikram Singh', 'phone' => '+91 99877 12340', 'email' => 'vikram.singh@example.com', 'dob' => '1980-09-30', 'address' => 'Delhi', 'nationality' => 'India', 'idType' => 'Aadhaar', 'idNumber' => '1129 8862 3340', 'joinedAt' => '2024-05-18', 'tier' => 'Gold', 'pointsBalance' => 3800, 'lifetimePoints' => 14500, 'lifetimeStays' => 7, 'lifetimeNights' => 14, 'lifetimeSpend' => 78400, 'lastStayDate' => '2026-04-02', 'preferences' => ['Non-smoking', 'Veg meal'], 'consentMarketing' => false],
+            ['membershipId' => 'LM-2024-2588', 'name' => 'Mr. Ahmed Al-Mansoori', 'phone' => '+971 50 123 4567', 'email' => 'ahmed.almansoori@example.ae', 'dob' => '1975-02-25', 'address' => 'Dubai (UAE)', 'nationality' => 'UAE', 'idType' => 'Emirates ID', 'idNumber' => '784-1975-1234567-8', 'joinedAt' => '2024-07-08', 'tier' => 'Gold', 'pointsBalance' => 5240, 'lifetimePoints' => 16800, 'lifetimeStays' => 6, 'lifetimeNights' => 18, 'lifetimeSpend' => 84000, 'lastStayDate' => '2026-05-22', 'preferences' => ['Hypoallergenic pillow', 'Halal meal'], 'consentMarketing' => true],
+            ['membershipId' => 'LM-2025-3010', 'name' => 'Priya Sharma', 'phone' => '+91 99001 22334', 'email' => 'priya.sharma@example.com', 'dob' => '1995-06-01', 'address' => 'Pune', 'nationality' => 'India', 'idType' => 'Aadhaar', 'idNumber' => '6601 2241 9982', 'joinedAt' => '2025-01-15', 'tier' => 'Silver', 'pointsBalance' => 1840, 'lifetimePoints' => 4200, 'lifetimeStays' => 4, 'lifetimeNights' => 7, 'lifetimeSpend' => 28400, 'lastStayDate' => '2026-05-04', 'preferences' => ['Welcome drink'], 'consentMarketing' => true],
+            ['membershipId' => 'LM-2025-3142', 'name' => 'Rohan Joshi', 'phone' => '+91 89765 11220', 'email' => 'rohan.joshi@example.com', 'dob' => '1993-12-15', 'address' => 'Bengaluru', 'nationality' => 'India', 'idType' => 'PAN', 'idNumber' => 'ABKPJ8821H', 'joinedAt' => '2025-04-08', 'tier' => 'Silver', 'pointsBalance' => 1200, 'lifetimePoints' => 2800, 'lifetimeStays' => 3, 'lifetimeNights' => 6, 'lifetimeSpend' => 22400, 'lastStayDate' => '2026-04-30', 'preferences' => ['High floor'], 'consentMarketing' => true],
+            ['membershipId' => 'LM-2025-3290', 'name' => 'Liu Wei', 'phone' => '+86 138 1234 5678', 'email' => 'liu.wei@example.cn', 'dob' => '1987-03-10', 'address' => 'Shanghai (CN)', 'nationality' => 'China', 'idType' => 'Passport', 'idNumber' => 'E12345678', 'joinedAt' => '2025-06-22', 'tier' => 'Silver', 'pointsBalance' => 980, 'lifetimePoints' => 2100, 'lifetimeStays' => 3, 'lifetimeNights' => 5, 'lifetimeSpend' => 18900, 'lastStayDate' => '2026-05-18', 'preferences' => ['Twin bed'], 'consentMarketing' => false],
+            ['membershipId' => 'LM-2025-3414', 'name' => 'Kavya Nair', 'phone' => '+91 99224 88110', 'email' => 'kavya.nair@example.com', 'dob' => '1991-09-04', 'anniversary' => '2018-01-19', 'address' => 'Kochi, Kerala', 'nationality' => 'India', 'idType' => 'Aadhaar', 'idNumber' => '4421 5519 8870', 'joinedAt' => '2025-09-04', 'tier' => 'Silver', 'pointsBalance' => 620, 'lifetimePoints' => 1100, 'lifetimeStays' => 2, 'lifetimeNights' => 3, 'lifetimeSpend' => 12600, 'preferences' => [], 'consentMarketing' => true],
+        ] as $m) {
+            LoyaltyMember::create($m);
+        }
+    }
+}

@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
             ErpSeeder::class,
             FbMenuSeeder::class,
             OpsSeeder::class,
+            LoyaltySeeder::class,
         ]);
     }
 }

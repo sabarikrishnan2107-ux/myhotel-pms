@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { money, cn, formatDate } from "@/lib/utils";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
 
 // ============================================================
 // TYPES & CONSTANTS
@@ -311,7 +312,12 @@ export default function LoyaltyPage() {
   const [tab, setTab] = React.useState<TabId>("dashboard");
 
   // State
-  const [members, setMembers] = React.useState<LoyaltyMember[]>(SEED_MEMBERS);
+  const [members, setMembers] = React.useState<LoyaltyMember[]>([]);
+  React.useEffect(() => {
+    apiGet<LoyaltyMember[]>("/loyalty-members")
+      .then(rows => setMembers(rows.map(r => ({ ...r, id: String(r.id), preferences: r.preferences ?? [] }))))
+      .catch(() => {});
+  }, []);
   const [tiers, setTiers] = React.useState<Tier[]>(TIERS);
   const [rewards, setRewards] = React.useState<Reward[]>(SEED_REWARDS);
   const [campaigns, setCampaigns] = React.useState<Campaign[]>(SEED_CAMPAIGNS);
@@ -380,15 +386,19 @@ export default function LoyaltyPage() {
 
       {/* Modals */}
       {addMember && <AddMemberModal onClose={() => setAddMember(false)} onSave={(m) => {
-        const id = `lm-${Date.now().toString(36)}`;
         const membershipId = `LM-${new Date().getFullYear()}-${(members.length + 1100).toString().slice(-4)}`;
-        setMembers(prev => [{ ...m, id, membershipId, joinedAt: new Date().toISOString().slice(0, 10), tier: "Silver" as TierLevel, pointsBalance: 500, lifetimePoints: 500, lifetimeStays: 0, lifetimeNights: 0, lifetimeSpend: 0, preferences: [] } as LoyaltyMember, ...prev]);
+        const draft = { ...m, membershipId, joinedAt: new Date().toISOString().slice(0, 10), tier: "Silver" as TierLevel, pointsBalance: 500, lifetimePoints: 500, lifetimeStays: 0, lifetimeNights: 0, lifetimeSpend: 0, preferences: [] };
+        apiPost<LoyaltyMember>("/loyalty-members", draft)
+          .then(row => setMembers(prev => [{ ...row, id: String(row.id), preferences: row.preferences ?? [] }, ...prev]))
+          .catch(() => showToast("Could not save member"));
         setAddMember(false);
         showToast(`Welcome ${m.name} · ${membershipId} · +500 joining bonus`);
       }} />}
       {memberDetail && <MemberDetailDrawer member={memberDetail} txns={SEED_TXNS.filter(t => t.memberId === memberDetail.id)} tier={tiers.find(t => t.level === memberDetail.tier)!} onClose={() => setMemberDetail(null)} onAdjust={() => { setAdjustPoints(memberDetail); setMemberDetail(null); }} onToast={showToast} />}
       {adjustPoints && <AdjustPointsModal member={adjustPoints} settings={settings} onClose={() => setAdjustPoints(null)} onSave={(delta, reason) => {
-        setMembers(prev => prev.map(m => m.id === adjustPoints.id ? { ...m, pointsBalance: Math.max(0, m.pointsBalance + delta), lifetimePoints: delta > 0 ? m.lifetimePoints + delta : m.lifetimePoints } : m));
+        const next = { pointsBalance: Math.max(0, adjustPoints.pointsBalance + delta), lifetimePoints: delta > 0 ? adjustPoints.lifetimePoints + delta : adjustPoints.lifetimePoints };
+        setMembers(prev => prev.map(m => m.id === adjustPoints.id ? { ...m, ...next } : m));
+        apiPut(`/loyalty-members/${adjustPoints.id}`, next).catch(() => showToast("Could not save points"));
         setAdjustPoints(null);
         showToast(`${adjustPoints.name}: ${delta > 0 ? "+" : ""}${delta} points · ${reason}`);
       }} />}

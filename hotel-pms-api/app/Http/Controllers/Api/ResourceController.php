@@ -18,6 +18,7 @@ use App\Models\Guest;
 use App\Models\HallPackage;
 use App\Models\Holiday;
 use App\Models\InventoryItem;
+use App\Models\LoyaltyMember;
 use App\Models\MenuItem;
 use App\Models\NotificationTemplate;
 use App\Models\PaymentMethod;
@@ -62,6 +63,7 @@ class ResourceController extends Controller
         'maintenance-tickets'    => MaintenanceTicket::class,
         'enquiries'              => Enquiry::class,
         'found-items'            => FoundItem::class,
+        'loyalty-members'        => LoyaltyMember::class,
     ];
 
     /** Resources that can be filtered by ?bookingNo= on index. */
@@ -206,6 +208,16 @@ class ResourceController extends Controller
             'foundBy' => 'string|max:100|nullable', 'storageLocation' => 'string|max:255|nullable',
             'condition' => 'string|max:50', 'description' => 'string|max:2000|nullable', 'timeline' => 'array',
         ],
+        'loyalty-members' => [
+            'membershipId' => 'string|max:50', 'name' => 'string|max:255', 'phone' => 'string|max:50|nullable',
+            'email' => 'email|max:255|nullable', 'dob' => 'string|max:50|nullable', 'anniversary' => 'string|max:50|nullable',
+            'address' => 'string|max:500|nullable', 'nationality' => 'string|max:100', 'idType' => 'string|max:50',
+            'idNumber' => 'string|max:100', 'joinedAt' => 'string|max:50', 'tier' => 'string|max:50',
+            'pointsBalance' => 'integer|min:0', 'lifetimePoints' => 'integer|min:0', 'lifetimeStays' => 'integer|min:0',
+            'lifetimeNights' => 'integer|min:0', 'lifetimeSpend' => 'integer|min:0', 'lastStayDate' => 'string|max:50|nullable',
+            'upcomingBooking' => 'array|nullable', 'preferences' => 'array', 'staffNotes' => 'string|max:2000|nullable',
+            'consentMarketing' => 'boolean', 'blocked' => 'boolean',
+        ],
     ];
 
     /** Fields that must be present (and non-empty) when creating a row. */
@@ -220,6 +232,7 @@ class ResourceController extends Controller
         'staff' => ['name'], 'vendors' => ['name'], 'inventory-items' => ['name'],
         'menu-items' => ['name'], 'fb-orders' => ['tableNo'],
         'maintenance-tickets' => ['title'], 'enquiries' => ['name'], 'found-items' => ['name'],
+        'loyalty-members' => ['name'],
     ];
 
     private function model(string $resource): string
