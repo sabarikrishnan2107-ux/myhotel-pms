@@ -15,6 +15,11 @@ import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { MAINTENANCE_TICKETS, TECHNICIANS, type Priority, type TicketStatus } from "@/lib/mock-data-ext";
 import { cn, money, formatDate } from "@/lib/utils";
+import { apiGet, apiPost } from "@/lib/api";
+
+type Ticket = typeof MAINTENANCE_TICKETS[number];
+let __mtkt = 2402;
+const nextTicketCode = () => `M-${++__mtkt}`;
 
 const PRIORITY_TONE = { low: "neutral", medium: "info", high: "warning", urgent: "danger" } as const;
 const STATUS_TONE = { open: "warning", assigned: "info", "in-progress": "brand", resolved: "success" } as const;
@@ -150,11 +155,18 @@ export default function MaintenancePage() {
     return d >= 0 && d <= 90;
   }).length;
 
-  const urgent = MAINTENANCE_TICKETS.filter(t => t.priority === "urgent" && t.status !== "resolved").length;
+  const [tickets, setTickets] = React.useState<Ticket[]>(MAINTENANCE_TICKETS);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Ticket[]>("/maintenance-tickets").then(r => { if (!cancelled) setTickets(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const urgent = tickets.filter(t => t.priority === "urgent" && t.status !== "resolved").length;
 
   const filtered = React.useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return MAINTENANCE_TICKETS.filter(t => {
+    return tickets.filter(t => {
       if (needle) {
         const hay = `${t.code} ${t.room} ${t.title} ${t.category} ${t.assignee ?? ""}`.toLowerCase();
         if (!hay.includes(needle)) return false;
@@ -208,8 +220,8 @@ export default function MaintenancePage() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KPICard label="Open tickets" value={MAINTENANCE_TICKETS.filter(t => t.status === "open").length} icon={AlertCircle} accent="warning" />
-        <KPICard label="In Progress" value={MAINTENANCE_TICKETS.filter(t => t.status === "in-progress").length} icon={Wrench} accent="info" />
+        <KPICard label="Open tickets" value={tickets.filter(t => t.status === "open").length} icon={AlertCircle} accent="warning" />
+        <KPICard label="In Progress" value={tickets.filter(t => t.status === "in-progress").length} icon={Wrench} accent="info" />
         <KPICard label="Urgent" value={urgent} icon={AlertCircle} accent="danger" />
         <KPICard label="Overdue PM" value={overdue} icon={AlertTriangle} accent={overdue > 0 ? "danger" : "success"} hint="preventive" />
         <KPICard label="Due this week" value={upcomingWeek} icon={CalendarClock} accent="info" hint="scheduled" />
@@ -219,7 +231,7 @@ export default function MaintenancePage() {
       {/* ============ TOP TABS ============ */}
       <div className="border-b border-border flex items-center gap-1 overflow-x-auto">
         {([
-          { id: "reactive",  label: "Reactive Tickets",     icon: Wrench,         count: MAINTENANCE_TICKETS.filter(t => t.status !== "resolved").length },
+          { id: "reactive",  label: "Reactive Tickets",     icon: Wrench,         count: tickets.filter(t => t.status !== "resolved").length },
           { id: "schedule",  label: "Preventive Schedule",  icon: CalendarClock,  count: dueToday + overdue },
           { id: "amc",       label: "AMC / Vendors",         icon: ShieldCheck,    count: AMC_VENDORS.length },
         ] as { id: MainTab; label: string; icon: typeof Wrench; count: number }[]).map(t => {
@@ -320,7 +332,7 @@ export default function MaintenancePage() {
 
       {/* Count banner */}
       <div className="text-xs text-muted-foreground">
-        Showing <span className="font-medium text-foreground">{sorted.length}</span> of {MAINTENANCE_TICKETS.length} tickets
+        Showing <span className="font-medium text-foreground">{sorted.length}</span> of {tickets.length} tickets
       </div>
 
       {/* Empty state */}
@@ -357,7 +369,11 @@ export default function MaintenancePage() {
 
       {/* New Ticket modal */}
       {newTicketOpen && (
-        <NewTicketModal onClose={() => setNewTicketOpen(false)} onSave={(msg) => { setNewTicketOpen(false); showToast(msg); }} />
+        <NewTicketModal onClose={() => setNewTicketOpen(false)} onSave={(t) => {
+          setNewTicketOpen(false);
+          showToast(`Ticket ${t.code} created · Room ${t.room}`);
+          apiPost<Ticket>("/maintenance-tickets", t).then(created => setTickets(prev => [created, ...prev])).catch(() => showToast("⚠ Save failed — backend offline"));
+        }} />
       )}
 
       {/* Quick assign modal */}
@@ -909,7 +925,7 @@ function AmcTab({ onOpenDetail, onShowToast }: {
 // ===================== NEW TICKET MODAL =====================
 function NewTicketModal({ onClose, onSave }: {
   onClose: () => void;
-  onSave: (msg: string) => void;
+  onSave: (t: Omit<Ticket, "id">) => void;
 }) {
   const [title, setTitle] = React.useState("");
   const [room, setRoom] = React.useState("");
@@ -1009,7 +1025,7 @@ function NewTicketModal({ onClose, onSave }: {
           <div className="px-5 py-3 border-t border-border bg-surface-elevated flex items-center justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
             <Button
-              onClick={() => onSave(`Ticket M-2402 created · Room ${room}${assignee !== "Unassigned" ? ` · assigned to ${assignee}` : " · pending assignment"}`)}
+              onClick={() => onSave({ code: nextTicketCode(), room, title, priority, status: "open" as TicketStatus, assignee: assignee === "Unassigned" ? null : assignee, reported: "Just now", category })}
               disabled={!valid}
               variant="success"
             >

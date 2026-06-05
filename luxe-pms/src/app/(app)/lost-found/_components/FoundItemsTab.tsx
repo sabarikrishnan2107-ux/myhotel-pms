@@ -55,6 +55,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
 
 type Status = "Waiting" | "Notified" | "Claimed" | "Returned" | "Storage" | "Disposed" | "Donated";
 type Category =
@@ -773,7 +774,14 @@ function fmtDate(d?: string) {
 }
 
 export default function FoundItemsTab({ onToast }: { onToast: (m: string) => void }) {
-  const [items] = React.useState<FoundItem[]>(SEED);
+  const [items, setItems] = React.useState<FoundItem[]>(SEED);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<FoundItem[]>("/found-items")
+      .then(r => { if (!cancelled && r.length) setItems(r.map(i => ({ ...i, timeline: i.timeline ?? [] }))); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [search, setSearch] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<"All" | Status>("All");
   const [categoryFilter, setCategoryFilter] = React.useState<"All" | Category>("All");

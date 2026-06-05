@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { cn, money, formatDate } from "@/lib/utils";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 
 // ============ TYPES ============
 type EnquiryType = "Room" | "Hall" | "Both";
@@ -212,6 +213,14 @@ export default function EnquiriesPage() {
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2600); };
 
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Enquiry[]>("/enquiries")
+      .then(r => { if (!cancelled) setEnquiries(r.map(e => ({ ...e, followUps: e.followUps ?? [] }))); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   const list = enquiries.filter(e => {
     if (search && !`${e.name} ${e.enqNo} ${e.phone} ${e.email} ${e.company ?? ""}`.toLowerCase().includes(search.toLowerCase())) return false;
     if (typeFilter !== "all" && e.type !== typeFilter) return false;
@@ -240,17 +249,23 @@ export default function EnquiriesPage() {
 
   const updateEnquiry = (id: string, patch: Partial<Enquiry>) => {
     setEnquiries(es => es.map(e => e.id === id ? { ...e, ...patch } : e));
+    apiPut(`/enquiries/${id}`, patch).catch(() => showToast("⚠ Save failed — backend offline"));
   };
   const addFollowUp = (id: string, fu: FollowUp) => {
-    setEnquiries(es => es.map(e => e.id === id ? { ...e, followUps: [...e.followUps, fu], nextFollowUp: fu.done ? e.nextFollowUp : fu.date } : e));
+    const cur = enquiries.find(e => e.id === id);
+    if (!cur) return;
+    const followUps = [...cur.followUps, fu];
+    const nextFollowUp = fu.done ? cur.nextFollowUp : fu.date;
+    setEnquiries(es => es.map(e => e.id === id ? { ...e, followUps, nextFollowUp } : e));
+    apiPut(`/enquiries/${id}`, { followUps, nextFollowUp }).catch(() => showToast("⚠ Save failed — backend offline"));
   };
   const markFollowUpDone = (id: string, fuId: string, outcome: string) => {
-    setEnquiries(es => es.map(e => {
-      if (e.id !== id) return e;
-      const fus = e.followUps.map(f => f.id === fuId ? { ...f, done: true, outcome: outcome || f.outcome } : f);
-      const nextPending = fus.find(f => !f.done);
-      return { ...e, followUps: fus, nextFollowUp: nextPending?.date };
-    }));
+    const cur = enquiries.find(e => e.id === id);
+    if (!cur) return;
+    const followUps = cur.followUps.map(f => f.id === fuId ? { ...f, done: true, outcome: outcome || f.outcome } : f);
+    const nextFollowUp = followUps.find(f => !f.done)?.date;
+    setEnquiries(es => es.map(e => e.id === id ? { ...e, followUps, nextFollowUp } : e));
+    apiPut(`/enquiries/${id}`, { followUps, nextFollowUp }).catch(() => showToast("⚠ Save failed — backend offline"));
   };
 
   const sources = Array.from(new Set(enquiries.map(e => e.source))) as EnquirySource[];
@@ -467,7 +482,7 @@ export default function EnquiriesPage() {
                         </button>
                         <button
                           type="button"
-                          onClick={ev => { ev.stopPropagation(); if (window.confirm(`Delete enquiry ${e.enqNo}?`)) { setEnquiries(es => es.filter(x => x.id !== e.id)); showToast(`Enquiry ${e.enqNo} deleted`); } }}
+                          onClick={ev => { ev.stopPropagation(); if (window.confirm(`Delete enquiry ${e.enqNo}?`)) { setEnquiries(es => es.filter(x => x.id !== e.id)); showToast(`Enquiry ${e.enqNo} deleted`); apiDelete(`/enquiries/${e.id}`).catch(() => showToast("⚠ Delete failed — backend offline")); } }}
                           className="h-8 w-8 rounded-md border border-border hover:bg-danger-soft hover:text-danger inline-flex items-center justify-center text-muted-foreground transition-colors"
                           title="Delete enquiry"
                         >
@@ -507,9 +522,13 @@ export default function EnquiriesPage() {
         <NewEnquiryModal
           onClose={() => setNewOpen(false)}
           onSave={(e) => {
-            setEnquiries(es => [e, ...es]);
             setNewOpen(false);
             showToast(`Enquiry ${e.enqNo} created · auto thank-you sent`);
+            const { id: _drop, ...payload } = e;
+            void _drop;
+            apiPost<Enquiry>("/enquiries", payload)
+              .then(created => setEnquiries(es => [{ ...created, followUps: created.followUps ?? [] }, ...es]))
+              .catch(() => showToast("⚠ Save failed — backend offline"));
           }}
         />
       )}

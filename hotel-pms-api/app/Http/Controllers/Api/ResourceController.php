@@ -5,12 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Agent;
 use App\Models\Booking;
+use App\Models\Enquiry;
 use App\Models\FbPackage;
 use App\Models\Floor;
 use App\Models\FolioCharge;
 use App\Models\FolioPayment;
 use App\Models\FbOrder;
+use App\Models\FoundItem;
 use App\Models\GstSlab;
+use App\Models\MaintenanceTicket;
 use App\Models\Guest;
 use App\Models\HallPackage;
 use App\Models\Holiday;
@@ -56,6 +59,9 @@ class ResourceController extends Controller
         'inventory-items'        => InventoryItem::class,
         'menu-items'             => MenuItem::class,
         'fb-orders'              => FbOrder::class,
+        'maintenance-tickets'    => MaintenanceTicket::class,
+        'enquiries'              => Enquiry::class,
+        'found-items'            => FoundItem::class,
     ];
 
     /** Resources that can be filtered by ?bookingNo= on index. */
@@ -178,6 +184,28 @@ class ResourceController extends Controller
             'items' => 'array', 'total' => 'integer|min:0', 'status' => 'string|max:50',
             'paymentMethod' => 'string|max:100|nullable', 'room' => 'string|max:50|nullable',
         ],
+        'maintenance-tickets' => [
+            'code' => 'string|max:50', 'room' => 'string|max:50|nullable', 'title' => 'string|max:255',
+            'priority' => 'string|max:50', 'status' => 'string|max:50', 'assignee' => 'string|max:100|nullable',
+            'reported' => 'string|max:50', 'category' => 'string|max:100',
+        ],
+        'enquiries' => [
+            'enqNo' => 'string|max:50', 'type' => 'string|max:50', 'name' => 'string|max:255',
+            'phone' => 'string|max:50|nullable', 'email' => 'email|max:255|nullable', 'company' => 'string|max:255|nullable',
+            'source' => 'string|max:50', 'status' => 'string|max:50', 'roomNights' => 'integer|nullable',
+            'roomCount' => 'integer|nullable', 'hallName' => 'string|max:255|nullable', 'guestCount' => 'integer|nullable',
+            'checkIn' => 'string|max:50|nullable', 'checkOut' => 'string|max:50|nullable', 'eventDate' => 'string|max:50|nullable',
+            'budget' => 'integer|nullable', 'quotedAmount' => 'integer|nullable', 'enquiredOn' => 'string|max:50',
+            'assignedTo' => 'string|max:100', 'nextFollowUp' => 'string|max:50|nullable', 'followUps' => 'array',
+            'notes' => 'string|max:2000|nullable', 'thankYouSent' => 'boolean', 'vip' => 'boolean',
+        ],
+        'found-items' => [
+            'name' => 'string|max:255', 'category' => 'string|max:100', 'status' => 'string|max:50',
+            'qty' => 'integer|min:0', 'value' => 'integer|min:0', 'hvi' => 'boolean', 'daysHeld' => 'integer',
+            'foundLocation' => 'string|max:255|nullable', 'foundDate' => 'string|max:50|nullable',
+            'foundBy' => 'string|max:100|nullable', 'storageLocation' => 'string|max:255|nullable',
+            'condition' => 'string|max:50', 'description' => 'string|max:2000|nullable', 'timeline' => 'array',
+        ],
     ];
 
     /** Fields that must be present (and non-empty) when creating a row. */
@@ -191,6 +219,7 @@ class ResourceController extends Controller
         'folio-charges' => ['bookingNo', 'description'], 'folio-payments' => ['bookingNo'],
         'staff' => ['name'], 'vendors' => ['name'], 'inventory-items' => ['name'],
         'menu-items' => ['name'], 'fb-orders' => ['tableNo'],
+        'maintenance-tickets' => ['title'], 'enquiries' => ['name'], 'found-items' => ['name'],
     ];
 
     private function model(string $resource): string

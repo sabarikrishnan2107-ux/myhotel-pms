@@ -23,6 +23,7 @@ class DatabaseSeeder extends Seeder
             FolioSeeder::class,
             ErpSeeder::class,
             FbMenuSeeder::class,
+            OpsSeeder::class,
         ]);
     }
 }
