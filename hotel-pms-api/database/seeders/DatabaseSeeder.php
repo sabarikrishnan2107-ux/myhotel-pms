@@ -31,6 +31,7 @@ class DatabaseSeeder extends Seeder
             GroupBookingSeeder::class,
             ComplianceLicenseSeeder::class,
             ChannelSeeder::class,
+            WebRoomSeeder::class,
             AuditLogSeeder::class,
         ]);
     }

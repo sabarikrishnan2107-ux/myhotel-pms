@@ -36,6 +36,7 @@ use App\Models\Season;
 use App\Models\Staff;
 use App\Models\Vendor;
 use App\Models\Webhook;
+use App\Models\WebRoom;
 use Illuminate\Http\Request;
 
 /**
@@ -77,6 +78,7 @@ class ResourceController extends Controller
         'group-bookings'         => GroupBooking::class,
         'compliance-licenses'    => ComplianceLicense::class,
         'channels'               => Channel::class,
+        'web-rooms'              => WebRoom::class,
     ];
 
     /** Resources that can be filtered by ?bookingNo= on index. */
@@ -225,6 +227,10 @@ class ResourceController extends Controller
             'name' => 'string|max:255', 'status' => 'string|max:50', 'lastSync' => 'string|max:100|nullable',
             'bookings' => 'integer|min:0', 'commission' => 'integer|min:0|max:100', 'rev' => 'integer|min:0',
         ],
+        'web-rooms' => [
+            'name' => 'string|max:255', 'price' => 'integer|min:0', 'image' => 'string|max:50|nullable',
+            'desc' => 'string|max:500|nullable', 'published' => 'boolean',
+        ],
         'compliance-licenses' => [
             'name' => 'string|max:255', 'authority' => 'string|max:255', 'number' => 'string|max:100|nullable',
             'issueDate' => 'string|max:50|nullable', 'expiryDate' => 'string|max:50|nullable',
@@ -290,6 +296,7 @@ class ResourceController extends Controller
         'group-bookings' => ['name'],
         'compliance-licenses' => ['name', 'authority'],
         'channels' => ['name'],
+        'web-rooms' => ['name'],
     ];
 
     private function model(string $resource): string
