@@ -9,11 +9,13 @@ use App\Models\FbPackage;
 use App\Models\Floor;
 use App\Models\FolioCharge;
 use App\Models\FolioPayment;
+use App\Models\FbOrder;
 use App\Models\GstSlab;
 use App\Models\Guest;
 use App\Models\HallPackage;
 use App\Models\Holiday;
 use App\Models\InventoryItem;
+use App\Models\MenuItem;
 use App\Models\NotificationTemplate;
 use App\Models\PaymentMethod;
 use App\Models\RatePlan;
@@ -52,6 +54,8 @@ class ResourceController extends Controller
         'staff'                  => Staff::class,
         'vendors'                => Vendor::class,
         'inventory-items'        => InventoryItem::class,
+        'menu-items'             => MenuItem::class,
+        'fb-orders'              => FbOrder::class,
     ];
 
     /** Resources that can be filtered by ?bookingNo= on index. */
@@ -165,6 +169,15 @@ class ResourceController extends Controller
             'qty' => 'integer|min:0', 'min' => 'integer|min:0', 'unit' => 'string|max:50',
             'lastPurchase' => 'string|max:50|nullable', 'price' => 'numeric|min:0',
         ],
+        'menu-items' => [
+            'cat' => 'string|max:100', 'name' => 'string|max:255', 'price' => 'integer|min:0',
+            'veg' => 'boolean', 'spice' => 'string|max:50|nullable', 'tag' => 'string|max:100|nullable',
+        ],
+        'fb-orders' => [
+            'orderNo' => 'string|max:50', 'tableNo' => 'string|max:50', 'server' => 'string|max:100|nullable',
+            'items' => 'array', 'total' => 'integer|min:0', 'status' => 'string|max:50',
+            'paymentMethod' => 'string|max:100|nullable', 'room' => 'string|max:50|nullable',
+        ],
     ];
 
     /** Fields that must be present (and non-empty) when creating a row. */
@@ -177,6 +190,7 @@ class ResourceController extends Controller
         'guests' => ['name'], 'bookings' => ['guestName'],
         'folio-charges' => ['bookingNo', 'description'], 'folio-payments' => ['bookingNo'],
         'staff' => ['name'], 'vendors' => ['name'], 'inventory-items' => ['name'],
+        'menu-items' => ['name'], 'fb-orders' => ['tableNo'],
     ];
 
     private function model(string $resource): string

@@ -22,6 +22,7 @@ class DatabaseSeeder extends Seeder
             GuestBookingSeeder::class,
             FolioSeeder::class,
             ErpSeeder::class,
+            FbMenuSeeder::class,
         ]);
     }
 }

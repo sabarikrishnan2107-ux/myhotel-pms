@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet, apiPost } from "@/lib/api";
+import type { Reservation } from "@/lib/types";
 
 // ------------ DATA ------------
 type TableStatus = "free" | "seated" | "ordering" | "billing" | "dirty";
@@ -125,6 +127,10 @@ const PRELOADED: Record<string, LineItem[]> = {
   ],
 };
 
+// Monotonic KOT (kitchen order ticket) number — pure, collision-free.
+let __kot = 7000;
+const nextKot = () => ++__kot;
+
 // ------------ COMPONENT ------------
 export default function RestaurantPOSPage() {
   const [toast, setToast] = React.useState<string | null>(null);
@@ -134,6 +140,15 @@ export default function RestaurantPOSPage() {
   const [cat, setCat] = React.useState<Category>("Indian");
   const [search, setSearch] = React.useState("");
   const [orders, setOrders] = React.useState<Record<string, LineItem[]>>(PRELOADED);
+  const [chargeRoomOpen, setChargeRoomOpen] = React.useState(false);
+
+  // Live menu from Postgres (falls back to the seed menu if offline).
+  const [menu, setMenu] = React.useState<Item[]>(MENU);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Item[]>("/menu-items").then(r => { if (!cancelled && r.length) setMenu(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // Modifier popup
   const [modifierFor, setModifierFor] = React.useState<Item | null>(null);
@@ -151,8 +166,8 @@ export default function RestaurantPOSPage() {
 
   const filteredItems = React.useMemo(() => {
     const q = search.trim().toLowerCase();
-    return MENU.filter(m => m.cat === cat && (!q || m.name.toLowerCase().includes(q)));
-  }, [cat, search]);
+    return menu.filter(m => m.cat === cat && (!q || m.name.toLowerCase().includes(q)));
+  }, [menu, cat, search]);
 
   const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
   const discountAmt = Math.round(subtotal * (discountPct / 100));
@@ -194,7 +209,45 @@ export default function RestaurantPOSPage() {
 
   const sendToKitchen = () => {
     if (lines.length === 0) { showToast("Add items before sending to kitchen"); return; }
+    const orderNo = `KOT-${nextKot()}`;
     showToast(`KOT printed · ${selectedTable} · ${lines.reduce((s, l) => s + l.qty, 0)} items to kitchen`);
+    apiPost("/fb-orders", {
+      orderNo,
+      tableNo: selectedTable,
+      server: table.server ?? "",
+      items: lines.map(l => ({ name: l.name, qty: l.qty, price: l.price })),
+      total: Math.round(grandTotal),
+      status: "placed",
+    }).catch(() => showToast("⚠ Couldn't send to kitchen — backend offline"));
+  };
+
+  // Charge the current order to a guest's room (posts a real folio charge).
+  const chargeToRoom = async (roomNumber: string) => {
+    setChargeRoomOpen(false);
+    try {
+      const list = await apiGet<Reservation[]>("/bookings");
+      const bk = list.find(b => b.roomNumber === roomNumber && (b as { status?: string }).status !== "cancelled");
+      if (!bk) { showToast(`No active booking in room ${roomNumber}`); return; }
+      await apiPost("/folio-charges", {
+        bookingNo: bk.bookingNo,
+        date: new Date().toISOString().slice(0, 10),
+        description: `F&B — ${selectedTable} (${lines.length} items)`,
+        type: "F&B",
+        qty: 1,
+        rate: Math.round(grandTotal),
+        tax: 0,
+        amount: Math.round(grandTotal),
+        paidBy: "Guest",
+      });
+      const orderNo = `KOT-${nextKot()}`;
+      apiPost("/fb-orders", { orderNo, tableNo: selectedTable, server: table.server ?? "", items: lines.map(l => ({ name: l.name, qty: l.qty, price: l.price })), total: Math.round(grandTotal), status: "paid", paymentMethod: "Room charge", room: roomNumber }).catch(() => {});
+      setOrders(o => ({ ...o, [selectedTable]: [] }));
+      setDiscountPct(0);
+      setLoyaltyApplied(0);
+      showToast(`${money(grandTotal)} charged to Room ${roomNumber} · ${bk.guestName}`);
+    } catch {
+      showToast("⚠ Charge failed — backend offline");
+    }
   };
 
   return (
@@ -476,6 +529,9 @@ export default function RestaurantPOSPage() {
             <Button className="w-full" variant="outline" onClick={() => setPayOpen(true)} disabled={lines.length === 0}>
               <CreditCard className="h-4 w-4" />Pay {lines.length > 0 && money(grandTotal)}
             </Button>
+            <Button className="w-full" variant="outline" onClick={() => setChargeRoomOpen(true)} disabled={lines.length === 0}>
+              <BedDouble className="h-4 w-4" />Charge to Room
+            </Button>
             <Button size="sm" variant="ghost" className="w-full" onClick={() => showToast(`Bill printed for ${selectedTable}`)}>
               <Printer className="h-3.5 w-3.5" />Print bill
             </Button>
@@ -499,13 +555,21 @@ export default function RestaurantPOSPage() {
           onClose={() => setPayOpen(false)}
           onPay={(method, ref) => {
             setPayOpen(false);
+            const paidLines = lines;
             setOrders(o => ({ ...o, [selectedTable]: [] }));
             setDiscountPct(0);
             setLoyaltyApplied(0);
             showToast(`Payment ${money(grandTotal)} · ${method}${ref ? ` · ${ref}` : ""} · ${selectedTable} closed`);
+            apiPost("/fb-orders", {
+              orderNo: `KOT-${nextKot()}`, tableNo: selectedTable, server: table.server ?? "",
+              items: paidLines.map(l => ({ name: l.name, qty: l.qty, price: l.price })),
+              total: Math.round(grandTotal), status: "paid", paymentMethod: method,
+            }).catch(() => {});
           }}
         />
       )}
+
+      {chargeRoomOpen && <ChargeRoomModal total={grandTotal} onClose={() => setChargeRoomOpen(false)} onConfirm={chargeToRoom} />}
 
       {splitOpen && (
         <SplitModal
@@ -688,6 +752,36 @@ function ModifierModal({ item, onClose, onSave }: {
 }
 
 // ============= PAY MODAL =============
+function ChargeRoomModal({ total, onClose, onConfirm }: { total: number; onClose: () => void; onConfirm: (room: string) => void }) {
+  const [room, setRoom] = React.useState("");
+  React.useEffect(() => { document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = ""; }; }, []);
+  return (
+    <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-surface rounded-xl shadow-2xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-3.5 border-b border-border">
+          <h3 className="font-semibold">Charge to room</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Posts {money(total)} to the room folio</p>
+        </div>
+        <div className="px-5 py-4 space-y-2">
+          <label className="text-sm font-medium">Room number</label>
+          <input
+            value={room}
+            onChange={e => setRoom(e.target.value)}
+            placeholder="e.g. 401"
+            autoFocus
+            className="w-full h-10 rounded-md border border-border bg-surface px-3 text-sm focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 outline-hidden"
+          />
+          <p className="text-[11px] text-muted-foreground">The room must have an active (checked-in) booking.</p>
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-3 border-t border-border bg-surface-sunken/30">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button disabled={!room.trim()} onClick={() => onConfirm(room.trim())}>Charge {money(total)}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PayModal({ total, table, onClose, onPay }: {
   total: number;
   table: string;

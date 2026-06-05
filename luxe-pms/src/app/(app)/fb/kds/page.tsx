@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { apiGet, apiPut } from "@/lib/api";
 
 type Station = "all" | "hot" | "cold" | "tandoor" | "bar";
 type ColumnKey = "new" | "preparing" | "ready" | "served";
@@ -261,22 +262,56 @@ export default function KDSPage() {
   const overdue = activeOrders.filter(o => elapsedFor(o) > o.targetMin);
   const overdueCount = overdue.length;
 
+  // Load live kitchen orders from the POS (placed via the real fb_orders API).
+  React.useEffect(() => {
+    let cancelled = false;
+    type ApiOrder = { id: number; orderNo: string; tableNo: string; server?: string; status: string; items?: { name: string; qty: number }[] };
+    apiGet<ApiOrder[]>("/fb-orders").then(rows => {
+      if (cancelled) return;
+      const live = rows
+        .filter(r => r.status !== "paid")
+        .map(r => ({
+          id: String(r.id),
+          orderNo: r.orderNo,
+          table: r.tableNo,
+          station: "hot" as Exclude<Station, "all">,
+          course: 1 as Course,
+          items: (r.items ?? []).map(it => ({ name: it.name, qty: it.qty })),
+          receivedMinAgo: 0,
+          targetMin: 15,
+          column: (r.status === "placed" ? "new" : r.status) as ColumnKey,
+          server: r.server || "—",
+        }));
+      if (live.length) setOrders(live);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persist a KDS column change to the backing fb_order (id is numeric for real orders).
+  const persistStatus = (id: string, status: string) => {
+    if (/^\d+$/.test(id)) apiPut(`/fb-orders/${id}`, { status }).catch(() => {});
+  };
+
   // Actions
   const acknowledge = (id: string) => {
     setOrders(prev => prev.map(o => o.id === id ? { ...o, column: "preparing" } : o));
     showToast("Acknowledged - moved to Preparing");
+    persistStatus(id, "preparing");
   };
   const markReady = (id: string) => {
     setOrders(prev => prev.map(o => o.id === id ? { ...o, column: "ready" } : o));
     showToast("Marked ready - server notified");
+    persistStatus(id, "ready");
   };
   const markServed = (id: string) => {
     setOrders(prev => prev.map(o => o.id === id ? { ...o, column: "served", servedAtMinAgo: 0 } : o));
     showToast("Order served - moved to history");
+    persistStatus(id, "served");
   };
   const recall = (id: string) => {
     setOrders(prev => prev.map(o => o.id === id ? { ...o, column: "preparing" } : o));
     showToast("Order recalled - back to Preparing");
+    persistStatus(id, "preparing");
   };
 
   return (
