@@ -12,6 +12,9 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { Avatar } from "@/components/ui/avatar";
 import { CHANNELS } from "@/lib/mock-data-ext";
 import { money, cn } from "@/lib/utils";
+import { apiGet, apiPut } from "@/lib/api";
+
+type ChannelRow = { id: string; name: string; status: string; lastSync: string; bookings: number; commission: number; rev: number };
 
 const STATUS_TONE = { connected: "success", syncing: "info", disconnected: "neutral" } as const;
 
@@ -64,9 +67,27 @@ const SYNC_LOGS = [
 
 export default function ChannelsPage() {
   const [tab, setTab] = React.useState<TabId>("connections");
-  const totalBookings = CHANNELS.reduce((s, c) => s + c.bookings, 0);
-  const totalRev = CHANNELS.reduce((s, c) => s + c.rev, 0);
-  const connected = CHANNELS.filter(c => c.status === "connected").length;
+  const [channels, setChannels] = React.useState<ChannelRow[]>(() => CHANNELS.map(c => ({ ...c })));
+  const [toast, setToast] = React.useState<string | null>(null);
+  const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2600); };
+
+  React.useEffect(() => {
+    apiGet<ChannelRow[]>("/channels")
+      .then(rows => { if (rows.length) setChannels(rows.map(c => ({ ...c, id: String(c.id) }))); })
+      .catch(() => {});
+  }, []);
+
+  const patchChannel = (id: string, patch: Partial<ChannelRow>) => {
+    setChannels(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
+    apiPut(`/channels/${id}`, patch).catch(() => showToast("Could not save"));
+  };
+  const connectChannel = (c: ChannelRow) => { patchChannel(c.id, { status: "connected", lastSync: "Just now" }); showToast(`${c.name} connected`); };
+  const syncChannel = (c: ChannelRow) => { patchChannel(c.id, { lastSync: "Just now" }); showToast(`${c.name} synced`); };
+  const syncAll = () => { channels.forEach(c => { if (c.status !== "disconnected") patchChannel(c.id, { lastSync: "Just now" }); }); showToast("All channels synced"); };
+
+  const totalBookings = channels.reduce((s, c) => s + c.bookings, 0);
+  const totalRev = channels.reduce((s, c) => s + c.rev, 0);
+  const connected = channels.filter(c => c.status === "connected").length;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
@@ -76,13 +97,13 @@ export default function ChannelsPage() {
           <p className="text-muted-foreground text-sm mt-1">Two-way rate &amp; availability sync · double-booking prevention</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline"><RefreshCw className="h-4 w-4" />Sync All Now</Button>
-          <Button><Plus className="h-4 w-4" />Connect Channel</Button>
+          <Button variant="outline" onClick={syncAll}><RefreshCw className="h-4 w-4" />Sync All Now</Button>
+          <Button onClick={() => { const d = channels.find(c => c.status === "disconnected"); if (d) connectChannel(d); else showToast("All channels are connected"); }}><Plus className="h-4 w-4" />Connect Channel</Button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPICard label="Active Channels" value={connected} icon={Wifi} accent="success" hint={`${CHANNELS.length} configured`} />
+        <KPICard label="Active Channels" value={connected} icon={Wifi} accent="success" hint={`${channels.length} configured`} />
         <KPICard label="OTA Bookings (MTD)" value={totalBookings} icon={Globe} accent="brand" />
         <KPICard label="OTA Revenue (MTD)" value={money(totalRev)} icon={Globe} accent="info" />
         <KPICard label="Avg Commission" value="15.8%" icon={Percent} accent="warning" />
@@ -112,7 +133,7 @@ export default function ChannelsPage() {
       {/* CONNECTIONS */}
       {tab === "connections" && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {CHANNELS.map(c => (
+          {channels.map(c => (
             <Card key={c.id} className={cn(
               "p-5 transition-all hover:shadow-md border-l-4",
               c.status === "connected" && "border-l-success",
@@ -129,7 +150,7 @@ export default function ChannelsPage() {
                     Last sync · {c.lastSync}
                   </div>
                 </div>
-                <Badge tone={STATUS_TONE[c.status]}>{c.status}</Badge>
+                <Badge tone={STATUS_TONE[c.status as keyof typeof STATUS_TONE] ?? "neutral"}>{c.status}</Badge>
               </div>
               <dl className="mt-4 pt-4 border-t border-border grid grid-cols-3 gap-2">
                 <div>
@@ -147,11 +168,11 @@ export default function ChannelsPage() {
               </dl>
               <div className="mt-4 flex gap-2">
                 {c.status === "disconnected" ? (
-                  <Button size="sm" className="flex-1"><Link2 className="h-3.5 w-3.5" />Connect</Button>
+                  <Button size="sm" className="flex-1" onClick={() => connectChannel(c)}><Link2 className="h-3.5 w-3.5" />Connect</Button>
                 ) : (
                   <>
-                    <Button variant="secondary" size="sm" className="flex-1">Settings</Button>
-                    <Button variant="outline" size="sm"><RefreshCw className="h-3.5 w-3.5" /></Button>
+                    <Button variant="secondary" size="sm" className="flex-1" onClick={() => showToast(`${c.name} settings`)}>Settings</Button>
+                    <Button variant="outline" size="sm" onClick={() => syncChannel(c)}><RefreshCw className="h-3.5 w-3.5" /></Button>
                   </>
                 )}
               </div>
@@ -166,7 +187,7 @@ export default function ChannelsPage() {
           <Card className="p-3">
             <div className="flex flex-wrap items-center gap-2">
               <Input placeholder="Search by booking #, guest, channel…" className="flex-1 min-w-[240px] h-9" />
-              <Select className="h-9 w-auto"><option>All channels</option>{CHANNELS.map(c => <option key={c.id}>{c.name}</option>)}</Select>
+              <Select className="h-9 w-auto"><option>All channels</option>{channels.map(c => <option key={c.id}>{c.name}</option>)}</Select>
               <Select className="h-9 w-auto"><option>All statuses</option><option>Confirmed</option><option>Modified</option><option>Cancelled</option><option>Pending</option></Select>
               <Select className="h-9 w-auto"><option>This week</option><option>This month</option></Select>
             </div>
@@ -301,7 +322,7 @@ export default function ChannelsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {CHANNELS.filter(c => c.bookings > 0).map(c => {
+              {channels.filter(c => c.bookings > 0).map(c => {
                 const commission = Math.round(c.rev * c.commission / 100);
                 return (
                   <tr key={c.id}>
@@ -318,14 +339,14 @@ export default function ChannelsPage() {
             <tfoot className="bg-surface-elevated border-t border-border">
               <tr>
                 <td className="px-5 py-3 font-semibold">Total</td>
-                <td className="px-5 py-3 text-right tabular font-semibold">{CHANNELS.reduce((s, c) => s + c.bookings, 0)}</td>
-                <td className="px-5 py-3 text-right tabular font-semibold">{money(CHANNELS.reduce((s, c) => s + c.rev, 0))}</td>
+                <td className="px-5 py-3 text-right tabular font-semibold">{channels.reduce((s, c) => s + c.bookings, 0)}</td>
+                <td className="px-5 py-3 text-right tabular font-semibold">{money(channels.reduce((s, c) => s + c.rev, 0))}</td>
                 <td></td>
                 <td className="px-5 py-3 text-right tabular font-semibold text-warning">
-                  {money(CHANNELS.reduce((s, c) => s + Math.round(c.rev * c.commission / 100), 0))}
+                  {money(channels.reduce((s, c) => s + Math.round(c.rev * c.commission / 100), 0))}
                 </td>
                 <td className="px-5 py-3 text-right tabular font-semibold">
-                  {money(CHANNELS.reduce((s, c) => s + (c.rev - Math.round(c.rev * c.commission / 100)), 0))}
+                  {money(channels.reduce((s, c) => s + (c.rev - Math.round(c.rev * c.commission / 100)), 0))}
                 </td>
               </tr>
             </tfoot>
@@ -363,6 +384,12 @@ export default function ChannelsPage() {
             </tbody>
           </table>
         </Card>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-md bg-foreground text-background px-4 py-2.5 text-sm font-medium shadow-lg">
+          {toast}
+        </div>
       )}
     </div>
   );

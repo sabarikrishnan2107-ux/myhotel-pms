@@ -30,6 +30,7 @@ class DatabaseSeeder extends Seeder
             HallBookingSeeder::class,
             GroupBookingSeeder::class,
             ComplianceLicenseSeeder::class,
+            ChannelSeeder::class,
             AuditLogSeeder::class,
         ]);
     }
