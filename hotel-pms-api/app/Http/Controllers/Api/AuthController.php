@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AppSetting;
+use App\Models\AuditLog;
 use App\Models\User;
 use App\Support\Totp;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -22,13 +25,41 @@ class AuthController extends Controller
             'code'     => ['sometimes', 'nullable', 'string'],
         ]);
 
+        // Enforce the configurable "lockout after N failed attempts" security setting.
+        $security = AppSetting::where('key', 'security')->first()?->value ?? [];
+        $maxAttempts = (int) ($security['lockoutAfter'] ?? 0);
+        $throttleKey = 'login:' . strtolower($data['email']) . '|' . $request->ip();
+
+        if ($maxAttempts > 0 && RateLimiter::tooManyAttempts($throttleKey, $maxAttempts)) {
+            $seconds = RateLimiter::availableIn($throttleKey);
+            AuditLog::record([
+                'module' => 'Auth', 'action' => 'Login blocked', 'entity' => $data['email'],
+                'after' => 'Account locked', 'severity' => 'critical',
+                'ip' => $request->ip(), 'device' => $request->userAgent(),
+            ]);
+            throw ValidationException::withMessages([
+                'email' => ["Too many failed attempts. Try again in {$seconds} second(s)."],
+            ]);
+        }
+
         $user = User::where('email', $data['email'])->first();
 
         if (! $user || ! Hash::check($data['password'], $user->password)) {
+            if ($maxAttempts > 0) {
+                RateLimiter::hit($throttleKey, 900); // 15-minute lockout window
+            }
+            AuditLog::record([
+                'module' => 'Auth', 'action' => 'Login failed', 'entity' => $data['email'],
+                'after' => 'Invalid credentials', 'severity' => 'warning',
+                'ip' => $request->ip(), 'device' => $request->userAgent(),
+            ]);
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
         }
+
+        // Successful credentials — clear the failed-attempt counter.
+        RateLimiter::clear($throttleKey);
 
         // If 2FA is on, require a valid authenticator code before issuing a token.
         if ($user->two_factor_enabled) {
@@ -44,7 +75,7 @@ class AuthController extends Controller
 
         $token = $user->createToken('web')->plainTextToken;
 
-        \App\Models\AuditLog::record([
+        AuditLog::record([
             'user' => $user->name, 'module' => 'Auth', 'action' => 'Logged in',
             'entity' => $user->email, 'after' => 'Success',
             'ip' => $request->ip(), 'device' => $request->userAgent(),
