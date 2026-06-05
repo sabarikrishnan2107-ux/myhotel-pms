@@ -54,6 +54,13 @@ class ShiftController extends Controller
             'closedAt' => now()->format('Y-m-d H:i'),
         ]));
 
+        \App\Models\AuditLog::record([
+            'module' => 'Cashier', 'action' => 'Shift closed',
+            'entity' => "Shift #{$shift->number}",
+            'after'  => 'Variance ' . ($shift->variance ?? 0),
+            'severity' => abs((int) ($shift->variance ?? 0)) > 100 ? 'warning' : 'info',
+        ], $request);
+
         return response()->json($this->withTotals($shift));
     }
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BackupController;
 use App\Http\Controllers\Api\NightAuditController;
@@ -45,6 +46,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // Cashier shift — live mode totals from real payments + close-out
     Route::get('/shift/current', [ShiftController::class, 'current']);
     Route::post('/shift/close', [ShiftController::class, 'close']);
+
+    // Audit trail — real activity recorded across CRUD, auth, night audit, shifts
+    Route::get('/audit-logs', [AuditLogController::class, 'index']);
 
     // Image uploads (logos, brand assets)
     Route::post('/upload', [UploadController::class, 'store']);

@@ -44,6 +44,12 @@ class AuthController extends Controller
 
         $token = $user->createToken('web')->plainTextToken;
 
+        \App\Models\AuditLog::record([
+            'user' => $user->name, 'module' => 'Auth', 'action' => 'Logged in',
+            'entity' => $user->email, 'after' => 'Success',
+            'ip' => $request->ip(), 'device' => $request->userAgent(),
+        ]);
+
         return response()->json([
             'token' => $token,
             'user'  => ['id' => $user->id, 'name' => $user->name, 'email' => $user->email],

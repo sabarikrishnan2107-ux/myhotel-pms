@@ -12,6 +12,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { AUDIT_LOG_ENTRIES } from "@/lib/mock-data-ext";
 import { cn } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
 
 type Severity = "info" | "warning" | "critical";
 type SeededEntry = typeof AUDIT_LOG_ENTRIES[number];
@@ -49,7 +50,13 @@ function enrich(): Enriched[] {
 }
 
 export default function AuditLogsPage() {
-  const entries = React.useMemo(enrich, []);
+  // Real activity trail from the backend; falls back to the demo seed if offline.
+  const [entries, setEntries] = React.useState<Enriched[]>(enrich);
+  React.useEffect(() => {
+    apiGet<Enriched[]>("/audit-logs")
+      .then(rows => { if (rows.length) setEntries(rows); })
+      .catch(() => {});
+  }, []);
 
   const [search, setSearch] = React.useState("");
   const [moduleFilter, setModuleFilter] = React.useState("all");

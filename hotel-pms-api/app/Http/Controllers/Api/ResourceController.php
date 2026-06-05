@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AccountEntry;
 use App\Models\Agent;
+use App\Models\AuditLog;
 use App\Models\AppUser;
 use App\Models\Booking;
 use App\Models\Enquiry;
@@ -312,21 +313,68 @@ class ResourceController extends Controller
         $this->model($resource); // 404 if unknown
         $row = $this->model($resource)::create($this->validated($resource, $request, true));
 
+        AuditLog::record([
+            'module' => $this->moduleLabel($resource), 'action' => 'Created',
+            'entity' => $this->entityLabel($resource, $row), 'after' => 'Created',
+        ], $request);
+
         return response()->json($row, 201);
     }
 
     public function update(string $resource, Request $request, $id)
     {
         $row = $this->model($resource)::findOrFail($id);
-        $row->update($this->validated($resource, $request, false));
+        $changes = $this->validated($resource, $request, false);
+        $row->update($changes);
+
+        AuditLog::record([
+            'module' => $this->moduleLabel($resource),
+            'action' => isset($changes['status']) ? 'Status changed' : 'Updated',
+            'entity' => $this->entityLabel($resource, $row),
+            'after'  => isset($changes['status']) ? (string) $changes['status'] : 'Updated',
+        ], $request);
 
         return response()->json($row);
     }
 
-    public function destroy(string $resource, $id)
+    public function destroy(string $resource, Request $request, $id)
     {
-        $this->model($resource)::findOrFail($id)->delete();
+        $row = $this->model($resource)::findOrFail($id);
+        $entity = $this->entityLabel($resource, $row);
+        $row->delete();
+
+        AuditLog::record([
+            'module' => $this->moduleLabel($resource), 'action' => 'Deleted',
+            'entity' => $entity, 'after' => 'Deleted', 'severity' => 'warning',
+        ], $request);
 
         return response()->noContent();
+    }
+
+    /** Slugs whose friendly module name differs from a plain title-case. */
+    private const MODULE_LABELS = [
+        'folio-charges' => 'Folio', 'folio-payments' => 'Payment', 'fb-orders' => 'F&B',
+        'menu-items' => 'F&B', 'inventory-items' => 'Inventory', 'maintenance-tickets' => 'Maintenance',
+        'found-items' => 'Lost & Found', 'loyalty-members' => 'Loyalty', 'account-entries' => 'Accounts',
+        'app-users' => 'Users', 'hall-bookings' => 'Halls', 'group-bookings' => 'Groups',
+        'rate-plans' => 'Rate Plans', 'gst-slabs' => 'GST', 'payment-methods' => 'Payment Methods',
+        'notification-templates' => 'Notifications',
+    ];
+
+    private function moduleLabel(string $resource): string
+    {
+        return self::MODULE_LABELS[$resource] ?? ucwords(str_replace('-', ' ', $resource));
+    }
+
+    /** Best human label for a row — name/code/booking ref, else #id. */
+    private function entityLabel(string $resource, $row): string
+    {
+        foreach (['name', 'code', 'bookingNo', 'customer', 'guestName', 'membershipId', 'enqNo', 'orderNo', 'title', 'email'] as $field) {
+            if (! empty($row->{$field})) {
+                return (string) $row->{$field};
+            }
+        }
+
+        return '#' . $row->id;
     }
 }

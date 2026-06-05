@@ -55,6 +55,12 @@ class NightAuditController extends Controller
             $total += $nightly;
         }
 
+        \App\Models\AuditLog::record([
+            'module' => 'Night Audit', 'action' => 'Audit completed',
+            'entity' => "Business date {$today}",
+            'after'  => "{$rooms} rooms posted · ₹{$total}",
+        ]);
+
         return response()->json([
             'businessDate'   => $today,
             'roomsPosted'    => $rooms,
