@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 
 // ============================================================
 // TYPES + SEED
@@ -139,7 +140,12 @@ export default function PricingPage() {
     return seedSignals(start, 90);
   });
   const [selectedDay, setSelectedDay] = React.useState<DaySignal | null>(null);
-  const [rules, setRules] = React.useState<PricingRule[]>(RULES_SEED);
+  const [rules, setRules] = React.useState<PricingRule[]>([]);
+  React.useEffect(() => {
+    apiGet<PricingRule[]>("/pricing-rules")
+      .then(rows => setRules(rows.map(r => ({ ...r, id: String(r.id) }))))
+      .catch(() => {});
+  }, []);
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
@@ -252,9 +258,9 @@ export default function PricingPage() {
       {tab === "rules" && (
         <RulesTab
           rules={rules}
-          onToggle={(id) => { setRules(prev => prev.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r)); showToast("Rule updated"); }}
-          onDelete={(id) => { setRules(prev => prev.filter(r => r.id !== id)); showToast("Rule deleted"); }}
-          onAdd={(r) => { setRules(prev => [...prev, { ...r, id: "r" + (prev.length + 1) }]); showToast("Rule created"); }}
+          onToggle={(id) => { const cur = rules.find(r => r.id === id); const next = !cur?.enabled; setRules(prev => prev.map(r => r.id === id ? { ...r, enabled: next } : r)); apiPut(`/pricing-rules/${id}`, { enabled: next }).catch(() => showToast("Could not save")); showToast("Rule updated"); }}
+          onDelete={(id) => { setRules(prev => prev.filter(r => r.id !== id)); apiDelete(`/pricing-rules/${id}`).catch(() => showToast("Could not delete")); showToast("Rule deleted"); }}
+          onAdd={(r) => { apiPost<PricingRule>("/pricing-rules", r).then(row => setRules(prev => [...prev, { ...row, id: String(row.id) }])).catch(() => showToast("Could not save rule")); showToast("Rule created"); }}
         />
       )}
 
@@ -788,6 +794,24 @@ function SettingsTab({ onToast }: { onToast: (m: string) => void }) {
   const [refreshFreq, setRefreshFreq] = React.useState("hourly");
   const [autoPublish, setAutoPublish] = React.useState(false);
   const [confThreshold, setConfThreshold] = React.useState(75);
+  const ready = React.useRef(false);
+
+  React.useEffect(() => {
+    apiGet<{ sensitivity?: string; refreshFreq?: string; autoPublish?: boolean; confThreshold?: number }>("/settings/pricing")
+      .then(s => {
+        if (s?.sensitivity) setSensitivity(s.sensitivity);
+        if (s?.refreshFreq) setRefreshFreq(s.refreshFreq);
+        if (typeof s?.autoPublish === "boolean") setAutoPublish(s.autoPublish);
+        if (s?.confThreshold) setConfThreshold(s.confThreshold);
+      })
+      .catch(() => {})
+      .finally(() => { ready.current = true; });
+  }, []);
+
+  React.useEffect(() => {
+    if (!ready.current) return;
+    apiPut("/settings/pricing", { sensitivity, refreshFreq, autoPublish, confThreshold }).catch(() => onToast("Could not save settings"));
+  }, [sensitivity, refreshFreq, autoPublish, confThreshold, onToast]);
 
   return (
     <div className="space-y-4">

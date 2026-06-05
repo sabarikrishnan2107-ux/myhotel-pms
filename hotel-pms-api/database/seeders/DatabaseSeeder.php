@@ -32,6 +32,7 @@ class DatabaseSeeder extends Seeder
             ComplianceLicenseSeeder::class,
             ChannelSeeder::class,
             WebRoomSeeder::class,
+            PricingRuleSeeder::class,
             AuditLogSeeder::class,
         ]);
     }
