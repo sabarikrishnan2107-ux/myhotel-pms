@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AccountEntry;
 use App\Models\Agent;
 use App\Models\Booking;
 use App\Models\Enquiry;
@@ -64,6 +65,7 @@ class ResourceController extends Controller
         'enquiries'              => Enquiry::class,
         'found-items'            => FoundItem::class,
         'loyalty-members'        => LoyaltyMember::class,
+        'account-entries'        => AccountEntry::class,
     ];
 
     /** Resources that can be filtered by ?bookingNo= on index. */
@@ -208,6 +210,14 @@ class ResourceController extends Controller
             'foundBy' => 'string|max:100|nullable', 'storageLocation' => 'string|max:255|nullable',
             'condition' => 'string|max:50', 'description' => 'string|max:2000|nullable', 'timeline' => 'array',
         ],
+        'account-entries' => [
+            'date' => 'string|max:50', 'type' => 'string|max:50', 'category' => 'string|max:255',
+            'description' => 'string|max:500', 'amount' => 'integer', 'mode' => 'string|max:50',
+            'ref' => 'string|max:255|nullable', 'vendor' => 'string|max:255|nullable', 'gstin' => 'string|max:50|nullable',
+            'cgst' => 'integer|nullable', 'sgst' => 'integer|nullable', 'igst' => 'integer|nullable',
+            'hsnSac' => 'string|max:50|nullable', 'voucherNo' => 'string|max:50|nullable',
+            'lines' => 'array|nullable', 'attachment' => 'array|nullable',
+        ],
         'loyalty-members' => [
             'membershipId' => 'string|max:50', 'name' => 'string|max:255', 'phone' => 'string|max:50|nullable',
             'email' => 'email|max:255|nullable', 'dob' => 'string|max:50|nullable', 'anniversary' => 'string|max:50|nullable',
@@ -233,6 +243,7 @@ class ResourceController extends Controller
         'menu-items' => ['name'], 'fb-orders' => ['tableNo'],
         'maintenance-tickets' => ['title'], 'enquiries' => ['name'], 'found-items' => ['name'],
         'loyalty-members' => ['name'],
+        'account-entries' => ['category', 'description'],
     ];
 
     private function model(string $resource): string

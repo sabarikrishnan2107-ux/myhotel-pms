@@ -13,6 +13,7 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { AIInsight } from "@/components/ui/ai-insight";
 import { INCOME_BREAKDOWN, EXPENSE_BREAKDOWN, RECENT_TXN } from "@/lib/mock-data-ext";
 import { money, cn, formatDate } from "@/lib/utils";
+import { apiGet, apiPost } from "@/lib/api";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend, LineChart, Line } from "recharts";
 
 const PL_TREND = [
@@ -371,7 +372,12 @@ const SEED_ENTRIES: Entry[] = [
 
 export default function AccountsPage() {
   const [tab, setTab] = React.useState<TabId>("overview");
-  const [entries, setEntries] = React.useState<Entry[]>(SEED_ENTRIES);
+  const [entries, setEntries] = React.useState<Entry[]>([]);
+  React.useEffect(() => {
+    apiGet<Entry[]>("/account-entries")
+      .then(rows => setEntries(rows.map(r => ({ ...r, id: String(r.id) })).reverse()))
+      .catch(() => {});
+  }, []);
   const [showEntry, setShowEntry] = React.useState<EntryType | null>(null);
   const [showExpenseFull, setShowExpenseFull] = React.useState(false);
   const [voucherEntry, setVoucherEntry] = React.useState<Entry | null>(null);
@@ -386,13 +392,20 @@ export default function AccountsPage() {
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
-  const income = INCOME_BREAKDOWN.reduce((s, i) => s + i.value, 0);
-  const expense = EXPENSE_BREAKDOWN.reduce((s, i) => s + i.value, 0);
+  // Headline KPIs derive from the real posted entries (fall back to the
+  // illustrative breakdown only before any entry has loaded).
+  const sumByType = (t: EntryType) => entries.filter(e => e.type === t).reduce((s, e) => s + e.amount, 0);
+  const seedIncome = INCOME_BREAKDOWN.reduce((s, i) => s + i.value, 0);
+  const seedExpense = EXPENSE_BREAKDOWN.reduce((s, i) => s + i.value, 0);
+  const income = entries.length ? sumByType("income") : seedIncome;
+  const expense = entries.length ? sumByType("expense") + sumByType("refund") : seedExpense;
   const profit = income - expense;
-  const margin = ((profit / income) * 100).toFixed(1);
+  const margin = income ? ((profit / income) * 100).toFixed(1) : "0.0";
 
   const handleAdd = (e: Omit<Entry, "id">) => {
-    setEntries(prev => [{ ...e, id: `e${Date.now()}` }, ...prev]);
+    apiPost<Entry>("/account-entries", e)
+      .then(row => setEntries(prev => [{ ...row, id: String(row.id) }, ...prev]))
+      .catch(() => showToast("Could not save entry"));
     setShowEntry(null);
     showToast(`${e.type === "income" ? "Income" : e.type === "expense" ? "Expense" : "Refund"} of ${money(e.amount)} recorded`);
   };
