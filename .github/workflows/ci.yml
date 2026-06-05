@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend · Laravel tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hotel-pms-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo, pdo_sqlite, sqlite3, mbstring, bcmath
+          coverage: none
+
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: hotel-pms-api/vendor
+          key: composer-${{ hashFiles('hotel-pms-api/composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Run tests (in-memory SQLite)
+        run: php artisan test
+
+  frontend:
+    name: Frontend · lint + unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: luxe-pms
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: luxe-pms/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Advisory: the codebase has pre-existing lint debt in some large pages,
+      # so lint reports issues but does not gate the build. Tests are the gate.
+      - name: Lint (advisory)
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Unit tests
+        run: npm test
