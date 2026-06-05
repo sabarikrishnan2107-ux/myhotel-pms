@@ -13,7 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { Input } from "@/components/ui/input";
-import { GROUP_BOOKINGS, SAMPLE_ROOMING_LIST, GROUP_TIMELINE, type GroupStatus } from "@/lib/mock-data-ext";
+import { GROUP_BOOKINGS, SAMPLE_ROOMING_LIST, GROUP_TIMELINE, type GroupStatus, type GroupBooking } from "@/lib/mock-data-ext";
+import { apiGet } from "@/lib/api";
 import { cn, money, formatDate } from "@/lib/utils";
 
 const STATUS_TONE: Record<GroupStatus, "neutral" | "info" | "success" | "brand" | "warning" | "danger"> = {
@@ -32,7 +33,15 @@ const TABS = [
 
 export default function GroupDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const group = GROUP_BOOKINGS.find(g => g.code === id) ?? GROUP_BOOKINGS[0];
+  const [group, setGroup] = React.useState<GroupBooking>(() => GROUP_BOOKINGS.find(g => g.code === id) ?? GROUP_BOOKINGS[0]);
+  React.useEffect(() => {
+    apiGet<GroupBooking[]>("/group-bookings")
+      .then(rows => {
+        const match = rows.find(g => g.code === id);
+        if (match) setGroup({ ...match, id: String(match.id), block: match.block ?? [], services: match.services ?? [] });
+      })
+      .catch(() => {});
+  }, [id]);
   const [tab, setTab] = React.useState("overview");
 
   const allocated = group.block.reduce((s, b) => s + b.assigned, 0);

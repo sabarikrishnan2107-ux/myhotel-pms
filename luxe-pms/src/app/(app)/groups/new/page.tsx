@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   UsersRound, Calendar, BedDouble, Plus, Minus, Trash2, Sparkles,
   ChevronLeft, Send, Upload, CheckCircle2, ArrowRight, Building2, Briefcase,
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiPost } from "@/lib/api";
 
 interface BlockRow { id: string; type: string; qty: number; rate: number; }
 
@@ -79,6 +81,27 @@ export default function NewGroupPage() {
   };
   const removeBlock = (id: string) => setBlock(b => b.filter(r => r.id !== id));
   const addBlock = () => setBlock(b => [...b, { id: `b${Date.now()}`, type: "Deluxe", qty: 5, rate: 650 }]);
+
+  const router = useRouter();
+  const [saving, setSaving] = React.useState(false);
+  const requiredOk = !!(name && contactName && contactPhone && arrival && departure && block.length);
+
+  const save = (status: "confirmed" | "tentative") => {
+    if (saving || !requiredOk) return;
+    setSaving(true);
+    const code = `GRP-${new Date().getFullYear().toString().slice(-2)}${Math.floor(10 + (totalRooms % 90))}`;
+    apiPost("/group-bookings", {
+      code, name, type, contactName, contactPhone, contactEmail,
+      bookedBy, arrival, departure, nights,
+      block: block.map(b => ({ type: b.type, qty: b.qty, rate: b.rate, assigned: 0 })),
+      totalRooms, totalPax: pax, ratePlan,
+      services: services.map(id => SERVICE_OPTIONS.find(o => o.id === id)?.label ?? id),
+      total: Math.round(total), advance: Math.round(advance), balance: Math.round(total - advance),
+      status, notes, createdAt: new Date().toISOString().slice(0, 10),
+    })
+      .then(() => router.push("/groups"))
+      .catch(() => setSaving(false));
+  };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
@@ -395,12 +418,10 @@ export default function NewGroupPage() {
           </div>
 
           <div className="border-t border-border pt-4 space-y-2">
-            <Link href="/groups">
-              <Button className="w-full" size="lg" variant="success">
-                <Send className="h-4 w-4" />Create Group Booking
-              </Button>
-            </Link>
-            <Button className="w-full" variant="outline">
+            <Button className="w-full" size="lg" variant="success" disabled={!requiredOk || saving} onClick={() => save("confirmed")}>
+              <Send className="h-4 w-4" />{saving ? "Saving…" : "Create Group Booking"}
+            </Button>
+            <Button className="w-full" variant="outline" disabled={!requiredOk || saving} onClick={() => save("tentative")}>
               Save as Tentative<ArrowRight className="h-4 w-4" />
             </Button>
           </div>

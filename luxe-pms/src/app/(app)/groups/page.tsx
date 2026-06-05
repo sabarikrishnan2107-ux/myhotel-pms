@@ -12,8 +12,9 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
-import { GROUP_BOOKINGS, type GroupStatus, type GroupType } from "@/lib/mock-data-ext";
+import { GROUP_BOOKINGS, type GroupStatus, type GroupType, type GroupBooking } from "@/lib/mock-data-ext";
 import { money, cn, formatDate } from "@/lib/utils";
+import { apiGet, apiPut } from "@/lib/api";
 
 const STATUS_TONE: Record<GroupStatus, "neutral" | "info" | "success" | "brand" | "warning" | "danger"> = {
   draft: "neutral",
@@ -49,6 +50,14 @@ export default function GroupsPage() {
   const [dateWindow, setDateWindow] = React.useState<DateWindow>("all");
   const [actionMenuFor, setActionMenuFor] = React.useState<string | null>(null);
 
+  // Groups load from the database; cancel/modify layer over them and persist.
+  const [groups, setGroups] = React.useState<GroupBooking[]>([]);
+  React.useEffect(() => {
+    apiGet<GroupBooking[]>("/group-bookings")
+      .then(rows => setGroups(rows.map(g => ({ ...g, id: String(g.id), block: g.block ?? [], services: g.services ?? [] }))))
+      .catch(() => {});
+  }, []);
+
   // Local mutations
   const [cancelledIds, setCancelledIds] = React.useState<Set<string>>(new Set());
   const [overrides, setOverrides] = React.useState<Record<string, GroupOverride>>({});
@@ -59,7 +68,7 @@ export default function GroupsPage() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2800); };
 
   const effective = React.useMemo(() => {
-    return GROUP_BOOKINGS.map(g => {
+    return groups.map(g => {
       const ov = overrides[g.id] ?? {};
       return {
         ...g,
@@ -67,7 +76,7 @@ export default function GroupsPage() {
         status: cancelledIds.has(g.id) ? ("cancelled" as GroupStatus) : (ov.status ?? g.status),
       };
     });
-  }, [overrides, cancelledIds]);
+  }, [groups, overrides, cancelledIds]);
 
   const inWindow = (iso: string) => {
     if (dateWindow === "all") return true;
@@ -95,11 +104,13 @@ export default function GroupsPage() {
 
   const handleModify = (g: typeof GROUP_BOOKINGS[number], patch: GroupOverride) => {
     setOverrides(o => ({ ...o, [g.id]: { ...(o[g.id] ?? {}), ...patch } }));
+    apiPut(`/group-bookings/${g.id}`, patch).catch(() => showToast("Could not save changes"));
     setModifyTarget(null);
     showToast(`Group ${g.code} updated`);
   };
   const handleCancel = (g: typeof GROUP_BOOKINGS[number], reason: string, refund: number) => {
     setCancelledIds(c => new Set([...c, g.id]));
+    apiPut(`/group-bookings/${g.id}`, { status: "cancelled" }).catch(() => showToast("Could not cancel"));
     setCancelTarget(null);
     showToast(`${g.name} cancelled · ${money(refund)} refund processed (${reason})`);
   };

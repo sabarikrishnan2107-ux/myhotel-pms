@@ -14,6 +14,7 @@ use App\Models\FolioCharge;
 use App\Models\FolioPayment;
 use App\Models\FbOrder;
 use App\Models\FoundItem;
+use App\Models\GroupBooking;
 use App\Models\GstSlab;
 use App\Models\HallBooking;
 use App\Models\MaintenanceTicket;
@@ -70,6 +71,7 @@ class ResourceController extends Controller
         'account-entries'        => AccountEntry::class,
         'app-users'              => AppUser::class,
         'hall-bookings'          => HallBooking::class,
+        'group-bookings'         => GroupBooking::class,
     ];
 
     /** Resources that can be filtered by ?bookingNo= on index. */
@@ -214,6 +216,15 @@ class ResourceController extends Controller
             'foundBy' => 'string|max:100|nullable', 'storageLocation' => 'string|max:255|nullable',
             'condition' => 'string|max:50', 'description' => 'string|max:2000|nullable', 'timeline' => 'array',
         ],
+        'group-bookings' => [
+            'code' => 'string|max:50', 'name' => 'string|max:255', 'type' => 'string|max:50',
+            'contactName' => 'string|max:255', 'contactPhone' => 'string|max:50|nullable', 'contactEmail' => 'email|max:255|nullable',
+            'bookedBy' => 'string|max:255|nullable', 'arrival' => 'string|max:50', 'departure' => 'string|max:50',
+            'nights' => 'integer|min:0', 'block' => 'array', 'totalRooms' => 'integer|min:0', 'totalPax' => 'integer|min:0',
+            'ratePlan' => 'string|max:255|nullable', 'services' => 'array', 'total' => 'integer|min:0',
+            'advance' => 'integer|min:0', 'balance' => 'integer', 'status' => 'string|max:50',
+            'notes' => 'string|max:2000|nullable', 'createdAt' => 'string|max:50|nullable',
+        ],
         'hall-bookings' => [
             'customer' => 'string|max:255', 'phone' => 'string|max:50|nullable', 'hall' => 'string|max:255',
             'date' => 'string|max:50', 'start' => 'string|max:50', 'end' => 'string|max:50',
@@ -261,6 +272,7 @@ class ResourceController extends Controller
         'account-entries' => ['category', 'description'],
         'app-users' => ['name', 'email'],
         'hall-bookings' => ['customer'],
+        'group-bookings' => ['name'],
     ];
 
     private function model(string $resource): string
