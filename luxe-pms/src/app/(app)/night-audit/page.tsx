@@ -13,6 +13,9 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { AUDIT_RUNS } from "@/lib/mock-data-ext";
 import { DASHBOARD_KPIS } from "@/lib/mock-data";
 import { money, cn } from "@/lib/utils";
+import { apiPost } from "@/lib/api";
+
+type AuditResult = { businessDate: string; roomsPosted: number; totalPosted: number };
 
 // ================== TYPES ==================
 type AuditRun = typeof AUDIT_RUNS[number] & {
@@ -341,21 +344,29 @@ function RunAuditWizard({ onClose, onComplete, flash }: {
   const [currentStep, setCurrentStep] = React.useState(0);
   const [completed, setCompleted] = React.useState<boolean[]>(Array(WIZARD_STEPS.length).fill(false));
   const [working, setWorking] = React.useState(false);
+  const [postResult, setPostResult] = React.useState<AuditResult | null>(null);
 
   React.useEffect(() => {
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = ""; };
   }, []);
 
+  const finishStep = () => {
+    setCompleted(prev => prev.map((c, i) => i === currentStep ? true : c));
+    if (currentStep < WIZARD_STEPS.length - 1) setCurrentStep(currentStep + 1);
+    setWorking(false);
+  };
+
   const advance = () => {
     setWorking(true);
-    setTimeout(() => {
-      setCompleted(prev => prev.map((c, i) => i === currentStep ? true : c));
-      if (currentStep < WIZARD_STEPS.length - 1) {
-        setCurrentStep(currentStep + 1);
-      }
-      setWorking(false);
-    }, 700);
+    // The "post nightly charges" step actually posts room charges to in-house folios.
+    if (WIZARD_STEPS[currentStep].id === "post") {
+      apiPost<AuditResult>("/night-audit", {})
+        .then(r => { setPostResult(r); finishStep(); })
+        .catch(() => finishStep());
+    } else {
+      setTimeout(finishStep, 700);
+    }
   };
 
   const isLast = currentStep === WIZARD_STEPS.length - 1;
@@ -404,6 +415,7 @@ function RunAuditWizard({ onClose, onComplete, flash }: {
             flash={flash}
             working={working}
             completed={completed[currentStep]}
+            postResult={postResult}
           />
         </div>
 
@@ -436,11 +448,12 @@ function RunAuditWizard({ onClose, onComplete, flash }: {
   );
 }
 
-function WizardStepBody({ step, flash, working, completed }: {
+function WizardStepBody({ step, flash, working, completed, postResult }: {
   step: typeof WIZARD_STEPS[number]["id"];
   flash: { revenue: number; adr: number; revpar: number; occupancy: number; cashCollected: number; taxLiability: number };
   working: boolean;
   completed: boolean;
+  postResult: AuditResult | null;
 }) {
   if (step === "precheck") {
     return (
@@ -478,13 +491,13 @@ function WizardStepBody({ step, flash, working, completed }: {
         <p className="text-xs text-muted-foreground">Automated posting of room rent + 12% GST (CGST 6 + SGST 6) for all in-house guests.</p>
         <Card className="p-3 bg-info-soft/15 border-info/20">
           <div className="grid grid-cols-3 gap-2 text-xs">
-            <div><p className="text-muted-foreground">In-house rooms</p><p className="font-semibold tabular text-lg">28</p></div>
-            <div><p className="text-muted-foreground">Total rent</p><p className="font-semibold tabular text-lg">{money(2_36_500)}</p></div>
-            <div><p className="text-muted-foreground">+ GST 12%</p><p className="font-semibold tabular text-lg">{money(28_380)}</p></div>
+            <div><p className="text-muted-foreground">In-house rooms</p><p className="font-semibold tabular text-lg">{postResult ? postResult.roomsPosted : 28}</p></div>
+            <div><p className="text-muted-foreground">Total rent</p><p className="font-semibold tabular text-lg">{money(postResult ? postResult.totalPosted : 2_36_500)}</p></div>
+            <div><p className="text-muted-foreground">+ GST 12%</p><p className="font-semibold tabular text-lg">{money(postResult ? Math.round(postResult.totalPosted * 0.12) : 28_380)}</p></div>
           </div>
         </Card>
         {working && <p className="text-xs text-muted-foreground inline-flex items-center gap-1.5"><RefreshCw className="h-3 w-3 animate-spin" />Posting charges to folios…</p>}
-        {completed && <p className="text-xs text-success inline-flex items-center gap-1.5"><CheckCircle2 className="h-3 w-3" />All 28 charges posted successfully</p>}
+        {completed && postResult && <p className="text-xs text-success inline-flex items-center gap-1.5"><CheckCircle2 className="h-3 w-3" />Posted {postResult.roomsPosted} room charges to in-house folios · business date {postResult.businessDate}</p>}
       </div>
     );
   }

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BackupController;
+use App\Http\Controllers\Api\NightAuditController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\ResourceController;
 use App\Http\Controllers\Api\SettingsController;
@@ -36,6 +37,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // Dashboard KPIs + live room board (aggregated from real data)
     Route::get('/stats', [StatsController::class, 'index']);
     Route::get('/room-board', [StatsController::class, 'roomBoard']);
+
+    // Night audit — post nightly room charges to in-house folios
+    Route::post('/night-audit', [NightAuditController::class, 'run']);
 
     // Image uploads (logos, brand assets)
     Route::post('/upload', [UploadController::class, 'store']);
