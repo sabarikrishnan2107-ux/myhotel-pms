@@ -593,7 +593,6 @@ export default function BookingWizardPage() {
                 <ToggleRow label="Breakfast buffet (à la carte top-up)" hint={`${money(95)} per person/day · use this only if not on a meal plan`} checked={breakfast} onChange={setBreakfast} />
                 <ToggleRow label="Extra bed" hint={`${money(900)} per person/night (incl. breakfast)`} checked={extraBed} onChange={setExtraBed} />
                 <ToggleRow label="Airport transfer" hint={`${money(175)} one way`} checked={airportTransfer} onChange={setAirportTransfer} />
-                <ToggleRow label="Late check-out (until 4pm)" hint={`${money(200)} flat`} checked={lateCheckout} onChange={setLateCheckout} />
               </div>
             </div>
           )}
