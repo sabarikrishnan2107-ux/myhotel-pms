@@ -2,7 +2,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bot, ChevronDown, Menu, Plus, Search, LogOut } from "lucide-react";
+import { Bot, Menu, Plus, Search, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "./theme-toggle";
 import { Avatar } from "@/components/ui/avatar";
@@ -46,15 +46,6 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
         aria-label="Open menu"
       >
         <Menu className="h-4 w-4" />
-      </button>
-
-      {/* Property switcher */}
-      <button className="hidden md:inline-flex h-9 items-center gap-2 rounded-md border border-border bg-surface px-3 text-sm hover:bg-surface-sunken transition-colors">
-        <span className="h-2 w-2 rounded-full bg-brand" />
-        <span className="font-medium">The Pearl Marina</span>
-        <span className="text-subtle-foreground">·</span>
-        <span className="text-muted-foreground">Main Tower</span>
-        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
       </button>
 
       {/* Global search */}
