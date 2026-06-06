@@ -170,28 +170,28 @@ export default function DashboardPage() {
           />
           <div className="absolute top-0 left-0 h-full w-1 bg-brand pointer-events-none" />
 
-          <div className="relative p-7">
+          <div className="relative p-5">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-semibold inline-flex items-center gap-2">
                   <Sun className="h-3 w-3 text-brand" />
                   {today || "—"} · {now || "—"}
                 </p>
-                <h1 className="mt-3 text-3xl sm:text-4xl font-display font-medium tracking-tight">
+                <h1 className="mt-1.5 text-2xl sm:text-3xl font-display font-medium tracking-tight">
                   {greeting}, <span className="text-brand">{userName ? userName.split(" ")[0] : "there"}</span>.
                 </h1>
-                <p className="mt-2 text-muted-foreground leading-relaxed max-w-xl">
-                  Today is shaping up well — <span className="font-medium text-foreground">{k.occupancyPct}% occupancy</span>,{" "}
-                  <span className="font-medium text-foreground">{arrivals.length} arrivals</span> &amp;{" "}
-                  <span className="font-medium text-foreground">{departures.length} departures</span>.
-                  Net profit so far <span className="text-success font-semibold">{money(k.todayProfit)}</span>.
+                <p className="mt-1 text-sm text-muted-foreground leading-relaxed max-w-xl">
+                  <span className="font-medium text-foreground">{k.occupancyPct}% occupancy</span> ·{" "}
+                  <span className="font-medium text-foreground">{arrivals.length} arrivals</span> ·{" "}
+                  <span className="font-medium text-foreground">{departures.length} departures</span> · net{" "}
+                  <span className="text-success font-semibold">{money(k.todayProfit)}</span>
                 </p>
               </div>
-              <Avatar name={userName || "Guest User"} size={52} />
+              <Avatar name={userName || "Guest User"} size={44} />
             </div>
 
             {/* Hero KPI strip */}
-            <div className="mt-7 pt-5 border-t border-border/40 grid grid-cols-3 gap-6">
+            <div className="mt-4 pt-4 border-t border-border/40 grid grid-cols-3 gap-4">
               <HeroStat
                 label="Occupancy"
                 value={pct(k.occupancyPct)}
@@ -791,7 +791,7 @@ function HeroStat({ label, value, delta, spark, sparkColor }: {
   return (
     <div>
       <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</p>
-      <p className="text-3xl font-semibold tabular mt-1.5 tracking-tight">{value}</p>
+      <p className="text-2xl font-semibold tabular mt-1 tracking-tight">{value}</p>
       {typeof delta === "number" && (
         <span className={cn(
           "text-[11px] inline-flex items-center gap-0.5 mt-0.5 font-medium",
@@ -801,7 +801,7 @@ function HeroStat({ label, value, delta, spark, sparkColor }: {
         </span>
       )}
       {spark && spark.length > 0 && (
-        <Sparkline data={spark} color={sparkColor} height={28} className="mt-2 -mx-1" />
+        <Sparkline data={spark} color={sparkColor} height={20} className="mt-1.5 -mx-1" />
       )}
     </div>
   );
