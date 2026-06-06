@@ -19,7 +19,24 @@ import type { Reservation } from "@/lib/types";
 
 export default function CheckoutPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const reservation = RESERVATIONS.find(r => r.bookingNo === id) ?? RESERVATIONS[0];
+
+  // Load the real booking + its folio (charges & payments) for this bookingNo.
+  const [reservation, setReservation] = React.useState<Reservation>(
+    () => RESERVATIONS.find(r => r.bookingNo === id) ?? RESERVATIONS[0],
+  );
+  const [folioCharges, setFolioCharges] = React.useState<typeof SAMPLE_FOLIO_CHARGES>([]);
+  const [folioPayments, setFolioPayments] = React.useState<typeof SAMPLE_PAYMENTS>([]);
+  React.useEffect(() => {
+    apiGet<Reservation[]>("/bookings")
+      .then(list => { const b = list.find(x => x.bookingNo === id); if (b) setReservation({ ...b, id: String(b.id) }); })
+      .catch(() => {});
+    apiGet<typeof SAMPLE_FOLIO_CHARGES>(`/folio-charges?bookingNo=${encodeURIComponent(id)}`)
+      .then(rows => setFolioCharges(rows.map(r => ({ ...r, id: String(r.id) }))))
+      .catch(() => {});
+    apiGet<typeof SAMPLE_PAYMENTS>(`/folio-payments?bookingNo=${encodeURIComponent(id)}`)
+      .then(rows => setFolioPayments(rows.map(r => ({ ...r, id: String(r.id) }))))
+      .catch(() => {});
+  }, [id]);
   const guest = GUESTS.find(g => g.name === reservation.guestName);
 
   type PayMode = "Cash" | "Card" | "UPI" | "Bank" | "Online" | "Agent Credit";
@@ -47,10 +64,36 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
+  // Use the real folio when charges exist; otherwise derive a room-charge line
+  // from the booking so the bill still reflects the actual stay.
+  const billCharges = React.useMemo(() => {
+    if (folioCharges.length) return folioCharges;
+    const nights = Math.max(1, reservation.nights || 1);
+    const nightly = Math.round((reservation.total || 0) / nights);
+    return Array.from({ length: nights }, (_, i) => ({
+      id: `room-${i + 1}`,
+      date: reservation.checkIn,
+      description: `Room — ${reservation.roomType} (Night ${i + 1})`,
+      type: "Room",
+      qty: 1,
+      rate: nightly,
+      tax: 0,
+      amount: i === nights - 1 ? (reservation.total || 0) - nightly * (nights - 1) : nightly,
+      paidBy: "Guest",
+    })) as typeof SAMPLE_FOLIO_CHARGES;
+  }, [folioCharges, reservation]);
+
+  const billPayments = React.useMemo(() => {
+    if (folioPayments.length) return folioPayments;
+    return (reservation.advance > 0
+      ? [{ id: "adv", date: reservation.checkIn, mode: "Advance", reference: "Advance paid at booking", amount: reservation.advance }]
+      : []) as typeof SAMPLE_PAYMENTS;
+  }, [folioPayments, reservation]);
+
   // Detailed payment capture — supports SPLIT payments (multiple modes)
-  const charges = SAMPLE_FOLIO_CHARGES.reduce((s, c) => s + c.amount, 0);
-  const tax = SAMPLE_FOLIO_CHARGES.reduce((s, c) => s + c.tax, 0);
-  const paid = SAMPLE_PAYMENTS.reduce((s, p) => s + p.amount, 0);
+  const charges = billCharges.reduce((s, c) => s + c.amount, 0);
+  const tax = billCharges.reduce((s, c) => s + c.tax, 0);
+  const paid = billPayments.reduce((s, p) => s + p.amount, 0);
   const lineDiscAmt = lineDiscount.reduce((t, l) => t + l.amount, 0);
   const discountAmt = (charges * discount) / 100 + lineDiscAmt;
   const grandTotal = Math.max(0, charges - discountAmt + tip);
@@ -120,7 +163,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
             </Button>
             <Link href="/dashboard"><Button>Back to Dashboard</Button></Link>
           </div>
-          {showInvoice && <InvoiceModal onClose={() => setShowInvoice(false)} reservation={reservation} guest={guest} charges={charges} tax={tax} discount={discount} discountAmt={discountAmt} grandTotal={grandTotal} paid={paid + Math.max(0, balance)} paymentMode={paymentMode} />}
+          {showInvoice && <InvoiceModal onClose={() => setShowInvoice(false)} reservation={reservation} guest={guest} items={billCharges} charges={charges} tax={tax} discount={discount} discountAmt={discountAmt} grandTotal={grandTotal} paid={paid + Math.max(0, balance)} paymentMode={paymentMode} />}
           {showReceipt && <ReceiptModal onClose={() => setShowReceipt(false)} reservation={reservation} guest={guest} balance={Math.max(0, balance)} paymentMode={paymentMode} />}
         </Card>
       </div>
@@ -161,7 +204,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
             </CardHeader>
             <CardContent className="p-0">
               <ul className="divide-y divide-border">
-                {SAMPLE_FOLIO_CHARGES.map(c => (
+                {billCharges.map(c => (
                   <li key={c.id} className="flex items-center justify-between px-5 py-2.5">
                     <div className="min-w-0">
                       <p className="text-sm">{c.description}</p>
@@ -253,7 +296,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
             </CardHeader>
             <CardContent className="p-0">
               <ul className="divide-y divide-border">
-                {SAMPLE_PAYMENTS.map(p => (
+                {billPayments.map(p => (
                   <li key={p.id} className="px-5 py-2.5 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <span className="h-8 w-8 rounded-md bg-success-soft text-success inline-flex items-center justify-center shrink-0">
@@ -270,7 +313,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
                     <span className="font-semibold tabular text-sm text-success shrink-0">{money(p.amount)}</span>
                   </li>
                 ))}
-                {SAMPLE_PAYMENTS.length === 0 && (
+                {billPayments.length === 0 && (
                   <li className="px-5 py-4 text-center text-sm text-muted-foreground">No advance payments on file.</li>
                 )}
               </ul>
@@ -416,7 +459,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
         </Card>
       </div>
 
-      {showInvoice && <InvoiceModal onClose={() => setShowInvoice(false)} reservation={reservation} guest={guest} charges={charges} tax={tax} discount={discount} discountAmt={discountAmt} grandTotal={grandTotal} paid={paid + Math.max(0, balance)} paymentMode={paymentMode} />}
+      {showInvoice && <InvoiceModal onClose={() => setShowInvoice(false)} reservation={reservation} guest={guest} items={billCharges} charges={charges} tax={tax} discount={discount} discountAmt={discountAmt} grandTotal={grandTotal} paid={paid + Math.max(0, balance)} paymentMode={paymentMode} />}
       {showReceipt && <ReceiptModal onClose={() => setShowReceipt(false)} reservation={reservation} guest={guest} balance={Math.max(0, balance)} paymentMode={paymentMode} />}
 
       {toast && (
@@ -678,11 +721,12 @@ function ModalShell({ title, onClose, children }: { title: string; onClose: () =
 }
 
 function InvoiceModal({
-  onClose, reservation, guest, charges, tax, discount, discountAmt, grandTotal, paid, paymentMode,
+  onClose, reservation, guest, items, charges, tax, discount, discountAmt, grandTotal, paid, paymentMode,
 }: {
   onClose: () => void;
   reservation: typeof RESERVATIONS[number];
   guest: typeof GUESTS[number] | undefined;
+  items: typeof SAMPLE_FOLIO_CHARGES;
   charges: number;
   tax: number;
   discount: number;
@@ -754,7 +798,7 @@ function InvoiceModal({
               </tr>
             </thead>
             <tbody>
-              {SAMPLE_FOLIO_CHARGES.map(c => {
+              {items.map(c => {
                 const sac = c.description.match(/SAC\s+(\d+)/)?.[1] ?? "9963";
                 return (
                   <tr key={c.id} className="border-b border-border/40">
