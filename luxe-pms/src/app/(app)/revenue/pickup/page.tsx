@@ -656,7 +656,7 @@ export default function PickupReportPage() {
               </span>
               <div>
                 <h2 className="text-base font-semibold">Pickup by lead time</h2>
-                <p className="text-xs text-muted-foreground">Booking-to-stay distance · today's pickup</p>
+                <p className="text-xs text-muted-foreground">Booking-to-stay distance · today&apos;s pickup</p>
               </div>
             </div>
             <Badge tone="info">Avg lead 14.2 d</Badge>

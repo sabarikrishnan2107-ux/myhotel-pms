@@ -300,7 +300,7 @@ export default function CompShopPage() {
               <th className="text-left px-3 py-2.5 font-medium">Distance</th>
               <th className="text-left px-3 py-2.5 font-medium">Stars</th>
               <th className="text-left px-3 py-2.5 font-medium">Your Position</th>
-              <th className="text-left px-3 py-2.5 font-medium">Today's Rate</th>
+              <th className="text-left px-3 py-2.5 font-medium">Today&apos;s Rate</th>
               <th className="text-left px-3 py-2.5 font-medium">vs You</th>
               <th className="text-right px-4 py-2.5 font-medium">Actions</th>
             </tr>
@@ -645,7 +645,7 @@ export default function CompShopPage() {
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between p-4 pb-3 border-b border-border flex-wrap gap-2">
           <div>
-            <h2 className="text-base font-semibold">By Room Type · Today's BAR Comparison</h2>
+            <h2 className="text-base font-semibold">By Room Type · Today&apos;s BAR Comparison</h2>
             <p className="text-xs text-muted-foreground mt-0.5">Like-for-like comparison across published rates · 2 Jun 2026</p>
           </div>
           <Select className="w-auto h-8 text-xs" value={roomType} onChange={(e) => { setRoomType(e.target.value); showToast(`Filtered to ${ROOM_TYPES.find((r) => r.code === e.target.value)?.name}`); }}>
@@ -665,7 +665,7 @@ export default function CompShopPage() {
           <tbody className="divide-y divide-border">
             {ROOM_TYPES.map((rt) => {
               const ids = ["you", ...COMP_IDS] as const;
-              const vals = ids.map((id) => ({ id, p: (rt as any)[id] as number }));
+              const vals = ids.map((id) => ({ id, p: (rt as Record<string, number>)[id] }));
               const min = Math.min(...vals.map((v) => v.p));
               const max = Math.max(...vals.map((v) => v.p));
               vals.sort((a, b) => a.p - b.p);
@@ -684,7 +684,7 @@ export default function CompShopPage() {
                     </div>
                   </td>
                   {(["you", ...COMP_IDS] as const).map((id) => {
-                    const p = (rt as any)[id] as number;
+                    const p = (rt as Record<string, number>)[id];
                     const tone = cellTone(p, min, max);
                     return (
                       <td key={id} className="px-2 py-3 text-center">

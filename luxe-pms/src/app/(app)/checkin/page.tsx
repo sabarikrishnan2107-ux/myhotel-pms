@@ -1350,7 +1350,7 @@ function KYCUploadSlot({
     return (
       <div className="rounded-md border-2 border-success bg-success-soft/40 p-2 relative">
         <div className="h-24 rounded-md bg-white/60 border border-success/30 overflow-hidden flex items-center justify-center">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           {file.startsWith("data:image") ? (
             <img src={file} alt={label} className="h-full w-full object-cover" />
           ) : (

@@ -65,7 +65,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
       ? [{ ...ls[0], amount: balance }]
       : ls
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [balance]);
 
   const totalNowReceiving = payLines.reduce((t, l) => t + (l.amount || 0), 0);

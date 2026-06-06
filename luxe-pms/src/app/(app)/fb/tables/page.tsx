@@ -353,7 +353,7 @@ export default function TablesPage() {
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Guest, phone or table…" className="pl-8 h-8 text-xs w-[220px]" />
                 </div>
-                <Select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="h-8 w-[130px] text-xs">
+                <Select value={statusFilter} onChange={e => setStatusFilter(e.target.value as "all" | ResStatus)} className="h-8 w-[130px] text-xs">
                   <option value="all">All status</option>
                   <option value="confirmed">Confirmed</option>
                   <option value="seated">Seated</option>
@@ -591,7 +591,7 @@ export default function TablesPage() {
                   </div>
                   {w.notified && (
                     <div className="text-[10px] text-success flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3" /> "Your table is ready" sent
+                      <CheckCircle2 className="h-3 w-3" /> &quot;Your table is ready&quot; sent
                     </div>
                   )}
                 </div>

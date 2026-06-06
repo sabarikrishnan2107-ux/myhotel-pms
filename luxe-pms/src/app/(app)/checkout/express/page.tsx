@@ -97,7 +97,7 @@ export default function ExpressCheckoutPage() {
               <Check className="h-10 w-10 text-success" strokeWidth={3} />
             </div>
             <div>
-              <h2 className="text-3xl font-display font-medium tracking-tight">You're checked out</h2>
+              <h2 className="text-3xl font-display font-medium tracking-tight">You&apos;re checked out</h2>
               <p className="text-muted-foreground mt-2">Thank you for staying at The Pearl Marina, Anjali.</p>
             </div>
             <div className="inline-flex items-center gap-2 rounded-full bg-surface-sunken px-4 py-2 text-sm">
@@ -497,7 +497,7 @@ export default function ExpressCheckoutPage() {
             <Card className="p-4 sm:p-5 shadow-xl border-brand-soft">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <div className="text-xs text-muted-foreground">You'll be charged</div>
+                  <div className="text-xs text-muted-foreground">You&apos;ll be charged</div>
                   <div className="font-display text-2xl tabular">{money(grandTotal)}</div>
                 </div>
                 <div className="flex items-center gap-2 w-full sm:w-auto">

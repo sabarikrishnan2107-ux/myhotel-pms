@@ -60,11 +60,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Advisory: the codebase has pre-existing lint debt in some large pages,
-      # so lint reports issues but does not gate the build. Tests are the gate.
-      - name: Lint (advisory)
+      - name: Lint
         run: npm run lint
-        continue-on-error: true
 
       - name: Unit tests
         run: npm test

@@ -90,7 +90,7 @@ function buildInitial(): Record<RoomTypeKey, Record<string, Restriction>> {
 
     (Object.keys(out) as RoomTypeKey[]).forEach((rt) => {
       let minLos = 1;
-      let maxLos = 30;
+      const maxLos = 30;
       let cta = false;
       let ctd = false;
       if (wk) minLos = 2;

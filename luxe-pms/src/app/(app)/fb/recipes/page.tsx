@@ -745,7 +745,7 @@ export default function RecipesPage() {
                 {selected.ingredients.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                      No ingredients yet — click "Add ingredient" to start costing this dish
+                      No ingredients yet — click &quot;Add ingredient&quot; to start costing this dish
                     </td>
                   </tr>
                 )}

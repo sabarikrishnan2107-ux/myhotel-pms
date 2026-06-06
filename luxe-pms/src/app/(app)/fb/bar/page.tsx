@@ -380,7 +380,7 @@ export default function BarInventoryPage() {
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Theoretical usage 2,250ml vs actual 3,120ml in last 7 days. Estimated revenue loss
-              <span className="tabular font-semibold text-foreground"> {money(7888)}</span>. Possible 60ml pours instead of 30ml, or unaccounted complimentary serves. Recommend audit of bartender Karan M.'s shifts (28-31 May).
+              <span className="tabular font-semibold text-foreground"> {money(7888)}</span>. Possible 60ml pours instead of 30ml, or unaccounted complimentary serves. Recommend audit of bartender Karan M.&apos;s shifts (28-31 May).
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -857,7 +857,7 @@ function VarianceTab({ showToast }: { showToast: (m: string) => void }) {
                   </td>
                   <td className="px-4 py-3 text-right tabular">{money(Math.round(estLoss))}</td>
                   <td className="px-4 py-3">
-                    <Badge tone={flagTone(v.flag) as any}>{flagLabel(v.flag)}</Badge>
+                    <Badge tone={flagTone(v.flag) as React.ComponentProps<typeof Badge>["tone"]}>{flagLabel(v.flag)}</Badge>
                   </td>
                   <td className="px-4 py-3 text-xs text-muted-foreground max-w-[260px]">{v.note}</td>
                   <td className="px-4 py-3 text-right">
