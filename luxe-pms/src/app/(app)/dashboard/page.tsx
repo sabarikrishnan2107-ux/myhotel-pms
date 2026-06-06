@@ -106,8 +106,15 @@ export default function DashboardPage() {
   const departures = stats?.departures ?? TODAY_DEPARTURES;
 
   const [now, setNow] = React.useState<string>("");
+  const [today, setToday] = React.useState<string>("");
   const [greeting, setGreeting] = React.useState<string>("Good afternoon");
+  const [userName, setUserName] = React.useState<string>("");
   const [selectedRes, setSelectedRes] = React.useState<Reservation | null>(null);
+
+  // Real signed-in user for the greeting.
+  React.useEffect(() => {
+    apiGet<{ name: string }>("/me").then(u => { if (u?.name) setUserName(u.name); }).catch(() => {});
+  }, []);
 
   // Resolve a Guest record for the selected reservation (synthesize if not found)
   const selectedGuest: Guest | null = React.useMemo(() => {
@@ -133,6 +140,7 @@ export default function DashboardPage() {
   React.useEffect(() => {
     const d = new Date();
     setNow(d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+    setToday(d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" }));
     const h = d.getHours();
     setGreeting(h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : h < 21 ? "Good evening" : "Working late");
   }, []);
@@ -167,10 +175,10 @@ export default function DashboardPage() {
               <div className="min-w-0">
                 <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-semibold inline-flex items-center gap-2">
                   <Sun className="h-3 w-3 text-brand" />
-                  Sunday · 25 May 2026 · {now || "—"} · Shift #4218
+                  {today || "—"} · {now || "—"}
                 </p>
                 <h1 className="mt-3 text-3xl sm:text-4xl font-display font-medium tracking-tight">
-                  {greeting}, <span className="text-brand">Khalid</span>.
+                  {greeting}, <span className="text-brand">{userName ? userName.split(" ")[0] : "there"}</span>.
                 </h1>
                 <p className="mt-2 text-muted-foreground leading-relaxed max-w-xl">
                   Today is shaping up well — <span className="font-medium text-foreground">{k.occupancyPct}% occupancy</span>,{" "}
@@ -179,7 +187,7 @@ export default function DashboardPage() {
                   Net profit so far <span className="text-success font-semibold">{money(k.todayProfit)}</span>.
                 </p>
               </div>
-              <Avatar name="Khalid Rahman" size={52} />
+              <Avatar name={userName || "Guest User"} size={52} />
             </div>
 
             {/* Hero KPI strip */}
