@@ -25,11 +25,15 @@ import { cn, money, formatTime } from "@/lib/utils";
 import { apiGet, apiPut } from "@/lib/api";
 
 // Mark a booking checked-in in Postgres (looked up by its bookingNo).
-async function persistCheckIn(bookingNo: string) {
+async function persistCheckIn(bookingNo: string, roomNumber?: string) {
   try {
     const list = await apiGet<{ id: number; bookingNo: string }[]>("/bookings");
     const bk = list.find(b => b.bookingNo === bookingNo);
-    if (bk) await apiPut(`/bookings/${bk.id}`, { status: "checked-in" });
+    if (bk) {
+      const patch: Record<string, string> = { status: "checked-in" };
+      if (roomNumber) patch.roomNumber = roomNumber;   // write the room assigned at check-in
+      await apiPut(`/bookings/${bk.id}`, patch);
+    }
   } catch { /* offline — UI still reflects the check-in locally */ }
 }
 
@@ -510,12 +514,12 @@ export default function CheckinPage() {
           reservation={checkingIn}
           forceKycCapture={expressWalkInIds.has(checkingIn.id)}
           onClose={() => setCheckingIn(null)}
-          onComplete={(res, msg) => {
+          onComplete={(res, msg, room) => {
             setCompletedIds(s => new Set([...s, res.id]));
             setCheckingIn(null);
             setToast(msg);
             setTimeout(() => setToast(null), 3000);
-            persistCheckIn(res.bookingNo);
+            persistCheckIn(res.bookingNo, room);
           }}
         />
       )}
@@ -687,7 +691,7 @@ function CheckinProcessModal({
 }: {
   reservation: Reservation;
   onClose: () => void;
-  onComplete: (r: Reservation, msg: string) => void;
+  onComplete: (r: Reservation, msg: string, roomNumber: string) => void;
   forceKycCapture?: boolean;
 }) {
   type Step = 0 | 1 | 2 | 3 | 4;
@@ -729,8 +733,15 @@ function CheckinProcessModal({
     ? idVerified
     : (idLengthOk && idFrontFile !== null && (!needsBackSide || idBackFile !== null) && facePhoto !== null && signature !== null && kycConsent);
 
-  // Step 2 — Room assignment
-  const [assignedRoom, setAssignedRoom] = React.useState(reservation.roomNumber);
+  // Step 2 — Room assignment. Booking reserves a room TYPE; here we pick a
+  // currently-available room of that type (plus the pre-assigned one if any).
+  const isUnassigned = !reservation.roomNumber || reservation.roomNumber === "Unassigned";
+  const availableForType = React.useMemo(
+    () => ROOMS.filter(r => r.type === reservation.roomType && (r.status === "available" || r.number === reservation.roomNumber)),
+    [reservation.roomType, reservation.roomNumber],
+  );
+  const [assignedRoom, setAssignedRoom] = React.useState(isUnassigned ? "" : reservation.roomNumber);
+  const selectedRoomObj = availableForType.find(r => r.number === assignedRoom);
   const [keyCardEncoded, setKeyCardEncoded] = React.useState(false);
 
   // Step 3 — Payment
@@ -760,7 +771,7 @@ function CheckinProcessModal({
 
   const handleComplete = () => {
     setDone(true);
-    setTimeout(() => onComplete(reservation, `${reservation.guestName} checked in · Room ${assignedRoom}`), 1600);
+    setTimeout(() => onComplete(reservation, `${reservation.guestName} checked in · Room ${assignedRoom}`, assignedRoom), 1600);
   };
 
   if (done) {
@@ -1042,24 +1053,33 @@ function CheckinProcessModal({
               <div className="space-y-4">
                 <div>
                   <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-2">Step 2 · Assign Room &amp; Key Card</p>
-                  <h2 className="text-base font-semibold">Room {reservation.roomNumber} is pre-assigned</h2>
+                  <h2 className="text-base font-semibold">
+                    {isUnassigned ? `Assign an available ${reservation.roomType} room` : `Room ${reservation.roomNumber} is pre-assigned`}
+                  </h2>
                 </div>
                 <div className="rounded-md border border-border p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-2xl font-semibold tabular">{assignedRoom}</p>
-                      <p className="text-xs text-muted-foreground">{reservation.roomType} · Floor {Math.floor(parseInt(assignedRoom) / 100)} · {reservation.nights} nights</p>
+                      <p className="text-2xl font-semibold tabular">{assignedRoom || "—"}</p>
+                      <p className="text-xs text-muted-foreground">{reservation.roomType}{selectedRoomObj ? ` · Floor ${selectedRoomObj.floor}` : ""} · {reservation.nights} nights</p>
                     </div>
-                    <Badge tone="success"><CheckCircle2 className="h-3 w-3" />Inspected · Ready</Badge>
+                    {assignedRoom
+                      ? <Badge tone="success"><CheckCircle2 className="h-3 w-3" />Inspected · Ready</Badge>
+                      : <Badge tone="warning">Pick a room</Badge>}
                   </div>
                   <div className="mt-3 pt-3 border-t border-border">
-                    <Label className="text-xs">Reassign to another room (optional)</Label>
+                    <Label className="text-xs">{isUnassigned ? `Available ${reservation.roomType} rooms` : "Reassign to another room (optional)"}</Label>
                     <Select value={assignedRoom} onChange={e => setAssignedRoom(e.target.value)} className="mt-1">
-                      <option value={reservation.roomNumber}>Room {reservation.roomNumber} (pre-assigned)</option>
-                      <option value="305">Room 305 · {reservation.roomType} · Same type, higher floor</option>
-                      <option value="402">Room 402 · {reservation.roomType} · Quieter wing</option>
-                      <option value="605">Room 605 · Suite · Complimentary upgrade (VIP)</option>
+                      <option value="">Select an available {reservation.roomType} room…</option>
+                      {availableForType.map(r => (
+                        <option key={r.id} value={r.number}>
+                          Room {r.number} · {r.type} · Floor {r.floor}{r.number === reservation.roomNumber ? " (pre-assigned)" : ""}
+                        </option>
+                      ))}
                     </Select>
+                    {availableForType.length === 0 && (
+                      <p className="text-xs text-warning mt-1.5">No {reservation.roomType} rooms are currently available — free one up or change the room type.</p>
+                    )}
                   </div>
                 </div>
                 <button
