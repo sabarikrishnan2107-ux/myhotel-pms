@@ -3,8 +3,8 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  User, Calendar, Users, BedDouble, Tag, CreditCard, CheckCircle2,
-  ChevronLeft, ChevronRight, Search, Plus, Minus, Sparkles, ArrowRight, Send,
+  User, Calendar, Users, Tag, CreditCard, CheckCircle2,
+  ChevronLeft, ChevronRight, Search, Plus, Minus, ArrowRight, Send,
   Printer, Mail, MessageCircle, Phone, Copy, X, Eye,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -72,14 +72,15 @@ const FB_PACKAGES = [
   { id: "fb4", name: "High Tea Platter",      short: "High Tea",    icon: "🍪", price: 650,  type: "High Tea" as const },
 ];
 
+// Room number is NOT chosen at booking — only the room type is reserved. The
+// specific room is assigned at check-in from what's available that day.
 const STEPS = [
   { n: 1, title: "Guest", icon: User, desc: "Find existing or create new" },
   { n: 2, title: "Dates", icon: Calendar, desc: "Stay duration" },
   { n: 3, title: "Pax & Type", icon: Users, desc: "Adults, children, room type" },
-  { n: 4, title: "Room", icon: BedDouble, desc: "Pick available room" },
-  { n: 5, title: "Rate Plan", icon: Tag, desc: "EP / CP / MAP / AP + extras" },
-  { n: 6, title: "Payment", icon: CreditCard, desc: "Advance or full" },
-  { n: 7, title: "Confirm", icon: CheckCircle2, desc: "Send confirmation" },
+  { n: 4, title: "Rate Plan", icon: Tag, desc: "EP / CP / MAP / AP + extras" },
+  { n: 5, title: "Payment", icon: CreditCard, desc: "Advance or full" },
+  { n: 6, title: "Confirm", icon: CheckCircle2, desc: "Send confirmation" },
 ];
 
 export default function BookingWizardPage() {
@@ -92,7 +93,6 @@ export default function BookingWizardPage() {
   const [adults, setAdults] = React.useState(2);
   const [children, setChildren] = React.useState(0);
   const [roomType, setRoomType] = React.useState("Deluxe");
-  const [selectedRoom, setSelectedRoom] = React.useState<string | null>(null);
   const [ratePlan, setRatePlan] = React.useState("CP");
   const [breakfast, setBreakfast] = React.useState(true);
   const [extraBed, setExtraBed] = React.useState(false);
@@ -149,8 +149,7 @@ export default function BookingWizardPage() {
     if (!urlRoom) return;
     const room = ROOMS.find(r => r.number === urlRoom);
     if (room) {
-      setRoomType(room.type);
-      setSelectedRoom(room.id);
+      setRoomType(room.type);   // pre-select the room's type; specific room is assigned at check-in
     }
   }, [urlRoom]);
 
@@ -204,11 +203,9 @@ export default function BookingWizardPage() {
   const advance = Math.round((total * paymentPct) / 100);
 
   const filteredGuests = GUESTS.filter(g => `${g.name} ${g.phone} ${g.email}`.toLowerCase().includes(search.toLowerCase())).slice(0, 5);
-  const availableRooms = ROOMS.filter(r => r.type === roomType).slice(0, 6);
 
   const canNext = () => {
     if (step === 1) return guest !== null || newGuest !== null;
-    if (step === 4) return selectedRoom !== null;
     return true;
   };
 
@@ -488,35 +485,6 @@ export default function BookingWizardPage() {
           )}
 
           {step === 4 && (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">{availableRooms.length} {roomType} rooms available for these dates</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {availableRooms.map(r => (
-                  <button
-                    key={r.id}
-                    onClick={() => setSelectedRoom(r.id)}
-                    className={cn(
-                      "p-3 rounded-md border text-left transition-all hover:shadow-md",
-                      selectedRoom === r.id ? "bg-brand-soft border-brand" : "border-border hover:bg-surface-sunken"
-                    )}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-lg font-semibold tabular">{r.number}</span>
-                      {selectedRoom === r.id && <CheckCircle2 className="h-4 w-4 text-brand" />}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">Floor {r.floor} · {r.type}</p>
-                    <p className="text-sm font-medium mt-2 tabular">{money(r.rate)}<span className="text-xs text-muted-foreground">/night</span></p>
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground pt-2 border-t border-border">
-                <Sparkles className="h-3.5 w-3.5 text-brand" />
-                <span>AI suggests <span className="text-foreground font-medium">Room {availableRooms[0]?.number}</span> — closest to elevator, requested twice by this guest before.</span>
-              </div>
-            </div>
-          )}
-
-          {step === 5 && (
             <div className="space-y-5">
               {/* Rate plan — visual meal-inclusion */}
               <div className="space-y-1.5">
@@ -630,7 +598,7 @@ export default function BookingWizardPage() {
             </div>
           )}
 
-          {step === 6 && (
+          {step === 5 && (
             <div className="space-y-5">
               <div className="space-y-1.5">
                 <Label>Booking source</Label>
@@ -697,7 +665,7 @@ export default function BookingWizardPage() {
             </div>
           )}
 
-          {step === 7 && (
+          {step === 6 && (
             <div className="space-y-5">
               <div className="text-center py-4">
                 <div className="inline-flex h-16 w-16 rounded-full bg-success-soft text-success items-center justify-center mb-3">
@@ -721,7 +689,7 @@ export default function BookingWizardPage() {
                   ].filter(Boolean).join(" · ")}
                   onEdit={() => setStep(2)}
                 />
-                <ReviewRow label="Room" value={`${ROOMS.find(r => r.id === selectedRoom)?.number ?? "—"} · ${roomType}`} sub={`${adults}A${children ? ` + ${children}C` : ""}`} onEdit={() => setStep(4)} />
+                <ReviewRow label="Room type" value={roomType} sub={`${adults}A${children ? ` + ${children}C` : ""} · room assigned at check-in`} onEdit={() => setStep(3)} />
                 <ReviewRow
                   label="Rate plan"
                   value={`${ratePlan} · ${RATE_PLANS.find(p => p.v === ratePlan)?.hint ?? ""}`}
@@ -732,9 +700,9 @@ export default function BookingWizardPage() {
                     airportTransfer && "Airport transfer",
                     lateCheckout && "Late check-out",
                   ].filter(Boolean).join(" · ") || "No extras"}
-                  onEdit={() => setStep(5)}
+                  onEdit={() => setStep(4)}
                 />
-                <ReviewRow label="Payment" value={paymentPct === 0 ? "Pay at hotel" : paymentPct === 100 ? `Full · ${paymentMode}` : `${paymentPct}% advance · ${paymentMode}`} sub={`${money(advance)} now · ${money(total - advance)} balance`} onEdit={() => setStep(6)} />
+                <ReviewRow label="Payment" value={paymentPct === 0 ? "Pay at hotel" : paymentPct === 100 ? `Full · ${paymentMode}` : `${paymentPct}% advance · ${paymentMode}`} sub={`${money(advance)} now · ${money(total - advance)} balance`} onEdit={() => setStep(5)} />
                 {instructions && (
                   <div className="p-3 border-t border-border">
                     <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Special instructions</p>
@@ -781,7 +749,6 @@ export default function BookingWizardPage() {
             <Row k="Nights" v={`${nights}`} />
             <Row k="Pax" v={`${adults}A${children ? ` + ${children}C` : ""}`} />
             <Row k="Room type" v={roomType} />
-            {selectedRoom && <Row k="Room" v={ROOMS.find(r => r.id === selectedRoom)?.number ?? ""} />}
             <Row k="Rate plan" v={ratePlan} />
           </dl>
 
@@ -844,13 +811,12 @@ export default function BookingWizardPage() {
               <Button
                 className="flex-1"
                 variant="success"
-                disabled={submitting || !selectedGuestDisplay || !selectedRoom}
+                disabled={submitting || !selectedGuestDisplay}
                 onClick={async () => {
                   setSubmitting(true);
                   // Deterministic-ish booking number (no Date.now() to avoid hydration drift if rendered server-side)
-                  const seed = (selectedGuestDisplay?.name ?? "X").length * 137 + (selectedRoom?.length ?? 1) * 53 + nights * 7;
+                  const seed = (selectedGuestDisplay?.name ?? "X").length * 137 + roomType.length * 53 + nights * 7;
                   const bookingNo = `BK${100400 + (seed % 9000)}`;
-                  const roomNumber = ROOMS.find(r => r.id === selectedRoom)?.number ?? "";
                   // Persist the booking (and the guest, if a brand-new one was entered).
                   try {
                     if (newGuest && step1Mode === "create") {
@@ -866,7 +832,7 @@ export default function BookingWizardPage() {
                     await apiPost("/bookings", {
                       bookingNo,
                       guestName: selectedGuestDisplay!.name,
-                      roomNumber,
+                      roomNumber: "Unassigned",   // specific room assigned at check-in
                       roomType,
                       source: "Walk-in",
                       checkIn,
@@ -879,6 +845,7 @@ export default function BookingWizardPage() {
                       total: Math.round(total),
                       advance: Math.round(advance),
                       balance: Math.round(total - advance),
+                      status: "confirmed",     // reservation; room assigned at check-in
                       vip: false,
                     });
                   } catch {
@@ -888,7 +855,7 @@ export default function BookingWizardPage() {
                     bookingNo,
                     guestName: selectedGuestDisplay!.name,
                     guestPhone: selectedGuestDisplay!.phone,
-                    roomNumber: roomNumber || "—",
+                    roomNumber: "Assigned at check-in",
                     roomType,
                     checkIn,
                     checkOut,
@@ -929,7 +896,6 @@ export default function BookingWizardPage() {
             setStep(1);
             setGuest(null);
             setNewGuest(null);
-            setSelectedRoom(null);
             setSearch("");
           }}
         />
