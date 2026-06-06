@@ -5,16 +5,18 @@ import { use } from "react";
 import {
   ChevronLeft, UsersRound, BedDouble, Receipt, Calendar, MessageSquare, Activity,
   Printer, Send, CreditCard, Sparkles, Phone, Mail, Briefcase, UserPlus, Upload,
-  CheckCircle2, ArrowRight, Plus, Building2, Edit, MoreVertical,
+  CheckCircle2, ArrowRight, Plus, Building2, Edit, MoreVertical, X,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
-import { Input } from "@/components/ui/input";
+import { Input, Label, Select } from "@/components/ui/input";
 import { GROUP_BOOKINGS, SAMPLE_ROOMING_LIST, GROUP_TIMELINE, type GroupStatus, type GroupBooking } from "@/lib/mock-data-ext";
-import { apiGet } from "@/lib/api";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
+
+type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string };
 import { cn, money, formatDate } from "@/lib/utils";
 
 const STATUS_TONE: Record<GroupStatus, "neutral" | "info" | "success" | "brand" | "warning" | "danger"> = {
@@ -43,6 +45,34 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
       .catch(() => {});
   }, [id]);
   const [tab, setTab] = React.useState("overview");
+
+  // Rooming list — group-scoped, loaded from the API.
+  const [rooming, setRooming] = React.useState<RoomingEntry[]>(SAMPLE_ROOMING_LIST);
+  const [assignId, setAssignId] = React.useState<string | null>(null);
+  const [assignVal, setAssignVal] = React.useState("");
+  const [addGuestOpen, setAddGuestOpen] = React.useState(false);
+  const [toast, setToast] = React.useState<string | null>(null);
+  const flash = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
+
+  React.useEffect(() => {
+    apiGet<RoomingEntry[]>(`/group-rooming?groupCode=${encodeURIComponent(id)}`)
+      .then(rows => { if (rows.length) setRooming(rows.map(r => ({ ...r, id: String(r.id) }))); })
+      .catch(() => {});
+  }, [id]);
+
+  const assignRoom = (entry: RoomingEntry, roomNo: string) => {
+    setRooming(prev => prev.map(r => r.id === entry.id ? { ...r, roomNo } : r));
+    apiPut(`/group-rooming/${entry.id}`, { roomNo }).catch(() => flash("⚠ Save failed — backend offline"));
+    setAssignId(null); setAssignVal("");
+    flash(`Room ${roomNo} assigned to ${entry.lead}`);
+  };
+  const addGuest = (g: { lead: string; roomType: string; pax: number; phone?: string; remarks?: string }) => {
+    apiPost<RoomingEntry>("/group-rooming", { ...g, groupCode: id, roomNo: null })
+      .then(row => setRooming(prev => [...prev, { ...row, id: String(row.id) }]))
+      .catch(() => flash("⚠ Save failed — backend offline"));
+    setAddGuestOpen(false);
+    flash(`${g.lead} added to rooming list`);
+  };
 
   const allocated = group.block.reduce((s, b) => s + b.assigned, 0);
   const allocPct = Math.round((allocated / group.totalRooms) * 100);
@@ -234,11 +264,11 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>Rooming List</CardTitle>
-                <p className="text-xs text-muted-foreground mt-1">{SAMPLE_ROOMING_LIST.length} guests in {group.totalRooms} rooms · {SAMPLE_ROOMING_LIST.filter(r => !r.roomNo).length} pending allocation</p>
+                <p className="text-xs text-muted-foreground mt-1">{rooming.length} guests in {group.totalRooms} rooms · {rooming.filter(r => !r.roomNo).length} pending allocation</p>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm"><Upload className="h-3.5 w-3.5" />Import CSV</Button>
-                <Button size="sm"><Plus className="h-3.5 w-3.5" />Add Guest</Button>
+                <Button variant="outline" size="sm" onClick={() => flash("CSV import — coming soon")}><Upload className="h-3.5 w-3.5" />Import CSV</Button>
+                <Button size="sm" onClick={() => setAddGuestOpen(true)}><Plus className="h-3.5 w-3.5" />Add Guest</Button>
               </div>
             </div>
           </CardHeader>
@@ -255,10 +285,22 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {SAMPLE_ROOMING_LIST.map(g => (
+              {rooming.map(g => (
                 <tr key={g.id} className={cn("hover:bg-surface-sunken/40", !g.roomNo && "bg-warning-soft/30")}>
                   <td className="px-5 py-3 font-medium tabular">
-                    {g.roomNo ? g.roomNo : <button className="text-xs text-brand hover:underline">Assign</button>}
+                    {g.roomNo ? g.roomNo : assignId === g.id ? (
+                      <input
+                        autoFocus
+                        value={assignVal}
+                        onChange={e => setAssignVal(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter" && assignVal.trim()) assignRoom(g, assignVal.trim()); if (e.key === "Escape") { setAssignId(null); setAssignVal(""); } }}
+                        onBlur={() => { if (assignVal.trim()) assignRoom(g, assignVal.trim()); else { setAssignId(null); setAssignVal(""); } }}
+                        placeholder="Room #"
+                        className="w-20 h-7 px-2 rounded border border-brand bg-surface text-sm tabular outline-none"
+                      />
+                    ) : (
+                      <button className="text-xs text-brand hover:underline" onClick={() => { setAssignId(g.id); setAssignVal(""); }}>Assign</button>
+                    )}
                   </td>
                   <td className="px-5 py-3"><Badge tone="neutral">{g.roomType}</Badge></td>
                   <td className="px-5 py-3">{g.lead}</td>
@@ -415,6 +457,48 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
           </ol>
         </Card>
       )}
+
+      {addGuestOpen && <AddGuestModal onClose={() => setAddGuestOpen(false)} onSave={addGuest} />}
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-md bg-foreground text-background px-4 py-2.5 text-sm font-medium shadow-lg">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddGuestModal({ onClose, onSave }: { onClose: () => void; onSave: (g: { lead: string; roomType: string; pax: number; phone?: string; remarks?: string }) => void }) {
+  const [lead, setLead] = React.useState("");
+  const [roomType, setRoomType] = React.useState("Deluxe");
+  const [pax, setPax] = React.useState(2);
+  const [phone, setPhone] = React.useState("");
+  const [remarks, setRemarks] = React.useState("");
+
+  return (
+    <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <Card className="w-full max-w-md p-5 space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <CardTitle>Add Guest to Rooming List</CardTitle>
+          <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground" /></button>
+        </div>
+        <div className="space-y-3">
+          <div className="space-y-1.5"><Label>Lead guest *</Label><Input value={lead} onChange={e => setLead(e.target.value)} placeholder="e.g. Mr. Karim Bishara" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5"><Label>Room type</Label><Select value={roomType} onChange={e => setRoomType(e.target.value)}>{["Deluxe", "King", "Queen", "Suite", "Family", "Executive"].map(t => <option key={t}>{t}</option>)}</Select></div>
+            <div className="space-y-1.5"><Label>Pax</Label><Input type="number" value={pax} onChange={e => setPax(Math.max(1, Number(e.target.value) || 1))} /></div>
+          </div>
+          <div className="space-y-1.5"><Label>Phone</Label><Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 …" /></div>
+          <div className="space-y-1.5"><Label>Remarks</Label><Input value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="Preferences, notes…" /></div>
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={!lead.trim()} onClick={() => onSave({ lead: lead.trim(), roomType, pax, phone: phone || undefined, remarks: remarks || undefined })}>
+            <Plus className="h-3.5 w-3.5" />Add Guest
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }

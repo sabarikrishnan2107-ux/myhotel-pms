@@ -19,6 +19,7 @@ use App\Models\FbOrder;
 use App\Models\FormCRegistration;
 use App\Models\FoundItem;
 use App\Models\GroupBooking;
+use App\Models\GroupRooming;
 use App\Models\GstSlab;
 use App\Models\HallBooking;
 use App\Models\MaintenanceTicket;
@@ -84,6 +85,7 @@ class ResourceController extends Controller
         'app-users'              => AppUser::class,
         'hall-bookings'          => HallBooking::class,
         'group-bookings'         => GroupBooking::class,
+        'group-rooming'          => GroupRooming::class,
         'compliance-licenses'    => ComplianceLicense::class,
         'form-c-registrations'   => FormCRegistration::class,
         'channels'               => Channel::class,
@@ -91,8 +93,12 @@ class ResourceController extends Controller
         'pricing-rules'          => PricingRule::class,
     ];
 
-    /** Resources that can be filtered by ?bookingNo= on index. */
-    private const FILTER_BY_BOOKING = ['folio-charges', 'folio-payments'];
+    /** Resources whose index can be scoped by a query param → column. */
+    private const FILTER_BY = [
+        'folio-charges'  => 'bookingNo',
+        'folio-payments' => 'bookingNo',
+        'group-rooming'  => 'groupCode',
+    ];
 
     /** Resource slugs, for the route constraint. */
     public static function resources(): array
@@ -251,6 +257,11 @@ class ResourceController extends Controller
             'name' => 'string|max:255', 'trigger' => 'string|max:255|nullable', 'adjustment' => 'string|max:100|nullable',
             'enabled' => 'boolean', 'scope' => 'string|max:255',
         ],
+        'group-rooming' => [
+            'groupCode' => 'string|max:50', 'roomNo' => 'string|max:50|nullable', 'roomType' => 'string|max:100',
+            'lead' => 'string|max:255', 'pax' => 'integer|min:1', 'phone' => 'string|max:50|nullable',
+            'remarks' => 'string|max:500|nullable',
+        ],
         'compliance-licenses' => [
             'name' => 'string|max:255', 'authority' => 'string|max:255', 'number' => 'string|max:100|nullable',
             'issueDate' => 'string|max:50|nullable', 'expiryDate' => 'string|max:50|nullable',
@@ -335,6 +346,7 @@ class ResourceController extends Controller
         'app-users' => ['name', 'email'],
         'hall-bookings' => ['customer'],
         'group-bookings' => ['name'],
+        'group-rooming' => ['lead', 'roomType'],
         'compliance-licenses' => ['name', 'authority'],
         'form-c-registrations' => ['guestName'],
         'channels' => ['name'],
@@ -367,8 +379,11 @@ class ResourceController extends Controller
     {
         $query = $this->model($resource)::query();
 
-        if (in_array($resource, self::FILTER_BY_BOOKING, true) && $request->filled('bookingNo')) {
-            $query->where('bookingNo', $request->query('bookingNo'));
+        if (isset(self::FILTER_BY[$resource])) {
+            $col = self::FILTER_BY[$resource];
+            if ($request->filled($col)) {
+                $query->where($col, $request->query($col));
+            }
         }
 
         return $query->orderBy('id')->get();

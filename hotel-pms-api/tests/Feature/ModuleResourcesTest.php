@@ -29,6 +29,7 @@ class ModuleResourcesTest extends TestCase
             'app-users'           => ['app-users', ['name' => 'Staff A', 'email' => 'a@x.com']],
             'hall-bookings'       => ['hall-bookings', ['customer' => 'Wedding']],
             'group-bookings'      => ['group-bookings', ['name' => 'Tour Group']],
+            'group-rooming'       => ['group-rooming', ['groupCode' => 'GRP-2401', 'roomType' => 'Suite', 'lead' => 'Mr Lead']],
             'compliance-licenses' => ['compliance-licenses', ['name' => 'FSSAI', 'authority' => 'FSSAI']],
             'form-c-registrations' => ['form-c-registrations', ['guestName' => 'Mr. Lee Chang']],
             'channels'            => ['channels', ['name' => 'Booking.com']],
@@ -56,6 +57,16 @@ class ModuleResourcesTest extends TestCase
         $this->putJson("/api/hall-bookings/{$id}", ['status' => 'cancelled'])
             ->assertOk()
             ->assertJsonFragment(['status' => 'cancelled']);
+    }
+
+    public function test_group_rooming_is_scoped_by_group_code(): void
+    {
+        $this->postJson('/api/group-rooming', ['groupCode' => 'GRP-1', 'roomType' => 'Suite', 'lead' => 'A'])->assertCreated();
+        $this->postJson('/api/group-rooming', ['groupCode' => 'GRP-1', 'roomType' => 'King', 'lead' => 'B'])->assertCreated();
+        $this->postJson('/api/group-rooming', ['groupCode' => 'GRP-2', 'roomType' => 'Deluxe', 'lead' => 'C'])->assertCreated();
+
+        $this->getJson('/api/group-rooming?groupCode=GRP-1')->assertOk()->assertJsonCount(2);
+        $this->getJson('/api/group-rooming?groupCode=GRP-2')->assertOk()->assertJsonCount(1);
     }
 
     public function test_group_booking_stores_json_block(): void

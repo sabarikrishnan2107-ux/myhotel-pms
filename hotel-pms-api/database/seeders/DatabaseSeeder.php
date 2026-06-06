@@ -30,6 +30,7 @@ class DatabaseSeeder extends Seeder
             AppUserRosterSeeder::class,
             HallBookingSeeder::class,
             GroupBookingSeeder::class,
+            GroupRoomingSeeder::class,
             ComplianceLicenseSeeder::class,
             FormCSeeder::class,
             ChannelSeeder::class,
