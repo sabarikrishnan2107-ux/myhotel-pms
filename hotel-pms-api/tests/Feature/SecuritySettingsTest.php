@@ -68,4 +68,45 @@ class SecuritySettingsTest extends TestCase
         }
         $this->postJson('/api/login', ['email' => 'admin@hotel.com', 'password' => 'secret123'])->assertOk();
     }
+
+    // ---- Password policy enforcement ----
+
+    private function actAsUserWithPolicy(string $policy): void
+    {
+        AppSetting::create(['key' => 'security', 'value' => ['policy' => $policy]]);
+        $this->actingAs(User::factory()->create(['password' => Hash::make('currentpass1234')]), 'sanctum');
+    }
+
+    private function change(string $newPassword)
+    {
+        return $this->postJson('/api/change-password', [
+            'current_password' => 'currentpass1234',
+            'new_password'     => $newPassword,
+        ]);
+    }
+
+    public function test_standard_policy_requires_eight_chars(): void
+    {
+        $this->actAsUserWithPolicy('Standard (min 8 chars)');
+
+        $this->change('short7x')->assertStatus(422);   // 7 chars
+        $this->change('eightchr')->assertOk();          // 8 chars, no symbol needed
+    }
+
+    public function test_strong_policy_requires_twelve_chars_and_a_symbol(): void
+    {
+        $this->actAsUserWithPolicy('Strong (12 + symbol)');
+
+        $this->change('twelvecharsx')->assertStatus(422);   // 12 chars but no symbol
+        $this->change('shorty1!')->assertStatus(422);        // has symbol but too short
+        $this->change('twelvechars!1')->assertOk();          // 13 chars with symbol
+    }
+
+    public function test_enterprise_policy_requires_sixteen_chars_and_a_symbol(): void
+    {
+        $this->actAsUserWithPolicy('Enterprise (16 + symbol + rotated 90d)');
+
+        $this->change('fourteenchars!')->assertStatus(422);       // 14 chars + symbol — too short
+        $this->change('sixteencharswith!')->assertOk();           // 17 chars + symbol
+    }
 }

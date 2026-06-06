@@ -105,10 +105,29 @@ class AuthController extends Controller
      */
     public function changePassword(Request $request)
     {
-        $data = $request->validate([
-            'current_password' => ['required', 'string'],
-            'new_password'     => ['required', 'string', 'min:12'],
-        ]);
+        // Derive the new-password rules from the configured Security "password policy".
+        $policy = (string) (AppSetting::where('key', 'security')->first()?->value['policy'] ?? '');
+        $min = 12;            // default preserves prior behaviour when unset
+        $needSymbol = false;
+        if (str_contains($policy, 'Standard')) {
+            $min = 8;
+        } elseif (str_contains($policy, 'Strong')) {
+            $min = 12;
+            $needSymbol = true;
+        } elseif (str_contains($policy, 'Enterprise')) {
+            $min = 16;
+            $needSymbol = true;
+        }
+
+        $newRules = ['required', 'string', 'min:' . $min];
+        if ($needSymbol) {
+            $newRules[] = 'regex:/[^A-Za-z0-9]/';
+        }
+
+        $data = $request->validate(
+            ['current_password' => ['required', 'string'], 'new_password' => $newRules],
+            ['new_password.regex' => 'The new password must contain at least one symbol.'],
+        );
 
         $user = $request->user();
         if (! Hash::check($data['current_password'], $user->password)) {
