@@ -11,15 +11,23 @@ import { Input, Select } from "@/components/ui/input";
 import { Badge, PaymentBadge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
-import { RESERVATIONS, GUESTS } from "@/lib/mock-data";
+import { GUESTS } from "@/lib/mock-data";
 import type { Reservation, PaymentStatus, BookingSource, Guest } from "@/lib/types";
 import { cn, money, formatTime } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
-
-const DEPARTURES = RESERVATIONS.slice(0, 14);
 
 export default function CheckoutListPage() {
   const [q, setQ] = React.useState("");
+  // In-house guests = checked-in bookings, ready to check out.
+  const [departures, setDepartures] = React.useState<Reservation[]>([]);
+  React.useEffect(() => {
+    apiGet<(Reservation & { status?: string })[]>("/bookings")
+      .then(rows => setDepartures(
+        rows.filter(b => (b.status ?? "") === "checked-in").map(b => ({ ...b, id: String(b.id) })),
+      ))
+      .catch(() => {});
+  }, []);
   const [view, setView] = React.useState<"cards" | "list">("cards");
   const [source, setSource] = React.useState<"all" | BookingSource>("all");
   const [payment, setPayment] = React.useState<"all" | PaymentStatus>("all");
@@ -29,7 +37,7 @@ export default function CheckoutListPage() {
 
   const matched = React.useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return DEPARTURES.filter(r => {
+    return departures.filter(r => {
       if (needle && !`${r.bookingNo} ${r.guestName} ${r.roomNumber}`.toLowerCase().includes(needle)) return false;
       if (source !== "all" && r.source !== source) return false;
       if (payment !== "all" && r.paymentStatus !== payment) return false;
@@ -37,12 +45,12 @@ export default function CheckoutListPage() {
       if (vipOnly && !r.vip) return false;
       return true;
     });
-  }, [q, source, payment, balanceOnly, vipOnly]);
+  }, [departures, q, source, payment, balanceOnly, vipOnly]);
 
   const exactMatch = q.trim() && matched.length === 1 ? matched[0] : null;
-  const totalOutstanding = DEPARTURES.reduce((s, r) => s + r.balance, 0);
-  const cleared = DEPARTURES.filter(r => r.balance === 0).length;
-  const sources = Array.from(new Set(DEPARTURES.map(r => r.source)));
+  const totalOutstanding = departures.reduce((s, r) => s + r.balance, 0);
+  const cleared = departures.filter(r => r.balance === 0).length;
+  const sources = Array.from(new Set(departures.map(r => r.source)));
   const activeFilters = (source !== "all" ? 1 : 0) + (payment !== "all" ? 1 : 0) + (balanceOnly ? 1 : 0) + (vipOnly ? 1 : 0);
 
   const guestForSelected: Guest | null = React.useMemo(() => {
@@ -69,17 +77,17 @@ export default function CheckoutListPage() {
         <div>
           <h1 className="text-2xl font-display font-medium tracking-tight">Checkout</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            {DEPARTURES.length} departures expected today · one-click for guests with zero balance
+            {departures.length} departures expected today · one-click for guests with zero balance
           </p>
         </div>
         <Link href="/bookings/new"><Button variant="outline">New Booking</Button></Link>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPICard label="Expected Today" value={DEPARTURES.length} icon={Calendar} accent="brand" />
+        <KPICard label="Expected Today" value={departures.length} icon={Calendar} accent="brand" />
         <KPICard label="Already Settled" value={cleared} icon={CreditCard} accent="success" />
         <KPICard label="Outstanding Balance" value={money(totalOutstanding)} icon={CreditCard} accent="warning" />
-        <KPICard label="VIP Departures" value={DEPARTURES.filter(r => r.vip).length} icon={Crown} accent="accent" />
+        <KPICard label="VIP Departures" value={departures.filter(r => r.vip).length} icon={Crown} accent="accent" />
       </div>
 
       {/* Quick checkout hero */}
@@ -219,7 +227,7 @@ export default function CheckoutListPage() {
       </div>
 
       <div className="text-xs text-muted-foreground">
-        Showing <span className="font-medium text-foreground">{matched.length}</span> of {DEPARTURES.length} departures
+        Showing <span className="font-medium text-foreground">{matched.length}</span> of {departures.length} departures
       </div>
 
       {view === "cards" ? (
