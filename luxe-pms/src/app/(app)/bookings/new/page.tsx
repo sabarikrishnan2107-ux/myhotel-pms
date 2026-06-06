@@ -135,8 +135,14 @@ export default function BookingWizardPage() {
   const urlCheckin = searchParams.get("checkin") ?? searchParams.get("date");
   const urlCheckout = searchParams.get("checkout");
 
-  const [checkIn, setCheckIn] = React.useState(urlCheckin ?? "2026-05-24");
-  const [checkOut, setCheckOut] = React.useState(urlCheckout ?? "2026-05-27");
+  // Default to today → today + 3 nights (local time), unless the URL overrides it.
+  const isoDay = (offset = 0) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    return d.toLocaleDateString("en-CA");
+  };
+  const [checkIn, setCheckIn] = React.useState(urlCheckin ?? isoDay(0));
+  const [checkOut, setCheckOut] = React.useState(urlCheckout ?? isoDay(3));
 
   // If the URL specified a room, find it and pre-select its type + the room itself
   React.useEffect(() => {
