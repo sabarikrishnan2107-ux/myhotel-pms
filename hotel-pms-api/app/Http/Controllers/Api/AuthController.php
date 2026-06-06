@@ -73,7 +73,10 @@ class AuthController extends Controller
             }
         }
 
-        $token = $user->createToken('web')->plainTextToken;
+        // Apply the configurable session timeout as a per-token expiry.
+        $sessionMin = (int) ($security['sessionMin'] ?? 0);
+        $expiresAt = $sessionMin > 0 ? now()->addMinutes($sessionMin) : null;
+        $token = $user->createToken('web', ['*'], $expiresAt)->plainTextToken;
 
         AuditLog::record([
             'user' => $user->name, 'module' => 'Auth', 'action' => 'Logged in',

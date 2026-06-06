@@ -109,4 +109,35 @@ class SecuritySettingsTest extends TestCase
         $this->change('fourteenchars!')->assertStatus(422);       // 14 chars + symbol — too short
         $this->change('sixteencharswith!')->assertOk();           // 17 chars + symbol
     }
+
+    // ---- Session timeout ----
+
+    public function test_login_sets_token_expiry_from_session_timeout(): void
+    {
+        $this->makeUser();
+        AppSetting::create(['key' => 'security', 'value' => ['sessionMin' => 30]]);
+
+        $this->postJson('/api/login', ['email' => 'admin@hotel.com', 'password' => 'secret123'])->assertOk();
+
+        $token = \Laravel\Sanctum\PersonalAccessToken::first();
+        $this->assertNotNull($token->expires_at);
+        $this->assertEqualsWithDelta(30, now()->diffInMinutes($token->expires_at, false), 1);
+    }
+
+    public function test_login_leaves_token_without_expiry_when_unset(): void
+    {
+        $this->makeUser();
+
+        $this->postJson('/api/login', ['email' => 'admin@hotel.com', 'password' => 'secret123'])->assertOk();
+
+        $this->assertNull(\Laravel\Sanctum\PersonalAccessToken::first()->expires_at);
+    }
+
+    public function test_an_expired_token_is_rejected(): void
+    {
+        $user = User::factory()->create();
+        $expired = $user->createToken('web', ['*'], now()->subMinute())->plainTextToken;
+
+        $this->withHeader('Authorization', "Bearer {$expired}")->getJson('/api/me')->assertStatus(401);
+    }
 }
