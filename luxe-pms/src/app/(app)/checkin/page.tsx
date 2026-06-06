@@ -19,7 +19,7 @@ import { Badge, PaymentBadge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
-import { RESERVATIONS, GUESTS, ROOMS } from "@/lib/mock-data";
+import { GUESTS, ROOMS } from "@/lib/mock-data";
 import type { Reservation, PaymentStatus, BookingSource, Guest } from "@/lib/types";
 import { cn, money, formatTime } from "@/lib/utils";
 import { apiGet, apiPut } from "@/lib/api";
@@ -32,9 +32,6 @@ async function persistCheckIn(bookingNo: string) {
     if (bk) await apiPut(`/bookings/${bk.id}`, { status: "checked-in" });
   } catch { /* offline — UI still reflects the check-in locally */ }
 }
-
-// Use first 12 reservations as "expected arrivals today" pool
-const ARRIVALS = RESERVATIONS.slice(0, 12);
 
 /** Join a reservation with its guest profile to enable phone/email/ID search */
 function enrich(r: Reservation) {
@@ -51,18 +48,18 @@ function enrich(r: Reservation) {
     nationality: guest?.nationality ?? "",
   };
 }
-const ENRICHED = ARRIVALS.map(enrich);
+type Enriched = ReturnType<typeof enrich>;
 
 type MatchField = "Booking #" | "First name" | "Last name" | "Full name" | "Phone" | "Email" | "ID #" | "Room #" | "Nationality";
 
 /** Returns matched reservations + which fields matched for each */
-function smartSearch(needle: string): { res: Reservation; fields: MatchField[] }[] {
+function smartSearch(needle: string, enriched: Enriched[]): { res: Reservation; fields: MatchField[] }[] {
   const q = needle.trim().toLowerCase();
   if (!q) return [];
   // Strip spaces and punctuation for phone-like search
   const qDigits = q.replace(/[^0-9]/g, "");
 
-  return ENRICHED
+  return enriched
     .map(e => {
       const fields: MatchField[] = [];
       if (e.res.bookingNo.toLowerCase().includes(q)) fields.push("Booking #");
@@ -127,16 +124,30 @@ export default function CheckinPage() {
   // Reservations created from express walk-in — force KYC capture in the check-in modal
   const [expressWalkInIds, setExpressWalkInIds] = React.useState<Set<string>>(new Set());
 
+  // Today's real expected arrivals — confirmed bookings whose check-in date is today.
+  const [arrivals, setArrivals] = React.useState<Reservation[]>([]);
+  React.useEffect(() => {
+    const today = new Date().toLocaleDateString("en-CA");
+    apiGet<(Reservation & { status?: string })[]>("/bookings")
+      .then(rows => setArrivals(
+        rows
+          .filter(b => (b.checkIn ?? "").slice(0, 10) === today && (b.status ?? "confirmed") === "confirmed")
+          .map(b => ({ ...b, id: String(b.id) })),
+      ))
+      .catch(() => {});
+  }, []);
+  const enriched = React.useMemo(() => arrivals.map(enrich), [arrivals]);
+
   // Auto-open check-in modal when navigated with ?book=BK100245 (e.g. from dashboard)
   React.useEffect(() => {
     if (!bookParam) return;
-    const target = ARRIVALS.find(r => r.bookingNo === bookParam);
+    const target = arrivals.find(r => r.bookingNo === bookParam);
     if (target) {
       setCheckingIn(target);
       // Clear the query string so re-render / close doesn't re-open
       router.replace("/checkin");
     }
-  }, [bookParam, router]);
+  }, [bookParam, router, arrivals]);
 
   // Resolve a Guest record (from GUESTS or synthesized) for the selected reservation
   const selectedGuest: Guest | null = React.useMemo(() => {
@@ -164,12 +175,12 @@ export default function CheckinPage() {
   const [roomType, setRoomType] = React.useState<string>("all");
   const [vipOnly, setVipOnly] = React.useState(false);
 
-  const smartMatches = React.useMemo(() => smartSearch(q), [q]);
+  const smartMatches = React.useMemo(() => smartSearch(q, enriched), [q, enriched]);
 
   const matched = React.useMemo(() => {
     // The list/cards view shows reservations that pass filters AND match the search (if any)
     const searchSet = q.trim() ? new Set(smartMatches.map(m => m.res.id)) : null;
-    return ARRIVALS.filter(r => {
+    return arrivals.filter(r => {
       if (searchSet && !searchSet.has(r.id)) return false;
       if (source !== "all" && r.source !== source) return false;
       if (payment !== "all" && r.paymentStatus !== payment) return false;
@@ -178,15 +189,15 @@ export default function CheckinPage() {
       if (vipOnly && !r.vip) return false;
       return true;
     });
-  }, [q, smartMatches, source, payment, slot, roomType, vipOnly]);
+  }, [arrivals, q, smartMatches, source, payment, slot, roomType, vipOnly]);
 
   // Live dropdown shows top 5 matches
   const topMatches = smartMatches.slice(0, 5);
   const exactMatch = smartMatches.length === 1 ? smartMatches[0].res : null;
 
-  const totalBalance = ARRIVALS.reduce((s, r) => s + r.balance, 0);
-  const sources = Array.from(new Set(ARRIVALS.map(r => r.source)));
-  const roomTypes = Array.from(new Set(ARRIVALS.map(r => r.roomType)));
+  const totalBalance = arrivals.reduce((s, r) => s + r.balance, 0);
+  const sources = Array.from(new Set(arrivals.map(r => r.source)));
+  const roomTypes = Array.from(new Set(arrivals.map(r => r.roomType)));
 
   const clearFilters = () => {
     setSource("all"); setPayment("all"); setSlot("all"); setRoomType("all"); setVipOnly(false);
@@ -200,7 +211,7 @@ export default function CheckinPage() {
         <div>
           <h1 className="text-2xl font-display font-medium tracking-tight">Check-in</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            {ARRIVALS.length} arrivals expected today · one-click for confirmed reservations
+            {arrivals.length} arrivals expected today · one-click for confirmed reservations
           </p>
         </div>
         <div className="flex gap-2">
@@ -213,9 +224,9 @@ export default function CheckinPage() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPICard label="Expected Today" value={ARRIVALS.length} icon={Calendar} accent="brand" />
-        <KPICard label="VIP Arrivals" value={ARRIVALS.filter(r => r.vip).length} icon={Crown} accent="accent" />
-        <KPICard label="Paid in Advance" value={ARRIVALS.filter(r => r.paymentStatus === "paid").length} icon={CreditCard} accent="success" />
+        <KPICard label="Expected Today" value={arrivals.length} icon={Calendar} accent="brand" />
+        <KPICard label="VIP Arrivals" value={arrivals.filter(r => r.vip).length} icon={Crown} accent="accent" />
+        <KPICard label="Paid in Advance" value={arrivals.filter(r => r.paymentStatus === "paid").length} icon={CreditCard} accent="success" />
         <KPICard label="Pending Balance" value={money(totalBalance)} icon={CreditCard} accent="warning" />
       </div>
 
@@ -434,7 +445,7 @@ export default function CheckinPage() {
 
       {/* Body */}
       <div className="text-xs text-muted-foreground">
-        Showing <span className="font-medium text-foreground">{matched.length}</span> of {ARRIVALS.length} arrivals
+        Showing <span className="font-medium text-foreground">{matched.length}</span> of {arrivals.length} arrivals
       </div>
 
       {view === "cards"
