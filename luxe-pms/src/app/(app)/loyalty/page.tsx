@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { money, cn, formatDate } from "@/lib/utils";
-import { apiGet, apiPost, apiPut } from "@/lib/api";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 
 // ============================================================
 // TYPES & CONSTANTS
@@ -25,6 +25,7 @@ type TxnKind = "Earn" | "Redeem" | "Bonus" | "Adjust" | "Expire";
 type RedemptionStatus = "Pending" | "Approved" | "Rejected" | "Applied";
 
 interface Tier {
+  id?: string;
   level: TierLevel;
   minSpend: number;
   minNights: number;
@@ -321,6 +322,11 @@ export default function LoyaltyPage() {
   const [tiers, setTiers] = React.useState<Tier[]>(TIERS);
   const [rewards, setRewards] = React.useState<Reward[]>(SEED_REWARDS);
   const [campaigns, setCampaigns] = React.useState<Campaign[]>(SEED_CAMPAIGNS);
+  React.useEffect(() => {
+    apiGet<Tier[]>("/loyalty-tiers").then(r => { if (r.length) setTiers(r.map(t => ({ ...t, id: String(t.id), perks: t.perks ?? [] }))); }).catch(() => {});
+    apiGet<Reward[]>("/loyalty-rewards").then(r => { if (r.length) setRewards(r.map(x => ({ ...x, id: String(x.id) }))); }).catch(() => {});
+    apiGet<Campaign[]>("/loyalty-campaigns").then(r => { if (r.length) setCampaigns(r.map(c => ({ ...c, id: String(c.id), applicableTiers: c.applicableTiers ?? [], applicableRoomTypes: c.applicableRoomTypes ?? [] }))); }).catch(() => {});
+  }, []);
   const [redemptions, setRedemptions] = React.useState<Redemption[]>(SEED_REDEMPTIONS);
   const [audit] = React.useState<AuditEntry[]>(SEED_AUDIT);
   const [earningRules, setEarningRules] = React.useState<EarningRule[]>(SEED_EARNING_RULES);
@@ -377,8 +383,8 @@ export default function LoyaltyPage() {
       {tab === "dashboard"   && <DashboardTab members={members} redemptions={redemptions} txns={SEED_TXNS} onOpenMember={setMemberDetail} />}
       {tab === "members"     && <MembersTab members={members} onOpenMember={setMemberDetail} onAdjustPoints={setAdjustPoints} />}
       {tab === "tiers"       && <TiersTab tiers={tiers} earningRules={earningRules} settings={settings} onEditTier={setEditTier} onUpdateRule={(id, patch) => setEarningRules(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))} onUpdateSettings={setSettings} onToast={showToast} />}
-      {tab === "rewards"     && <RewardsTab rewards={rewards} settings={settings} onEdit={setEditReward} onToggle={(id) => setRewards(prev => prev.map(r => r.id === id ? { ...r, active: !r.active } : r))} onDelete={(id) => { setRewards(prev => prev.filter(r => r.id !== id)); showToast("Reward removed"); }} />}
-      {tab === "campaigns"   && <CampaignsTab campaigns={campaigns} onEdit={setEditCampaign} onToggle={(id) => setCampaigns(prev => prev.map(c => c.id === id ? { ...c, active: !c.active } : c))} onDelete={(id) => { setCampaigns(prev => prev.filter(c => c.id !== id)); showToast("Campaign removed"); }} />}
+      {tab === "rewards"     && <RewardsTab rewards={rewards} settings={settings} onEdit={setEditReward} onToggle={(id) => { const cur = rewards.find(r => r.id === id); const active = !cur?.active; setRewards(prev => prev.map(r => r.id === id ? { ...r, active } : r)); apiPut(`/loyalty-rewards/${id}`, { active }).catch(() => showToast("Could not save")); }} onDelete={(id) => { setRewards(prev => prev.filter(r => r.id !== id)); apiDelete(`/loyalty-rewards/${id}`).catch(() => showToast("Could not delete")); showToast("Reward removed"); }} />}
+      {tab === "campaigns"   && <CampaignsTab campaigns={campaigns} onEdit={setEditCampaign} onToggle={(id) => { const cur = campaigns.find(c => c.id === id); const active = !cur?.active; setCampaigns(prev => prev.map(c => c.id === id ? { ...c, active } : c)); apiPut(`/loyalty-campaigns/${id}`, { active }).catch(() => showToast("Could not save")); }} onDelete={(id) => { setCampaigns(prev => prev.filter(c => c.id !== id)); apiDelete(`/loyalty-campaigns/${id}`).catch(() => showToast("Could not delete")); showToast("Campaign removed"); }} />}
       {tab === "redemptions" && <RedemptionsTab redemptions={redemptions} onApprove={(id) => { setRedemptions(prev => prev.map(r => r.id === id ? { ...r, status: "Approved" as const, approver: "Tom W." } : r)); showToast("Redemption approved"); }} onReject={(id) => { setRedemptions(prev => prev.map(r => r.id === id ? { ...r, status: "Rejected" as const } : r)); showToast("Redemption rejected"); }} />}
       {tab === "reports"     && <ReportsTab members={members} redemptions={redemptions} campaigns={campaigns} onToast={showToast} />}
       {tab === "audit"       && <AuditTab entries={audit} />}
@@ -402,16 +408,16 @@ export default function LoyaltyPage() {
         setAdjustPoints(null);
         showToast(`${adjustPoints.name}: ${delta > 0 ? "+" : ""}${delta} points · ${reason}`);
       }} />}
-      {editTier && <TierEditModal tier={editTier} onClose={() => setEditTier(null)} onSave={(t) => { setTiers(prev => prev.map(x => x.level === t.level ? t : x)); setEditTier(null); showToast(`${t.level} tier updated`); }} />}
+      {editTier && <TierEditModal tier={editTier} onClose={() => setEditTier(null)} onSave={(t) => { setTiers(prev => prev.map(x => x.level === t.level ? { ...t, id: x.id } : x)); if (editTier.id) apiPut(`/loyalty-tiers/${editTier.id}`, t).catch(() => showToast("Could not save")); setEditTier(null); showToast(`${t.level} tier updated`); }} />}
       {editReward && <RewardEditModal reward={editReward === "new" ? null : editReward} onClose={() => setEditReward(null)} onSave={(r) => {
-        if (editReward === "new") setRewards(prev => [{ ...r, id: `rw-${Date.now().toString(36)}` }, ...prev]);
-        else setRewards(prev => prev.map(x => x.id === (editReward as Reward).id ? { ...r, id: (editReward as Reward).id } : x));
+        if (editReward === "new") apiPost<Reward>("/loyalty-rewards", r).then(row => setRewards(prev => [{ ...row, id: String(row.id) }, ...prev])).catch(() => showToast("Could not save reward"));
+        else { const id = (editReward as Reward).id; setRewards(prev => prev.map(x => x.id === id ? { ...r, id } : x)); apiPut(`/loyalty-rewards/${id}`, r).catch(() => showToast("Could not save")); }
         setEditReward(null);
         showToast(editReward === "new" ? `Reward "${r.name}" created` : `Reward "${r.name}" updated`);
       }} />}
       {editCampaign && <CampaignEditModal campaign={editCampaign === "new" ? null : editCampaign} onClose={() => setEditCampaign(null)} onSave={(c) => {
-        if (editCampaign === "new") setCampaigns(prev => [{ ...c, id: `cp-${Date.now().toString(36)}`, redemptions: 0 }, ...prev]);
-        else setCampaigns(prev => prev.map(x => x.id === (editCampaign as Campaign).id ? { ...c, id: (editCampaign as Campaign).id, redemptions: (editCampaign as Campaign).redemptions } : x));
+        if (editCampaign === "new") apiPost<Campaign>("/loyalty-campaigns", { ...c, redemptions: 0 }).then(row => setCampaigns(prev => [{ ...row, id: String(row.id), applicableTiers: row.applicableTiers ?? [], applicableRoomTypes: row.applicableRoomTypes ?? [] }, ...prev])).catch(() => showToast("Could not save campaign"));
+        else { const ex = editCampaign as Campaign; setCampaigns(prev => prev.map(x => x.id === ex.id ? { ...c, id: ex.id, redemptions: ex.redemptions } : x)); apiPut(`/loyalty-campaigns/${ex.id}`, { ...c, redemptions: ex.redemptions }).catch(() => showToast("Could not save")); }
         setEditCampaign(null);
         showToast(editCampaign === "new" ? `Campaign "${c.name}" launched` : `Campaign "${c.name}" updated`);
       }} />}

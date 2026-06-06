@@ -25,7 +25,10 @@ use App\Models\Guest;
 use App\Models\HallPackage;
 use App\Models\Holiday;
 use App\Models\InventoryItem;
+use App\Models\LoyaltyCampaign;
 use App\Models\LoyaltyMember;
+use App\Models\LoyaltyReward;
+use App\Models\LoyaltyTier;
 use App\Models\MenuItem;
 use App\Models\NotificationTemplate;
 use App\Models\PaymentMethod;
@@ -73,6 +76,9 @@ class ResourceController extends Controller
         'enquiries'              => Enquiry::class,
         'found-items'            => FoundItem::class,
         'loyalty-members'        => LoyaltyMember::class,
+        'loyalty-tiers'          => LoyaltyTier::class,
+        'loyalty-rewards'        => LoyaltyReward::class,
+        'loyalty-campaigns'      => LoyaltyCampaign::class,
         'account-entries'        => AccountEntry::class,
         'app-users'              => AppUser::class,
         'hall-bookings'          => HallBooking::class,
@@ -271,6 +277,24 @@ class ResourceController extends Controller
             'hsnSac' => 'string|max:50|nullable', 'voucherNo' => 'string|max:50|nullable',
             'lines' => 'array|nullable', 'attachment' => 'array|nullable',
         ],
+        'loyalty-tiers' => [
+            'level' => 'string|max:50', 'minSpend' => 'integer|min:0', 'minNights' => 'integer|min:0',
+            'pointsRate' => 'numeric|min:0', 'discountPct' => 'integer|min:0|max:100', 'roomUpgrade' => 'string|max:100',
+            'lateCheckout' => 'string|max:100|nullable', 'earlyCheckin' => 'string|max:100|nullable',
+            'freeBreakfast' => 'boolean', 'welcomeDrink' => 'boolean', 'priorityBooking' => 'boolean', 'vipTag' => 'boolean',
+            'color' => 'string|max:50|nullable', 'perks' => 'array',
+        ],
+        'loyalty-rewards' => [
+            'name' => 'string|max:255', 'category' => 'string|max:50', 'pointsCost' => 'integer|min:0',
+            'cashValue' => 'integer|min:0', 'description' => 'string|max:500|nullable', 'minTier' => 'string|max:50',
+            'active' => 'boolean', 'icon' => 'string|max:20|nullable',
+        ],
+        'loyalty-campaigns' => [
+            'name' => 'string|max:255', 'type' => 'string|max:50', 'description' => 'string|max:1000|nullable',
+            'validFrom' => 'string|max:50|nullable', 'validTo' => 'string|max:50|nullable',
+            'applicableTiers' => 'array', 'applicableRoomTypes' => 'array', 'minBookingAmount' => 'integer|min:0',
+            'rewardValue' => 'string|max:255|nullable', 'active' => 'boolean', 'redemptions' => 'integer|min:0',
+        ],
         'loyalty-members' => [
             'membershipId' => 'string|max:50', 'name' => 'string|max:255', 'phone' => 'string|max:50|nullable',
             'email' => 'email|max:255|nullable', 'dob' => 'string|max:50|nullable', 'anniversary' => 'string|max:50|nullable',
@@ -296,6 +320,9 @@ class ResourceController extends Controller
         'menu-items' => ['name'], 'fb-orders' => ['tableNo'],
         'maintenance-tickets' => ['title'], 'enquiries' => ['name'], 'found-items' => ['name'],
         'loyalty-members' => ['name'],
+        'loyalty-tiers' => ['level'],
+        'loyalty-rewards' => ['name'],
+        'loyalty-campaigns' => ['name'],
         'account-entries' => ['category', 'description'],
         'app-users' => ['name', 'email'],
         'hall-bookings' => ['customer'],

@@ -22,6 +22,9 @@ class ModuleResourcesTest extends TestCase
     {
         return [
             'loyalty-members'     => ['loyalty-members', ['name' => 'Member A']],
+            'loyalty-tiers'       => ['loyalty-tiers', ['level' => 'Platinum']],
+            'loyalty-rewards'     => ['loyalty-rewards', ['name' => 'Free night']],
+            'loyalty-campaigns'   => ['loyalty-campaigns', ['name' => 'Diwali Bonus']],
             'account-entries'     => ['account-entries', ['category' => 'Room Revenue', 'description' => 'Settle']],
             'app-users'           => ['app-users', ['name' => 'Staff A', 'email' => 'a@x.com']],
             'hall-bookings'       => ['hall-bookings', ['customer' => 'Wedding']],
