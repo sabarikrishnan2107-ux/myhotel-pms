@@ -107,12 +107,18 @@ export default function CompliancePage() {
       .then(rows => setLicenses(rows.map(l => ({ ...l, id: String(l.id), documents: l.documents ?? [], reminders: l.reminders ?? [] }))))
       .catch(() => {});
   }, []);
+  const [formC, setFormC] = React.useState<FormCRegistration[]>([]);
+  React.useEffect(() => {
+    apiGet<FormCRegistration[]>("/form-c-registrations")
+      .then(rows => setFormC(rows.map(f => ({ ...f, id: String(f.id) }))))
+      .catch(() => {});
+  }, []);
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
   const expiredCount = licenses.filter(l => l.status === "expired").length;
   const expiringSoonCount = licenses.filter(l => l.status === "expiring_soon").length;
-  const formCPending = FORM_C_SEED.filter(f => !f.reportedToFrro).length;
+  const formCPending = formC.filter(f => !f.reportedToFrro).length;
   const eInvoiceFailed = EINVOICES_SEED.filter(e => e.status === "failed" || e.status === "pending").length;
 
   return (
@@ -194,7 +200,7 @@ export default function CompliancePage() {
       {tab === "gstr" && <GstrTab onToast={showToast} />}
 
       {/* FORM C */}
-      {tab === "formC" && <FormCTab onToast={showToast} />}
+      {tab === "formC" && <FormCTab forms={formC} setForms={setFormC} onToast={showToast} />}
 
       {/* LICENSE CALENDAR */}
       {tab === "licenses" && (
@@ -241,8 +247,8 @@ function OverviewTab({ licenses, setTab }: { licenses: License[]; setTab: (t: Co
           <Card className="p-4 hover:border-brand transition-colors">
             <span className="h-8 w-8 rounded-md bg-warning-soft text-warning inline-flex items-center justify-center mb-2"><Globe className="h-4 w-4" /></span>
             <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Form C this month</p>
-            <p className="text-xl font-bold tabular mt-0.5">{FORM_C_SEED.length}</p>
-            <p className="text-[10px] text-muted-foreground">{FORM_C_SEED.filter(f => !f.reportedToFrro).length} pending FRRO upload</p>
+            <p className="text-xl font-bold tabular mt-0.5">{formC.length}</p>
+            <p className="text-[10px] text-muted-foreground">{formCPending} pending FRRO upload</p>
           </Card>
         </button>
         <button onClick={() => setTab("licenses")} className="text-left">
@@ -483,9 +489,15 @@ function GstrTab({ onToast }: { onToast: (m: string) => void }) {
 // ============================================================
 // FORM C TAB
 // ============================================================
-function FormCTab({ onToast }: { onToast: (m: string) => void }) {
-  const [forms] = React.useState(FORM_C_SEED);
+function FormCTab({ forms, setForms, onToast }: { forms: FormCRegistration[]; setForms: React.Dispatch<React.SetStateAction<FormCRegistration[]>>; onToast: (m: string) => void }) {
   const [filter, setFilter] = React.useState<"all" | "pending" | "reported">("all");
+
+  const reportToFrro = (f: FormCRegistration) => {
+    const reportedAt = new Date().toISOString().slice(0, 16).replace("T", " ");
+    setForms(prev => prev.map(x => x.id === f.id ? { ...x, reportedToFrro: true, reportedAt } : x));
+    apiPut(`/form-c-registrations/${f.id}`, { reportedToFrro: true, reportedAt }).catch(() => onToast("⚠ Save failed — backend offline"));
+    onToast(`Uploaded to FRRO portal · ${f.guestName} · ACK received`);
+  };
   const [search, setSearch] = React.useState("");
 
   const filtered = forms.filter(f => {
@@ -557,7 +569,7 @@ function FormCTab({ onToast }: { onToast: (m: string) => void }) {
                   <div className="inline-flex gap-1">
                     <Button size="sm" variant="ghost" onClick={() => onToast(`Form C downloaded for ${f.guestName}`)}><Download className="h-3 w-3" /></Button>
                     {!f.reportedToFrro && (
-                      <Button size="sm" onClick={() => onToast(`Uploaded to FRRO portal · ${f.guestName} · ACK received`)}>
+                      <Button size="sm" onClick={() => reportToFrro(f)}>
                         <Upload className="h-3 w-3" />Upload
                       </Button>
                     )}

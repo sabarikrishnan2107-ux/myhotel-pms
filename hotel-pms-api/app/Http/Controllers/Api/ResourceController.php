@@ -16,6 +16,7 @@ use App\Models\Floor;
 use App\Models\FolioCharge;
 use App\Models\FolioPayment;
 use App\Models\FbOrder;
+use App\Models\FormCRegistration;
 use App\Models\FoundItem;
 use App\Models\GroupBooking;
 use App\Models\GstSlab;
@@ -84,6 +85,7 @@ class ResourceController extends Controller
         'hall-bookings'          => HallBooking::class,
         'group-bookings'         => GroupBooking::class,
         'compliance-licenses'    => ComplianceLicense::class,
+        'form-c-registrations'   => FormCRegistration::class,
         'channels'               => Channel::class,
         'web-rooms'              => WebRoom::class,
         'pricing-rules'          => PricingRule::class,
@@ -235,6 +237,12 @@ class ResourceController extends Controller
             'name' => 'string|max:255', 'status' => 'string|max:50', 'lastSync' => 'string|max:100|nullable',
             'bookings' => 'integer|min:0', 'commission' => 'integer|min:0|max:100', 'rev' => 'integer|min:0',
         ],
+        'form-c-registrations' => [
+            'guestName' => 'string|max:255', 'passportNo' => 'string|max:100|nullable', 'nationality' => 'string|max:100|nullable',
+            'visaNo' => 'string|max:100|nullable', 'visaExpiry' => 'string|max:50|nullable', 'arrivalAt' => 'string|max:50|nullable',
+            'departureAt' => 'string|max:50|nullable', 'roomNo' => 'string|max:50|nullable',
+            'reportedToFrro' => 'boolean', 'reportedAt' => 'string|max:50|nullable',
+        ],
         'web-rooms' => [
             'name' => 'string|max:255', 'price' => 'integer|min:0', 'image' => 'string|max:50|nullable',
             'desc' => 'string|max:500|nullable', 'published' => 'boolean',
@@ -328,6 +336,7 @@ class ResourceController extends Controller
         'hall-bookings' => ['customer'],
         'group-bookings' => ['name'],
         'compliance-licenses' => ['name', 'authority'],
+        'form-c-registrations' => ['guestName'],
         'channels' => ['name'],
         'web-rooms' => ['name'],
         'pricing-rules' => ['name'],

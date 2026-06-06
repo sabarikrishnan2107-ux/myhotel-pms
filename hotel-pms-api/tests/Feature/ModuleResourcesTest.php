@@ -30,6 +30,7 @@ class ModuleResourcesTest extends TestCase
             'hall-bookings'       => ['hall-bookings', ['customer' => 'Wedding']],
             'group-bookings'      => ['group-bookings', ['name' => 'Tour Group']],
             'compliance-licenses' => ['compliance-licenses', ['name' => 'FSSAI', 'authority' => 'FSSAI']],
+            'form-c-registrations' => ['form-c-registrations', ['guestName' => 'Mr. Lee Chang']],
             'channels'            => ['channels', ['name' => 'Booking.com']],
             'web-rooms'           => ['web-rooms', ['name' => 'Deluxe']],
             'pricing-rules'       => ['pricing-rules', ['name' => 'Weekend premium']],

@@ -31,6 +31,7 @@ class DatabaseSeeder extends Seeder
             HallBookingSeeder::class,
             GroupBookingSeeder::class,
             ComplianceLicenseSeeder::class,
+            FormCSeeder::class,
             ChannelSeeder::class,
             WebRoomSeeder::class,
             PricingRuleSeeder::class,
