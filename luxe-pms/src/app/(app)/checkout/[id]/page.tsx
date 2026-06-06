@@ -379,6 +379,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
             </Button>
           </div>
 
+          {collectShortBy > 0 && (
+            <p className="text-xs text-warning text-center mb-2 inline-flex items-center justify-center gap-1 w-full">
+              <AlertCircle className="h-3.5 w-3.5" />Collect {money(collectShortBy)} more to settle the balance before checkout
+            </p>
+          )}
           <Button
             onClick={() => {
               setDone(true);
@@ -403,8 +408,10 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
             size="lg"
             variant="success"
             className="w-full"
+            disabled={collectShortBy > 0}
+            title={collectShortBy > 0 ? "Settle the full balance to enable checkout" : undefined}
           >
-            <CheckCircle2 className="h-5 w-5" />Complete Checkout
+            <CheckCircle2 className="h-5 w-5" />{collectShortBy > 0 ? `Balance due ${money(collectShortBy)}` : "Complete Checkout"}
           </Button>
         </Card>
       </div>
