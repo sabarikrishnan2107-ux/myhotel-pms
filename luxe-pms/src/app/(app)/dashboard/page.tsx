@@ -440,76 +440,76 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        {/* Activity feed — 3 cols */}
-        <Card className="lg:col-span-3 p-5">
-          <div className="mb-3">
-            <h2 className="text-lg font-semibold">Activity</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Recent staff &amp; system events</p>
-          </div>
-          <ul className="-mx-2 max-h-[420px] overflow-y-auto pr-1">
-            {activity.map(a => {
-              const v = activityVisual(`${a.verb} ${a.target}`, a.tone);
-              const Icon = v.icon;
-              const title = a.verb.charAt(0).toUpperCase() + a.verb.slice(1);
-              const detail = a.target && a.target !== "—" ? ` · ${a.target}` : "";
-              const who = a.actor && a.actor !== "System" ? `${a.actor} · ` : "";
-              return (
-                <li key={a.id} className="flex items-start gap-3 px-2 py-2 rounded-md hover:bg-surface-sunken/50 transition-colors">
-                  <span className={cn("h-8 w-8 shrink-0 rounded-lg flex items-center justify-center", ACTIVITY_CHIP[v.accent])}>
-                    <Icon className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm leading-snug">
-                      <span className="font-medium">{title}</span>
-                      <span className="text-muted-foreground">{detail}</span>
-                    </p>
-                    <p className="text-[11px] text-subtle-foreground mt-0.5">{who}{a.at}</p>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </Card>
-      </section>
-
-      {/* ============ AI DAILY BRIEFING ============ */}
-      <section>
-        <Card className="p-5 relative overflow-hidden border-l-2 border-l-accent bg-linear-to-br from-accent-soft/15 via-surface to-surface">
-          <div className="flex items-center gap-2.5 mb-3">
-            <span className="h-9 w-9 rounded-md bg-accent text-accent-foreground flex items-center justify-center shadow-xs">
-              <Bot className="h-4.5 w-4.5" />
-            </span>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold">AI Daily Briefing</p>
-              <p className="text-[11px] text-muted-foreground">Live activity stream · updated 2m ago</p>
+        {/* Activity + AI feed — 3 cols, stacked */}
+        <div className="lg:col-span-3 space-y-5">
+          <Card className="p-5">
+            <div className="mb-3">
+              <h2 className="text-lg font-semibold">Activity</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Recent staff &amp; system events</p>
             </div>
-            <span className="inline-flex items-center gap-1 rounded-md bg-info-soft text-info px-2 py-0.5 text-[10px] font-semibold">
-              <span className="h-1.5 w-1.5 rounded-full bg-info animate-pulse" /> AI
-            </span>
-          </div>
-          <ul className="grid sm:grid-cols-2 gap-x-6 gap-y-2.5 text-sm">
-            {AI_BRIEFING.map((b, i) => (
-              <li key={i} className="flex items-start gap-2 leading-snug">
-                <span className={cn(
-                  "h-1.5 w-1.5 rounded-full mt-1.5 shrink-0",
-                  b.tone === "success" && "bg-success",
-                  b.tone === "info" && "bg-info",
-                  b.tone === "warning" && "bg-warning",
-                  b.tone === "danger" && "bg-danger",
-                )} />
-                <span>{b.text}</span>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-3 pt-3 border-t border-border/40 flex items-center justify-between">
-            <span className="inline-flex items-center gap-1 text-[10px] text-success font-medium">
-              <CheckCircle2 className="h-3 w-3" /> Verified against live PMS data
-            </span>
-            <Link href="/ai" className="text-xs text-brand hover:underline inline-flex items-center gap-0.5 font-medium">
-              Ask AI Assistant <ChevronRight className="h-3 w-3" />
-            </Link>
-          </div>
-        </Card>
+            <ul className="-mx-2 max-h-[300px] overflow-y-auto pr-1">
+              {activity.map(a => {
+                const v = activityVisual(`${a.verb} ${a.target}`, a.tone);
+                const Icon = v.icon;
+                const title = a.verb.charAt(0).toUpperCase() + a.verb.slice(1);
+                const detail = a.target && a.target !== "—" ? ` · ${a.target}` : "";
+                const who = a.actor && a.actor !== "System" ? `${a.actor} · ` : "";
+                return (
+                  <li key={a.id} className="flex items-start gap-3 px-2 py-2 rounded-md hover:bg-surface-sunken/50 transition-colors">
+                    <span className={cn("h-8 w-8 shrink-0 rounded-lg flex items-center justify-center", ACTIVITY_CHIP[v.accent])}>
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm leading-snug">
+                        <span className="font-medium">{title}</span>
+                        <span className="text-muted-foreground">{detail}</span>
+                      </p>
+                      <p className="text-[11px] text-subtle-foreground mt-0.5">{who}{a.at}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+
+          {/* AI Daily Briefing — under Activity */}
+          <Card className="p-5 relative overflow-hidden border-l-2 border-l-accent bg-linear-to-br from-accent-soft/15 via-surface to-surface">
+            <div className="flex items-center gap-2.5 mb-3">
+              <span className="h-9 w-9 rounded-md bg-accent text-accent-foreground flex items-center justify-center shadow-xs">
+                <Bot className="h-4.5 w-4.5" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold">AI Daily Briefing</p>
+                <p className="text-[11px] text-muted-foreground">Live insight stream · 2m ago</p>
+              </div>
+              <span className="inline-flex items-center gap-1 rounded-md bg-info-soft text-info px-2 py-0.5 text-[10px] font-semibold">
+                <span className="h-1.5 w-1.5 rounded-full bg-info animate-pulse" /> AI
+              </span>
+            </div>
+            <ul className="space-y-2.5 text-[13px]">
+              {AI_BRIEFING.map((b, i) => (
+                <li key={i} className="flex items-start gap-2 leading-snug">
+                  <span className={cn(
+                    "h-1.5 w-1.5 rounded-full mt-1.5 shrink-0",
+                    b.tone === "success" && "bg-success",
+                    b.tone === "info" && "bg-info",
+                    b.tone === "warning" && "bg-warning",
+                    b.tone === "danger" && "bg-danger",
+                  )} />
+                  <span>{b.text}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 pt-3 border-t border-border/40 flex items-center justify-between">
+              <span className="inline-flex items-center gap-1 text-[10px] text-success font-medium">
+                <CheckCircle2 className="h-3 w-3" /> Verified vs live PMS data
+              </span>
+              <Link href="/ai" className="text-xs text-brand hover:underline inline-flex items-center gap-0.5 font-medium">
+                Ask AI <ChevronRight className="h-3 w-3" />
+              </Link>
+            </div>
+          </Card>
+        </div>
       </section>
 
       {/* ============ REVENUE KPIs WITH SPARKLINES ============ */}
