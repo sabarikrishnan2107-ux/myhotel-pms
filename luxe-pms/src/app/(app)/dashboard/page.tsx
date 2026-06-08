@@ -374,10 +374,10 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* ============ PRIORITIES + GAUGE + ACTIVITY ============ */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Priorities — 5 cols */}
-        <Card className="lg:col-span-5 p-5">
+      {/* ============ PRIORITIES + LIVE STATUS + ACTIVITY + AI ============ */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 items-start">
+        {/* Priorities */}
+        <Card className="p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
               <p className="text-xs uppercase tracking-[0.16em] text-subtle-foreground font-semibold">Today&apos;s Priorities</p>
@@ -404,8 +404,8 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        {/* Live Status — gauge + floor heatmap — 4 cols */}
-        <Card className="lg:col-span-4 p-5">
+        {/* Live Status — gauge + floor heatmap */}
+        <Card className="p-5">
           <div className="flex items-center justify-between mb-2">
             <div>
               <p className="text-xs uppercase tracking-[0.16em] text-subtle-foreground font-semibold">Live Status</p>
@@ -440,11 +440,10 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        {/* Activity + AI feed — 3 cols, stacked */}
-        <div className="lg:col-span-3 space-y-5">
-          <Card className="p-5">
-            <div className="mb-3">
-              <h2 className="text-lg font-semibold">Activity</h2>
+        {/* Activity */}
+        <Card className="p-5">
+          <div className="mb-3">
+            <h2 className="text-lg font-semibold">Activity</h2>
               <p className="text-xs text-muted-foreground mt-0.5">Recent staff &amp; system events</p>
             </div>
             <ul className="-mx-2 max-h-[300px] overflow-y-auto pr-1">
@@ -508,8 +507,7 @@ export default function DashboardPage() {
                 Ask AI <ChevronRight className="h-3 w-3" />
               </Link>
             </div>
-          </Card>
-        </div>
+        </Card>
       </section>
 
       {/* ============ REVENUE KPIs WITH SPARKLINES ============ */}
