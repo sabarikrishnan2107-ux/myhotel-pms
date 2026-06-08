@@ -188,9 +188,9 @@ export default function DashboardPage() {
         </Card>
 
         {/* KPI cards */}
-        <HeroKpiCard className="lg:col-span-2" label="Occupancy" value={pct(k.occupancyPct)} delta={2.1} spark={SPARKLINE_DATA.occupancy} color="var(--color-brand)" />
-        <HeroKpiCard className="lg:col-span-2" label="ADR" value={money(k.adr)} delta={1.4} spark={SPARKLINE_DATA.adr} color="var(--color-accent)" />
-        <HeroKpiCard className="lg:col-span-2" label="RevPAR" value={money(k.revpar)} delta={3.6} spark={SPARKLINE_DATA.revpar} color="var(--color-success)" />
+        <HeroKpiCard className="lg:col-span-2" label="Occupancy" value={pct(k.occupancyPct)} sub={`${k.occupied} of ${k.totalRooms} rooms sold`} delta={2.1} spark={SPARKLINE_DATA.occupancy} color="var(--color-brand)" />
+        <HeroKpiCard className="lg:col-span-2" label="ADR" value={money(k.adr)} sub="avg / occupied room" delta={1.4} spark={SPARKLINE_DATA.adr} color="var(--color-accent)" />
+        <HeroKpiCard className="lg:col-span-2" label="RevPAR" value={money(k.revpar)} sub="revenue / available room" delta={3.6} spark={SPARKLINE_DATA.revpar} color="var(--color-success)" />
 
         {/* AI Daily Briefing — right of RevPAR */}
         <Card className="sm:col-span-2 lg:col-span-4 p-4 bg-linear-to-br from-accent-soft/30 via-surface to-brand-soft/30 border-l-4 border-l-accent flex flex-col">
@@ -762,13 +762,16 @@ function SectionHeader({ title, hint, icon: Icon }: { title: string; hint?: stri
   );
 }
 
-function HeroKpiCard({ label, value, delta, spark, color, className }: {
-  label: string; value: string; delta?: number; spark?: number[]; color?: string; className?: string;
+function HeroKpiCard({ label, value, sub, delta, spark, color, className }: {
+  label: string; value: string; sub?: string; delta?: number; spark?: number[]; color?: string; className?: string;
 }) {
   return (
-    <Card className={cn("p-3.5 flex flex-col hover:shadow-md transition-shadow", className)}>
+    <Card className={cn("p-4 flex flex-col overflow-hidden hover:shadow-md transition-shadow", className)}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-semibold">{label}</p>
+        <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-semibold inline-flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
+          {label}
+        </p>
         {typeof delta === "number" && (
           <span className={cn(
             "text-[10px] inline-flex items-center gap-0.5 font-medium rounded-md px-1.5 py-0.5",
@@ -778,9 +781,10 @@ function HeroKpiCard({ label, value, delta, spark, color, className }: {
           </span>
         )}
       </div>
-      <p className="text-2xl font-semibold tabular mt-1 tracking-tight">{value}</p>
+      <p className="text-3xl font-semibold tabular mt-1.5 tracking-tight leading-none">{value}</p>
+      {sub && <p className="text-[11px] text-muted-foreground mt-1.5">{sub}</p>}
       {spark && spark.length > 0 && (
-        <Sparkline data={spark} color={color} height={20} className="mt-auto pt-2 -mx-0.5" />
+        <Sparkline data={spark} color={color} height={40} className="mt-auto pt-3 -mx-1 -mb-1" />
       )}
     </Card>
   );
