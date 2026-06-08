@@ -18,6 +18,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { RESERVATIONS, GUESTS, SAMPLE_FOLIO_CHARGES, SAMPLE_PAYMENTS } from "@/lib/mock-data";
 import { cn, money, formatDate, formatDateLong, formatTime } from "@/lib/utils";
 import { apiGet, apiPost, apiDelete } from "@/lib/api";
+import { useProperty, hotelName } from "@/lib/use-property";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: FileBarChart },
@@ -55,6 +56,7 @@ const NOTES = {
 
 export default function FolioDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const name = hotelName(useProperty());
   const reservation = RESERVATIONS.find(r => r.bookingNo === id) ?? RESERVATIONS[0];
   const guest = GUESTS.find(g => g.name === reservation.guestName);
 
@@ -150,7 +152,7 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
               <Sparkles className="h-5 w-5" />
             </span>
             <div>
-              <p className="font-display text-lg font-medium tracking-tight">The Pearl Marina</p>
+              <p className="font-display text-lg font-medium tracking-tight">{name}</p>
               <p className="text-[11px] text-muted-foreground">Main Tower · MG Road, Bandra West, Mumbai 400050 · GSTIN <span className="font-medium text-foreground tabular">27AAACR5055K1Z5</span> · PAN AAACR5055K</p>
             </div>
           </div>
@@ -977,6 +979,7 @@ function PrintModal({ onClose, onPrint, reservation, grandTotal, paymentsTotal, 
   onClose: () => void; onPrint: () => void;
   reservation: typeof RESERVATIONS[number]; grandTotal: number; paymentsTotal: number; balance: number; chargesSubtotal: number; chargesTax: number;
 }) {
+  const name = hotelName(useProperty());
   return (
     <Modal title="Print / Export Invoice" onClose={onClose} wide>
       <div className="space-y-4">
@@ -984,7 +987,7 @@ function PrintModal({ onClose, onPrint, reservation, grandTotal, paymentsTotal, 
         <div className="rounded-md border border-border p-5 bg-surface text-sm space-y-3">
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-display text-base font-medium">The Pearl Palace</p>
+              <p className="font-display text-base font-medium">{name}</p>
               <p className="text-xs text-muted-foreground">Main Tower · MG Road, Bandra West, Mumbai 400050</p>
               <p className="text-[10px] text-muted-foreground tabular mt-0.5">GSTIN 27AAACR5055K1Z5 · PAN AAACR5055K · SAC 9963</p>
             </div>
@@ -1024,8 +1027,9 @@ function EmailModal({ onClose, onSend, reservation, guestEmail, grandTotal }: {
   onClose: () => void; onSend: () => void;
   reservation: typeof RESERVATIONS[number]; guestEmail: string; grandTotal: number;
 }) {
+  const name = hotelName(useProperty());
   const [to, setTo] = React.useState(guestEmail);
-  const [subject, setSubject] = React.useState(`Your invoice for INV-${reservation.bookingNo} — The Pearl Marina`);
+  const [subject, setSubject] = React.useState(`Your invoice for INV-${reservation.bookingNo} — ${name}`);
   const [channels, setChannels] = React.useState<string[]>(["email"]);
   const toggle = (c: string) => setChannels(v => v.includes(c) ? v.filter(x => x !== c) : [...v, c]);
 
@@ -1067,7 +1071,7 @@ function EmailModal({ onClose, onSend, reservation, guestEmail, grandTotal }: {
           <Label>Message</Label>
           <textarea
             rows={4}
-            defaultValue={`Dear ${reservation.guestName.split(" ")[0]},\n\nThank you for staying with us. Please find your invoice attached for your records.\n\nAmount: ${money(grandTotal)}\n\nWarm regards,\nThe Pearl Marina`}
+            defaultValue={`Dear ${reservation.guestName.split(" ")[0]},\n\nThank you for staying with us. Please find your invoice attached for your records.\n\nAmount: ${money(grandTotal)}\n\nWarm regards,\n${name}`}
             className="w-full px-3 py-2 rounded-md border border-border bg-surface text-sm placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 outline-hidden resize-none"
           />
         </div>

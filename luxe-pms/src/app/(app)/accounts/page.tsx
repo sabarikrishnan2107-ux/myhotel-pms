@@ -14,6 +14,7 @@ import { AIInsight } from "@/components/ui/ai-insight";
 import { INCOME_BREAKDOWN, EXPENSE_BREAKDOWN, RECENT_TXN } from "@/lib/mock-data-ext";
 import { money, cn, formatDate } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
+import { useProperty, hotelName } from "@/lib/use-property";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend, LineChart, Line } from "recharts";
 
 const PL_TREND = [
@@ -1928,6 +1929,7 @@ function EntryModal({ type, onClose, onSubmit, incomeCats, expenseCats }: {
 
 // ---------- Payment Voucher Modal ----------
 function PaymentVoucherModal({ entry, onClose }: { entry: Entry; onClose: () => void }) {
+  const name = hotelName(useProperty());
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
@@ -1955,7 +1957,7 @@ function PaymentVoucherModal({ entry, onClose }: { entry: Entry; onClose: () => 
           <div id="print-area" className="rounded-md border-2 border-double border-border p-5 bg-surface text-sm space-y-3">
             {/* Header */}
             <div className="text-center border-b-2 border-double border-border pb-3">
-              <p className="font-display text-lg font-medium">The Pearl Palace</p>
+              <p className="font-display text-lg font-medium">{name}</p>
               <p className="text-[10px] text-muted-foreground">Main Tower · MG Road, Bandra West, Mumbai 400050</p>
               <p className="text-[10px] text-muted-foreground tabular">GSTIN 27AAACR5055K1Z5 · PAN AAACR5055K</p>
               <div className="mt-2 inline-block px-4 py-1 rounded-full bg-warning text-white text-[10px] uppercase tracking-[0.2em] font-bold">
@@ -2436,6 +2438,7 @@ function PnlStat({ label, value, tone, big }: { label: string; value: string; to
 }
 
 function PnlBsTab({ entries }: { entries: Entry[] }) {
+  const name = hotelName(useProperty());
   const [subtab, setSubtab] = React.useState<"pnl" | "bs">("pnl");
 
   // Actual P&L computed from the real day-book entries.
@@ -2528,7 +2531,7 @@ function PnlBsTab({ entries }: { entries: Entry[] }) {
         <Card className="p-5">
           <div className="text-center mb-4">
             <h3 className="font-display text-xl">Departmental P&amp;L Statement</h3>
-            <p className="text-xs text-muted-foreground">Budgeted departmental view · May 2026 · MYHOTEL — The Pearl Marina</p>
+            <p className="text-xs text-muted-foreground">Budgeted departmental view · May 2026 · MYHOTEL — {name}</p>
           </div>
           <table className="w-full text-sm">
             <thead className="border-y-2 border-foreground">
@@ -2612,7 +2615,7 @@ function PnlBsTab({ entries }: { entries: Entry[] }) {
         <Card className="p-5">
           <div className="text-center mb-4">
             <h3 className="font-display text-xl">Balance Sheet</h3>
-            <p className="text-xs text-muted-foreground">As at 31 May 2026 · MYHOTEL — The Pearl Marina</p>
+            <p className="text-xs text-muted-foreground">As at 31 May 2026 · MYHOTEL — {name}</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Liabilities + Equity */}

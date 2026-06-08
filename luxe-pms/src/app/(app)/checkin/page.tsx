@@ -23,6 +23,7 @@ import { GUESTS, ROOMS } from "@/lib/mock-data";
 import type { Reservation, PaymentStatus, BookingSource, Guest } from "@/lib/types";
 import { cn, money, formatTime } from "@/lib/utils";
 import { apiGet, apiPut } from "@/lib/api";
+import { useProperty, hotelName } from "@/lib/use-property";
 
 // Mark a booking checked-in in Postgres (looked up by its bookingNo).
 async function persistCheckIn(bookingNo: string, roomNumber?: string) {
@@ -694,6 +695,7 @@ function CheckinProcessModal({
   onComplete: (r: Reservation, msg: string, roomNumber: string) => void;
   forceKycCapture?: boolean;
 }) {
+  const name = hotelName(useProperty());
   type Step = 0 | 1 | 2 | 3 | 4;
   const STEPS = [
     { id: 0, label: "Identity", icon: IdCard, hint: "Verify ID" },
@@ -1279,7 +1281,7 @@ function CheckinProcessModal({
                 <div className="rounded-md bg-surface-sunken p-3 text-xs">
                   <p className="font-semibold mb-1">Message preview (WhatsApp template)</p>
                   <p className="text-muted-foreground leading-relaxed">
-                    Dear <span className="text-foreground font-medium">{reservation.guestName.split(" ")[0]}</span>, welcome to The Pearl Palace! You&apos;re checked into <span className="text-foreground font-medium">Room {assignedRoom}</span> until {formatTime(reservation.checkOut)}. Wi-Fi: PearlGuest (OTP via SMS). Concierge: dial 0 from your room. Enjoy your stay!
+                    Dear <span className="text-foreground font-medium">{reservation.guestName.split(" ")[0]}</span>, welcome to {name}! You&apos;re checked into <span className="text-foreground font-medium">Room {assignedRoom}</span> until {formatTime(reservation.checkOut)}. Wi-Fi: PearlGuest (OTP via SMS). Concierge: dial 0 from your room. Enjoy your stay!
                   </p>
                 </div>
               </div>
@@ -2139,6 +2141,7 @@ function AdvanceReceiptModal({
   grandTotal: number; payment: AdvancePayment; balance: number;
   ratePlan?: RatePlan;
 }) {
+  const name = hotelName(useProperty());
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
@@ -2165,7 +2168,7 @@ function AdvanceReceiptModal({
           <div id="print-area" className="rounded-md border-2 border-double border-border p-5 bg-surface text-sm space-y-3">
             {/* Hotel header */}
             <div className="text-center border-b-2 border-double border-border pb-3">
-              <p className="font-display text-lg font-medium">The Pearl Palace</p>
+              <p className="font-display text-lg font-medium">{name}</p>
               <p className="text-[10px] text-muted-foreground">Main Tower · MG Road, Bandra West, Mumbai 400050</p>
               <p className="text-[10px] text-muted-foreground tabular">GSTIN 27AAACR5055K1Z5 · PAN AAACR5055K</p>
               <div className="mt-2 inline-block px-3 py-0.5 rounded-full bg-brand-soft text-brand-soft-foreground text-[10px] uppercase tracking-[0.18em] font-bold">
@@ -2260,7 +2263,7 @@ function AdvanceReceiptModal({
                 <p className="border-t border-border pt-1 text-[10px] text-muted-foreground tabular">Cashier · Khalid R.</p>
               </div>
               <div className="text-right">
-                <p className="text-[10px] text-muted-foreground italic mb-6">For The Pearl Palace</p>
+                <p className="text-[10px] text-muted-foreground italic mb-6">For {name}</p>
                 <p className="border-t border-border pt-1 text-[10px] text-muted-foreground tabular">Authorised Signatory</p>
               </div>
             </div>
