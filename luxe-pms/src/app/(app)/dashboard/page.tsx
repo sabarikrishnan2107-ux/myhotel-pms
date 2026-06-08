@@ -301,17 +301,9 @@ export default function DashboardPage() {
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-semibold">Overview</p>
             <h1 className="text-2xl font-display font-semibold tracking-tight leading-tight truncate">{propName || "Dashboard"}</h1>
-            <p className="text-xs text-muted-foreground mt-0.5 inline-flex items-center gap-1.5 truncate">
-              {typeof property.branch === "string" && property.branch && (
-                <span className="truncate">{property.branch}</span>
-              )}
-              {typeof property.branch === "string" && property.branch && typeof property.city === "string" && property.city && (
-                <span className="text-border">·</span>
-              )}
-              {typeof property.city === "string" && property.city && (
-                <span className="truncate">{property.city}</span>
-              )}
-            </p>
+            {typeof property.branch === "string" && property.branch && (
+              <p className="text-xs text-muted-foreground mt-0.5 truncate">{property.branch}</p>
+            )}
           </div>
         </div>
 
