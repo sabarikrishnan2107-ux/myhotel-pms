@@ -159,7 +159,7 @@ export default function DashboardPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-7">
       {/* ============ HERO ============ */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4 items-stretch">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4 items-start">
         {/* Greeting card */}
         <Card className="sm:col-span-2 lg:col-span-2 p-4 relative overflow-hidden flex flex-col justify-center">
           <div className="absolute inset-0 bg-linear-to-br from-brand-soft/50 via-surface to-accent-soft/30 pointer-events-none" />
@@ -784,7 +784,7 @@ function HeroKpiCard({ label, value, sub, delta, spark, color, className }: {
       <p className="text-3xl font-semibold tabular mt-1.5 tracking-tight leading-none">{value}</p>
       {sub && <p className="text-[11px] text-muted-foreground mt-1.5">{sub}</p>}
       {spark && spark.length > 0 && (
-        <Sparkline data={spark} color={color} height={40} className="mt-auto pt-3 -mx-1 -mb-1" />
+        <Sparkline data={spark} color={color} height={30} className="mt-2.5 -mx-1 -mb-1" />
       )}
     </Card>
   );
