@@ -4,7 +4,7 @@ import Link from "next/link";
 import {
   BedDouble, Sparkles, Wrench, TrendingUp, Wallet, Receipt, ChevronRight,
   AlertTriangle, Building2, UtensilsCrossed, LogIn, LogOut, LayoutGrid, CalendarRange,
-  Bot, FileBarChart, Bell, Crown, CalendarPlus, SprayCan, Banknote,
+  Bot, FileBarChart, Bell, Crown, CalendarPlus, BrushCleaning, Banknote,
   Activity as ActivityIcon, CheckCircle2, Clock, Target, Trophy, ArrowRight,
   CreditCard, RefreshCw, Star, Trash2,
   Hotel, DoorOpen, PlaneLanding, PlaneTakeoff,
@@ -47,7 +47,7 @@ const QUICK_ACTIONS = [
   { href: "/checkout", label: "Checkout", icon: LogOut, tone: "accent" as const, count: 5 },
   { href: "/rack", label: "Room Rack", icon: LayoutGrid, tone: "neutral" as const },
   { href: "/calendar", label: "Calendar", icon: CalendarRange, tone: "neutral" as const },
-  { href: "/housekeeping", label: "Housekeeping", icon: SprayCan, tone: "warning" as const, count: 6 },
+  { href: "/housekeeping", label: "Housekeeping", icon: BrushCleaning, tone: "warning" as const, count: 6 },
   { href: "/cashier", label: "Cashier", icon: Banknote, tone: "success" as const },
   { href: "/reports", label: "Reports", icon: FileBarChart, tone: "neutral" as const },
 ];
