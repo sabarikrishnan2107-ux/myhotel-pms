@@ -6,6 +6,7 @@ import {
   AlertTriangle, Building2, UtensilsCrossed, LogIn, LogOut, LayoutGrid, CalendarRange,
   Bot, ClipboardCheck, FileBarChart, Bell, Crown,
   Activity as ActivityIcon, CheckCircle2, Clock, Target, Trophy, ArrowRight,
+  CreditCard, RefreshCw, Star, Trash2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -112,6 +113,41 @@ function auditTone(severity: string, action: string): ActivityTone {
   if (a.includes("updat") || a.includes("sync")) return "info";
   return "brand";
 }
+
+type ActivityAccent = "success" | "info" | "warning" | "danger" | "brand" | "neutral";
+
+/** Pick an icon + soft colour for an activity row from its text/tone. */
+function activityVisual(text: string, tone: ActivityTone): { icon: typeof BedDouble; accent: ActivityAccent } {
+  const v = text.toLowerCase();
+  if (v.includes("payment") || v.includes("paid") || v.includes("received") || v.includes("refund")) return { icon: CreditCard, accent: "success" };
+  if (v.includes("sync")) return { icon: RefreshCw, accent: "info" };
+  if (v.includes("clean") || v.includes("inspect")) return { icon: Sparkles, accent: "success" };
+  if (v.includes("discount") || v.includes("approv")) return { icon: Star, accent: "warning" };
+  if (v.includes("maintenance") || v.includes("repair") || v.includes("started job") || v.includes("complaint")) return { icon: Wrench, accent: "warning" };
+  if (v.includes("check-in") || v.includes("checked in") || v.includes("checkin")) return { icon: LogIn, accent: "info" };
+  if (v.includes("checkout") || v.includes("checked out")) return { icon: LogOut, accent: "neutral" };
+  if (v.includes("reservation") || v.includes("booking") || v.includes("ota")) return { icon: BedDouble, accent: "info" };
+  if (v.includes("login")) return { icon: LogIn, accent: "info" };
+  if (v.includes("delet") || v.includes("cancel") || v.includes("remov")) return { icon: Trash2, accent: "danger" };
+  const map: Record<ActivityTone, { icon: typeof BedDouble; accent: ActivityAccent }> = {
+    success: { icon: CheckCircle2, accent: "success" },
+    info: { icon: Bell, accent: "info" },
+    warning: { icon: AlertTriangle, accent: "warning" },
+    danger: { icon: AlertTriangle, accent: "danger" },
+    brand: { icon: ActivityIcon, accent: "brand" },
+    accent: { icon: Sparkles, accent: "brand" },
+  };
+  return map[tone];
+}
+
+const ACTIVITY_CHIP: Record<ActivityAccent, string> = {
+  success: "bg-success-soft text-success",
+  info: "bg-info-soft text-info",
+  warning: "bg-warning-soft text-warning",
+  danger: "bg-danger-soft text-danger",
+  brand: "bg-brand-soft text-brand",
+  neutral: "bg-surface-sunken text-muted-foreground",
+};
 
 type DashStats = {
   rooms: { total: number; occupied: number; available: number; occupancyPct: number };
@@ -378,35 +414,33 @@ export default function DashboardPage() {
 
         {/* Activity feed — 3 cols */}
         <Card className="lg:col-span-3 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.16em] text-subtle-foreground font-semibold">Activity</p>
-              <h2 className="text-lg font-semibold mt-0.5">Live feed</h2>
-            </div>
-            <Bell className="h-4 w-4 text-muted-foreground" />
+          <div className="mb-3">
+            <h2 className="text-lg font-semibold">Activity</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Recent staff &amp; system events</p>
           </div>
-          <ol className="relative space-y-3">
-            <div className="absolute left-1.5 top-1 bottom-1 w-px bg-border" />
-            {activity.map(a => (
-              <li key={a.id} className="relative pl-6">
-                <span className={cn(
-                  "absolute left-0 top-1 h-3 w-3 rounded-full ring-2 ring-surface",
-                  a.tone === "success" && "bg-success",
-                  a.tone === "info" && "bg-info",
-                  a.tone === "warning" && "bg-warning",
-                  a.tone === "danger" && "bg-danger",
-                  a.tone === "brand" && "bg-brand",
-                  a.tone === "accent" && "bg-accent",
-                )} />
-                <p className="text-xs leading-snug">
-                  <span className="font-medium">{a.actor}</span>{" "}
-                  <span className="text-muted-foreground">{a.verb}</span>{" "}
-                  <span className="font-medium">{a.target}</span>
-                </p>
-                <p className="text-[10px] text-subtle-foreground mt-0.5 tabular">{a.at}</p>
-              </li>
-            ))}
-          </ol>
+          <ul className="-mx-2 max-h-[420px] overflow-y-auto pr-1">
+            {activity.map(a => {
+              const v = activityVisual(`${a.verb} ${a.target}`, a.tone);
+              const Icon = v.icon;
+              const title = a.verb.charAt(0).toUpperCase() + a.verb.slice(1);
+              const detail = a.target && a.target !== "—" ? ` · ${a.target}` : "";
+              const who = a.actor && a.actor !== "System" ? `${a.actor} · ` : "";
+              return (
+                <li key={a.id} className="flex items-start gap-3 px-2 py-2 rounded-md hover:bg-surface-sunken/50 transition-colors">
+                  <span className={cn("h-8 w-8 shrink-0 rounded-lg flex items-center justify-center", ACTIVITY_CHIP[v.accent])}>
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm leading-snug">
+                      <span className="font-medium">{title}</span>
+                      <span className="text-muted-foreground">{detail}</span>
+                    </p>
+                    <p className="text-[11px] text-subtle-foreground mt-0.5">{who}{a.at}</p>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         </Card>
       </section>
 
