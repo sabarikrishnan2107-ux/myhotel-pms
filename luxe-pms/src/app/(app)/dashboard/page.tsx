@@ -703,29 +703,6 @@ export default function DashboardPage() {
         </Card>
       </section>
 
-      {/* ============ ARRIVAL PREP STRIP ============ */}
-      <Card className="p-5 bg-linear-to-br from-brand-soft/30 via-surface to-surface border-l-4 border-l-brand">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-          <span className="h-12 w-12 rounded-md bg-brand text-brand-foreground flex items-center justify-center shrink-0">
-            <Crown className="h-6 w-6" />
-          </span>
-          <div className="flex-1">
-            <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-semibold">Pre-arrival Preparation</p>
-            <h3 className="text-lg font-semibold mt-0.5">
-              {vipArrivals} VIP arrival{vipArrivals === 1 ? "" : "s"} · {arrivals.length} total
-            </h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              Balance to collect on arrival: <span className="font-semibold text-foreground tabular">{money(arrivalsBalance, cur)}</span>.
-              {vipArrivals > 0 && " VIP rooms flagged for inspection before 13:00."}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Link href="/housekeeping"><Button variant="outline">HK Status</Button></Link>
-            <Link href="/checkin"><Button>Open Check-in<ChevronRight className="h-4 w-4" /></Button></Link>
-          </div>
-        </div>
-      </Card>
-
       {/* ============ CHARTS ============ */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <Card className="lg:col-span-2">
