@@ -2,9 +2,9 @@
 import * as React from "react";
 import Link from "next/link";
 import {
-  BedDouble, KeyRound, Sparkles, Wrench, TrendingUp, Wallet, Receipt, ChevronRight,
+  BedDouble, Sparkles, Wrench, TrendingUp, Wallet, Receipt, ChevronRight,
   AlertTriangle, Building2, UtensilsCrossed, LogIn, LogOut, LayoutGrid, CalendarRange,
-  Bot, ClipboardCheck, FileBarChart, Bell, Crown,
+  Bot, FileBarChart, Bell, Crown, CalendarPlus, SprayCan, Banknote,
   Activity as ActivityIcon, CheckCircle2, Clock, Target, Trophy, ArrowRight,
   CreditCard, RefreshCw, Star, Trash2,
   Hotel, DoorOpen, PlaneLanding, PlaneTakeoff,
@@ -42,13 +42,13 @@ const SOURCE_COLORS = [
 ];
 
 const QUICK_ACTIONS = [
-  { href: "/bookings/new", label: "New Booking", icon: KeyRound, tone: "brand" as const },
+  { href: "/bookings/new", label: "New Booking", icon: CalendarPlus, tone: "brand" as const },
   { href: "/checkin", label: "Check-in", icon: LogIn, tone: "info" as const, count: 7 },
   { href: "/checkout", label: "Checkout", icon: LogOut, tone: "accent" as const, count: 5 },
   { href: "/rack", label: "Room Rack", icon: LayoutGrid, tone: "neutral" as const },
   { href: "/calendar", label: "Calendar", icon: CalendarRange, tone: "neutral" as const },
-  { href: "/housekeeping", label: "Housekeeping", icon: Sparkles, tone: "warning" as const, count: 6 },
-  { href: "/cashier", label: "Cashier", icon: ClipboardCheck, tone: "success" as const },
+  { href: "/housekeeping", label: "Housekeeping", icon: SprayCan, tone: "warning" as const, count: 6 },
+  { href: "/cashier", label: "Cashier", icon: Banknote, tone: "success" as const },
   { href: "/reports", label: "Reports", icon: FileBarChart, tone: "neutral" as const },
 ];
 
