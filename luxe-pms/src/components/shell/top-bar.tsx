@@ -19,6 +19,21 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
   const property = useProperty();
   const name = hotelName(property, "");
 
+  // Live clock — updates every minute (client-only to avoid hydration mismatch).
+  const [clock, setClock] = React.useState<{ time: string; date: string } | null>(null);
+  React.useEffect(() => {
+    const tick = () => {
+      const d = new Date();
+      setClock({
+        time: d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        date: d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }).toUpperCase(),
+      });
+    };
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   const onLogout = async () => {
     await logout();
     router.replace("/login");
@@ -41,7 +56,12 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
         </span>
       </Link>
 
-      <div className="ml-auto flex items-center gap-1.5">
+      <div className="ml-auto flex items-center gap-2.5">
+        <div className="hidden sm:flex flex-col items-end leading-tight pr-1">
+          <span className="text-sm font-semibold tabular">{clock?.time ?? "—"}</span>
+          <span className="text-[10px] text-brand font-semibold tabular tracking-wide">{clock?.date ?? ""}</span>
+        </div>
+
         <Link href="/bookings/new">
           <Button size="sm" className="hidden sm:inline-flex">
             <Plus className="h-3.5 w-3.5" />

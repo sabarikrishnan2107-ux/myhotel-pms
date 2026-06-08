@@ -19,7 +19,7 @@ import { FloorHeatmap } from "@/components/ui/floor-heatmap";
 import { GoalProgress } from "@/components/ui/goal-progress";
 import { money, formatTime, cn } from "@/lib/utils";
 import { apiGet } from "@/lib/api";
-import { useProperty, hotelName, currencySymbol } from "@/lib/use-property";
+import { useProperty, currencySymbol } from "@/lib/use-property";
 import {
   DASHBOARD_KPIS, TODAY_ARRIVALS, TODAY_DEPARTURES, REVENUE_TREND,
   OCCUPANCY_FORECAST, SOURCE_MIX, ALERTS, ROOMS, GUESTS,
@@ -89,15 +89,6 @@ const ACTIVITY: { id: string; at: string; actor: string; verb: string; target: s
   { id: "a6", at: "31 min ago", actor: "Khalid R.", verb: "checked in", target: "Anastasia V. · Room 607", tone: "success" as const },
   { id: "a7", at: "48 min ago", actor: "OTA: Booking.com", verb: "new reservation", target: "BDC-44218 · 3N", tone: "info" as const },
 ];
-
-/** Short timezone label (IST, GST, GMT…) from a Date's offset. */
-function tzAbbrev(d: Date): string {
-  const m: Record<number, string> = { [-330]: "IST", [-240]: "GST", [0]: "GMT", [300]: "EST", [240]: "AST", [-60]: "CET", [-480]: "CST" };
-  const off = d.getTimezoneOffset();
-  if (off in m) return m[off];
-  const h = -off / 60;
-  return `GMT${h >= 0 ? "+" : ""}${h}`;
-}
 
 /** Relative "x min ago" label from an audit log's date + time, given the current clock. */
 function relTime(date: string, time: string, nowMs: number): string {
@@ -192,12 +183,8 @@ export default function DashboardPage() {
   const arrivals = stats?.arrivals ?? TODAY_ARRIVALS;
   const departures = stats?.departures ?? TODAY_DEPARTURES;
 
-  const [now, setNow] = React.useState<string>("");
   const [nowMs, setNowMs] = React.useState<number>(0);
-  const [tz, setTz] = React.useState<string>("");
-  const [today, setToday] = React.useState<string>("");
   const property = useProperty();
-  const propName = hotelName(property, "");
   const cur = currencySymbol(property);
   const [selectedRes, setSelectedRes] = React.useState<Reservation | null>(null);
 
@@ -249,11 +236,7 @@ export default function DashboardPage() {
   }, [selectedRes]);
 
   React.useEffect(() => {
-    const d = new Date();
-    setNow(d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-    setNowMs(d.getTime());
-    setTz(tzAbbrev(d));
-    setToday(`${d.toLocaleDateString(undefined, { weekday: "long" })}, ${d.getDate()} ${d.toLocaleDateString(undefined, { month: "long" })} ${d.getFullYear()}`);
+    setNowMs(new Date().getTime());
   }, []);
 
   const arrivalsBalance = arrivals.reduce((s, r) => s + r.balance, 0);
@@ -292,29 +275,6 @@ export default function DashboardPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-7">
-      {/* ============ HEADER ============ */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-display font-semibold tracking-tight leading-tight truncate">{propName || "Dashboard"}</h1>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-success-soft text-success px-2.5 py-1 text-xs font-semibold">
-            <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" /> Live
-          </span>
-          <span className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm">
-            <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
-            <span className="text-muted-foreground">{today || "—"}</span>
-            {now && (
-              <>
-                <span className="text-border">·</span>
-                <span className="font-medium tabular">{now} {tz}</span>
-              </>
-            )}
-          </span>
-        </div>
-      </div>
-
       {/* ============ EXECUTIVE KPIs ============ */}
       <section className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <ExecKpi label="Total Rooms" value={roomCounts.total} sub="across all floors" icon={Hotel} accent="neutral" />
