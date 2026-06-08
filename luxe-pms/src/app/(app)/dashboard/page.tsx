@@ -184,6 +184,7 @@ export default function DashboardPage() {
   const departures = stats?.departures ?? TODAY_DEPARTURES;
 
   const [nowMs, setNowMs] = React.useState<number>(0);
+  const [period, setPeriod] = React.useState<{ label: string; day: number; days: number } | null>(null);
   const property = useProperty();
   const cur = currencySymbol(property);
   const [selectedRes, setSelectedRes] = React.useState<Reservation | null>(null);
@@ -236,7 +237,13 @@ export default function DashboardPage() {
   }, [selectedRes]);
 
   React.useEffect(() => {
-    setNowMs(new Date().getTime());
+    const d = new Date();
+    setNowMs(d.getTime());
+    setPeriod({
+      label: d.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
+      day: d.getDate(),
+      days: new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(),
+    });
   }, []);
 
   const arrivalsBalance = arrivals.reduce((s, r) => s + r.balance, 0);
@@ -591,9 +598,11 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <p className="text-xs uppercase tracking-[0.16em] text-subtle-foreground font-semibold inline-flex items-center gap-1">
-                <Target className="h-3 w-3 text-brand" /> Monthly Goals · Target AED 160k
+                <Target className="h-3 w-3 text-brand" /> Monthly Goals
               </p>
-              <h2 className="text-lg font-semibold mt-0.5">May 2026 — day 25 of 31</h2>
+              <h2 className="text-lg font-semibold mt-0.5">
+                {period ? `${period.label} — day ${period.day} of ${period.days}` : "This month"}
+              </h2>
             </div>
             <Link href="/reports/r10" className="text-xs text-brand hover:underline inline-flex items-center gap-1">
               Forecast<ChevronRight className="h-3 w-3" />
