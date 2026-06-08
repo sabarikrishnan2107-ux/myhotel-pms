@@ -273,7 +273,8 @@ export default function DashboardPage() {
       {/* ============ HERO ============ */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
         {/* Unified hero card */}
-        <Card className="lg:col-span-8 p-5 flex flex-col">
+        <Card className="lg:col-span-8 p-5 flex flex-col relative overflow-hidden bg-linear-to-br from-brand-soft/25 via-surface to-accent-soft/15">
+          <div className="absolute inset-x-0 top-0 h-0.5 bg-linear-to-r from-brand via-accent to-success pointer-events-none" />
           {/* Meta row */}
           <div className="flex items-start justify-between gap-4">
             <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground font-semibold inline-flex flex-wrap items-center gap-2">
@@ -334,7 +335,7 @@ export default function DashboardPage() {
         </Card>
 
         {/* AI Daily Briefing */}
-        <Card className="lg:col-span-4 p-5 flex flex-col">
+        <Card className="lg:col-span-4 p-5 flex flex-col relative overflow-hidden border-l-2 border-l-accent bg-linear-to-br from-accent-soft/15 via-surface to-surface">
           <div className="flex items-center gap-2 mb-3">
             <span className="h-8 w-8 rounded-md bg-accent text-accent-foreground flex items-center justify-center shadow-xs">
               <Bot className="h-4 w-4" />
@@ -918,19 +919,25 @@ function HeroMetric({ label, value, deltaText, up, spark, color, className }: {
     <div className={cn("flex flex-col", className)}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-semibold">{label}</p>
-        <span className={cn("text-[11px] font-medium inline-flex items-center gap-0.5", up ? "text-success" : "text-danger")}>
+        <span className={cn(
+          "text-[11px] font-semibold inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5",
+          up ? "text-success bg-success-soft/50" : "text-danger bg-danger-soft/50"
+        )}>
           <Trend className="h-3 w-3" /> {deltaText}
         </span>
       </div>
-      <div className="flex items-end justify-between gap-3 mt-1.5">
-        <p className="text-2xl font-semibold tabular tracking-tight leading-none">{value}</p>
+      <div className="flex items-end justify-between gap-3 mt-2">
+        <p className="text-[26px] font-semibold tabular tracking-tight leading-none">{value}</p>
         {spark && spark.length > 0 && (
-          <div className="w-20 h-8 shrink-0">
-            <Sparkline data={spark} color={color} height={32} />
+          <div className="w-24 h-9 shrink-0 rounded-lg bg-foreground/[0.04] ring-1 ring-border/40 px-1 py-1 overflow-hidden">
+            <Sparkline data={spark} color={color} height={28} />
           </div>
         )}
       </div>
-      <p className="text-[10px] text-muted-foreground mt-1.5">vs yesterday · 7d trend</p>
+      <p className="text-[10px] text-muted-foreground mt-2 inline-flex items-center gap-1">
+        <span className="h-1 w-1 rounded-full" style={{ background: color }} />
+        vs yesterday · 7d trend
+      </p>
     </div>
   );
 }
