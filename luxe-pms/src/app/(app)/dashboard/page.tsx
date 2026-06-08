@@ -285,18 +285,39 @@ export default function DashboardPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-7">
       {/* ============ HEADER ============ */}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-display font-semibold tracking-tight">Overview</h1>
-          <p className="text-sm text-muted-foreground mt-1 inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="inline-flex items-center gap-1.5 text-success font-medium">
-              <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" /> Live
-            </span>
-            <span className="text-border">·</span>
-            <span className="text-foreground/80 font-medium">{propName || "—"}</span>
-            <span className="text-border">·</span>
-            <span>{today || "—"}{now ? ` · ${now} ${tz}` : ""}</span>
-          </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3.5">
+          <span className="h-11 w-11 shrink-0 rounded-xl bg-brand text-brand-foreground flex items-center justify-center shadow-sm">
+            <Building2 className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-display font-semibold tracking-tight leading-none">Overview</h1>
+            <p className="text-sm text-muted-foreground mt-1.5 inline-flex items-center gap-1.5 truncate">
+              <span className="font-medium text-foreground/90 truncate">{propName || "—"}</span>
+              {typeof property.branch === "string" && property.branch && (
+                <>
+                  <span className="text-border">·</span>
+                  <span className="truncate">{property.branch}</span>
+                </>
+              )}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-success-soft text-success px-2.5 py-1 text-xs font-semibold">
+            <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" /> Live
+          </span>
+          <span className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm">
+            <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
+            <span className="text-muted-foreground">{today || "—"}</span>
+            {now && (
+              <>
+                <span className="text-border">·</span>
+                <span className="font-medium tabular">{now} {tz}</span>
+              </>
+            )}
+          </span>
         </div>
       </div>
 
