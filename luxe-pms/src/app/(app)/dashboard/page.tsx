@@ -159,28 +159,28 @@ export default function DashboardPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-7">
       {/* ============ HERO ============ */}
-      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4 items-stretch">
         {/* Greeting card */}
-        <Card className="p-5 relative overflow-hidden flex flex-col justify-center">
+        <Card className="sm:col-span-2 lg:col-span-2 p-4 relative overflow-hidden flex flex-col justify-center">
           <div className="absolute inset-0 bg-linear-to-br from-brand-soft/50 via-surface to-accent-soft/30 pointer-events-none" />
           <div className="absolute top-0 left-0 h-full w-1 bg-brand pointer-events-none" />
           <div className="relative">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-semibold inline-flex items-center gap-1.5">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-semibold inline-flex items-center gap-1.5">
               <Sun className="h-3 w-3 text-brand" />
               {today || "—"} · {now || "—"}
             </p>
-            <h1 className="mt-2 text-2xl font-display font-medium tracking-tight leading-snug">
+            <h1 className="mt-1.5 text-xl font-display font-medium tracking-tight leading-snug">
               {greeting},{" "}
               <span className="text-brand">{propName || (userName ? userName.split(" ")[0] : "there")}</span>
             </h1>
-            <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
-              <span className="inline-flex items-center rounded-md bg-surface/70 border border-border/50 px-2 py-1">
-                <span className="font-semibold text-foreground">{arrivals.length}</span>&nbsp;arrival{arrivals.length === 1 ? "" : "s"}
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+              <span className="inline-flex items-center rounded-md bg-surface/70 border border-border/50 px-1.5 py-0.5">
+                <span className="font-semibold text-foreground">{arrivals.length}</span>&nbsp;arr
               </span>
-              <span className="inline-flex items-center rounded-md bg-surface/70 border border-border/50 px-2 py-1">
-                <span className="font-semibold text-foreground">{departures.length}</span>&nbsp;departure{departures.length === 1 ? "" : "s"}
+              <span className="inline-flex items-center rounded-md bg-surface/70 border border-border/50 px-1.5 py-0.5">
+                <span className="font-semibold text-foreground">{departures.length}</span>&nbsp;dep
               </span>
-              <span className="inline-flex items-center rounded-md bg-surface/70 border border-border/50 px-2 py-1">
+              <span className="inline-flex items-center rounded-md bg-surface/70 border border-border/50 px-1.5 py-0.5">
                 net&nbsp;<span className="font-semibold text-success">{money(k.todayProfit)}</span>
               </span>
             </div>
@@ -188,36 +188,34 @@ export default function DashboardPage() {
         </Card>
 
         {/* KPI cards */}
-        <HeroKpiCard label="Occupancy" value={pct(k.occupancyPct)} delta={2.1} spark={SPARKLINE_DATA.occupancy} color="var(--color-brand)" />
-        <HeroKpiCard label="ADR" value={money(k.adr)} delta={1.4} spark={SPARKLINE_DATA.adr} color="var(--color-accent)" />
-        <HeroKpiCard label="RevPAR" value={money(k.revpar)} delta={3.6} spark={SPARKLINE_DATA.revpar} color="var(--color-success)" />
-      </section>
+        <HeroKpiCard className="lg:col-span-2" label="Occupancy" value={pct(k.occupancyPct)} delta={2.1} spark={SPARKLINE_DATA.occupancy} color="var(--color-brand)" />
+        <HeroKpiCard className="lg:col-span-2" label="ADR" value={money(k.adr)} delta={1.4} spark={SPARKLINE_DATA.adr} color="var(--color-accent)" />
+        <HeroKpiCard className="lg:col-span-2" label="RevPAR" value={money(k.revpar)} delta={3.6} spark={SPARKLINE_DATA.revpar} color="var(--color-success)" />
 
-      {/* ============ AI DAILY BRIEFING ============ */}
-      <section>
-        <Card className="p-5 bg-linear-to-br from-accent-soft/30 via-surface to-brand-soft/30 border-l-4 border-l-accent flex flex-col">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="h-8 w-8 rounded-md bg-accent text-accent-foreground flex items-center justify-center shadow-xs">
-              <Bot className="h-4 w-4" />
+        {/* AI Daily Briefing — right of RevPAR */}
+        <Card className="sm:col-span-2 lg:col-span-4 p-4 bg-linear-to-br from-accent-soft/30 via-surface to-brand-soft/30 border-l-4 border-l-accent flex flex-col">
+          <div className="flex items-center gap-2 mb-2.5">
+            <span className="h-7 w-7 rounded-md bg-accent text-accent-foreground flex items-center justify-center shadow-xs">
+              <Bot className="h-3.5 w-3.5" />
             </span>
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold">AI Daily Briefing</p>
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Updated 8 min ago</p>
             </div>
             <Badge tone="accent">Live</Badge>
           </div>
-          <ul className="grid sm:grid-cols-2 gap-2.5 text-sm flex-1">
-            <AIBullet tone="info">Today&apos;s pace is <span className="font-semibold">+12%</span> vs last Sunday — hold rates.</AIBullet>
-            <AIBullet tone="warning"><span className="font-semibold">2 VIP arrivals</span> at 14:00 — Suite 605 prep flagged.</AIBullet>
-            <AIBullet tone="success">7-day forecast: <span className="font-semibold">78% occupancy</span>, healthy cash flow.</AIBullet>
-            <AIBullet tone="danger">Cash mismatch on Shift #4217 — awaiting owner approval.</AIBullet>
+          <ul className="grid sm:grid-cols-2 gap-x-4 gap-y-2 text-[13px] flex-1">
+            <AIBullet tone="info">Pace <span className="font-semibold">+12%</span> vs last Sunday — hold rates.</AIBullet>
+            <AIBullet tone="warning"><span className="font-semibold">2 VIP arrivals</span> at 14:00 — Suite 605 flagged.</AIBullet>
+            <AIBullet tone="success">7-day forecast <span className="font-semibold">78%</span>, healthy cash flow.</AIBullet>
+            <AIBullet tone="danger">Cash mismatch Shift #4217 — owner approval.</AIBullet>
           </ul>
-          <div className="mt-3 pt-3 border-t border-border/40 flex items-center justify-between">
+          <div className="mt-2.5 pt-2.5 border-t border-border/40 flex items-center justify-between">
             <span className="inline-flex items-center gap-1 text-[10px] text-success font-medium">
-              <CheckCircle2 className="h-3 w-3" /> All checks passed · briefing verified
+              <CheckCircle2 className="h-3 w-3" /> All checks passed
             </span>
             <Link href="/ai" className="text-xs text-brand hover:underline inline-flex items-center gap-0.5 font-medium">
-              Ask AI Assistant <ChevronRight className="h-3 w-3" />
+              Ask AI <ChevronRight className="h-3 w-3" />
             </Link>
           </div>
         </Card>
@@ -764,25 +762,25 @@ function SectionHeader({ title, hint, icon: Icon }: { title: string; hint?: stri
   );
 }
 
-function HeroKpiCard({ label, value, delta, spark, color }: {
-  label: string; value: string; delta?: number; spark?: number[]; color?: string;
+function HeroKpiCard({ label, value, delta, spark, color, className }: {
+  label: string; value: string; delta?: number; spark?: number[]; color?: string; className?: string;
 }) {
   return (
-    <Card className="p-5 flex flex-col hover:shadow-md transition-shadow">
+    <Card className={cn("p-3.5 flex flex-col hover:shadow-md transition-shadow", className)}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-semibold">{label}</p>
         {typeof delta === "number" && (
           <span className={cn(
-            "text-[11px] inline-flex items-center gap-0.5 font-medium rounded-md px-1.5 py-0.5",
+            "text-[10px] inline-flex items-center gap-0.5 font-medium rounded-md px-1.5 py-0.5",
             delta >= 0 ? "text-success bg-success-soft/60" : "text-danger bg-danger-soft/60"
           )}>
             {delta >= 0 ? "↗" : "↘"} {Math.abs(delta).toFixed(1)}%
           </span>
         )}
       </div>
-      <p className="text-3xl font-semibold tabular mt-1.5 tracking-tight">{value}</p>
+      <p className="text-2xl font-semibold tabular mt-1 tracking-tight">{value}</p>
       {spark && spark.length > 0 && (
-        <Sparkline data={spark} color={color} height={28} className="mt-auto pt-3 -mx-1" />
+        <Sparkline data={spark} color={color} height={20} className="mt-auto pt-2 -mx-0.5" />
       )}
     </Card>
   );
