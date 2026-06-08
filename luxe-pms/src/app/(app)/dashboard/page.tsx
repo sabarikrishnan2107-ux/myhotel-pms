@@ -299,7 +299,6 @@ export default function DashboardPage() {
             <Building2 className="h-5 w-5" />
           </span>
           <div className="min-w-0">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-semibold">Overview</p>
             <h1 className="text-2xl font-display font-semibold tracking-tight leading-tight truncate">{propName || "Dashboard"}</h1>
           </div>
         </div>
