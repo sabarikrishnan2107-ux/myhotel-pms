@@ -388,9 +388,9 @@ const INITIAL_DATA: Record<SectionId, Field[]> = {
   ],
   floors: [
     { kind: "number", label: "Number of floors", value: 6 },
-    { kind: "string", label: "Room types", value: "Queen, Deluxe, Suite, King, Family, Executive" },
     { kind: "number", label: "Total rooms", value: 68 },
   ],
+  "room-types": [],
   rooms: [
     { kind: "number", label: "Total rooms", value: 68 },
     { kind: "string", label: "Floor 1-5 (12 rooms each)", value: "Queen / Deluxe / King" },
@@ -583,7 +583,7 @@ export function SetupView() {
   };
 
   // List of sections that use a custom manager instead of the generic field grid
-  const CUSTOM_SECTIONS = new Set<SectionId>(["preferences", "security", "channels", "webhooks", "floors", "rooms", "pricing", "seasons", "food", "agents", "tax", "templates", "roles", "branding", "integrations", "backup"]);
+  const CUSTOM_SECTIONS = new Set<SectionId>(["preferences", "security", "channels", "webhooks", "floors", "room-types", "rooms", "pricing", "seasons", "food", "agents", "tax", "templates", "roles", "branding", "integrations", "backup"]);
   const isCustom = CUSTOM_SECTIONS.has(active);
 
   const startEdit = () => {
