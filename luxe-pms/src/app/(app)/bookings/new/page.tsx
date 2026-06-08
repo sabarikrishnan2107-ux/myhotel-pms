@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { GUESTS, ROOMS } from "@/lib/mock-data";
 import { cn, money } from "@/lib/utils";
-import { apiPost } from "@/lib/api";
+import { apiGet, apiPost } from "@/lib/api";
 import { NewGuestForm, type NewGuestData } from "@/components/guests/new-guest-form";
 
 // Dynamic pricing — weekday / weekend / holiday multipliers (read from Master Setup in production)
@@ -93,6 +93,11 @@ export default function BookingWizardPage() {
   const [adults, setAdults] = React.useState(2);
   const [children, setChildren] = React.useState(0);
   const [roomType, setRoomType] = React.useState("Deluxe");
+  // Managed room types (name → base rate) from Configuration → Room Types.
+  const [roomTypes, setRoomTypes] = React.useState<{ name: string; baseTariff: number }[]>([]);
+  React.useEffect(() => {
+    apiGet<{ name: string; baseTariff: number }[]>("/room-types").then(setRoomTypes).catch(() => {});
+  }, []);
   const [ratePlan, setRatePlan] = React.useState("CP");
   const [breakfast, setBreakfast] = React.useState(true);
   const [extraBed, setExtraBed] = React.useState(false);
@@ -180,7 +185,10 @@ export default function BookingWizardPage() {
 
   const nights = Math.max(1, Math.round((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86400000));
 
-  const rate = roomType === "Suite" ? 1200 : roomType === "King" ? 850 : roomType === "Deluxe" ? 650 : 450;
+  // Per-night base rate comes from the managed Room Type; falls back to a
+  // sensible default only if the type list hasn't loaded.
+  const rate = roomTypes.find(t => t.name === roomType)?.baseTariff
+    ?? (roomType === "Suite" ? 1200 : roomType === "King" ? 850 : roomType === "Deluxe" ? 650 : 450);
   // Dynamic per-night rate breakdown by day type
   const breakdown = React.useMemo(() => nightlyBreakdown(checkIn, nights, rate), [checkIn, nights, rate]);
   const subtotal = halfDay ? Math.round(rate * 0.5) : breakdown.total;
@@ -467,7 +475,7 @@ export default function BookingWizardPage() {
               <div className="space-y-1.5">
                 <Label>Room type</Label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {["Queen", "Deluxe", "Suite", "King", "Family", "Executive"].map(t => (
+                  {(roomTypes.length ? roomTypes.map(t => t.name) : ["Queen", "Deluxe", "Suite", "King", "Family", "Executive"]).map(t => (
                     <button
                       key={t}
                       onClick={() => setRoomType(t)}

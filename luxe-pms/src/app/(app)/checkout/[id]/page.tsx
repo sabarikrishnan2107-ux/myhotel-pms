@@ -15,6 +15,7 @@ import { Input, Label } from "@/components/ui/input";
 import { RESERVATIONS, GUESTS, SAMPLE_FOLIO_CHARGES, SAMPLE_PAYMENTS } from "@/lib/mock-data";
 import { cn, money, formatDate, formatDateLong, formatTime } from "@/lib/utils";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
+import { useProperty, hotelName } from "@/lib/use-property";
 import type { Reservation } from "@/lib/types";
 
 export default function CheckoutPage({ params }: { params: Promise<{ id: string }> }) {
@@ -735,6 +736,7 @@ function InvoiceModal({
   paid: number;
   paymentMode: string;
 }) {
+  const name = hotelName(useProperty());
   const subtotal = charges - tax;
   const cgst = tax / 2;
   const sgst = tax / 2;
@@ -748,7 +750,7 @@ function InvoiceModal({
           {/* Header */}
           <div className="flex items-start justify-between border-b border-border pb-3">
             <div>
-              <p className="font-display text-base font-medium">The Pearl Palace</p>
+              <p className="font-display text-base font-medium">{name}</p>
               <p className="text-xs text-muted-foreground">Main Tower · MG Road, Bandra West, Mumbai 400050</p>
               <p className="text-[10px] text-muted-foreground tabular mt-0.5">
                 GSTIN <span className="font-mono">27AAACR5055K1Z5</span> · PAN <span className="font-mono">AAACR5055K</span> · FSSAI 11522999000123
@@ -844,7 +846,7 @@ function InvoiceModal({
               <p className="text-muted-foreground mt-0.5">ACK 1120138237855 · 25 May 2026</p>
             </div>
             <div className="text-right">
-              <p className="text-muted-foreground italic">For The Pearl Palace</p>
+              <p className="text-muted-foreground italic">For {name}</p>
               <p className="mt-6 border-t border-border pt-1 tabular">Authorised Signatory</p>
             </div>
           </div>
@@ -874,6 +876,7 @@ function ReceiptModal({
   balance: number;
   paymentMode: string;
 }) {
+  const name = hotelName(useProperty());
   const receiptNo = `RCP-2026-${reservation.bookingNo.slice(2)}`;
   const amountInWords = numberToWords(Math.round(balance));
 
@@ -883,7 +886,7 @@ function ReceiptModal({
         <div className="rounded-md border-2 border-double border-border p-5 bg-surface text-sm space-y-3">
           {/* Header */}
           <div className="text-center border-b-2 border-double border-border pb-3">
-            <p className="font-display text-lg font-medium">The Pearl Palace</p>
+            <p className="font-display text-lg font-medium">{name}</p>
             <p className="text-[10px] text-muted-foreground">Main Tower · MG Road, Bandra West, Mumbai 400050</p>
             <p className="text-[10px] text-muted-foreground tabular">GSTIN 27AAACR5055K1Z5</p>
             <div className="mt-2 inline-block px-3 py-0.5 rounded-full bg-brand-soft text-brand-soft-foreground text-[10px] uppercase tracking-[0.18em] font-bold">
@@ -930,7 +933,7 @@ function ReceiptModal({
               <p className="border-t border-border pt-1 text-[10px] text-muted-foreground tabular">Cashier · Khalid R.</p>
             </div>
             <div className="text-right">
-              <p className="text-[10px] text-muted-foreground italic mb-6">For The Pearl Palace</p>
+              <p className="text-[10px] text-muted-foreground italic mb-6">For {name}</p>
               <p className="border-t border-border pt-1 text-[10px] text-muted-foreground tabular">Authorised Signatory</p>
             </div>
           </div>
