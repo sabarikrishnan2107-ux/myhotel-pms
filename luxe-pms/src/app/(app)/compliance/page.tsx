@@ -13,6 +13,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
+import { useProperty, hotelName } from "@/lib/use-property";
 
 // ============================================================
 // TYPES + SEED
@@ -100,6 +101,7 @@ const EINVOICES_SEED: EInvoice[] = [
 // MAIN PAGE
 // ============================================================
 export default function CompliancePage() {
+  const name = hotelName(useProperty());
   const [tab, setTab] = React.useState<ComplianceTab>("overview");
   const [licenses, setLicenses] = React.useState<License[]>([]);
   React.useEffect(() => {
@@ -135,8 +137,8 @@ export default function CompliancePage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <button onClick={() => showToast("Property: The Pearl Marina · GSTIN 27ABCDE1234F1Z5 · PAN ABCDE1234F")} className="h-8 inline-flex items-center gap-1.5 px-3 rounded-md border border-border hover:bg-surface-sunken text-xs font-medium">
-            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />The Pearl Marina · Mumbai
+          <button onClick={() => showToast(`Property: ${name}`)} className="h-8 inline-flex items-center gap-1.5 px-3 rounded-md border border-border hover:bg-surface-sunken text-xs font-medium">
+            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />{name} · Mumbai
           </button>
           <Button variant="outline" size="sm" onClick={() => showToast("Compliance reports opened")}>
             <FileBarChart className="h-3.5 w-3.5" />Reports

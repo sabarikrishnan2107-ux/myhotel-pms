@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { useProperty, hotelName } from "@/lib/use-property";
 
 // ---------- Menu data ----------
 type MenuCategory = "Breakfast" | "Mains" | "Indian" | "Continental" | "Sides" | "Desserts" | "Beverages";
@@ -601,6 +602,7 @@ export default function MenuRoomPage({ params }: { params: Promise<{ room: strin
 
 // ---------- Footer ----------
 function Footer() {
+  const name = hotelName(useProperty());
   return (
     <div className="mt-8 px-4 pb-2">
       <Card className="p-4 bg-surface-sunken/40">
@@ -621,7 +623,7 @@ function Footer() {
         </div>
       </Card>
       <div className="text-center text-[10px] text-muted-foreground mt-3">
-        The Pearl Marina · Mumbai · MYHOTEL
+        {name} · Mumbai · MYHOTEL
       </div>
     </div>
   );

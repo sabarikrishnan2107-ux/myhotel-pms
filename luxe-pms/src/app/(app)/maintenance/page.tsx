@@ -16,6 +16,7 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { MAINTENANCE_TICKETS, TECHNICIANS, type Priority, type TicketStatus } from "@/lib/mock-data-ext";
 import { cn, money, formatDate } from "@/lib/utils";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
+import { useProperty, hotelName } from "@/lib/use-property";
 
 type Ticket = typeof MAINTENANCE_TICKETS[number];
 let __mtkt = 2402;
@@ -127,6 +128,7 @@ function dueStatus(nextDue: string): { tone: "danger" | "warning" | "info" | "su
 type MainTab = "reactive" | "schedule" | "amc";
 
 export default function MaintenancePage() {
+  const name = hotelName(useProperty());
   const [view, setView] = React.useState<"cards" | "list">("cards");
   const [q, setQ] = React.useState("");
   const [priority, setPriority] = React.useState<"all" | Priority>("all");
@@ -231,8 +233,8 @@ export default function MaintenancePage() {
           <p className="text-muted-foreground text-sm mt-1">Complaints, work orders &amp; technician assignments</p>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => showToast("Switch property: The Pearl Marina, Mumbai")} className="h-9 px-3 rounded-md border border-border hover:bg-surface-sunken inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <Building2 className="h-3.5 w-3.5" />The Pearl Marina
+          <button type="button" onClick={() => showToast(`Property: ${name}`)} className="h-9 px-3 rounded-md border border-border hover:bg-surface-sunken inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <Building2 className="h-3.5 w-3.5" />{name}
           </button>
           <Button onClick={() => setNewTicketOpen(true)}><Plus className="h-4 w-4" />New Ticket</Button>
         </div>

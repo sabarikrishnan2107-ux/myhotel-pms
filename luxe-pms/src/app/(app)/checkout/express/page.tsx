@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { useProperty, hotelName } from "@/lib/use-property";
 
 type PayMethod = "preauth" | "upi" | "desk";
 type TipChoice = 0 | 0.05 | 0.10 | 0.15 | -1; // -1 = custom
@@ -37,6 +38,7 @@ const INCIDENTALS = [
 ];
 
 export default function ExpressCheckoutPage() {
+  const name = hotelName(useProperty());
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
@@ -98,7 +100,7 @@ export default function ExpressCheckoutPage() {
             </div>
             <div>
               <h2 className="text-3xl font-display font-medium tracking-tight">You&apos;re checked out</h2>
-              <p className="text-muted-foreground mt-2">Thank you for staying at The Pearl Marina, Anjali.</p>
+              <p className="text-muted-foreground mt-2">Thank you for staying at {name}, Anjali.</p>
             </div>
             <div className="inline-flex items-center gap-2 rounded-full bg-surface-sunken px-4 py-2 text-sm">
               <Receipt className="h-4 w-4 text-muted-foreground" />

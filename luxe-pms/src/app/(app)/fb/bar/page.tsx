@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { useProperty, hotelName } from "@/lib/use-property";
 
 type Category = "Whisky" | "Vodka" | "Gin" | "Rum" | "Wine" | "Beer" | "Liqueur" | "Soft";
 type TabKey = "inventory" | "pourcost" | "variance" | "po" | "menu";
@@ -270,6 +271,7 @@ function cocktailCost(c: Cocktail) {
 
 // ----- main page -----
 export default function BarInventoryPage() {
+  const name = hotelName(useProperty());
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
@@ -309,7 +311,7 @@ export default function BarInventoryPage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Bar Inventory & Pour Cost</h1>
             <p className="text-sm text-muted-foreground">
-              The Pearl Marina · Sky Lounge Bar · FL3 license · live stock & cocktail margins
+              {name} · Sky Lounge Bar · FL3 license · live stock & cocktail margins
             </p>
           </div>
         </div>

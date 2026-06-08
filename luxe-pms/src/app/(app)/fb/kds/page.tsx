@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useProperty, hotelName } from "@/lib/use-property";
 import { apiGet, apiPut } from "@/lib/api";
 
 type Station = "all" | "hot" | "cold" | "tandoor" | "bar";
@@ -225,6 +226,7 @@ function formatElapsed(mins: number) {
 }
 
 export default function KDSPage() {
+  const name = hotelName(useProperty());
   const [station, setStation] = React.useState<Station>("all");
   const [orders, setOrders] = React.useState<KDSOrder[]>(SEED_ORDERS);
   const [tick, setTick] = React.useState(0);
@@ -325,7 +327,7 @@ export default function KDSPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Kitchen Display System</h1>
             <p className="text-sm text-muted-foreground">
-              The Pearl Marina, Mumbai · Wall-mounted live view · Auto-refresh
+              {name}, Mumbai · Wall-mounted live view · Auto-refresh
             </p>
           </div>
         </div>

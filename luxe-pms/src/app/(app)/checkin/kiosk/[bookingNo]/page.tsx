@@ -27,6 +27,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { useProperty, hotelName } from "@/lib/use-property";
 
 type StepKey = "welcome" | "verify" | "id" | "signature" | "room" | "folio" | "complete";
 
@@ -68,6 +69,7 @@ export default function CheckinKioskPage({
 }: {
   params: Promise<{ bookingNo: string }>;
 }) {
+  const name = hotelName(useProperty());
   const { bookingNo } = React.use(params);
 
   const [stepIdx, setStepIdx] = React.useState(0);
@@ -109,7 +111,7 @@ export default function CheckinKioskPage({
             </div>
             <div>
               <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                The Pearl Marina · Self Check-in
+                {name} · Self Check-in
               </div>
               <div className="text-lg font-semibold">Booking {bookingNo}</div>
             </div>
@@ -758,6 +760,7 @@ function CompleteStep({
   onPrint: () => void;
   onRestart: () => void;
 }) {
+  const name = hotelName(useProperty());
   return (
     <Card className="p-12 lg:p-16 text-center space-y-8">
       <div className="flex justify-center">
@@ -774,7 +777,7 @@ function CompleteStep({
           You are checked in
         </h2>
         <div className="text-2xl lg:text-3xl text-muted-foreground">
-          Welcome to The Pearl Marina, {BOOKING.guest}
+          Welcome to {name}, {BOOKING.guest}
         </div>
         <div className="text-xl text-muted-foreground">
           Room {BOOKING.assignedRoom} · {BOOKING.locker} · Code{" "}

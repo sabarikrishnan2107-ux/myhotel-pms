@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { useProperty, hotelName } from "@/lib/use-property";
 
 // ----------------------- Types & Mock Pantry -----------------------
 type Ingredient = {
@@ -347,6 +348,7 @@ const ALLERGEN_META: Record<Allergen, { label: string; Icon: React.ComponentType
 
 // ----------------------- Page -----------------------
 export default function RecipesPage() {
+  const name = hotelName(useProperty());
   const [recipes, setRecipes] = React.useState<Recipe[]>(SEED_RECIPES);
   const [selectedId, setSelectedId] = React.useState<string>(SEED_RECIPES[0].id);
   const [search, setSearch] = React.useState("");
@@ -471,7 +473,7 @@ export default function RecipesPage() {
           <div>
             <h1 className="text-2xl font-semibold leading-tight">Recipes & Plate Cost</h1>
             <p className="text-sm text-muted-foreground">
-              Engineer kitchen profitability · The Pearl Marina, Mumbai · {recipes.length} active dishes
+              Engineer kitchen profitability · {name}, Mumbai · {recipes.length} active dishes
             </p>
           </div>
         </div>

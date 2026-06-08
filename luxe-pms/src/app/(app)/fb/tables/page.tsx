@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { useProperty, hotelName } from "@/lib/use-property";
 
 // ---------- Types ----------
 type ResStatus = "confirmed" | "seated" | "completed" | "no-show" | "cancelled" | "blocked";
@@ -138,6 +139,7 @@ function hrLabel(h: number) {
 
 // ---------- Page ----------
 export default function TablesPage() {
+  const name = hotelName(useProperty());
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
@@ -203,7 +205,7 @@ export default function TablesPage() {
           </div>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Table Reservations</h1>
-            <p className="text-sm text-muted-foreground">Restaurant floor &middot; The Pearl Marina, Mumbai &middot; {new Date(date).toLocaleDateString(undefined, { weekday: "long", day: "2-digit", month: "long" })}</p>
+            <p className="text-sm text-muted-foreground">Restaurant floor &middot; {name}, Mumbai &middot; {new Date(date).toLocaleDateString(undefined, { weekday: "long", day: "2-digit", month: "long" })}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
