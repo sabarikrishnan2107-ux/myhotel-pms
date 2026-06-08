@@ -707,12 +707,20 @@ export default function DashboardPage() {
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-3">
               <div>
                 <CardTitle>Occupancy Forecast — Next 30 days</CardTitle>
                 <p className="text-xs text-muted-foreground mt-1">Live pace vs AI forecast model</p>
               </div>
-              <Badge tone="brand"><Bot className="h-3 w-3" />AI</Badge>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span className="h-1 w-4 rounded-full bg-brand" /> Booked
+                </span>
+                <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span className="w-4 border-t-2 border-dashed border-info" /> Forecast
+                </span>
+                <Badge tone="brand"><Bot className="h-3 w-3" />AI</Badge>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="pl-0">
@@ -725,16 +733,16 @@ export default function DashboardPage() {
                       <stop offset="100%" stopColor="var(--color-brand)" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="grad2" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="var(--color-accent)" stopOpacity={0.3} />
-                      <stop offset="100%" stopColor="var(--color-accent)" stopOpacity={0} />
+                      <stop offset="0%" stopColor="var(--color-info)" stopOpacity={0.12} />
+                      <stop offset="100%" stopColor="var(--color-info)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-                  <XAxis dataKey="day" stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
-                  <YAxis stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} unit="%" />
+                  <XAxis dataKey="day" stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} interval={2} />
+                  <YAxis stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} unit="%" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} />
                   <Tooltip contentStyle={{ background: "var(--color-surface-elevated)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12, color: "var(--color-foreground)" }} />
-                  <Area type="monotone" dataKey="occupancy" stroke="var(--color-brand)" strokeWidth={2} fill="url(#grad1)" name="Booked" />
-                  <Area type="monotone" dataKey="forecast" stroke="var(--color-accent)" strokeWidth={2} fill="url(#grad2)" strokeDasharray="4 4" name="Forecast" />
+                  <Area type="monotone" dataKey="forecast" stroke="var(--color-info)" strokeWidth={2} fill="url(#grad2)" strokeDasharray="5 4" name="Forecast" dot={false} activeDot={{ r: 4 }} />
+                  <Area type="monotone" dataKey="occupancy" stroke="var(--color-brand)" strokeWidth={2.5} fill="url(#grad1)" name="Booked" dot={false} activeDot={{ r: 4 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
