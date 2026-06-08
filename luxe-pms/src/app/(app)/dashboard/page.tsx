@@ -664,37 +664,37 @@ export default function DashboardPage() {
               </h2>
             </div>
           </div>
-          <ol className="space-y-2.5">
+          <ol className="space-y-1">
             {topSources.map((s, i) => {
               const maxRev = topSources[0].revenue;
               return (
-                <li key={s.name} className="group">
-                  <div className="flex items-center justify-between gap-3 mb-1">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className={cn(
-                        "h-6 w-6 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0",
-                        i === 0 ? "bg-brand text-brand-foreground" :
-                        i === 1 ? "bg-accent-soft text-accent" :
-                        i === 2 ? "bg-warning-soft text-warning" :
-                        "bg-surface-sunken text-muted-foreground"
-                      )}>
-                        {i + 1}
-                      </span>
+                <li key={s.name} className="group flex items-center gap-3 -mx-2 px-2 py-1.5 rounded-md hover:bg-surface-sunken/40 transition-colors">
+                  <span className={cn(
+                    "h-7 w-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0",
+                    i === 0 ? "bg-brand text-brand-foreground" :
+                    i === 1 ? "bg-accent-soft text-accent" :
+                    i === 2 ? "bg-warning-soft text-warning" :
+                    "bg-surface-sunken text-muted-foreground"
+                  )}>
+                    {i + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium truncate">{s.name}</span>
+                      <span className="text-sm font-semibold tabular shrink-0">{money(s.revenue / 1000, cur)}k</span>
                     </div>
-                    <span className="text-sm font-semibold tabular shrink-0">{money(s.revenue / 1000, cur)}k</span>
-                  </div>
-                  <div className="ml-8.5 flex items-center gap-2">
-                    <div className="flex-1 h-1.5 bg-surface-sunken rounded-full overflow-hidden">
-                      <div
-                        className={cn(
-                          "h-full transition-all duration-700",
-                          i === 0 ? "bg-brand" : i === 1 ? "bg-accent" : i === 2 ? "bg-warning" : "bg-muted-foreground"
-                        )}
-                        style={{ width: `${(s.revenue / maxRev) * 100}%` }}
-                      />
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="flex-1 h-2 bg-surface-sunken rounded-full overflow-hidden">
+                        <div
+                          className={cn(
+                            "h-full rounded-full transition-all duration-700",
+                            i === 0 ? "bg-brand" : i === 1 ? "bg-accent" : i === 2 ? "bg-warning" : "bg-muted-foreground/60"
+                          )}
+                          style={{ width: `${(s.revenue / maxRev) * 100}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-muted-foreground tabular shrink-0">{s.bookings} bkg{s.bookings === 1 ? "" : "s"}</span>
                     </div>
-                    <span className="text-[10px] text-muted-foreground tabular w-12 text-right">{s.bookings}b</span>
                   </div>
                 </li>
               );
