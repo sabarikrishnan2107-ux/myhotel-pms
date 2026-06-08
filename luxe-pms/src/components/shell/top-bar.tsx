@@ -8,6 +8,7 @@ import { ThemeToggle } from "./theme-toggle";
 import { Avatar } from "@/components/ui/avatar";
 import { NotificationBell } from "@/components/notifications/bell-dropdown";
 import { logout } from "@/lib/api";
+import { useProperty, hotelName } from "@/lib/use-property";
 
 interface TopBarProps {
   onOpenSidebar: () => void;
@@ -15,6 +16,8 @@ interface TopBarProps {
 
 export function TopBar({ onOpenSidebar }: TopBarProps) {
   const router = useRouter();
+  const property = useProperty();
+  const name = hotelName(property, "");
 
   const onLogout = async () => {
     await logout();
@@ -31,6 +34,12 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       >
         <Menu className="h-4 w-4" />
       </button>
+
+      <Link href="/dashboard" className="min-w-0 flex items-center">
+        <span className="font-display font-semibold text-lg tracking-tight truncate">
+          {name || "Dashboard"}
+        </span>
+      </Link>
 
       <div className="ml-auto flex items-center gap-1.5">
         <Link href="/bookings/new">
