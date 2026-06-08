@@ -964,40 +964,36 @@ function KPISpark({ icon: Icon, label, value, delta, hint, spark, color, accent 
   spark?: number[]; color?: string;
   accent: "brand" | "accent" | "info" | "success" | "warning";
 }) {
-  const accentClasses = {
-    brand: "bg-brand-soft text-brand-soft-foreground",
-    accent: "bg-accent-soft text-accent",
-    info: "bg-info-soft text-info",
-    success: "bg-success-soft text-success",
-    warning: "bg-warning-soft text-warning",
+  const chip: Record<string, string> = {
+    brand: "bg-brand-soft text-brand ring-brand/20",
+    accent: "bg-accent-soft text-accent ring-accent/20",
+    info: "bg-info-soft text-info ring-info/20",
+    success: "bg-success-soft text-success ring-success/20",
+    warning: "bg-warning-soft text-warning ring-warning/20",
   };
   return (
-    <Card className="p-4 hover:shadow-md transition-shadow">
+    <Card className="p-4 flex flex-col hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</p>
-          <p className="text-xl font-semibold tabular mt-1 tracking-tight">{value}</p>
-          {hint && <p className="text-[10px] text-muted-foreground mt-0.5">{hint}</p>}
-        </div>
-        <span className={cn("h-8 w-8 shrink-0 rounded-md inline-flex items-center justify-center", accentClasses[accent])}>
-          <Icon className="h-4 w-4" />
+        <p className="text-[10px] uppercase tracking-[0.1em] text-muted-foreground font-semibold pt-0.5">{label}</p>
+        <span className={cn("h-9 w-9 shrink-0 rounded-xl ring-1 ring-inset inline-flex items-center justify-center", chip[accent])}>
+          <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
         </span>
       </div>
-      <div className="mt-2 flex items-end justify-between gap-2 min-h-[28px]">
+      <p className="text-2xl font-semibold tabular mt-2.5 tracking-tight leading-none">{value}</p>
+      <div className="mt-1.5 flex items-center gap-2">
         {typeof delta === "number" && (
           <span className={cn(
-            "text-[10px] font-medium inline-flex items-center gap-0.5",
-            delta >= 0 ? "text-success" : "text-danger"
+            "text-[11px] font-semibold inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5",
+            delta >= 0 ? "text-success bg-success-soft/60" : "text-danger bg-danger-soft/60"
           )}>
-            {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(1)}%
+            {delta >= 0 ? "↗" : "↘"} {Math.abs(delta).toFixed(1)}%
           </span>
         )}
-        {spark && spark.length > 0 && (
-          <div className="flex-1 ml-2">
-            <Sparkline data={spark} color={color} height={28} />
-          </div>
-        )}
+        {hint && <span className="text-[11px] text-muted-foreground">{hint}</span>}
       </div>
+      {spark && spark.length > 0 && (
+        <Sparkline data={spark} color={color} height={30} className="mt-auto pt-3 -mx-1 -mb-1" />
+      )}
     </Card>
   );
 }
