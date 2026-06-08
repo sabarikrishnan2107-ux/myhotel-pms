@@ -71,6 +71,13 @@ const TOP_SOURCES = [
   { name: "Expedia", revenue: 8900, bookings: 11 },
 ];
 
+const AI_BRIEFING: { tone: "success" | "info" | "warning" | "danger"; text: React.ReactNode }[] = [
+  { tone: "success", text: <>Pace <span className="font-semibold">+6.4%</span> vs last Monday — driven by Direct &amp; Corporate.</> },
+  { tone: "warning", text: <><span className="font-semibold">2 VIP arrivals</span> today: Mr. Kapoor (Suite 502), Ms. Iyer (Villa 3).</> },
+  { tone: "info", text: <>7-day forecast: <span className="font-semibold">82%</span> avg occupancy, healthy cash flow.</> },
+  { tone: "danger", text: <><span className="font-semibold">Open issue:</span> Room 214 AC complaint pending &gt; 2h.</> },
+];
+
 type ActivityTone = "success" | "info" | "warning" | "danger" | "brand" | "accent";
 const ACTIVITY: { id: string; at: string; actor: string; verb: string; target: string; tone: ActivityTone }[] = [
   { id: "a1", at: "Just now", actor: "Khalid R.", verb: "received payment", target: "AED 2,335 · Yuki Tanaka", tone: "success" as const },
@@ -462,6 +469,46 @@ export default function DashboardPage() {
               );
             })}
           </ul>
+        </Card>
+      </section>
+
+      {/* ============ AI DAILY BRIEFING ============ */}
+      <section>
+        <Card className="p-5 relative overflow-hidden border-l-2 border-l-accent bg-linear-to-br from-accent-soft/15 via-surface to-surface">
+          <div className="flex items-center gap-2.5 mb-3">
+            <span className="h-9 w-9 rounded-md bg-accent text-accent-foreground flex items-center justify-center shadow-xs">
+              <Bot className="h-4.5 w-4.5" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold">AI Daily Briefing</p>
+              <p className="text-[11px] text-muted-foreground">Live activity stream · updated 2m ago</p>
+            </div>
+            <span className="inline-flex items-center gap-1 rounded-md bg-info-soft text-info px-2 py-0.5 text-[10px] font-semibold">
+              <span className="h-1.5 w-1.5 rounded-full bg-info animate-pulse" /> AI
+            </span>
+          </div>
+          <ul className="grid sm:grid-cols-2 gap-x-6 gap-y-2.5 text-sm">
+            {AI_BRIEFING.map((b, i) => (
+              <li key={i} className="flex items-start gap-2 leading-snug">
+                <span className={cn(
+                  "h-1.5 w-1.5 rounded-full mt-1.5 shrink-0",
+                  b.tone === "success" && "bg-success",
+                  b.tone === "info" && "bg-info",
+                  b.tone === "warning" && "bg-warning",
+                  b.tone === "danger" && "bg-danger",
+                )} />
+                <span>{b.text}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 pt-3 border-t border-border/40 flex items-center justify-between">
+            <span className="inline-flex items-center gap-1 text-[10px] text-success font-medium">
+              <CheckCircle2 className="h-3 w-3" /> Verified against live PMS data
+            </span>
+            <Link href="/ai" className="text-xs text-brand hover:underline inline-flex items-center gap-0.5 font-medium">
+              Ask AI Assistant <ChevronRight className="h-3 w-3" />
+            </Link>
+          </div>
         </Card>
       </section>
 
