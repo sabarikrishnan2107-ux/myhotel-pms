@@ -375,7 +375,7 @@ export default function DashboardPage() {
       </section>
 
       {/* ============ PRIORITIES + LIVE STATUS + ACTIVITY + AI ============ */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 items-start">
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 items-stretch">
         {/* Priorities */}
         <Card className="p-5">
           <div className="flex items-center justify-between mb-4">
@@ -441,12 +441,12 @@ export default function DashboardPage() {
         </Card>
 
         {/* Activity */}
-        <Card className="p-5">
+        <Card className="p-5 flex flex-col">
           <div className="mb-3">
             <h2 className="text-lg font-semibold">Activity</h2>
               <p className="text-xs text-muted-foreground mt-0.5">Recent staff &amp; system events</p>
             </div>
-            <ul className="-mx-2 max-h-[300px] overflow-y-auto pr-1">
+            <ul className="-mx-2 flex-1 min-h-0 max-h-[440px] overflow-y-auto pr-1">
               {activity.map(a => {
                 const v = activityVisual(`${a.verb} ${a.target}`, a.tone);
                 const Icon = v.icon;
@@ -471,8 +471,8 @@ export default function DashboardPage() {
             </ul>
           </Card>
 
-          {/* AI Daily Briefing — under Activity */}
-          <Card className="p-5 relative overflow-hidden border-l-2 border-l-accent bg-linear-to-br from-accent-soft/15 via-surface to-surface">
+          {/* AI Daily Briefing */}
+          <Card className="p-5 flex flex-col relative overflow-hidden border-l-2 border-l-accent bg-linear-to-br from-accent-soft/15 via-surface to-surface">
             <div className="flex items-center gap-2.5 mb-3">
               <span className="h-9 w-9 rounded-md bg-accent text-accent-foreground flex items-center justify-center shadow-xs">
                 <Bot className="h-4.5 w-4.5" />
@@ -485,7 +485,7 @@ export default function DashboardPage() {
                 <span className="h-1.5 w-1.5 rounded-full bg-info animate-pulse" /> AI
               </span>
             </div>
-            <ul className="space-y-2.5 text-[13px]">
+            <ul className="space-y-2.5 text-[13px] flex-1">
               {AI_BRIEFING.map((b, i) => (
                 <li key={i} className="flex items-start gap-2 leading-snug">
                   <span className={cn(
@@ -499,7 +499,7 @@ export default function DashboardPage() {
                 </li>
               ))}
             </ul>
-            <div className="mt-3 pt-3 border-t border-border/40 flex items-center justify-between">
+            <div className="mt-auto pt-3 border-t border-border/40 flex items-center justify-between">
               <span className="inline-flex items-center gap-1 text-[10px] text-success font-medium">
                 <CheckCircle2 className="h-3 w-3" /> Verified vs live PMS data
               </span>
