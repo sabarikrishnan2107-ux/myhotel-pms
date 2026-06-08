@@ -21,6 +21,7 @@ class ModuleResourcesTest extends TestCase
     public static function resourceProvider(): array
     {
         return [
+            'room-types'          => ['room-types', ['name' => 'Villa', 'baseTariff' => 60000]],
             'loyalty-members'     => ['loyalty-members', ['name' => 'Member A']],
             'loyalty-tiers'       => ['loyalty-tiers', ['level' => 'Platinum']],
             'loyalty-rewards'     => ['loyalty-rewards', ['name' => 'Free night']],

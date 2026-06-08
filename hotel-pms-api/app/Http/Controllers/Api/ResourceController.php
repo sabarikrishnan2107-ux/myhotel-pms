@@ -38,6 +38,7 @@ use App\Models\PricingRule;
 use App\Models\RatePlan;
 use App\Models\Role;
 use App\Models\Room;
+use App\Models\RoomType;
 use App\Models\Season;
 use App\Models\Staff;
 use App\Models\Vendor;
@@ -54,6 +55,7 @@ class ResourceController extends Controller
     private const MODELS = [
         'floors'                 => Floor::class,
         'rooms'                  => Room::class,
+        'room-types'             => RoomType::class,
         'rate-plans'             => RatePlan::class,
         'seasons'                => Season::class,
         'holidays'               => Holiday::class,
@@ -115,6 +117,11 @@ class ResourceController extends Controller
             'name' => 'string|max:255', 'number' => 'integer', 'amenities' => 'array',
             'smokingAllowed' => 'boolean', 'vipFloor' => 'boolean', 'hasElevator' => 'boolean',
             'housekeepingZone' => 'string|max:255', 'status' => 'string|max:50',
+        ],
+        'room-types' => [
+            'name' => 'string|max:100', 'code' => 'string|max:20|nullable', 'baseTariff' => 'integer|min:0',
+            'maxAdults' => 'integer|min:1', 'maxChildren' => 'integer|min:0', 'sizeSqft' => 'integer|min:0|nullable',
+            'description' => 'string|max:500|nullable', 'amenities' => 'array', 'active' => 'boolean',
         ],
         'rooms' => [
             'number' => 'string|max:50', 'category' => 'string|max:50', 'floor' => 'integer',
@@ -328,7 +335,7 @@ class ResourceController extends Controller
 
     /** Fields that must be present (and non-empty) when creating a row. */
     private const REQUIRED_ON_CREATE = [
-        'floors' => ['name'], 'rooms' => ['number'], 'rate-plans' => ['code', 'name'],
+        'floors' => ['name'], 'rooms' => ['number'], 'room-types' => ['name'], 'rate-plans' => ['code', 'name'],
         'seasons' => ['name'], 'holidays' => ['name'], 'fb-packages' => ['name'],
         'hall-packages' => ['name'], 'agents' => ['name'], 'gst-slabs' => ['label'],
         'payment-methods' => ['name', 'code'], 'notification-templates' => ['event'],

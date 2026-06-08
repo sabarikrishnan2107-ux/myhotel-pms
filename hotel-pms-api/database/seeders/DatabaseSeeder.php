@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             AdminUserSeeder::class,
             PropertySettingSeeder::class,
             SetupDataSeeder::class,
+            RoomTypeSeeder::class,
             GuestBookingSeeder::class,
             FolioSeeder::class,
             ErpSeeder::class,

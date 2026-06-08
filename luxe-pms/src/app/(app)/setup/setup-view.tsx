@@ -52,8 +52,9 @@ const SECTIONS = [
   { id: "security",     group: "Personal" as SectionGroup,                label: "Security & Sign-in",       icon: Lock,         hint: "2FA · password · sessions",      accent: "warning" as const },
   { id: "property",     group: "Property" as SectionGroup,                label: "Property & Branch",        icon: Building2,    hint: "The Pearl Marina · Main Tower",  accent: "brand"   as const },
   { id: "branding",     group: "Property" as SectionGroup,                label: "Branding & Assets",        icon: Palette,      hint: "Logo · letterhead · email signature", accent: "brand" as const },
-  { id: "floors",       group: "Inventory" as SectionGroup,               label: "Floors & Room Types",      icon: Layers,       hint: "6 floors · 6 room types",        accent: "info"    as const },
-  { id: "rooms",        group: "Inventory" as SectionGroup,               label: "Rooms",                     icon: BedDouble,    hint: "68 rooms configured",            accent: "info"    as const },
+  { id: "floors",       group: "Inventory" as SectionGroup,               label: "Floors",                   icon: Layers,       hint: "Define each floor",              accent: "info"    as const },
+  { id: "room-types",   group: "Inventory" as SectionGroup,               label: "Room Types",               icon: BedDouble,    hint: "Categories · rates · occupancy", accent: "info"    as const },
+  { id: "rooms",        group: "Inventory" as SectionGroup,               label: "Rooms",                     icon: BedDouble,    hint: "Assign each room a type",        accent: "info"    as const },
   { id: "pricing",      group: "Rates & Packages" as SectionGroup,        label: "Pricing & Rate Plans",     icon: Tag,          hint: "5 rate plans · weekend +20%",    accent: "accent"  as const },
   { id: "seasons",      group: "Rates & Packages" as SectionGroup,        label: "Seasons & Holidays",       icon: Calendar,     hint: "Define peak / off-peak windows", accent: "accent"  as const },
   { id: "food",         group: "Rates & Packages" as SectionGroup,        label: "Food & Hall Packages",     icon: Utensils,     hint: "4 F&B · 6 hall packages",        accent: "accent"  as const },
@@ -99,7 +100,22 @@ type Floor = {
 
 const FLOOR_AMENITY_OPTIONS = ["Ice machine", "Vending", "Pantry", "Concierge desk", "Linen closet", "Service lift", "Fire exit", "CCTV"];
 
-type RoomCategory = "Queen" | "Deluxe" | "Suite" | "King" | "Family" | "Executive" | "Presidential";
+// A room's category is the name of a managed Room Type (free-form so custom
+// types like "Villa" or "Studio" work, not just the built-in seven).
+type RoomCategory = string;
+
+type RoomType = {
+  id: string;
+  name: string;
+  code?: string;
+  baseTariff: number;
+  maxAdults: number;
+  maxChildren: number;
+  sizeSqft?: number;
+  description?: string;
+  amenities: string[];
+  active: boolean;
+};
 type BedConfig = "1 King" | "1 Queen" | "2 Queens" | "2 Twins" | "1 King + 1 Sofa" | "2 Twins + 1 Sofa";
 type ViewType = "Sea" | "City" | "Garden" | "Pool" | "Mountain" | "Courtyard" | "None";
 type RoomStatus = "active" | "out-of-order" | "renovation" | "blocked";
@@ -126,6 +142,16 @@ type Room = {
 };
 
 const ROOM_CATEGORIES: RoomCategory[] = ["Queen", "Deluxe", "Suite", "King", "Family", "Executive", "Presidential"];
+
+const ROOM_TYPES_SEED: RoomType[] = [
+  { id: "rt1", name: "Queen", code: "QN", baseTariff: 4500, maxAdults: 2, maxChildren: 1, sizeSqft: 280, description: "Queen bed · city view", amenities: ["Smart TV", "Mini-bar", "In-room safe"], active: true },
+  { id: "rt2", name: "Deluxe", code: "DLX", baseTariff: 6500, maxAdults: 2, maxChildren: 1, sizeSqft: 340, description: "King bed · marina view", amenities: ["Smart TV", "Mini-bar", "In-room safe", "Bathrobe"], active: true },
+  { id: "rt3", name: "Suite", code: "STE", baseTariff: 12000, maxAdults: 4, maxChildren: 1, sizeSqft: 620, description: "Separate living room · marina view", amenities: ["Smart TV", "Mini-bar", "In-room safe", "Lounge access"], active: true },
+  { id: "rt4", name: "King", code: "KNG", baseTariff: 8500, maxAdults: 2, maxChildren: 1, sizeSqft: 400, description: "King bed · high floor", amenities: ["Smart TV", "Mini-bar", "In-room safe"], active: true },
+  { id: "rt5", name: "Family", code: "FAM", baseTariff: 9500, maxAdults: 4, maxChildren: 2, sizeSqft: 520, description: "Two queen beds · family friendly", amenities: ["Smart TV", "Mini-bar", "In-room safe", "Sofa bed"], active: true },
+  { id: "rt6", name: "Executive", code: "EXE", baseTariff: 15000, maxAdults: 2, maxChildren: 1, sizeSqft: 700, description: "Executive lounge · premium amenities", amenities: ["Smart TV", "Mini-bar", "In-room safe", "Lounge access"], active: true },
+  { id: "rt7", name: "Presidential", code: "PRES", baseTariff: 45000, maxAdults: 4, maxChildren: 2, sizeSqft: 1400, description: "Top-floor suite · panoramic view", amenities: ["Smart TV", "Mini-bar", "In-room safe", "Butler service"], active: true },
+];
 const BED_CONFIGS: BedConfig[] = ["1 King", "1 Queen", "2 Queens", "2 Twins", "1 King + 1 Sofa", "2 Twins + 1 Sofa"];
 const VIEW_OPTIONS: ViewType[] = ["Sea", "City", "Garden", "Pool", "Mountain", "Courtyard", "None"];
 const ROOM_AMENITY_OPTIONS = [
@@ -430,6 +456,7 @@ export function SetupView() {
   // Floors & rooms state (managed independently of the generic field grid)
   const [floors, setFloors] = React.useState<Floor[]>(FLOORS_SEED);
   const [rooms, setRooms] = React.useState<Room[]>(ROOMS_SEED);
+  const [roomTypes, setRoomTypes] = React.useState<RoomType[]>(ROOM_TYPES_SEED);
 
   // Additional manager states
   const [ratePlans, setRatePlans] = React.useState<RatePlan[]>(RATE_PLANS_SEED);
@@ -473,6 +500,7 @@ export function SetupView() {
     const loads = [
       apiGet<Floor[]>("/floors").then(r => { if (!cancelled) setFloors(r); }),
       apiGet<Room[]>("/rooms").then(r => { if (!cancelled) setRooms(r); }),
+      apiGet<RoomType[]>("/room-types").then(r => { if (!cancelled && r.length) setRoomTypes(r); }),
       apiGet<RatePlan[]>("/rate-plans").then(r => { if (!cancelled) setRatePlans(r); }),
       apiGet<Season[]>("/seasons").then(r => { if (!cancelled) setSeasons(r); }),
       apiGet<Holiday[]>("/holidays").then(r => { if (!cancelled) setHolidays(r); }),
@@ -541,7 +569,8 @@ export function SetupView() {
   // Live counts to keep the section list hints accurate
   const dynamicHint = (id: SectionId): string => {
     const s = SECTIONS.find(x => x.id === id)!;
-    if (id === "floors") return `${floors.length} floor${floors.length === 1 ? "" : "s"} · ${rooms.length} rooms`;
+    if (id === "floors") return `${floors.length} floor${floors.length === 1 ? "" : "s"} defined`;
+    if (id === "room-types") return `${roomTypes.length} room type${roomTypes.length === 1 ? "" : "s"}`;
     if (id === "rooms") return `${rooms.length} rooms configured`;
     if (id === "pricing") return `${ratePlans.filter(r => r.active).length} active rate plans`;
     if (id === "seasons") return `${seasons.filter(s => s.active).length} seasons · ${holidays.length} holidays`;
@@ -785,8 +814,12 @@ export function SetupView() {
               <FloorsManager floors={floors} rooms={rooms} onChange={next => persistList("floors", floors, next, setFloors)} onToast={showToast}
                 onMarkComplete={() => setCompleted(c => new Set([...c, "floors"]))} />
             )}
+            {active === "room-types" && (
+              <RoomTypesManager roomTypes={roomTypes} rooms={rooms} onChange={next => persistList("room-types", roomTypes, next, setRoomTypes)} onToast={showToast}
+                onMarkComplete={() => setCompleted(c => new Set([...c, "room-types"]))} />
+            )}
             {active === "rooms" && (
-              <RoomsManager rooms={rooms} floors={floors} onChange={next => persistList("rooms", rooms, next, setRooms)} onToast={showToast}
+              <RoomsManager rooms={rooms} floors={floors} roomTypes={roomTypes} onChange={next => persistList("rooms", rooms, next, setRooms)} onToast={showToast}
                 onMarkComplete={() => setCompleted(c => new Set([...c, "rooms"]))} />
             )}
             {active === "pricing" && (
@@ -1138,14 +1171,18 @@ function FloorsManager({
 
 // ===================== ROOMS MANAGER =====================
 function RoomsManager({
-  rooms, floors, onChange, onToast, onMarkComplete,
+  rooms, floors, roomTypes, onChange, onToast, onMarkComplete,
 }: {
   rooms: Room[];
   floors: Floor[];
+  roomTypes: RoomType[];
   onChange: (next: Room[]) => void;
   onToast: (msg: string) => void;
   onMarkComplete: () => void;
 }) {
+  // Categories selectable for a room = the active managed room types.
+  const typeNames = roomTypes.filter(t => t.active).map(t => t.name);
+  const categoryOptions = typeNames.length ? typeNames : ROOM_CATEGORIES;
   const [q, setQ] = React.useState("");
   const [floorFilter, setFloorFilter] = React.useState<"all" | string>("all");
   const [catFilter, setCatFilter] = React.useState<"all" | RoomCategory>("all");
@@ -1223,7 +1260,7 @@ function RoomsManager({
         </Select>
         <Select value={catFilter} onChange={e => setCatFilter(e.target.value as "all" | RoomCategory)} className="h-9 w-auto">
           <option value="all">All categories</option>
-          {ROOM_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
         </Select>
         <Select value={statusFilter} onChange={e => setStatusFilter(e.target.value as "all" | RoomStatus)} className="h-9 w-auto">
           <option value="all">Any status</option>
@@ -1427,7 +1464,7 @@ function BulkRoomModal({ floors, existingNumbers, template, onClose, onCreate }:
             <div className="space-y-1.5">
               <label className="text-xs font-medium">Category</label>
               <Select value={category} onChange={e => setCategory(e.target.value as RoomCategory)} className="h-9">
-                {ROOM_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
               </Select>
             </div>
             <div className="space-y-1.5">
@@ -1523,7 +1560,7 @@ function RoomEditModal({
                 </Field2>
                 <Field2 label="Category *">
                   <Select value={draft.category} onChange={e => set("category", e.target.value as RoomCategory)}>
-                    {ROOM_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                    {categoryOptions.map(c => <option key={c}>{c}</option>)}
                   </Select>
                 </Field2>
                 <Field2 label="Floor *">
@@ -1668,6 +1705,80 @@ function RoomEditModal({
 }
 
 // ===================== RATE PLANS MANAGER =====================
+// ===================== ROOM TYPES =====================
+function RoomTypesManager({ roomTypes, rooms, onChange, onToast, onMarkComplete }: {
+  roomTypes: RoomType[]; rooms: Room[]; onChange: (t: RoomType[]) => void; onToast: (m: string) => void; onMarkComplete: () => void;
+}) {
+  const upd = (id: string, patch: Partial<RoomType>) => onChange(roomTypes.map(t => t.id === id ? { ...t, ...patch } : t));
+  const add = () => {
+    onChange([...roomTypes, { id: `rt${tempSeq()}`, name: "New Type", code: "", baseTariff: 5000, maxAdults: 2, maxChildren: 1, sizeSqft: 300, description: "", amenities: [], active: true }]);
+    onToast("Room type added");
+  };
+  const del = (id: string) => {
+    const t = roomTypes.find(x => x.id === id);
+    const inUse = t ? rooms.filter(r => r.category === t.name).length : 0;
+    if (inUse > 0) { onToast(`Can't delete — ${inUse} room${inUse === 1 ? "" : "s"} use "${t?.name}"`); return; }
+    onChange(roomTypes.filter(t => t.id !== id));
+    onToast("Room type removed");
+  };
+  const roomsOfType = (name: string) => rooms.filter(r => r.category === name).length;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <SummaryStat icon={BedDouble} label="Room types" value={roomTypes.length} />
+        <SummaryStat icon={CheckCircle2} label="Active" value={roomTypes.filter(t => t.active).length} accent="success" />
+        <SummaryStat icon={IndianRupee} label="Lowest rate" value={money(Math.min(...roomTypes.map(t => t.baseTariff), 0) || 0)} />
+        <SummaryStat icon={IndianRupee} label="Highest rate" value={money(Math.max(...roomTypes.map(t => t.baseTariff), 0))} />
+      </div>
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">Define each category once — its base rate &amp; occupancy flow to Rooms, bookings and check-in.</p>
+        <Button size="sm" onClick={add}><Plus className="h-3.5 w-3.5" />Add type</Button>
+      </div>
+      <div className="rounded-md border border-border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-surface-elevated border-b border-border">
+            <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+              <th className="px-3 py-2 font-semibold">Type name</th>
+              <th className="px-3 py-2 font-semibold">Code</th>
+              <th className="px-3 py-2 font-semibold text-right">Base rate</th>
+              <th className="px-3 py-2 font-semibold text-right">Max adults</th>
+              <th className="px-3 py-2 font-semibold text-right">Max children</th>
+              <th className="px-3 py-2 font-semibold text-right">Rooms</th>
+              <th className="px-3 py-2 font-semibold">Active</th>
+              <th className="px-3 py-2 font-semibold text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {roomTypes.map(t => (
+              <tr key={t.id} className="hover:bg-surface-sunken/30">
+                <td className="px-3 py-2"><Input value={t.name} onChange={e => upd(t.id, { name: e.target.value })} className="h-8 w-40" /></td>
+                <td className="px-3 py-2"><Input value={t.code ?? ""} onChange={e => upd(t.id, { code: e.target.value.toUpperCase() })} className="h-8 font-mono tabular w-20" /></td>
+                <td className="px-3 py-2 text-right">
+                  <div className="inline-flex items-center gap-1">
+                    <span className="text-xs text-muted-foreground">₹</span>
+                    <Input type="number" value={t.baseTariff} onChange={e => upd(t.id, { baseTariff: Number(e.target.value) })} className="h-8 w-24 tabular text-right" />
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-right"><Input type="number" value={t.maxAdults} onChange={e => upd(t.id, { maxAdults: Math.max(1, Number(e.target.value) || 1) })} className="h-8 w-16 tabular text-right" /></td>
+                <td className="px-3 py-2 text-right"><Input type="number" value={t.maxChildren} onChange={e => upd(t.id, { maxChildren: Math.max(0, Number(e.target.value) || 0) })} className="h-8 w-16 tabular text-right" /></td>
+                <td className="px-3 py-2 text-right tabular text-muted-foreground">{roomsOfType(t.name)}</td>
+                <td className="px-3 py-2 text-center"><input type="checkbox" checked={t.active} onChange={e => upd(t.id, { active: e.target.checked })} className="h-4 w-4" /></td>
+                <td className="px-3 py-2 text-right">
+                  <button type="button" onClick={() => del(t.id)} className="h-7 w-7 rounded-md border border-border hover:bg-danger hover:text-white hover:border-danger inline-flex items-center justify-center text-muted-foreground" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex items-center justify-end pt-3 border-t border-border">
+        <Button variant="success" onClick={() => { onMarkComplete(); onToast("Room types saved"); }}><Save className="h-4 w-4" />Save Room Types</Button>
+      </div>
+    </div>
+  );
+}
+
 function RatePlansManager({ plans, onChange, onToast, onMarkComplete }: {
   plans: RatePlan[]; onChange: (p: RatePlan[]) => void; onToast: (m: string) => void; onMarkComplete: () => void;
 }) {
