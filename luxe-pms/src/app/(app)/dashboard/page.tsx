@@ -4,8 +4,9 @@ import Link from "next/link";
 import {
   BedDouble, KeyRound, Sparkles, Wrench, TrendingUp, Wallet, Receipt, ChevronRight,
   AlertTriangle, Building2, UtensilsCrossed, LogIn, LogOut, LayoutGrid, CalendarRange,
-  Bot, ClipboardCheck, FileBarChart, Bell, Sun, Crown,
+  Bot, ClipboardCheck, FileBarChart, Bell, Crown,
   Activity as ActivityIcon, CheckCircle2, Clock, Target, Trophy, ArrowRight,
+  TrendingDown, RefreshCw, ShieldCheck,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -81,6 +82,28 @@ const ACTIVITY: { id: string; at: string; actor: string; verb: string; target: s
   { id: "a7", at: "48 min ago", actor: "OTA: Booking.com", verb: "new reservation", target: "BDC-44218 · 3N", tone: "info" as const },
 ];
 
+/** Short timezone label (IST, GST, GMT…) from a Date's offset. */
+function tzAbbrev(d: Date): string {
+  const m: Record<number, string> = { [-330]: "IST", [-240]: "GST", [0]: "GMT", [300]: "EST", [240]: "AST", [-60]: "CET", [-480]: "CST" };
+  const off = d.getTimezoneOffset();
+  if (off in m) return m[off];
+  const h = -off / 60;
+  return `GMT${h >= 0 ? "+" : ""}${h}`;
+}
+
+/** Compact money for headline figures: ₹4.86 L / ₹1.2 Cr, or 4.9K / 1.2M for other currencies. */
+function moneyCompact(n: number, cur: string): string {
+  const abs = Math.abs(n);
+  if (cur === "₹") {
+    if (abs >= 1e7) return `${cur}${(n / 1e7).toFixed(2)} Cr`;
+    if (abs >= 1e5) return `${cur}${(n / 1e5).toFixed(2)} L`;
+    return money(n, cur);
+  }
+  if (abs >= 1e6) return `${cur}${(n / 1e6).toFixed(2)}M`;
+  if (abs >= 1e3) return `${cur}${(n / 1e3).toFixed(1)}K`;
+  return money(n, cur);
+}
+
 /** Relative "x min ago" label from an audit log's date + time, given the current clock. */
 function relTime(date: string, time: string, nowMs: number): string {
   if (!nowMs || !date) return time || "";
@@ -141,6 +164,7 @@ export default function DashboardPage() {
 
   const [now, setNow] = React.useState<string>("");
   const [nowMs, setNowMs] = React.useState<number>(0);
+  const [tz, setTz] = React.useState<string>("");
   const [today, setToday] = React.useState<string>("");
   const [greeting, setGreeting] = React.useState<string>("Good afternoon");
   const [userName, setUserName] = React.useState<string>("");
@@ -204,7 +228,8 @@ export default function DashboardPage() {
     const d = new Date();
     setNow(d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
     setNowMs(d.getTime());
-    setToday(d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" }));
+    setTz(tzAbbrev(d));
+    setToday(`${d.toLocaleDateString(undefined, { weekday: "long" })}, ${d.getDate()} ${d.toLocaleDateString(undefined, { month: "long" })} ${d.getFullYear()}`);
     const h = d.getHours();
     setGreeting(h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : h < 21 ? "Good evening" : "Working late");
   }, []);
@@ -246,63 +271,89 @@ export default function DashboardPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-7">
       {/* ============ HERO ============ */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4 items-start">
-        {/* Greeting card */}
-        <Card className="sm:col-span-2 lg:col-span-2 p-4 relative overflow-hidden flex flex-col justify-center">
-          <div className="absolute inset-0 bg-linear-to-br from-brand-soft/50 via-surface to-accent-soft/30 pointer-events-none" />
-          <div className="absolute top-0 left-0 h-full w-1 bg-brand pointer-events-none" />
-          <div className="relative">
-            <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-semibold inline-flex items-center gap-1.5">
-              <Sun className="h-3 w-3 text-brand" />
-              {today || "—"} · {now || "—"}
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+        {/* Unified hero card */}
+        <Card className="lg:col-span-8 p-5 flex flex-col">
+          {/* Meta row */}
+          <div className="flex items-start justify-between gap-4">
+            <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground font-semibold inline-flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-success">
+                <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" /> Live
+              </span>
+              <span className="text-border">/</span>
+              <span className="text-foreground/70">{today || "—"}</span>
+              <span className="text-border">/</span>
+              <span>{now || "—"} {tz}</span>
             </p>
-            <h1 className="mt-1.5 text-xl font-display font-medium tracking-tight leading-snug">
-              {greeting},{" "}
-              <span className="text-brand">{propName || (userName ? userName.split(" ")[0] : "there")}</span>
-            </h1>
-            <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-              <span className="inline-flex items-center rounded-md bg-surface/70 border border-border/50 px-1.5 py-0.5">
-                <span className="font-semibold text-foreground">{arrivals.length}</span>&nbsp;arr
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <span className="inline-flex items-center gap-1 rounded-md bg-accent-soft text-accent px-2 py-0.5 text-[11px] font-semibold">
+                <Sparkles className="h-3 w-3" /> Pace +6.4% WoW
               </span>
-              <span className="inline-flex items-center rounded-md bg-surface/70 border border-border/50 px-1.5 py-0.5">
-                <span className="font-semibold text-foreground">{departures.length}</span>&nbsp;dep
-              </span>
-              <span className="inline-flex items-center rounded-md bg-surface/70 border border-border/50 px-1.5 py-0.5">
-                net&nbsp;<span className="font-semibold text-success">{money(k.todayProfit, cur)}</span>
+              <span className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
+                <RefreshCw className="h-3 w-3" /> Synced just now
               </span>
             </div>
+          </div>
+
+          {/* Greeting */}
+          <h1 className="mt-2.5 text-2xl sm:text-3xl font-display font-medium tracking-tight">
+            {greeting}, <span className="text-brand">{propName || (userName ? userName.split(" ")[0] : "there")}</span>{" "}
+            <span className="text-muted-foreground font-normal">— here&apos;s your hotel today.</span>
+          </h1>
+
+          {/* Summary line */}
+          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+            <span className="inline-flex items-center gap-1.5">
+              <BedDouble className="h-4 w-4 text-brand" />
+              <span className="font-semibold tabular">{roomCounts.occupied}/{roomCounts.total}</span>
+              <span className="text-muted-foreground">rooms sold</span>
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <LogIn className="h-4 w-4 text-info" />
+              <span className="font-semibold tabular">{arrivals.length}</span>
+              <span className="text-muted-foreground">arrivals</span>
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <LogOut className="h-4 w-4 text-warning" />
+              <span className="font-semibold tabular">{departures.length}</span>
+              <span className="text-muted-foreground">departures</span>
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Wallet className="h-4 w-4 text-success" />
+              <span className="font-semibold tabular text-success">{moneyCompact(k.todayProfit, cur)}</span>
+              <span className="text-muted-foreground">net</span>
+            </span>
+          </div>
+
+          {/* Inline KPI strip */}
+          <div className="mt-4 pt-4 border-t border-border grid grid-cols-1 sm:grid-cols-3 sm:divide-x divide-border">
+            <HeroMetric className="sm:pr-4" label="Occupancy" value={pct(occPct)} deltaText="+4.2%" up spark={SPARKLINE_DATA.occupancy} color="var(--color-brand)" />
+            <HeroMetric className="pt-3 sm:pt-0 sm:px-4" label="ADR" value={money(k.adr, cur)} deltaText={`+${cur}310`} up spark={SPARKLINE_DATA.adr} color="var(--color-accent)" />
+            <HeroMetric className="pt-3 sm:pt-0 sm:pl-4" label="RevPAR" value={money(k.revpar, cur)} deltaText="-1.1%" up={false} spark={SPARKLINE_DATA.revpar} color="var(--color-success)" />
           </div>
         </Card>
 
-        {/* KPI cards */}
-        <HeroKpiCard className="lg:col-span-2" label="Occupancy" value={pct(occPct)} sub={`${roomCounts.occupied} of ${roomCounts.total} rooms sold`} delta={2.1} spark={SPARKLINE_DATA.occupancy} color="var(--color-brand)" />
-        <HeroKpiCard className="lg:col-span-2" label="ADR" value={money(k.adr, cur)} sub="avg / occupied room" delta={1.4} spark={SPARKLINE_DATA.adr} color="var(--color-accent)" />
-        <HeroKpiCard className="lg:col-span-2" label="RevPAR" value={money(k.revpar, cur)} sub="revenue / available room" delta={3.6} spark={SPARKLINE_DATA.revpar} color="var(--color-success)" />
-
-        {/* AI Daily Briefing — right of RevPAR */}
-        <Card className="sm:col-span-2 lg:col-span-4 p-4 bg-linear-to-br from-accent-soft/30 via-surface to-brand-soft/30 border-l-4 border-l-accent flex flex-col">
-          <div className="flex items-center gap-2 mb-2.5">
-            <span className="h-7 w-7 rounded-md bg-accent text-accent-foreground flex items-center justify-center shadow-xs">
-              <Bot className="h-3.5 w-3.5" />
+        {/* AI Daily Briefing */}
+        <Card className="lg:col-span-4 p-5 flex flex-col">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="h-8 w-8 rounded-md bg-accent text-accent-foreground flex items-center justify-center shadow-xs">
+              <Bot className="h-4 w-4" />
             </span>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold">AI Daily Briefing</p>
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Updated 8 min ago</p>
-            </div>
-            <Badge tone="accent">Live</Badge>
+            <p className="text-sm font-semibold flex-1">AI Daily Briefing</p>
+            <span className="inline-flex items-center rounded-md bg-info-soft text-info px-2 py-0.5 text-[10px] font-medium">Updated 2m ago</span>
           </div>
-          <ul className="grid sm:grid-cols-2 gap-x-4 gap-y-2 text-[13px] flex-1">
-            <AIBullet tone="info">Pace <span className="font-semibold">+12%</span> vs last Sunday — hold rates.</AIBullet>
-            <AIBullet tone="warning"><span className="font-semibold">2 VIP arrivals</span> at 14:00 — Suite 605 flagged.</AIBullet>
-            <AIBullet tone="success">7-day forecast <span className="font-semibold">78%</span>, healthy cash flow.</AIBullet>
-            <AIBullet tone="danger">Cash mismatch Shift #4217 — owner approval.</AIBullet>
+          <ul className="space-y-2.5 text-[13px] flex-1">
+            <AIBullet tone="success">Pace <span className="font-semibold">+6.4%</span> vs last Monday — driven by Direct &amp; Corporate.</AIBullet>
+            <AIBullet tone="warning"><span className="font-semibold">2 VIP arrivals</span> today: Mr. Kapoor (Suite 502), Ms. Iyer (Villa 3).</AIBullet>
+            <AIBullet tone="info">7-day forecast: <span className="font-semibold">82%</span> avg occupancy, ADR {money(8780, cur)} (+4.3%).</AIBullet>
+            <AIBullet tone="danger"><span className="font-semibold">Open issue:</span> Room 214 AC complaint pending &gt; 2h.</AIBullet>
           </ul>
-          <div className="mt-2.5 pt-2.5 border-t border-border/40 flex items-center justify-between">
+          <div className="mt-3 pt-3 border-t border-border/40 flex items-center justify-between">
             <span className="inline-flex items-center gap-1 text-[10px] text-success font-medium">
-              <CheckCircle2 className="h-3 w-3" /> All checks passed
+              <ShieldCheck className="h-3 w-3" /> Verified against live PMS data
             </span>
             <Link href="/ai" className="text-xs text-brand hover:underline inline-flex items-center gap-0.5 font-medium">
-              Ask AI <ChevronRight className="h-3 w-3" />
+              Ask AI Assistant <ChevronRight className="h-3 w-3" />
             </Link>
           </div>
         </Card>
@@ -859,31 +910,28 @@ function SectionHeader({ title, hint, icon: Icon }: { title: string; hint?: stri
   );
 }
 
-function HeroKpiCard({ label, value, sub, delta, spark, color, className }: {
-  label: string; value: string; sub?: string; delta?: number; spark?: number[]; color?: string; className?: string;
+function HeroMetric({ label, value, deltaText, up, spark, color, className }: {
+  label: string; value: string; deltaText: string; up: boolean; spark?: number[]; color?: string; className?: string;
 }) {
+  const Trend = up ? TrendingUp : TrendingDown;
   return (
-    <Card className={cn("p-4 flex flex-col overflow-hidden hover:shadow-md transition-shadow", className)}>
+    <div className={cn("flex flex-col", className)}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-semibold inline-flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-          {label}
-        </p>
-        {typeof delta === "number" && (
-          <span className={cn(
-            "text-[10px] inline-flex items-center gap-0.5 font-medium rounded-md px-1.5 py-0.5",
-            delta >= 0 ? "text-success bg-success-soft/60" : "text-danger bg-danger-soft/60"
-          )}>
-            {delta >= 0 ? "↗" : "↘"} {Math.abs(delta).toFixed(1)}%
-          </span>
+        <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-semibold">{label}</p>
+        <span className={cn("text-[11px] font-medium inline-flex items-center gap-0.5", up ? "text-success" : "text-danger")}>
+          <Trend className="h-3 w-3" /> {deltaText}
+        </span>
+      </div>
+      <div className="flex items-end justify-between gap-3 mt-1.5">
+        <p className="text-2xl font-semibold tabular tracking-tight leading-none">{value}</p>
+        {spark && spark.length > 0 && (
+          <div className="w-20 h-8 shrink-0">
+            <Sparkline data={spark} color={color} height={32} />
+          </div>
         )}
       </div>
-      <p className="text-3xl font-semibold tabular mt-1.5 tracking-tight leading-none">{value}</p>
-      {sub && <p className="text-[11px] text-muted-foreground mt-1.5">{sub}</p>}
-      {spark && spark.length > 0 && (
-        <Sparkline data={spark} color={color} height={30} className="mt-2.5 -mx-1 -mb-1" />
-      )}
-    </Card>
+      <p className="text-[10px] text-muted-foreground mt-1.5">vs yesterday · 7d trend</p>
+    </div>
   );
 }
 
