@@ -17,12 +17,12 @@ import { FloorHeatmap } from "@/components/ui/floor-heatmap";
 import { GoalProgress } from "@/components/ui/goal-progress";
 import { money, pct, formatTime, cn } from "@/lib/utils";
 import { apiGet } from "@/lib/api";
-import { useProperty, hotelName } from "@/lib/use-property";
+import { useProperty, hotelName, currencySymbol } from "@/lib/use-property";
 import {
   DASHBOARD_KPIS, TODAY_ARRIVALS, TODAY_DEPARTURES, REVENUE_TREND,
   OCCUPANCY_FORECAST, SOURCE_MIX, ALERTS, ROOMS, GUESTS,
 } from "@/lib/mock-data";
-import type { Reservation, Guest } from "@/lib/types";
+import type { Reservation, Guest, Room } from "@/lib/types";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
 import { Eye } from "lucide-react";
 import {
@@ -81,6 +81,29 @@ const ACTIVITY: { id: string; at: string; actor: string; verb: string; target: s
   { id: "a7", at: "48 min ago", actor: "OTA: Booking.com", verb: "new reservation", target: "BDC-44218 · 3N", tone: "info" as const },
 ];
 
+/** Relative "x min ago" label from an audit log's date + time, given the current clock. */
+function relTime(date: string, time: string, nowMs: number): string {
+  if (!nowMs || !date) return time || "";
+  const t = new Date(`${date}T${time || "00:00"}`).getTime();
+  if (Number.isNaN(t)) return time || "";
+  const m = Math.round((nowMs - t) / 60000);
+  if (m < 1) return "Just now";
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+/** Map an audit severity/action to an activity dot tone. */
+function auditTone(severity: string, action: string): ActivityTone {
+  const a = action.toLowerCase();
+  if (severity === "critical" || a.includes("delet") || a.includes("fail") || a.includes("block")) return "danger";
+  if (severity === "warning") return "warning";
+  if (a.includes("login") || a.includes("checked") || a.includes("creat") || a.includes("paid") || a.includes("payment")) return "success";
+  if (a.includes("updat") || a.includes("sync")) return "info";
+  return "brand";
+}
+
 type DashStats = {
   rooms: { total: number; occupied: number; available: number; occupancyPct: number };
   bookings: { total: number; inHouse: number; arrivalsToday: number; departuresToday: number };
@@ -89,6 +112,16 @@ type DashStats = {
   arrivals: Reservation[];
   departures: Reservation[];
   sourceMix: { source: string; bookings: number; revenue: number }[];
+};
+
+type RoomBoardRow = {
+  id: string; number: string; floor: number; type: string;
+  status: "occupied" | "available" | "dirty" | "cleaning" | "maintenance";
+};
+
+type AuditRow = {
+  id: string; time: string; date: string; user: string;
+  module: string; action: string; entity: string; severity: string;
 };
 
 export default function DashboardPage() {
@@ -107,17 +140,44 @@ export default function DashboardPage() {
   const departures = stats?.departures ?? TODAY_DEPARTURES;
 
   const [now, setNow] = React.useState<string>("");
+  const [nowMs, setNowMs] = React.useState<number>(0);
   const [today, setToday] = React.useState<string>("");
   const [greeting, setGreeting] = React.useState<string>("Good afternoon");
   const [userName, setUserName] = React.useState<string>("");
   const property = useProperty();
   const propName = hotelName(property, "");
+  const cur = currencySymbol(property);
   const [selectedRes, setSelectedRes] = React.useState<Reservation | null>(null);
 
   // Real signed-in user for the greeting.
   React.useEffect(() => {
     apiGet<{ name: string }>("/me").then(u => { if (u?.name) setUserName(u.name); }).catch(() => {});
   }, []);
+
+  // Live room board (real per-room status) for the Live Status panel + floor map.
+  const [board, setBoard] = React.useState<RoomBoardRow[] | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<RoomBoardRow[]>("/room-board").then(b => { if (!cancelled) setBoard(b); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Real activity trail for the live feed.
+  const [audit, setAudit] = React.useState<AuditRow[] | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<AuditRow[]>("/audit-logs").then(a => { if (!cancelled) setAudit(a); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Room-status breakdown derived from the real board (falls back to mock ROOMS).
+  const boardRooms = board ?? ROOMS.map(r => ({ id: r.id, number: r.number, floor: r.floor, type: r.type, status: r.status as RoomBoardRow["status"] }));
+  const roomCounts = React.useMemo(() => {
+    const c = { total: boardRooms.length, occupied: 0, available: 0, dirty: 0, cleaning: 0, maintenance: 0 };
+    for (const r of boardRooms) if (r.status in c) (c as Record<string, number>)[r.status]++;
+    return c;
+  }, [boardRooms]);
+  const occPct = roomCounts.total ? Math.round(roomCounts.occupied / roomCounts.total * 100) : 0;
 
   // Resolve a Guest record for the selected reservation (synthesize if not found)
   const selectedGuest: Guest | null = React.useMemo(() => {
@@ -143,6 +203,7 @@ export default function DashboardPage() {
   React.useEffect(() => {
     const d = new Date();
     setNow(d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+    setNowMs(d.getTime());
     setToday(d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" }));
     const h = d.getHours();
     setGreeting(h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : h < 21 ? "Good evening" : "Working late");
@@ -155,6 +216,32 @@ export default function DashboardPage() {
   const topSources = stats?.sourceMix?.length
     ? stats.sourceMix.map(s => ({ name: s.source, revenue: s.revenue, bookings: s.bookings }))
     : TOP_SOURCES;
+
+  // Live activity feed from the real audit trail (falls back to mock).
+  const activity = React.useMemo(() => {
+    if (!audit || audit.length === 0) return ACTIVITY;
+    return audit.slice(0, 7).map(a => ({
+      id: a.id,
+      at: relTime(a.date, a.time, nowMs),
+      actor: a.user || "System",
+      verb: a.action.replace(/_/g, " ").toLowerCase(),
+      target: a.entity && a.entity !== "—" ? a.entity : a.module,
+      tone: auditTone(a.severity, a.action),
+    }));
+  }, [audit, nowMs]);
+
+  // Today's priorities derived from real stats + the live room board.
+  const priorities = React.useMemo(() => {
+    const list: { tone: "danger" | "warning" | "info" | "accent"; icon: typeof AlertTriangle; count?: number; title: string; hint: string; href: string }[] = [];
+    const out = stats?.revenue.outstanding ?? 0;
+    if (out > 0) list.push({ tone: "danger", icon: Wallet, title: "Outstanding balance", hint: `${money(out, cur)} to collect across folios`, href: "/accounts" });
+    if (arrivals.length > 0) list.push({ tone: "warning", icon: LogIn, count: arrivals.length, title: "Arrivals expected today", hint: "Assign room & prep at check-in", href: "/checkin" });
+    if (departures.length > 0) list.push({ tone: "info", icon: LogOut, count: departures.length, title: "Checkouts due today", hint: "Settle the folio before checkout", href: "/checkout" });
+    if (roomCounts.dirty > 0) list.push({ tone: "accent", icon: Sparkles, count: roomCounts.dirty, title: "Rooms to clean", hint: "Housekeeping sign-off pending", href: "/housekeeping" });
+    if (roomCounts.maintenance > 0) list.push({ tone: "warning", icon: Wrench, count: roomCounts.maintenance, title: "Rooms out of order", hint: "Maintenance in progress", href: "/maintenance" });
+    if (vipArrivals > 0) list.push({ tone: "accent", icon: Crown, count: vipArrivals, title: "VIP arrivals today", hint: "Flag rooms for special prep", href: "/guests" });
+    return list.slice(0, 5);
+  }, [stats, cur, arrivals, departures, roomCounts, vipArrivals]);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-7">
@@ -181,16 +268,16 @@ export default function DashboardPage() {
                 <span className="font-semibold text-foreground">{departures.length}</span>&nbsp;dep
               </span>
               <span className="inline-flex items-center rounded-md bg-surface/70 border border-border/50 px-1.5 py-0.5">
-                net&nbsp;<span className="font-semibold text-success">{money(k.todayProfit)}</span>
+                net&nbsp;<span className="font-semibold text-success">{money(k.todayProfit, cur)}</span>
               </span>
             </div>
           </div>
         </Card>
 
         {/* KPI cards */}
-        <HeroKpiCard className="lg:col-span-2" label="Occupancy" value={pct(k.occupancyPct)} sub={`${k.occupied} of ${k.totalRooms} rooms sold`} delta={2.1} spark={SPARKLINE_DATA.occupancy} color="var(--color-brand)" />
-        <HeroKpiCard className="lg:col-span-2" label="ADR" value={money(k.adr)} sub="avg / occupied room" delta={1.4} spark={SPARKLINE_DATA.adr} color="var(--color-accent)" />
-        <HeroKpiCard className="lg:col-span-2" label="RevPAR" value={money(k.revpar)} sub="revenue / available room" delta={3.6} spark={SPARKLINE_DATA.revpar} color="var(--color-success)" />
+        <HeroKpiCard className="lg:col-span-2" label="Occupancy" value={pct(occPct)} sub={`${roomCounts.occupied} of ${roomCounts.total} rooms sold`} delta={2.1} spark={SPARKLINE_DATA.occupancy} color="var(--color-brand)" />
+        <HeroKpiCard className="lg:col-span-2" label="ADR" value={money(k.adr, cur)} sub="avg / occupied room" delta={1.4} spark={SPARKLINE_DATA.adr} color="var(--color-accent)" />
+        <HeroKpiCard className="lg:col-span-2" label="RevPAR" value={money(k.revpar, cur)} sub="revenue / available room" delta={3.6} spark={SPARKLINE_DATA.revpar} color="var(--color-success)" />
 
         {/* AI Daily Briefing — right of RevPAR */}
         <Card className="sm:col-span-2 lg:col-span-4 p-4 bg-linear-to-br from-accent-soft/30 via-surface to-brand-soft/30 border-l-4 border-l-accent flex flex-col">
@@ -266,14 +353,24 @@ export default function DashboardPage() {
               <p className="text-xs uppercase tracking-[0.16em] text-subtle-foreground font-semibold">Today&apos;s Priorities</p>
               <h2 className="text-lg font-semibold mt-0.5">What needs attention</h2>
             </div>
-            <Badge tone="brand">5 items</Badge>
+            <Badge tone="brand">{priorities.length} {priorities.length === 1 ? "item" : "items"}</Badge>
           </div>
           <div className="space-y-2">
-            <PriorityRow tone="danger" icon={AlertTriangle} count={1} title="Cash mismatch — Shift #4217" hint="AED 50 excess · Owner approval" href="/cashier" />
-            <PriorityRow tone="warning" icon={LogIn} count={3} title="Early check-in requested" hint="Rooms not yet ready for 2:00 PM" href="/checkin" />
-            <PriorityRow tone="warning" icon={Wrench} count={1} title="Room 305 AC complaint" hint="In-house · Maintenance dispatched" href="/maintenance" />
-            <PriorityRow tone="info" icon={LogOut} count={5} title="Pending checkouts" hint="3 with balance · 2 ready" href="/checkout" />
-            <PriorityRow tone="accent" icon={Sparkles} count={6} title="Awaiting inspection" hint="HK supervisor sign-off pending" href="/housekeeping" />
+            {priorities.length === 0 ? (
+              <div className="flex items-center gap-3 p-4 rounded-md border border-border bg-surface-sunken/40">
+                <span className="h-9 w-9 rounded-md bg-success-soft text-success flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="font-medium text-sm">All clear</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">No arrivals, checkouts or open balances right now.</p>
+                </div>
+              </div>
+            ) : (
+              priorities.map((p, i) => (
+                <PriorityRow key={i} tone={p.tone} icon={p.icon} count={p.count} title={p.title} hint={p.hint} href={p.href} />
+              ))
+            )}
           </div>
         </Card>
 
@@ -282,7 +379,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-2">
             <div>
               <p className="text-xs uppercase tracking-[0.16em] text-subtle-foreground font-semibold">Live Status</p>
-              <h2 className="text-lg font-semibold mt-0.5">{k.totalRooms} rooms · all floors</h2>
+              <h2 className="text-lg font-semibold mt-0.5">{roomCounts.total} rooms · all floors</h2>
             </div>
             <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
               <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
@@ -290,7 +387,7 @@ export default function DashboardPage() {
             </span>
           </div>
           <div className="flex flex-col items-center pt-1">
-            <OccupancyGauge value={k.occupancyPct} size={170} hint={`${k.occupied} of ${k.totalRooms} sold`} />
+            <OccupancyGauge value={occPct} size={170} hint={`${roomCounts.occupied} of ${roomCounts.total} sold`} />
           </div>
 
           {/* Floor heatmap — visual room-status grid */}
@@ -301,14 +398,14 @@ export default function DashboardPage() {
                 Open rack <ChevronRight className="h-2.5 w-2.5" />
               </Link>
             </div>
-            <FloorHeatmap rooms={ROOMS} />
+            <FloorHeatmap rooms={boardRooms as unknown as Room[]} />
             {/* Legend */}
             <div className="mt-2.5 flex flex-wrap gap-x-2 gap-y-1 text-[10px]">
-              <LegendDot color="bg-status-occupied" label={`Occupied ${k.occupied}`} />
-              <LegendDot color="bg-status-reserved" label={`Reserved ${k.reserved}`} />
-              <LegendDot color="bg-status-available" label={`Available ${k.available}`} />
-              <LegendDot color="bg-status-dirty" label={`Dirty ${k.dirty}`} />
-              <LegendDot color="bg-status-maintenance" label={`Maint ${k.maintenance}`} />
+              <LegendDot color="bg-status-occupied" label={`Occupied ${roomCounts.occupied}`} />
+              <LegendDot color="bg-status-available" label={`Available ${roomCounts.available}`} />
+              <LegendDot color="bg-status-dirty" label={`Dirty ${roomCounts.dirty}`} />
+              <LegendDot color="bg-status-cleaning" label={`Cleaning ${roomCounts.cleaning}`} />
+              <LegendDot color="bg-status-maintenance" label={`Maint ${roomCounts.maintenance}`} />
             </div>
           </div>
         </Card>
@@ -324,7 +421,7 @@ export default function DashboardPage() {
           </div>
           <ol className="relative space-y-3">
             <div className="absolute left-1.5 top-1 bottom-1 w-px bg-border" />
-            {ACTIVITY.map(a => (
+            {activity.map(a => (
               <li key={a.id} className="relative pl-6">
                 <span className={cn(
                   "absolute left-0 top-1 h-3 w-3 rounded-full ring-2 ring-surface",
@@ -351,12 +448,12 @@ export default function DashboardPage() {
       <section>
         <SectionHeader title="Revenue · Today" hint="Each card shows trailing 7-day trend" icon={TrendingUp} />
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-          <KPISpark icon={BedDouble} label="Room" value={money(k.roomRevenue)} delta={4.2} spark={SPARKLINE_DATA.rooms} color="var(--color-brand)" accent="brand" />
-          <KPISpark icon={UtensilsCrossed} label="F&B" value={money(k.foodRevenue)} delta={6.8} spark={SPARKLINE_DATA.fb} color="var(--color-accent)" accent="accent" />
-          <KPISpark icon={Building2} label="Hall" value={money(k.hallRevenue)} delta={2.4} spark={SPARKLINE_DATA.hall} color="var(--color-info)" accent="info" />
-          <KPISpark icon={Wallet} label="Advance" value={money(k.advanceReceived)} delta={null} accent="success" />
-          <KPISpark icon={Receipt} label="Pending" value={money(k.pendingPayments)} delta={null} accent="warning" hint="Outstanding" />
-          <KPISpark icon={TrendingUp} label="Net Profit" value={money(k.todayProfit)} delta={8.4} spark={SPARKLINE_DATA.net} color="var(--color-success)" accent="brand" />
+          <KPISpark icon={BedDouble} label="Room" value={money(k.roomRevenue, cur)} delta={4.2} spark={SPARKLINE_DATA.rooms} color="var(--color-brand)" accent="brand" />
+          <KPISpark icon={UtensilsCrossed} label="F&B" value={money(k.foodRevenue, cur)} delta={6.8} spark={SPARKLINE_DATA.fb} color="var(--color-accent)" accent="accent" />
+          <KPISpark icon={Building2} label="Hall" value={money(k.hallRevenue, cur)} delta={2.4} spark={SPARKLINE_DATA.hall} color="var(--color-info)" accent="info" />
+          <KPISpark icon={Wallet} label="Advance" value={money(k.advanceReceived, cur)} delta={null} accent="success" />
+          <KPISpark icon={Receipt} label="Pending" value={money(k.pendingPayments, cur)} delta={null} accent="warning" hint="Outstanding" />
+          <KPISpark icon={TrendingUp} label="Net Profit" value={money(k.todayProfit, cur)} delta={8.4} spark={SPARKLINE_DATA.net} color="var(--color-success)" accent="brand" />
         </div>
       </section>
 
@@ -438,7 +535,7 @@ export default function DashboardPage() {
                       <StatusBadge status="checkout-pending" />
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Room {r.roomNumber} · Balance {money(r.balance)}
+                      Room {r.roomNumber} · Balance {money(r.balance, cur)}
                     </p>
                   </div>
                   <Link href={`/checkout/${r.bookingNo}`}><Button size="sm">Checkout</Button></Link>
@@ -469,7 +566,7 @@ export default function DashboardPage() {
               label="Total Revenue"
               current={130110}
               target={160000}
-              format={v => money(v)}
+              format={v => money(v, cur)}
               pace="ontrack"
             />
             <GoalProgress
@@ -483,7 +580,7 @@ export default function DashboardPage() {
               label="ADR"
               current={742}
               target={720}
-              format={v => money(v)}
+              format={v => money(v, cur)}
               pace="ahead"
             />
             <GoalProgress
@@ -497,14 +594,14 @@ export default function DashboardPage() {
               label="F&B Revenue"
               current={21340}
               target={24000}
-              format={v => money(v)}
+              format={v => money(v, cur)}
               pace="ontrack"
             />
             <GoalProgress
               label="Net Profit"
               current={53810}
               target={55000}
-              format={v => money(v)}
+              format={v => money(v, cur)}
               pace="ahead"
             />
           </div>
@@ -538,7 +635,7 @@ export default function DashboardPage() {
                       </span>
                       <span className="text-sm font-medium truncate">{s.name}</span>
                     </div>
-                    <span className="text-sm font-semibold tabular shrink-0">{money(s.revenue / 1000)}k</span>
+                    <span className="text-sm font-semibold tabular shrink-0">{money(s.revenue / 1000, cur)}k</span>
                   </div>
                   <div className="ml-8.5 flex items-center gap-2">
                     <div className="flex-1 h-1.5 bg-surface-sunken rounded-full overflow-hidden">
@@ -571,7 +668,7 @@ export default function DashboardPage() {
               {vipArrivals} VIP arrival{vipArrivals === 1 ? "" : "s"} · {arrivals.length} total
             </h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Balance to collect on arrival: <span className="font-semibold text-foreground tabular">{money(arrivalsBalance)}</span>.
+              Balance to collect on arrival: <span className="font-semibold text-foreground tabular">{money(arrivalsBalance, cur)}</span>.
               {vipArrivals > 0 && " VIP rooms flagged for inspection before 13:00."}
             </p>
           </div>
@@ -836,7 +933,7 @@ function KPISpark({ icon: Icon, label, value, delta, hint, spark, color, accent 
 function PriorityRow({ tone, icon: Icon, count, title, hint, href }: {
   tone: "danger" | "warning" | "info" | "accent";
   icon: typeof AlertTriangle;
-  count: number;
+  count?: number;
   title: string;
   hint: string;
   href: string;
@@ -856,7 +953,9 @@ function PriorityRow({ tone, icon: Icon, count, title, hint, href }: {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <p className="font-medium text-sm">{title}</p>
-            <Badge tone={tone === "danger" ? "danger" : tone === "warning" ? "warning" : tone === "info" ? "info" : "accent"}>{count}</Badge>
+            {typeof count === "number" && (
+              <Badge tone={tone === "danger" ? "danger" : tone === "warning" ? "warning" : tone === "info" ? "info" : "accent"}>{count}</Badge>
+            )}
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">{hint}</p>
         </div>

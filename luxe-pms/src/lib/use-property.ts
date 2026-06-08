@@ -7,6 +7,7 @@ export type PropertyInfo = {
   branch?: string;
   city?: string;
   country?: string;
+  currency?: string;
   gst_state?: string;
   pin_code?: string;
   gstin?: string;
@@ -36,4 +37,15 @@ export function useProperty(): PropertyInfo {
 /** Hotel display name, with a safe fallback before the API responds. */
 export function hotelName(info: PropertyInfo, fallback = "The Pearl Marina"): string {
   return (typeof info.property_name === "string" && info.property_name) || fallback;
+}
+
+/** Currency symbol from the saved property setting (e.g. "INR — Indian Rupee (₹)" → "₹").
+ *  Falls back to ₹ before the API responds or when unset. */
+export function currencySymbol(info: PropertyInfo): string {
+  const raw = typeof info.currency === "string" ? info.currency : "";
+  const paren = raw.match(/\(([^)]+)\)/);
+  if (paren) return paren[1];
+  const code = raw.trim().toUpperCase().slice(0, 3);
+  const map: Record<string, string> = { INR: "₹", USD: "$", EUR: "€", GBP: "£", AED: "AED " };
+  return map[code] || "₹";
 }
