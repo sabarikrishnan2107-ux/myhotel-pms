@@ -2,7 +2,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bot, Menu, Plus, Search, LogOut } from "lucide-react";
+import { Bot, Menu, Plus, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "./theme-toggle";
 import { Avatar } from "@/components/ui/avatar";
@@ -14,28 +14,12 @@ interface TopBarProps {
 }
 
 export function TopBar({ onOpenSidebar }: TopBarProps) {
-  const searchRef = React.useRef<HTMLInputElement>(null);
   const router = useRouter();
 
   const onLogout = async () => {
     await logout();
     router.replace("/login");
   };
-
-  // ⌘K / Ctrl+K → focus search · Esc → blur
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        searchRef.current?.focus();
-        searchRef.current?.select();
-      } else if (e.key === "Escape" && document.activeElement === searchRef.current) {
-        searchRef.current?.blur();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
 
   return (
     <header className="sticky top-0 z-20 h-16 border-b border-border bg-surface flex items-center gap-3 px-4 lg:px-6">
@@ -47,21 +31,6 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       >
         <Menu className="h-4 w-4" />
       </button>
-
-      {/* Global search */}
-      <div className="ml-auto md:ml-4 flex-1 max-w-md relative hidden md:block">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-subtle-foreground" />
-        <input
-          ref={searchRef}
-          type="search"
-          placeholder="Search guests, rooms, bookings, invoices…"
-          className="w-full h-9 pl-9 pr-12 rounded-md border border-border bg-surface text-sm placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 outline-hidden transition-shadow focus-visible:shadow-soft"
-          aria-label="Global search (Cmd+K)"
-        />
-        <span className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center gap-1">
-          <kbd className="hidden lg:inline-flex h-5 items-center rounded border border-border bg-surface-sunken px-1.5 text-[10px] font-mono text-muted-foreground">⌘K</kbd>
-        </span>
-      </div>
 
       <div className="ml-auto flex items-center gap-1.5">
         <Link href="/bookings/new">
