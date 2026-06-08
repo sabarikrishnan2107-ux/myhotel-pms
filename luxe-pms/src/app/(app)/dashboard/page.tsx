@@ -7,6 +7,7 @@ import {
   Bot, ClipboardCheck, FileBarChart, Bell, Crown,
   Activity as ActivityIcon, CheckCircle2, Clock, Target, Trophy, ArrowRight,
   CreditCard, RefreshCw, Star, Trash2,
+  Hotel, DoorOpen, PlaneLanding, PlaneTakeoff,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -330,12 +331,12 @@ export default function DashboardPage() {
 
       {/* ============ EXECUTIVE KPIs ============ */}
       <section className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-        <ExecKpi label="Total Rooms" value={roomCounts.total} icon={LayoutGrid} accent="neutral" />
-        <ExecKpi label="Occupied" value={roomCounts.occupied} badge={`${occPct}%`} icon={KeyRound} accent="success" />
-        <ExecKpi label="Available" value={roomCounts.available} badge={`${availPct}%`} icon={BedDouble} accent="info" />
-        <ExecKpi label="Arrivals" value={arrivals.length} icon={LogIn} accent="brand" />
-        <ExecKpi label="Departures" value={departures.length} icon={LogOut} accent="warning" />
-        <ExecKpi label="Out of Order" value={roomCounts.maintenance} icon={Wrench} accent="danger" />
+        <ExecKpi label="Total Rooms" value={roomCounts.total} sub="across all floors" icon={Hotel} accent="neutral" />
+        <ExecKpi label="Occupied" value={roomCounts.occupied} badge={`${occPct}%`} sub="in-house now" icon={BedDouble} accent="success" />
+        <ExecKpi label="Available" value={roomCounts.available} badge={`${availPct}%`} sub="ready to sell" icon={DoorOpen} accent="info" />
+        <ExecKpi label="Arrivals" value={arrivals.length} sub="expected today" icon={PlaneLanding} accent="brand" />
+        <ExecKpi label="Departures" value={departures.length} sub="checking out" icon={PlaneTakeoff} accent="warning" />
+        <ExecKpi label="Out of Order" value={roomCounts.maintenance} sub="under maintenance" icon={Wrench} accent="danger" />
       </section>
 
       {/* ============ QUICK ACTIONS ============ */}
@@ -925,34 +926,35 @@ function SectionHeader({ title, hint, icon: Icon }: { title: string; hint?: stri
   );
 }
 
-function ExecKpi({ label, value, badge, icon: Icon, accent }: {
-  label: string; value: number | string; badge?: string;
+function ExecKpi({ label, value, badge, sub, icon: Icon, accent }: {
+  label: string; value: number | string; badge?: string; sub?: string;
   icon: typeof BedDouble;
   accent: "neutral" | "success" | "info" | "brand" | "warning" | "danger";
 }) {
   const styles: Record<string, { label: string; chip: string; badge: string }> = {
-    neutral: { label: "text-muted-foreground", chip: "bg-surface-sunken text-muted-foreground", badge: "bg-surface-sunken text-muted-foreground" },
-    success: { label: "text-success", chip: "bg-success-soft text-success", badge: "bg-success-soft text-success" },
-    info: { label: "text-info", chip: "bg-info-soft text-info", badge: "bg-info-soft text-info" },
-    brand: { label: "text-brand", chip: "bg-brand-soft text-brand", badge: "bg-brand-soft text-brand" },
-    warning: { label: "text-warning", chip: "bg-warning-soft text-warning", badge: "bg-warning-soft text-warning" },
-    danger: { label: "text-danger", chip: "bg-danger-soft text-danger", badge: "bg-danger-soft text-danger" },
+    neutral: { label: "text-muted-foreground", chip: "bg-surface-sunken text-muted-foreground ring-border", badge: "bg-surface-sunken text-muted-foreground" },
+    success: { label: "text-success", chip: "bg-success-soft text-success ring-success/20", badge: "bg-success-soft text-success" },
+    info: { label: "text-info", chip: "bg-info-soft text-info ring-info/20", badge: "bg-info-soft text-info" },
+    brand: { label: "text-brand", chip: "bg-brand-soft text-brand ring-brand/20", badge: "bg-brand-soft text-brand" },
+    warning: { label: "text-warning", chip: "bg-warning-soft text-warning ring-warning/20", badge: "bg-warning-soft text-warning" },
+    danger: { label: "text-danger", chip: "bg-danger-soft text-danger ring-danger/20", badge: "bg-danger-soft text-danger" },
   };
   const s = styles[accent];
   return (
     <Card className="p-4 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between gap-2">
-        <p className={cn("text-[11px] uppercase tracking-[0.12em] font-semibold", s.label)}>{label}</p>
-        <span className={cn("h-8 w-8 shrink-0 rounded-lg flex items-center justify-center", s.chip)}>
-          <Icon className="h-4 w-4" />
+        <p className={cn("text-[11px] uppercase tracking-[0.1em] font-semibold pt-0.5", s.label)}>{label}</p>
+        <span className={cn("h-9 w-9 shrink-0 rounded-xl ring-1 ring-inset flex items-center justify-center", s.chip)}>
+          <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
         </span>
       </div>
       <div className="mt-3 flex items-baseline gap-2">
-        <p className="text-3xl font-semibold tabular tracking-tight">{value}</p>
+        <p className="text-[28px] font-semibold tabular tracking-tight leading-none">{value}</p>
         {badge && (
           <span className={cn("text-[11px] font-semibold rounded-md px-1.5 py-0.5", s.badge)}>{badge}</span>
         )}
       </div>
+      {sub && <p className="text-[11px] text-muted-foreground mt-2">{sub}</p>}
     </Card>
   );
 }
