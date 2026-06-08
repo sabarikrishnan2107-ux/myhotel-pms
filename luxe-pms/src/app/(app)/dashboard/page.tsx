@@ -294,13 +294,8 @@ export default function DashboardPage() {
     <div className="p-4 sm:p-6 lg:p-8 space-y-7">
       {/* ============ HEADER ============ */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3.5">
-          <span className="h-11 w-11 shrink-0 rounded-xl bg-brand text-brand-foreground flex items-center justify-center shadow-sm">
-            <Building2 className="h-5 w-5" />
-          </span>
-          <div className="min-w-0">
-            <h1 className="text-2xl font-display font-semibold tracking-tight leading-tight truncate">{propName || "Dashboard"}</h1>
-          </div>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-display font-semibold tracking-tight leading-tight truncate">{propName || "Dashboard"}</h1>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
