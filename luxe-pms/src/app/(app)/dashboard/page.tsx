@@ -582,7 +582,7 @@ export default function DashboardPage() {
                     )}
                   </div>
                   <Link href={`/checkout/${r.bookingNo}`}>
-                    <Button size="sm" variant={r.balance > 0 ? "outline" : "default"}>Checkout</Button>
+                    <Button size="sm" variant={r.balance > 0 ? "outline" : "primary"}>Checkout</Button>
                   </Link>
                 </li>
               ))}
@@ -755,26 +755,30 @@ export default function DashboardPage() {
             <p className="text-xs text-muted-foreground mt-1">Where bookings originate</p>
           </CardHeader>
           <CardContent>
-            <div className="h-44 flex items-center">
+            <div className="relative h-44">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={SOURCE_MIX} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={2}>
+                  <Pie data={SOURCE_MIX} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={72} paddingAngle={2}>
                     {SOURCE_MIX.map((_, i) => (
                       <Cell key={i} fill={SOURCE_COLORS[i % SOURCE_COLORS.length]} stroke="var(--color-surface)" strokeWidth={2} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{ background: "var(--color-surface-elevated)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12, color: "var(--color-foreground)" }} />
+                  <Tooltip formatter={(value) => `${value}%`} contentStyle={{ background: "var(--color-surface-elevated)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12, color: "var(--color-foreground)" }} />
                 </PieChart>
               </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-2xl font-semibold tabular leading-none">{SOURCE_MIX[0]?.value}%</span>
+                <span className="text-[10px] text-muted-foreground mt-1 max-w-[88px] truncate text-center">{SOURCE_MIX[0]?.name}</span>
+              </div>
             </div>
-            <ul className="mt-2 space-y-1.5">
-              {SOURCE_MIX.slice(0, 4).map((s, i) => (
+            <ul className="mt-3 space-y-2">
+              {SOURCE_MIX.map((s, i) => (
                 <li key={s.name} className="flex items-center justify-between text-xs">
-                  <span className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ background: SOURCE_COLORS[i % SOURCE_COLORS.length] }} />
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: SOURCE_COLORS[i % SOURCE_COLORS.length] }} />
                     <span className="text-muted-foreground truncate">{s.name}</span>
                   </span>
-                  <span className="font-medium tabular">{s.value}%</span>
+                  <span className="font-semibold tabular shrink-0">{s.value}%</span>
                 </li>
               ))}
             </ul>
@@ -797,8 +801,8 @@ export default function DashboardPage() {
                 <BarChart data={REVENUE_TREND} margin={{ top: 8, right: 16, bottom: 0, left: 8 }} barGap={4}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
                   <XAxis dataKey="month" stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
-                  <YAxis stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={{ background: "var(--color-surface-elevated)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12, color: "var(--color-foreground)" }} />
+                  <YAxis stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${Math.round(v / 1000)}k`} />
+                  <Tooltip formatter={(value) => money(Number(value), cur)} contentStyle={{ background: "var(--color-surface-elevated)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12, color: "var(--color-foreground)" }} cursor={{ fill: "var(--color-surface-sunken)", opacity: 0.4 }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   <Bar dataKey="room" fill="var(--color-brand)" name="Room" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="food" fill="var(--color-accent)" name="F&B" radius={[4, 4, 0, 0]} />
@@ -850,10 +854,10 @@ export default function DashboardPage() {
           <div className="flex-1">
             <p className="text-[10px] uppercase tracking-[0.18em] font-semibold text-brand-soft-foreground">AI Revenue Insight</p>
             <p className="mt-2 text-base leading-relaxed">
-              At the current pace and 6-month trend, you&apos;re projected to close May at{" "}
-              <span className="font-semibold tabular">AED 142,400</span> — that&apos;s{" "}
-              <span className="font-semibold text-success">+12.4%</span> above last May.
-              Consider locking OTA rates for the first week of June; competitor rates are softening by an average of 4-6%.
+              At the current pace and 6-month trend, you&apos;re projected to close {period ? period.label.split(" ")[0] : "this month"} at{" "}
+              <span className="font-semibold tabular">{money(142400, cur)}</span> — that&apos;s{" "}
+              <span className="font-semibold text-success">+12.4%</span> above the same month last year.
+              Consider locking OTA rates for the coming week; competitor rates are softening by an average of 4-6%.
             </p>
             <div className="mt-3 flex items-center gap-2">
               <Link href="/reports/r10" className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline">
