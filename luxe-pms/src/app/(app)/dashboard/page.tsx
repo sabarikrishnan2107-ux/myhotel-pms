@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge, PaymentBadge, StatusBadge } from "@/components/ui/badge";
+import { Badge, PaymentBadge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { Sparkline } from "@/components/ui/sparkline";
 import { OccupancyGauge } from "@/components/ui/occupancy-gauge";
@@ -472,17 +472,26 @@ export default function DashboardPage() {
 
       {/* ============ ARRIVALS + DEPARTURES ============ */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Today&apos;s Arrivals</CardTitle>
-              <Link href="/checkin" className="text-xs text-brand hover:underline inline-flex items-center gap-1">
-                View all <ChevronRight className="h-3 w-3" />
-              </Link>
+        {/* Arrivals */}
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between p-5 pb-3">
+            <div className="flex items-center gap-2.5">
+              <span className="h-9 w-9 rounded-xl bg-info-soft text-info ring-1 ring-inset ring-info/20 flex items-center justify-center">
+                <PlaneLanding className="h-[18px] w-[18px]" />
+              </span>
+              <div>
+                <h2 className="text-base font-semibold leading-none">Today&apos;s Arrivals</h2>
+                <p className="text-[11px] text-muted-foreground mt-1">{arrivals.length} expected · {money(arrivalsBalance, cur)} to collect</p>
+              </div>
             </div>
-          </CardHeader>
-          <CardContent className="px-0 pb-2">
-            <ul className="divide-y divide-border">
+            <Link href="/checkin" className="text-xs text-brand hover:underline inline-flex items-center gap-1 font-medium">
+              View all <ChevronRight className="h-3 w-3" />
+            </Link>
+          </div>
+          {arrivals.length === 0 ? (
+            <p className="px-5 py-10 text-center text-sm text-muted-foreground border-t border-border">No arrivals scheduled today.</p>
+          ) : (
+            <ul className="divide-y divide-border border-t border-border">
               {arrivals.map(r => (
                 <li
                   key={r.id}
@@ -490,22 +499,22 @@ export default function DashboardPage() {
                   className="flex items-center gap-3 px-5 py-3 hover:bg-surface-sunken transition-colors group cursor-pointer"
                   title="Double-click to view booking details"
                 >
-                  <Avatar name={r.guestName} size={36} vip={r.vip} />
+                  <Avatar name={r.guestName} size={38} vip={r.vip} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-sm truncate">{r.guestName}</p>
-                      <Badge tone="neutral">{r.source}</Badge>
                       {r.vip && <Crown className="h-3 w-3 text-brand shrink-0" />}
+                      <Badge tone="neutral">{r.source}</Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground truncate">
-                      <span className="font-mono tabular">{r.bookingNo}</span> · Room {r.roomNumber} · {r.roomType} · {r.adults}A{r.children ? `+${r.children}C` : ""} · {r.nights}N
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">
+                      <span className="font-mono">{r.bookingNo}</span> · Room {r.roomNumber} · {r.roomType} · {r.adults}A{r.children ? `+${r.children}C` : ""} · {r.nights}N
                     </p>
                   </div>
-                  <div className="text-right hidden sm:block">
-                    <p className="text-xs text-muted-foreground inline-flex items-center gap-0.5"><Clock className="h-3 w-3" />{formatTime(r.checkIn)}</p>
+                  <div className="text-right hidden sm:flex flex-col items-end gap-1">
+                    <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1"><Clock className="h-3 w-3" />{formatTime(r.checkIn)}</span>
                     <PaymentBadge status={r.paymentStatus} />
                   </div>
-                  <div className="inline-flex gap-1 opacity-80 group-hover:opacity-100">
+                  <div className="inline-flex gap-1 opacity-90 group-hover:opacity-100">
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); setSelectedRes(r); }}
@@ -525,37 +534,53 @@ export default function DashboardPage() {
                 </li>
               ))}
             </ul>
-          </CardContent>
+          )}
         </Card>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Today&apos;s Departures</CardTitle>
-              <Link href="/checkout" className="text-xs text-brand hover:underline inline-flex items-center gap-1">
-                View all <ChevronRight className="h-3 w-3" />
-              </Link>
+        {/* Departures */}
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between p-5 pb-3">
+            <div className="flex items-center gap-2.5">
+              <span className="h-9 w-9 rounded-xl bg-warning-soft text-warning ring-1 ring-inset ring-warning/20 flex items-center justify-center">
+                <PlaneTakeoff className="h-[18px] w-[18px]" />
+              </span>
+              <div>
+                <h2 className="text-base font-semibold leading-none">Today&apos;s Departures</h2>
+                <p className="text-[11px] text-muted-foreground mt-1">{departures.length} checking out</p>
+              </div>
             </div>
-          </CardHeader>
-          <CardContent className="px-0 pb-2">
-            <ul className="divide-y divide-border">
+            <Link href="/checkout" className="text-xs text-brand hover:underline inline-flex items-center gap-1 font-medium">
+              View all <ChevronRight className="h-3 w-3" />
+            </Link>
+          </div>
+          {departures.length === 0 ? (
+            <p className="px-5 py-10 text-center text-sm text-muted-foreground border-t border-border">No departures due today.</p>
+          ) : (
+            <ul className="divide-y divide-border border-t border-border">
               {departures.map(r => (
                 <li key={r.id} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-sunken transition-colors">
-                  <Avatar name={r.guestName} size={36} vip={r.vip} />
+                  <Avatar name={r.guestName} size={38} vip={r.vip} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-sm truncate">{r.guestName}</p>
-                      <StatusBadge status="checkout-pending" />
+                      {r.vip && <Crown className="h-3 w-3 text-brand shrink-0" />}
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Room {r.roomNumber} · Balance {money(r.balance, cur)}
-                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Room {r.roomNumber}</p>
                   </div>
-                  <Link href={`/checkout/${r.bookingNo}`}><Button size="sm">Checkout</Button></Link>
+                  <div className="text-right hidden sm:block">
+                    {r.balance > 0 ? (
+                      <span className="text-xs font-semibold text-warning">Balance {money(r.balance, cur)}</span>
+                    ) : (
+                      <span className="text-xs font-semibold text-success inline-flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Settled</span>
+                    )}
+                  </div>
+                  <Link href={`/checkout/${r.bookingNo}`}>
+                    <Button size="sm" variant={r.balance > 0 ? "outline" : "default"}>Checkout</Button>
+                  </Link>
                 </li>
               ))}
             </ul>
-          </CardContent>
+          )}
         </Card>
       </section>
 
