@@ -6,7 +6,6 @@ import {
   AlertTriangle, Building2, UtensilsCrossed, LogIn, LogOut, LayoutGrid, CalendarRange,
   Bot, ClipboardCheck, FileBarChart, Bell, Crown,
   Activity as ActivityIcon, CheckCircle2, Clock, Target, Trophy, ArrowRight,
-  TrendingDown, RefreshCw, ShieldCheck,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +15,7 @@ import { Sparkline } from "@/components/ui/sparkline";
 import { OccupancyGauge } from "@/components/ui/occupancy-gauge";
 import { FloorHeatmap } from "@/components/ui/floor-heatmap";
 import { GoalProgress } from "@/components/ui/goal-progress";
-import { money, pct, formatTime, cn } from "@/lib/utils";
+import { money, formatTime, cn } from "@/lib/utils";
 import { apiGet } from "@/lib/api";
 import { useProperty, hotelName, currencySymbol } from "@/lib/use-property";
 import {
@@ -91,19 +90,6 @@ function tzAbbrev(d: Date): string {
   return `GMT${h >= 0 ? "+" : ""}${h}`;
 }
 
-/** Compact money for headline figures: ₹4.86 L / ₹1.2 Cr, or 4.9K / 1.2M for other currencies. */
-function moneyCompact(n: number, cur: string): string {
-  const abs = Math.abs(n);
-  if (cur === "₹") {
-    if (abs >= 1e7) return `${cur}${(n / 1e7).toFixed(2)} Cr`;
-    if (abs >= 1e5) return `${cur}${(n / 1e5).toFixed(2)} L`;
-    return money(n, cur);
-  }
-  if (abs >= 1e6) return `${cur}${(n / 1e6).toFixed(2)}M`;
-  if (abs >= 1e3) return `${cur}${(n / 1e3).toFixed(1)}K`;
-  return money(n, cur);
-}
-
 /** Relative "x min ago" label from an audit log's date + time, given the current clock. */
 function relTime(date: string, time: string, nowMs: number): string {
   if (!nowMs || !date) return time || "";
@@ -166,17 +152,10 @@ export default function DashboardPage() {
   const [nowMs, setNowMs] = React.useState<number>(0);
   const [tz, setTz] = React.useState<string>("");
   const [today, setToday] = React.useState<string>("");
-  const [greeting, setGreeting] = React.useState<string>("Good afternoon");
-  const [userName, setUserName] = React.useState<string>("");
   const property = useProperty();
   const propName = hotelName(property, "");
   const cur = currencySymbol(property);
   const [selectedRes, setSelectedRes] = React.useState<Reservation | null>(null);
-
-  // Real signed-in user for the greeting.
-  React.useEffect(() => {
-    apiGet<{ name: string }>("/me").then(u => { if (u?.name) setUserName(u.name); }).catch(() => {});
-  }, []);
 
   // Live room board (real per-room status) for the Live Status panel + floor map.
   const [board, setBoard] = React.useState<RoomBoardRow[] | null>(null);
@@ -202,6 +181,7 @@ export default function DashboardPage() {
     return c;
   }, [boardRooms]);
   const occPct = roomCounts.total ? Math.round(roomCounts.occupied / roomCounts.total * 100) : 0;
+  const availPct = roomCounts.total ? Math.round(roomCounts.available / roomCounts.total * 100) : 0;
 
   // Resolve a Guest record for the selected reservation (synthesize if not found)
   const selectedGuest: Guest | null = React.useMemo(() => {
@@ -230,8 +210,6 @@ export default function DashboardPage() {
     setNowMs(d.getTime());
     setTz(tzAbbrev(d));
     setToday(`${d.toLocaleDateString(undefined, { weekday: "long" })}, ${d.getDate()} ${d.toLocaleDateString(undefined, { month: "long" })} ${d.getFullYear()}`);
-    const h = d.getHours();
-    setGreeting(h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : h < 21 ? "Good evening" : "Working late");
   }, []);
 
   const arrivalsBalance = arrivals.reduce((s, r) => s + r.balance, 0);
@@ -270,94 +248,30 @@ export default function DashboardPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-7">
-      {/* ============ HERO ============ */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-        {/* Unified hero card */}
-        <Card className="lg:col-span-8 p-5 flex flex-col relative overflow-hidden bg-linear-to-br from-brand-soft/25 via-surface to-accent-soft/15">
-          <div className="absolute inset-x-0 top-0 h-0.5 bg-linear-to-r from-brand via-accent to-success pointer-events-none" />
-          {/* Meta row */}
-          <div className="flex items-start justify-between gap-4">
-            <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground font-semibold inline-flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 text-success">
-                <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" /> Live
-              </span>
-              <span className="text-border">/</span>
-              <span className="text-foreground/70">{today || "—"}</span>
-              <span className="text-border">/</span>
-              <span>{now || "—"} {tz}</span>
-            </p>
-            <div className="flex flex-col items-end gap-1 shrink-0">
-              <span className="inline-flex items-center gap-1 rounded-md bg-accent-soft text-accent px-2 py-0.5 text-[11px] font-semibold">
-                <Sparkles className="h-3 w-3" /> Pace +6.4% WoW
-              </span>
-              <span className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
-                <RefreshCw className="h-3 w-3" /> Synced just now
-              </span>
-            </div>
-          </div>
+      {/* ============ HEADER ============ */}
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-display font-semibold tracking-tight">Overview</h1>
+          <p className="text-sm text-muted-foreground mt-1 inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="inline-flex items-center gap-1.5 text-success font-medium">
+              <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" /> Live
+            </span>
+            <span className="text-border">·</span>
+            <span className="text-foreground/80 font-medium">{propName || "—"}</span>
+            <span className="text-border">·</span>
+            <span>{today || "—"}{now ? ` · ${now} ${tz}` : ""}</span>
+          </p>
+        </div>
+      </div>
 
-          {/* Greeting */}
-          <h1 className="mt-2.5 text-2xl sm:text-3xl font-display font-medium tracking-tight">
-            {greeting}, <span className="text-brand">{propName || (userName ? userName.split(" ")[0] : "there")}</span>{" "}
-            <span className="text-muted-foreground font-normal">— here&apos;s your hotel today.</span>
-          </h1>
-
-          {/* Summary line */}
-          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-            <span className="inline-flex items-center gap-1.5">
-              <BedDouble className="h-4 w-4 text-brand" />
-              <span className="font-semibold tabular">{roomCounts.occupied}/{roomCounts.total}</span>
-              <span className="text-muted-foreground">rooms sold</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <LogIn className="h-4 w-4 text-info" />
-              <span className="font-semibold tabular">{arrivals.length}</span>
-              <span className="text-muted-foreground">arrivals</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <LogOut className="h-4 w-4 text-warning" />
-              <span className="font-semibold tabular">{departures.length}</span>
-              <span className="text-muted-foreground">departures</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Wallet className="h-4 w-4 text-success" />
-              <span className="font-semibold tabular text-success">{moneyCompact(k.todayProfit, cur)}</span>
-              <span className="text-muted-foreground">net</span>
-            </span>
-          </div>
-
-          {/* Inline KPI strip */}
-          <div className="mt-4 pt-4 border-t border-border grid grid-cols-1 sm:grid-cols-3 sm:divide-x divide-border">
-            <HeroMetric className="sm:pr-4" label="Occupancy" value={pct(occPct)} deltaText="+4.2%" up spark={SPARKLINE_DATA.occupancy} color="var(--color-brand)" />
-            <HeroMetric className="pt-3 sm:pt-0 sm:px-4" label="ADR" value={money(k.adr, cur)} deltaText={`+${cur}310`} up spark={SPARKLINE_DATA.adr} color="var(--color-accent)" />
-            <HeroMetric className="pt-3 sm:pt-0 sm:pl-4" label="RevPAR" value={money(k.revpar, cur)} deltaText="-1.1%" up={false} spark={SPARKLINE_DATA.revpar} color="var(--color-success)" />
-          </div>
-        </Card>
-
-        {/* AI Daily Briefing */}
-        <Card className="lg:col-span-4 p-5 flex flex-col relative overflow-hidden border-l-2 border-l-accent bg-linear-to-br from-accent-soft/15 via-surface to-surface">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="h-8 w-8 rounded-md bg-accent text-accent-foreground flex items-center justify-center shadow-xs">
-              <Bot className="h-4 w-4" />
-            </span>
-            <p className="text-sm font-semibold flex-1">AI Daily Briefing</p>
-            <span className="inline-flex items-center rounded-md bg-info-soft text-info px-2 py-0.5 text-[10px] font-medium">Updated 2m ago</span>
-          </div>
-          <ul className="space-y-2.5 text-[13px] flex-1">
-            <AIBullet tone="success">Pace <span className="font-semibold">+6.4%</span> vs last Monday — driven by Direct &amp; Corporate.</AIBullet>
-            <AIBullet tone="warning"><span className="font-semibold">2 VIP arrivals</span> today: Mr. Kapoor (Suite 502), Ms. Iyer (Villa 3).</AIBullet>
-            <AIBullet tone="info">7-day forecast: <span className="font-semibold">82%</span> avg occupancy, ADR {money(8780, cur)} (+4.3%).</AIBullet>
-            <AIBullet tone="danger"><span className="font-semibold">Open issue:</span> Room 214 AC complaint pending &gt; 2h.</AIBullet>
-          </ul>
-          <div className="mt-3 pt-3 border-t border-border/40 flex items-center justify-between">
-            <span className="inline-flex items-center gap-1 text-[10px] text-success font-medium">
-              <ShieldCheck className="h-3 w-3" /> Verified against live PMS data
-            </span>
-            <Link href="/ai" className="text-xs text-brand hover:underline inline-flex items-center gap-0.5 font-medium">
-              Ask AI Assistant <ChevronRight className="h-3 w-3" />
-            </Link>
-          </div>
-        </Card>
+      {/* ============ EXECUTIVE KPIs ============ */}
+      <section className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+        <ExecKpi label="Total Rooms" value={roomCounts.total} icon={LayoutGrid} accent="neutral" />
+        <ExecKpi label="Occupied" value={roomCounts.occupied} badge={`${occPct}%`} icon={KeyRound} accent="success" />
+        <ExecKpi label="Available" value={roomCounts.available} badge={`${availPct}%`} icon={BedDouble} accent="info" />
+        <ExecKpi label="Arrivals" value={arrivals.length} icon={LogIn} accent="brand" />
+        <ExecKpi label="Departures" value={departures.length} icon={LogOut} accent="warning" />
+        <ExecKpi label="Out of Order" value={roomCounts.maintenance} icon={Wrench} accent="danger" />
       </section>
 
       {/* ============ QUICK ACTIONS ============ */}
@@ -911,34 +825,35 @@ function SectionHeader({ title, hint, icon: Icon }: { title: string; hint?: stri
   );
 }
 
-function HeroMetric({ label, value, deltaText, up, spark, color, className }: {
-  label: string; value: string; deltaText: string; up: boolean; spark?: number[]; color?: string; className?: string;
+function ExecKpi({ label, value, badge, icon: Icon, accent }: {
+  label: string; value: number | string; badge?: string;
+  icon: typeof BedDouble;
+  accent: "neutral" | "success" | "info" | "brand" | "warning" | "danger";
 }) {
-  const Trend = up ? TrendingUp : TrendingDown;
+  const styles: Record<string, { label: string; chip: string; badge: string }> = {
+    neutral: { label: "text-muted-foreground", chip: "bg-surface-sunken text-muted-foreground", badge: "bg-surface-sunken text-muted-foreground" },
+    success: { label: "text-success", chip: "bg-success-soft text-success", badge: "bg-success-soft text-success" },
+    info: { label: "text-info", chip: "bg-info-soft text-info", badge: "bg-info-soft text-info" },
+    brand: { label: "text-brand", chip: "bg-brand-soft text-brand", badge: "bg-brand-soft text-brand" },
+    warning: { label: "text-warning", chip: "bg-warning-soft text-warning", badge: "bg-warning-soft text-warning" },
+    danger: { label: "text-danger", chip: "bg-danger-soft text-danger", badge: "bg-danger-soft text-danger" },
+  };
+  const s = styles[accent];
   return (
-    <div className={cn("flex flex-col", className)}>
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-semibold">{label}</p>
-        <span className={cn(
-          "text-[11px] font-semibold inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5",
-          up ? "text-success bg-success-soft/50" : "text-danger bg-danger-soft/50"
-        )}>
-          <Trend className="h-3 w-3" /> {deltaText}
+    <Card className="p-4 hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between gap-2">
+        <p className={cn("text-[11px] uppercase tracking-[0.12em] font-semibold", s.label)}>{label}</p>
+        <span className={cn("h-8 w-8 shrink-0 rounded-lg flex items-center justify-center", s.chip)}>
+          <Icon className="h-4 w-4" />
         </span>
       </div>
-      <div className="flex items-end justify-between gap-3 mt-2">
-        <p className="text-[26px] font-semibold tabular tracking-tight leading-none">{value}</p>
-        {spark && spark.length > 0 && (
-          <div className="w-24 h-9 shrink-0 rounded-lg bg-foreground/[0.04] ring-1 ring-border/40 px-1 py-1 overflow-hidden">
-            <Sparkline data={spark} color={color} height={28} />
-          </div>
+      <div className="mt-3 flex items-baseline gap-2">
+        <p className="text-3xl font-semibold tabular tracking-tight">{value}</p>
+        {badge && (
+          <span className={cn("text-[11px] font-semibold rounded-md px-1.5 py-0.5", s.badge)}>{badge}</span>
         )}
       </div>
-      <p className="text-[10px] text-muted-foreground mt-2 inline-flex items-center gap-1">
-        <span className="h-1 w-1 rounded-full" style={{ background: color }} />
-        vs yesterday · 7d trend
-      </p>
-    </div>
+    </Card>
   );
 }
 
@@ -1041,17 +956,3 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
-function AIBullet({ tone, children }: { tone: "info" | "warning" | "success" | "danger"; children: React.ReactNode }) {
-  return (
-    <li className="flex items-start gap-2 leading-snug">
-      <span className={cn(
-        "h-1.5 w-1.5 rounded-full mt-1.5 shrink-0",
-        tone === "info" && "bg-info",
-        tone === "warning" && "bg-warning",
-        tone === "success" && "bg-success",
-        tone === "danger" && "bg-danger",
-      )} />
-      <span className="text-sm">{children}</span>
-    </li>
-  );
-}
