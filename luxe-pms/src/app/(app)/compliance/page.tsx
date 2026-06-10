@@ -196,7 +196,7 @@ export default function CompliancePage() {
       </div>
 
       {/* OVERVIEW */}
-      {tab === "overview" && <OverviewTab licenses={licenses} setTab={setTab} />}
+      {tab === "overview" && <OverviewTab licenses={licenses} setTab={setTab} formCCount={formC.length} formCPending={formCPending} />}
 
       {/* GSTR */}
       {tab === "gstr" && <GstrTab onToast={showToast} />}
@@ -228,7 +228,7 @@ export default function CompliancePage() {
 // ============================================================
 // OVERVIEW TAB
 // ============================================================
-function OverviewTab({ licenses, setTab }: { licenses: License[]; setTab: (t: ComplianceTab) => void }) {
+function OverviewTab({ licenses, setTab, formCCount, formCPending }: { licenses: License[]; setTab: (t: ComplianceTab) => void; formCCount: number; formCPending: number }) {
   const totalTax = GSTR1_ROWS.reduce((t, r) => t + r.igst + r.cgst + r.sgst, 0);
   const totalTaxable = GSTR1_ROWS.reduce((t, r) => t + r.taxable, 0);
   const tdsTotal = TDS_SEED.reduce((t, r) => t + r.tds, 0);
@@ -249,7 +249,7 @@ function OverviewTab({ licenses, setTab }: { licenses: License[]; setTab: (t: Co
           <Card className="p-4 hover:border-brand transition-colors">
             <span className="h-8 w-8 rounded-md bg-warning-soft text-warning inline-flex items-center justify-center mb-2"><Globe className="h-4 w-4" /></span>
             <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Form C this month</p>
-            <p className="text-xl font-bold tabular mt-0.5">{formC.length}</p>
+            <p className="text-xl font-bold tabular mt-0.5">{formCCount}</p>
             <p className="text-[10px] text-muted-foreground">{formCPending} pending FRRO upload</p>
           </Card>
         </button>

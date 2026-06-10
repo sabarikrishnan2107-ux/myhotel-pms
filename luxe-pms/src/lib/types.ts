@@ -94,7 +94,7 @@ export interface FolioCharge {
 export interface FolioPayment {
   id: string;
   date: string;
-  mode: "Cash" | "Card" | "UPI" | "Bank" | "Online" | "Agent Credit" | "Company Credit";
+  mode: "Cash" | "Card" | "UPI" | "Bank" | "Online" | "Agent Credit" | "Company Credit" | "Advance";
   reference: string;
   amount: number;
 }

@@ -1361,6 +1361,7 @@ function RoomsManager({
           room={editing}
           floors={floors}
           isNew={creating}
+          categoryOptions={categoryOptions}
           existingNumbers={rooms.filter(r => r.id !== editing.id).map(r => r.number)}
           onClose={() => { setEditing(null); setCreating(false); }}
           onSave={saveRoom}
@@ -1369,6 +1370,7 @@ function RoomsManager({
       {bulkOpen && (
         <BulkRoomModal
           floors={floors}
+          categoryOptions={categoryOptions}
           existingNumbers={rooms.map(r => r.number)}
           template={newRoomTemplate()}
           onClose={() => setBulkOpen(false)}
@@ -1384,8 +1386,9 @@ function RoomsManager({
 }
 
 // ===================== BULK ROOM MODAL =====================
-function BulkRoomModal({ floors, existingNumbers, template, onClose, onCreate }: {
+function BulkRoomModal({ floors, categoryOptions, existingNumbers, template, onClose, onCreate }: {
   floors: Floor[];
+  categoryOptions: string[];
   existingNumbers: string[];
   template: Room;
   onClose: () => void;
@@ -1510,11 +1513,12 @@ function BulkRoomModal({ floors, existingNumbers, template, onClose, onCreate }:
 
 // ===================== ROOM EDIT MODAL =====================
 function RoomEditModal({
-  room, floors, isNew, existingNumbers, onClose, onSave,
+  room, floors, isNew, categoryOptions, existingNumbers, onClose, onSave,
 }: {
   room: Room;
   floors: Floor[];
   isNew: boolean;
+  categoryOptions: string[];
   existingNumbers: string[];
   onClose: () => void;
   onSave: (r: Room) => void;

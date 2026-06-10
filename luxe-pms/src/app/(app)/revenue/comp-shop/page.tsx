@@ -665,7 +665,7 @@ export default function CompShopPage() {
           <tbody className="divide-y divide-border">
             {ROOM_TYPES.map((rt) => {
               const ids = ["you", ...COMP_IDS] as const;
-              const vals = ids.map((id) => ({ id, p: (rt as Record<string, number>)[id] }));
+              const vals = ids.map((id) => ({ id, p: (rt as unknown as Record<string, number>)[id] }));
               const min = Math.min(...vals.map((v) => v.p));
               const max = Math.max(...vals.map((v) => v.p));
               vals.sort((a, b) => a.p - b.p);
@@ -684,7 +684,7 @@ export default function CompShopPage() {
                     </div>
                   </td>
                   {(["you", ...COMP_IDS] as const).map((id) => {
-                    const p = (rt as Record<string, number>)[id];
+                    const p = (rt as unknown as Record<string, number>)[id];
                     const tone = cellTone(p, min, max);
                     return (
                       <td key={id} className="px-2 py-3 text-center">
