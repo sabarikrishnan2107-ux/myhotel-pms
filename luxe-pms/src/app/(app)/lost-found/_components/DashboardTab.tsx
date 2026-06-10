@@ -29,11 +29,49 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
 
 type Tone = "neutral" | "brand" | "success" | "warning" | "danger" | "info" | "accent";
 
+type FoundRow = {
+  id: number | string;
+  name: string;
+  category?: string;
+  status?: string;
+  value?: number;
+  hvi?: boolean;
+  daysHeld?: number;
+  department?: string;
+  foundLocation?: string;
+  foundDate?: string;
+  storageLocation?: string;
+};
+type ApiLog = { id: string; time: string; user: string; module: string; action: string; entity: string };
+
 export default function DashboardTab({ onToast }: { onToast: (m: string) => void }) {
-  // ------------ MOCK DATA ------------
+  // ------------ REAL DATA (with offline fallback below) ------------
+  const [items, setItems] = React.useState<FoundRow[]>([]);
+  const [logs, setLogs] = React.useState<ApiLog[]>([]);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<FoundRow[]>("/found-items")
+      .then((r) => { if (!cancelled && r.length) setItems(r); })
+      .catch(() => {});
+    apiGet<ApiLog[]>("/audit-logs")
+      .then((r) => { if (!cancelled) setLogs(r.filter((l) => l.module === "Lost & Found")); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const has = items.length > 0;
+  const eq = (s: string | undefined, ...vals: string[]) => !!s && vals.includes(s);
+  const count = (...vals: string[]) => items.filter((i) => eq(i.status, ...vals)).length;
+  const totalValue = items.reduce((s, i) => s + (i.value ?? 0), 0);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const monthStr = todayStr.slice(0, 7);
+  const foundToday = items.filter((i) => i.foundDate === todayStr).length;
+  const foundThisMonth = items.filter((i) => (i.foundDate ?? "").slice(0, 7) === monthStr).length;
+  // ------------ MOCK DATA (fallback when backend is offline) ------------
   const primaryKpis: {
     label: string;
     value: string;
@@ -44,7 +82,7 @@ export default function DashboardTab({ onToast }: { onToast: (m: string) => void
   }[] = [
     {
       label: "Total Found",
-      value: "1,284",
+      value: has ? items.length.toLocaleString("en-IN") : "1,284",
       sub: "All-time registered items",
       icon: Package,
       iconBg: "bg-info-soft",
@@ -52,7 +90,7 @@ export default function DashboardTab({ onToast }: { onToast: (m: string) => void
     },
     {
       label: "Waiting Claim",
-      value: "147",
+      value: has ? String(count("Waiting", "Notified")) : "147",
       sub: "Active waiting buckets",
       icon: Clock,
       iconBg: "bg-warning-soft",
@@ -60,7 +98,7 @@ export default function DashboardTab({ onToast }: { onToast: (m: string) => void
     },
     {
       label: "Returned",
-      value: "962",
+      value: has ? String(count("Returned", "Claimed")) : "962",
       sub: "Successfully handed over",
       icon: CheckCircle2,
       iconBg: "bg-success-soft",
@@ -68,7 +106,7 @@ export default function DashboardTab({ onToast }: { onToast: (m: string) => void
     },
     {
       label: "In Storage",
-      value: "175",
+      value: has ? String(count("Storage")) : "175",
       sub: "Locker A-3 / Vault B-1",
       icon: Archive,
       iconBg: "bg-surface-sunken",
@@ -84,12 +122,12 @@ export default function DashboardTab({ onToast }: { onToast: (m: string) => void
     tone: Tone;
     gold?: boolean;
   }[] = [
-    { label: "Disposed", value: "82", sub: "Last 12 months", icon: Trash2, tone: "danger" },
-    { label: "Donated", value: "46", sub: "Goonj / Robin Hood", icon: Gift, tone: "success" },
-    { label: "Pending Approval", value: "9", sub: "Awaiting GM sign-off", icon: ShieldQuestion, tone: "warning" },
-    { label: "High-Value Items", value: "23", sub: "Above ₹10,000", icon: Sparkles, tone: "accent", gold: true },
-    { label: "Older Than 30 Days", value: "38", sub: "Eligible for review", icon: CalendarClock, tone: "info" },
-    { label: "Older Than 90 Days", value: "14", sub: "Disposal candidates", icon: CalendarX, tone: "danger" },
+    { label: "Disposed", value: has ? String(count("Disposed")) : "82", sub: "Total disposed", icon: Trash2, tone: "danger" },
+    { label: "Donated", value: has ? String(count("Donated")) : "46", sub: "Goonj / Robin Hood", icon: Gift, tone: "success" },
+    { label: "Pending Approval", value: has ? String(items.filter((i) => (i.daysHeld ?? 0) >= 90 && !eq(i.status, "Returned", "Claimed", "Disposed", "Donated")).length) : "9", sub: "Awaiting GM sign-off", icon: ShieldQuestion, tone: "warning" },
+    { label: "High-Value Items", value: has ? String(items.filter((i) => i.hvi).length) : "23", sub: "Flagged HVI", icon: Sparkles, tone: "accent", gold: true },
+    { label: "Older Than 30 Days", value: has ? String(items.filter((i) => (i.daysHeld ?? 0) >= 30).length) : "38", sub: "Eligible for review", icon: CalendarClock, tone: "info" },
+    { label: "Older Than 90 Days", value: has ? String(items.filter((i) => (i.daysHeld ?? 0) >= 90).length) : "14", sub: "Disposal candidates", icon: CalendarX, tone: "danger" },
   ];
 
   // sparkline points (last 7 days, found today series)
@@ -121,47 +159,92 @@ export default function DashboardTab({ onToast }: { onToast: (m: string) => void
   const trendMax = Math.max(...monthlyTrend.map((d) => d.v));
 
   // status breakdown
-  const statusBreakdown: { label: string; count: number; tone: Tone; bar: string }[] = [
-    { label: "Waiting", count: 147, tone: "warning", bar: "bg-warning" },
-    { label: "Returned", count: 962, tone: "success", bar: "bg-success" },
-    { label: "Storage", count: 175, tone: "info", bar: "bg-info" },
-    { label: "Disposed", count: 82, tone: "danger", bar: "bg-danger" },
-    { label: "Donated", count: 46, tone: "success", bar: "bg-success/70" },
-    { label: "Closed", count: 31, tone: "neutral", bar: "bg-muted-foreground/60" },
+  const STATUS_META: { label: string; statuses: string[]; tone: Tone; bar: string }[] = [
+    { label: "Waiting", statuses: ["Waiting", "Notified"], tone: "warning", bar: "bg-warning" },
+    { label: "Returned", statuses: ["Returned", "Claimed"], tone: "success", bar: "bg-success" },
+    { label: "Storage", statuses: ["Storage"], tone: "info", bar: "bg-info" },
+    { label: "Disposed", statuses: ["Disposed"], tone: "danger", bar: "bg-danger" },
+    { label: "Donated", statuses: ["Donated"], tone: "success", bar: "bg-success/70" },
   ];
-  const statusTotal = statusBreakdown.reduce((a, b) => a + b.count, 0);
+  const mockBreakdown = [147, 962, 175, 82, 46];
+  const statusBreakdown = STATUS_META.map((s, i) => ({
+    label: s.label,
+    count: has ? items.filter((it) => eq(it.status, ...s.statuses)).length : mockBreakdown[i],
+    tone: s.tone,
+    bar: s.bar,
+  }));
+  const statusTotal = statusBreakdown.reduce((a, b) => a + b.count, 0) || 1;
 
-  // departments
-  const departments: { name: string; items: number; bar: string }[] = [
-    { name: "Housekeeping", items: 612, bar: "bg-brand" },
-    { name: "Front Office", items: 298, bar: "bg-info" },
-    { name: "Security", items: 184, bar: "bg-warning" },
-    { name: "F&B", items: 126, bar: "bg-success" },
-    { name: "Concierge", items: 64, bar: "bg-accent" },
-  ];
-  const deptMax = Math.max(...departments.map((d) => d.items));
+  // departments — grouped from real registrations
+  const groupTop = (key: (i: FoundRow) => string | undefined, limit: number) => {
+    const m = new Map<string, number>();
+    for (const it of items) {
+      const k = key(it);
+      if (k) m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    return Array.from(m.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([name, n]) => ({ name, items: n }));
+  };
+  const deptBars = ["bg-brand", "bg-info", "bg-warning", "bg-success", "bg-accent"];
+  const departments: { name: string; items: number; bar: string }[] = has
+    ? groupTop((i) => i.department, 5).map((d, i) => ({ ...d, bar: deptBars[i % deptBars.length] }))
+    : [
+        { name: "Housekeeping", items: 612, bar: "bg-brand" },
+        { name: "Front Office", items: 298, bar: "bg-info" },
+        { name: "Security", items: 184, bar: "bg-warning" },
+        { name: "F&B", items: 126, bar: "bg-success" },
+        { name: "Concierge", items: 64, bar: "bg-accent" },
+      ];
+  const deptMax = Math.max(1, ...departments.map((d) => d.items));
 
-  // locations
-  const locations: { name: string; items: number }[] = [
-    { name: "Room 412", items: 38 },
-    { name: "Lobby", items: 31 },
-    { name: "Sea Pearl Restaurant", items: 27 },
-    { name: "Infinity Pool", items: 22 },
-    { name: "Aura Spa", items: 18 },
-    { name: "Marina Banquet Hall", items: 16 },
-  ];
-  const locMax = Math.max(...locations.map((l) => l.items));
+  // locations — top spots from real data
+  const locations: { name: string; items: number }[] = has
+    ? groupTop((i) => i.foundLocation, 6)
+    : [
+        { name: "Room 412", items: 38 },
+        { name: "Lobby", items: 31 },
+        { name: "Sea Pearl Restaurant", items: 27 },
+        { name: "Infinity Pool", items: 22 },
+        { name: "Aura Spa", items: 18 },
+        { name: "Marina Banquet Hall", items: 16 },
+      ];
+  const locMax = Math.max(1, ...locations.map((l) => l.items));
 
   // return success
-  const returnRate = 78;
-  const returnBreakdown = [
-    { label: "Claimed by guest", v: 612, tone: "success" as Tone },
-    { label: "Returned via courier", v: 218, tone: "info" as Tone },
-    { label: "Handed at FO", v: 132, tone: "brand" as Tone },
-  ];
+  const resolvable = items.filter((i) => !eq(i.status, "Disposed", "Donated")).length;
+  const returnRate = has ? Math.round((count("Returned", "Claimed") / (resolvable || 1)) * 100) : 78;
+  const returnBreakdown = has
+    ? [
+        { label: "Claimed by guest", v: count("Claimed"), tone: "success" as Tone },
+        { label: "Returned / handed over", v: count("Returned"), tone: "info" as Tone },
+        { label: "Notified, awaiting", v: count("Notified"), tone: "brand" as Tone },
+      ]
+    : [
+        { label: "Claimed by guest", v: 612, tone: "success" as Tone },
+        { label: "Returned via courier", v: 218, tone: "info" as Tone },
+        { label: "Handed at FO", v: 132, tone: "brand" as Tone },
+      ];
 
-  // recent activities
-  const activities: {
+  // recent activities — from the real append-only audit feed
+  const ACTION_TONE: Record<string, Tone> = {
+    Created: "warning",
+    Updated: "info",
+    "Status changed": "accent",
+    Deleted: "danger",
+  };
+  const liveActivities = logs.slice(0, 8).map((l) => ({
+    time: l.time,
+    actor: l.user || "System",
+    dept: "L&F",
+    action: (l.action || "updated").toLowerCase(),
+    item: l.entity || "—",
+    location: "",
+    tone: ACTION_TONE[l.action] ?? "neutral",
+    statusLabel: l.action || "Activity",
+  }));
+  const mockActivities: {
     time: string;
     actor: string;
     dept: string;
@@ -252,14 +335,21 @@ export default function DashboardTab({ onToast }: { onToast: (m: string) => void
       statusLabel: "Donated",
     },
   ];
+  const activities = liveActivities.length ? liveActivities : mockActivities;
 
-  // disposal pending
-  const disposalPending: { name: string; days: number; value: number; high?: boolean }[] = [
-    { name: "Unbranded power bank", days: 118, value: 1200 },
-    { name: "Prescription eyeglasses", days: 104, value: 4500 },
-    { name: "Stainless steel water bottle", days: 96, value: 800 },
-    { name: "Cartier silver pen (HVI)", days: 94, value: 28500, high: true },
-  ];
+  // disposal pending — real unclaimed items past the retention window, oldest first
+  const disposalPending: { name: string; days: number; value: number; high?: boolean }[] = has
+    ? items
+        .filter((i) => (i.daysHeld ?? 0) >= 90 && !eq(i.status, "Returned", "Claimed", "Disposed", "Donated"))
+        .sort((a, b) => (b.daysHeld ?? 0) - (a.daysHeld ?? 0))
+        .slice(0, 6)
+        .map((i) => ({ name: i.name, days: i.daysHeld ?? 0, value: i.value ?? 0, high: i.hvi }))
+    : [
+        { name: "Unbranded power bank", days: 118, value: 1200 },
+        { name: "Prescription eyeglasses", days: 104, value: 4500 },
+        { name: "Stainless steel water bottle", days: 96, value: 800 },
+        { name: "Cartier silver pen (HVI)", days: 94, value: 28500, high: true },
+      ];
 
   // ------------ HANDLERS ------------
   const t = (m: string) => () => onToast(m);
@@ -331,12 +421,12 @@ export default function DashboardTab({ onToast }: { onToast: (m: string) => void
                 Found Today
               </div>
               <div className="flex items-baseline gap-2 mt-1">
-                <span className="tabular text-3xl font-semibold">8</span>
+                <span className="tabular text-3xl font-semibold">{has ? foundToday : 8}</span>
                 <span className="text-xs text-success font-medium inline-flex items-center gap-0.5">
-                  <TrendingUp className="h-3 w-3" /> +33%
+                  <TrendingUp className="h-3 w-3" /> today
                 </span>
               </div>
-              <div className="text-xs text-muted-foreground mt-1">vs 7-day avg of 6</div>
+              <div className="text-xs text-muted-foreground mt-1">items registered today</div>
             </div>
             <div className="w-32 h-12 shrink-0">
               <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="w-full h-full">
@@ -369,27 +459,27 @@ export default function DashboardTab({ onToast }: { onToast: (m: string) => void
                 Found This Month
               </div>
               <div className="flex items-baseline gap-2 mt-1">
-                <span className="tabular text-3xl font-semibold">96</span>
-                <span className="text-xs text-danger font-medium inline-flex items-center gap-0.5">
-                  <TrendingDown className="h-3 w-3" /> -11.1%
+                <span className="tabular text-3xl font-semibold">{has ? foundThisMonth : 96}</span>
+                <span className="text-xs text-muted-foreground font-medium inline-flex items-center gap-0.5">
+                  <TrendingDown className="h-3 w-3" /> this month
                 </span>
               </div>
               <div className="text-xs text-muted-foreground mt-1">
-                vs last month <span className="tabular">108</span>
+                registered in {monthStr}
               </div>
             </div>
             <div className="text-right">
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
                 Est. Value
               </div>
-              <div className="tabular text-lg font-semibold mt-1">{money(184500)}</div>
+              <div className="tabular text-lg font-semibold mt-1">{money(has ? totalValue : 184500)}</div>
               <div className="text-[10px] text-muted-foreground mt-0.5">Across all items</div>
             </div>
           </div>
           <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border">
-            <Badge tone="success">62 returned</Badge>
-            <Badge tone="warning">28 waiting</Badge>
-            <Badge tone="info">6 in storage</Badge>
+            <Badge tone="success">{has ? count("Returned", "Claimed") : 62} returned</Badge>
+            <Badge tone="warning">{has ? count("Waiting", "Notified") : 28} waiting</Badge>
+            <Badge tone="info">{has ? count("Storage") : 6} in storage</Badge>
           </div>
         </Card>
       </div>
@@ -640,7 +730,7 @@ export default function DashboardTab({ onToast }: { onToast: (m: string) => void
                     <span className="text-muted-foreground">({a.dept})</span>{" "}
                     <span className="text-muted-foreground">{a.action}:</span>{" "}
                     <span className="font-medium">{a.item}</span>{" "}
-                    <span className="text-muted-foreground">— {a.location}</span>
+                    {a.location && <span className="text-muted-foreground">— {a.location}</span>}
                   </div>
                 </div>
                 <Badge tone={a.tone} className="shrink-0 mt-0.5">
@@ -664,7 +754,7 @@ export default function DashboardTab({ onToast }: { onToast: (m: string) => void
               Items overdue per the 90-day retention policy
             </p>
           </div>
-          <Badge tone="warning">4 items</Badge>
+          <Badge tone="warning">{disposalPending.length} items</Badge>
         </div>
         <table className="w-full text-sm">
           <thead className="bg-surface-sunken/40">

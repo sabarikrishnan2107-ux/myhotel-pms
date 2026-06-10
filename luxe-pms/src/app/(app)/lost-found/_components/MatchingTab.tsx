@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet, apiPut } from "@/lib/api";
 
 type ToneType = "neutral" | "brand" | "success" | "warning" | "danger" | "info" | "accent";
 
@@ -429,16 +430,122 @@ function scoreTone(score: number): { tone: ToneType; label: string; bar: string 
   return { tone: "neutral", label: "Weak match", bar: "bg-muted-foreground/50" };
 }
 
+// ---- REAL DATA wiring ----
+type ApiLostReport = {
+  id: number | string; guest: string; room?: string; stayFrom?: string; stayTo?: string;
+  itemName: string; itemCategory?: string; description?: string; color?: string; brand?: string;
+  lastSeen?: string; reportedOn?: string; urgency?: string; hasPhoto?: boolean; phone?: string; status?: string;
+};
+type ApiFound = {
+  id: number | string; name: string; category?: string; value?: number; color?: string; brand?: string;
+  foundLocation?: string; foundDate?: string; description?: string; hvi?: boolean; status?: string;
+};
+
+const LOST_OPEN = ["Reported", "Searching", "Possible match", "Verification pending"];
+const FOUND_CLAIMABLE = ["Waiting", "Notified", "Storage"];
+
+function apiToLost(r: ApiLostReport): LostReport {
+  return {
+    id: String(r.id),
+    guest: r.guest,
+    room: r.room || "—",
+    stayDates: [r.stayFrom, r.stayTo].filter(Boolean).join(" - ") || "—",
+    itemName: r.itemName,
+    category: r.itemCategory || "—",
+    description: r.description || "",
+    color: r.color || "",
+    brand: r.brand || "",
+    location: r.lastSeen || "",
+    reportedAt: r.reportedOn || "",
+    urgency: r.urgency === "Urgent" || r.urgency === "High" ? "High" : r.urgency === "Low" ? "Low" : "Medium",
+    hasPhoto: !!r.hasPhoto,
+    contact: r.phone || "",
+  };
+}
+function apiToFound(i: ApiFound): FoundItem {
+  return {
+    id: String(i.id),
+    name: i.name,
+    category: i.category || "",
+    value: i.value || 0,
+    color: i.color || "",
+    brand: i.brand || "",
+    foundLocation: i.foundLocation || "",
+    foundDate: i.foundDate || "",
+    foundRoom: i.foundLocation || "",
+    description: i.description || "",
+    hvi: !!i.hvi,
+  };
+}
+
+const norm = (s: string) => (s || "").toLowerCase().trim();
+const words = (s: string) => norm(s).split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+function overlaps(a: string, b: string) {
+  const wb = new Set(words(b));
+  return words(a).some((w) => wb.has(w));
+}
+
+// Scores one found item against a lost report and builds the comparison rows.
+function buildCandidate(lost: LostReport, f: FoundItem): Candidate {
+  const rows: MatchRow[] = [
+    { label: "Item", icon: Package, lost: lost.itemName, found: f.name, matched: overlaps(lost.itemName, f.name) },
+    { label: "Category", icon: Tag, lost: lost.category, found: f.category, matched: !!norm(lost.category) && norm(lost.category) === norm(f.category) },
+    { label: "Brand", icon: Building2, lost: lost.brand || "—", found: f.brand || "—", matched: !!norm(lost.brand) && norm(lost.brand) === norm(f.brand) },
+    { label: "Color", icon: Palette, lost: lost.color || "—", found: f.color || "—", matched: !!norm(lost.color) && overlaps(lost.color, f.color) },
+    { label: "Location", icon: MapPin, lost: lost.location || "—", found: f.foundLocation || "—", matched: !!norm(lost.location) && overlaps(lost.location, f.foundLocation) },
+  ];
+  const matched = rows.filter((r) => r.matched).length;
+  const score = Math.round((matched / rows.length) * 100);
+  return { foundItem: f, score, rows };
+}
+
 export default function MatchingTab({ onToast }: { onToast: (m: string) => void }) {
-  const [selectedReportId, setSelectedReportId] = React.useState<string>(LOST_REPORTS[0].id);
   const [search, setSearch] = React.useState("");
   const [drawerItem, setDrawerItem] = React.useState<FoundItem | null>(null);
   const [compareItem, setCompareItem] = React.useState<{ lost: LostReport; found: FoundItem } | null>(null);
   const [notesFor, setNotesFor] = React.useState<FoundItem | null>(null);
   const [notesText, setNotesText] = React.useState("");
 
-  const selected = LOST_REPORTS.find((r) => r.id === selectedReportId)!;
-  const allCandidates = CANDIDATES_BY_REPORT[selectedReportId] ?? [];
+  // Live lost reports + claimable found items; matches are scored client-side.
+  const [lostData, setLostData] = React.useState<LostReport[] | null>(null);
+  const [foundData, setFoundData] = React.useState<FoundItem[]>([]);
+  const [justConfirmed, setJustConfirmed] = React.useState<
+    { id: string; lostId: string; foundId: string; item: string; guest: string; returnedOn: string }[]
+  >([]);
+  React.useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      apiGet<ApiLostReport[]>("/lost-reports").catch(() => [] as ApiLostReport[]),
+      apiGet<ApiFound[]>("/found-items").catch(() => [] as ApiFound[]),
+    ]).then(([lr, fi]) => {
+      if (cancelled) return;
+      const open = lr.filter((r) => LOST_OPEN.includes(r.status ?? "Reported"));
+      if (open.length) setLostData(open.map(apiToLost));
+      setFoundData(fi.filter((i) => FOUND_CLAIMABLE.includes(i.status ?? "")).map(apiToFound));
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const live = !!(lostData && lostData.length);
+  const reportsList = live ? lostData! : LOST_REPORTS;
+
+  const [pickedReportId, setPickedReportId] = React.useState<string>(LOST_REPORTS[0].id);
+  // Fall back to the first available report when the picked id isn't in the list.
+  const selectedReportId = reportsList.some((r) => r.id === pickedReportId)
+    ? pickedReportId
+    : reportsList[0]?.id;
+  const setSelectedReportId = setPickedReportId;
+
+  const selected = reportsList.find((r) => r.id === selectedReportId) ?? reportsList[0];
+
+  // Candidate matches: scored live, or the curated samples when offline.
+  const allCandidates: Candidate[] = live
+    ? foundData
+        .map((f) => buildCandidate(selected, f))
+        .filter((c) => c.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 6)
+    : CANDIDATES_BY_REPORT[selectedReportId] ?? [];
   const candidates = search.trim()
     ? allCandidates.filter((c) => {
         const q = search.toLowerCase();
@@ -451,6 +558,20 @@ export default function MatchingTab({ onToast }: { onToast: (m: string) => void 
         );
       })
     : allCandidates;
+
+  const recentConfirmed = live ? justConfirmed : RECENT_CONFIRMED;
+
+  // Confirm: claim the found item for the guest and mark the report verified.
+  const confirmMatch = (lost: LostReport, f: FoundItem) => {
+    setFoundData((prev) => prev.filter((x) => x.id !== f.id));
+    setJustConfirmed((prev) => [
+      { id: `MC-${f.id}`, lostId: lost.id, foundId: f.id, item: f.name, guest: lost.guest, returnedOn: "just now" },
+      ...prev,
+    ]);
+    apiPut(`/found-items/${f.id}`, { status: "Claimed", guestName: lost.guest }).catch(() => {});
+    apiPut(`/lost-reports/${lost.id}`, { status: "Verified" }).catch(() => {});
+    onToast(`Match confirmed · ${lost.guest} notified about "${f.name}"`);
+  };
 
   return (
     <div className="space-y-4">
@@ -530,12 +651,14 @@ export default function MatchingTab({ onToast }: { onToast: (m: string) => void 
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold text-foreground">Active lost reports</div>
-            <Badge tone="info">{LOST_REPORTS.length}</Badge>
+            <Badge tone="info">{reportsList.length}</Badge>
           </div>
           <div className="space-y-2">
-            {LOST_REPORTS.map((r) => {
+            {reportsList.map((r) => {
               const active = r.id === selectedReportId;
-              const count = CANDIDATES_BY_REPORT[r.id]?.length ?? 0;
+              const count = live
+                ? foundData.filter((f) => buildCandidate(r, f).score > 0).length
+                : CANDIDATES_BY_REPORT[r.id]?.length ?? 0;
               return (
                 <button
                   key={r.id}
@@ -802,9 +925,7 @@ export default function MatchingTab({ onToast }: { onToast: (m: string) => void 
                         </Button>
                         <Button
                           size="sm"
-                          onClick={() =>
-                            onToast(`Match confirmed · ${selected.guest} notified about "${c.foundItem.name}"`)
-                          }
+                          onClick={() => confirmMatch(selected, c.foundItem)}
                         >
                           <Check className="size-3.5 mr-1.5" />
                           Confirm match
@@ -827,7 +948,10 @@ export default function MatchingTab({ onToast }: { onToast: (m: string) => void 
               <Button size="sm" variant="ghost" onClick={() => onToast("Opening full match history")}>View all</Button>
             </div>
             <div className="space-y-2">
-              {RECENT_CONFIRMED.map((m) => (
+              {recentConfirmed.length === 0 && (
+                <div className="text-xs text-muted-foreground py-3 text-center">No confirmed matches yet.</div>
+              )}
+              {recentConfirmed.map((m) => (
                 <div
                   key={m.id}
                   className="flex items-center gap-3 p-2.5 rounded-md bg-surface-sunken/40 border border-border"
@@ -937,7 +1061,7 @@ export default function MatchingTab({ onToast }: { onToast: (m: string) => void 
                 <Button
                   size="sm"
                   onClick={() => {
-                    onToast(`Match confirmed for ${drawerItem.name} · guest notify queued`);
+                    confirmMatch(selected, drawerItem);
                     setDrawerItem(null);
                   }}
                 >
@@ -1011,7 +1135,7 @@ export default function MatchingTab({ onToast }: { onToast: (m: string) => void 
               <Button
                 size="sm"
                 onClick={() => {
-                  onToast(`Match confirmed · ${compareItem.lost.guest} notified`);
+                  confirmMatch(compareItem.lost, compareItem.found);
                   setCompareItem(null);
                 }}
               >

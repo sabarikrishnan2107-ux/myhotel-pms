@@ -445,7 +445,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
               apiGet<Reservation[]>("/bookings")
                 .then(list => {
                   const bk = list.find(b => b.bookingNo === reservation.bookingNo);
-                  if (bk) apiPut(`/bookings/${(bk as { id: number | string }).id}`, { paymentStatus: "paid", advance: reservation.total, balance: 0, status: "checked-out" });
+                  if (bk) return apiPut(`/bookings/${(bk as { id: number | string }).id}`, { paymentStatus: "paid", advance: reservation.total, balance: 0, status: "checked-out" });
+                })
+                // Vacated room goes dirty so it surfaces on the Housekeeping board.
+                .then(() => apiGet<{ id: number; number: string }[]>("/rooms"))
+                .then(rooms => {
+                  const room = rooms?.find(r => r.number === reservation.roomNumber);
+                  if (room) return apiPut(`/rooms/${room.id}`, { hkStatus: "dirty" });
                 })
                 .catch(() => {});
             }}

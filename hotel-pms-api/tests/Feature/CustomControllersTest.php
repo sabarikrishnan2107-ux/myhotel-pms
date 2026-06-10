@@ -132,6 +132,72 @@ class CustomControllersTest extends TestCase
         $this->getJson('/api/room-board')->assertOk()->assertJsonCount(1);
     }
 
+    public function test_room_board_exposes_booking_ids_for_occupied_rooms(): void
+    {
+        $this->actingUser();
+        $this->postJson('/api/rooms', ['number' => '401'])->assertCreated();
+        $this->postJson('/api/bookings', [
+            'bookingNo' => 'BK999', 'guestName' => 'Test Guest', 'roomNumber' => '401',
+            'source' => 'Direct', 'status' => 'checked-in', 'nights' => 3, 'total' => 9000, 'balance' => 3000,
+        ])->assertCreated();
+
+        $room = collect($this->getJson('/api/room-board')->assertOk()->json())
+            ->firstWhere('number', '401');
+
+        $this->assertSame('occupied', $room['status']);
+        $this->assertSame('BK999', $room['bookingNo']);
+        $this->assertNotNull($room['bookingId']);
+        $this->assertSame(3, $room['nights']);
+        $this->assertSame(3000, $room['balance']);
+    }
+
+    public function test_room_board_reports_blocked_rooms(): void
+    {
+        $this->actingUser();
+        $id = $this->postJson('/api/rooms', ['number' => '102'])->assertCreated()->json('id');
+
+        $this->putJson("/api/rooms/{$id}", ['status' => 'blocked'])->assertOk();
+
+        $room = collect($this->getJson('/api/room-board')->assertOk()->json())
+            ->firstWhere('number', '102');
+
+        $this->assertSame('blocked', $room['status']);
+    }
+
+    public function test_checked_out_booking_frees_the_room(): void
+    {
+        $this->actingUser();
+        $this->postJson('/api/rooms', ['number' => '404'])->assertCreated();
+        // A checked-out booking whose date range still spans today must NOT keep the room occupied.
+        $this->postJson('/api/bookings', [
+            'bookingNo' => 'BK404', 'guestName' => 'Departed Guest', 'roomNumber' => '404',
+            'source' => 'Direct', 'status' => 'checked-out',
+            'checkIn' => '2000-01-01', 'checkOut' => '2999-12-31',
+        ])->assertCreated();
+
+        $room = collect($this->getJson('/api/room-board')->assertOk()->json())
+            ->firstWhere('number', '404');
+
+        $this->assertNotSame('occupied', $room['status']);
+        $this->assertNull($room['bookingNo']);
+    }
+
+    public function test_room_board_exposes_housekeeping_assignment(): void
+    {
+        $this->actingUser();
+        $id = $this->postJson('/api/rooms', ['number' => '103'])->assertCreated()->json('id');
+
+        $this->putJson("/api/rooms/{$id}", [
+            'hkStatus' => 'cleaning', 'hkAssignee' => 'Maria Lopez', 'hkStartedAt' => '13:42',
+        ])->assertOk();
+
+        $room = collect($this->getJson('/api/room-board')->assertOk()->json())
+            ->firstWhere('number', '103');
+
+        $this->assertSame('Maria Lopez', $room['hkAssignee']);
+        $this->assertSame('13:42', $room['hkStartedAt']);
+    }
+
     public function test_stats_revenue_breakdown_and_quick_counts(): void
     {
         $this->actingUser();

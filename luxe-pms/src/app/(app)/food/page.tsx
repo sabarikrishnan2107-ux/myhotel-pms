@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { MENU_CATEGORIES, MENU_ITEMS, FOOD_ORDERS } from "@/lib/mock-data-ext";
 import { RESERVATIONS } from "@/lib/mock-data";
-import { apiGet } from "@/lib/api";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
 import { money } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
@@ -20,12 +20,32 @@ import { cn } from "@/lib/utils";
 const IN_HOUSE = RESERVATIONS.slice(0, 8);
 type OrderTarget = "room" | "hall" | "walkin";
 
-const STATUS_TONE = { preparing: "warning", "in-kitchen": "info", delivered: "success" } as const;
-
 export default function FoodPage() {
   const [cat, setCat] = React.useState<string>(MENU_CATEGORIES[0]);
-  const [cart, setCart] = React.useState<Record<string, number>>({ m1: 1, m15: 2 });
+  const [cart, setCart] = React.useState<Record<string, number>>({});
   const [room, setRoom] = React.useState("305");
+
+  // Menu — loaded from the backend, mock as offline fallback.
+  const [menu, setMenu] = React.useState<MenuItem[]>(() => MENU_ITEMS.map(m => ({ ...m })));
+  React.useEffect(() => {
+    apiGet<{ id: number | string; cat?: string; name?: string; price?: number; veg?: boolean; spice?: string | null; tag?: string | null }[]>("/menu-items")
+      .then(rows => { if (Array.isArray(rows) && rows.length) setMenu(rows.map(normalizeMenu)); })
+      .catch(() => {});
+  }, []);
+  const categories = React.useMemo(() => {
+    const seen: string[] = [];
+    for (const m of menu) if (!seen.includes(m.cat)) seen.push(m.cat);
+    return seen.length ? seen : MENU_CATEGORIES;
+  }, [menu]);
+  const activeCat = categories.includes(cat) ? cat : categories[0];
+
+  // Live F&B orders.
+  const [orders, setOrders] = React.useState<FoodOrder[]>(() => FOOD_ORDERS.map(o => ({ ...o, guest: o.guest, lineItems: [] })));
+  React.useEffect(() => {
+    apiGet<FbOrderRow[]>("/fb-orders")
+      .then(rows => { if (Array.isArray(rows) && rows.length) setOrders(rows.map(normalizeOrder)); })
+      .catch(() => {});
+  }, []);
   const [guestName, setGuestName] = React.useState<string | null>(null);
   const [target, setTarget] = React.useState<OrderTarget>("room");
   const [newOrderOpen, setNewOrderOpen] = React.useState(false);
@@ -44,21 +64,25 @@ export default function FoodPage() {
 
   // Effective orders with overrides applied
   const effectiveOrders = React.useMemo(() => {
-    return FOOD_ORDERS.map(o => {
+    return orders.map(o => {
       const ov = orderOverrides[o.id] ?? {};
       return { ...o, ...ov, status: (ov.status ?? o.status) as OrderStatus };
     });
-  }, [orderOverrides]);
+  }, [orders, orderOverrides]);
 
   const handleModifyOrder = (id: string, patch: OrderOverride) => {
     setOrderOverrides(o => ({ ...o, [id]: { ...(o[id] ?? {}), ...patch } }));
     setModifyOrder(null);
+    const body: Record<string, unknown> = {};
+    if (patch.total !== undefined) body.total = Math.round(patch.total);
+    if (Object.keys(body).length) apiPut(`/fb-orders/${id}`, body).catch(() => showToast("⚠ Save failed — backend offline"));
     showToast(`Order updated · KOT reprinted`);
   };
 
   const handleCancelOrder = (id: string, reason: string) => {
     setOrderOverrides(o => ({ ...o, [id]: { ...(o[id] ?? {}), status: "cancelled" } }));
     setCancelOrder(null);
+    apiPut(`/fb-orders/${id}`, { status: "cancelled" }).catch(() => showToast("⚠ Cancel not saved — backend offline"));
     showToast(`Order cancelled · ${reason}`);
   };
 
@@ -75,8 +99,8 @@ export default function FoodPage() {
     setTimeout(() => cartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   };
 
-  const items = MENU_ITEMS.filter(m => m.cat === cat);
-  const cartItems = MENU_ITEMS.filter(m => cart[m.id]).map(m => ({ ...m, qty: cart[m.id] }));
+  const items = menu.filter(m => m.cat === activeCat);
+  const cartItems = menu.filter(m => cart[m.id]).map(m => ({ ...m, qty: cart[m.id] }));
   const subtotal = cartItems.reduce((s, c) => s + c.price * c.qty, 0);
   const tax = subtotal * 0.05;
   const total = subtotal + tax;
@@ -218,13 +242,13 @@ export default function FoodPage() {
               <Input placeholder="Search menu items…" className="pl-9 h-10" />
             </div>
             <div className="flex flex-wrap gap-1.5 mt-3">
-              {MENU_CATEGORIES.map(c => (
+              {categories.map(c => (
                 <button
                   key={c}
                   onClick={() => setCat(c)}
                   className={cn(
                     "h-8 px-3 rounded-full text-xs font-medium border transition-colors",
-                    cat === c
+                    activeCat === c
                       ? "bg-brand text-brand-foreground border-brand"
                       : "bg-surface text-muted-foreground border-border hover:bg-surface-sunken hover:text-foreground"
                   )}
@@ -236,7 +260,7 @@ export default function FoodPage() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle className="text-sm">{cat} · {items.length} items</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-sm">{activeCat} · {items.length} items</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-2">
               {items.map(item => (
                 <button
@@ -341,7 +365,22 @@ export default function FoodPage() {
                   size="sm"
                   variant="success"
                   onClick={() => {
-                    showToast(`Order sent to kitchen · ${target === "room" ? `Room ${room}` : target === "hall" ? `Hall ${room}` : "Walk-in"} · ${money(total)}`);
+                    const label = target === "room" ? `Room ${room}` : target === "hall" ? `Hall ${room}` : "Walk-in";
+                    const lineItems = cartItems.map(c => ({ name: c.name, qty: c.qty, price: c.price }));
+                    const payload = {
+                      orderNo: "KOT-" + Date.now().toString().slice(-5),
+                      tableNo: label,
+                      server: guestName ?? "",
+                      items: lineItems,
+                      total: Math.round(total),
+                      status: "placed",
+                      paymentMethod: cartPaymentMode,
+                      room: target === "room" ? room : "",
+                    };
+                    apiPost<FbOrderRow>("/fb-orders", payload)
+                      .then(row => setOrders(prev => [normalizeOrder(row), ...prev]))
+                      .catch(() => showToast("⚠ Order not saved — backend offline"));
+                    showToast(`Order sent to kitchen · ${label} · ${money(total)}`);
                     setCart({});
                   }}
                 >
@@ -614,8 +653,51 @@ function Row({ label, value, muted }: { label: React.ReactNode; value: React.Rea
 
 // ===================== ORDER MODALS =====================
 type OrderStatus = "preparing" | "in-kitchen" | "delivered" | "cancelled";
-type FoodOrder = Omit<typeof FOOD_ORDERS[number], "status"> & { status: OrderStatus; instructions?: string };
+type LineItem = { name: string; qty: number; price: number };
+type FoodOrder = {
+  id: string; room: string; guest: string; time: string; items: number;
+  total: number; status: OrderStatus; paidBy: string; instructions?: string; lineItems?: LineItem[];
+};
 type ModifyPatch = { items?: number; total?: number; instructions?: string };
+
+type MenuItem = { id: string; cat: string; name: string; price: number; veg?: boolean; spice?: string | null; tag?: string | null };
+// Row shape from GET /api/fb-orders
+type FbOrderRow = {
+  id: number | string; orderNo?: string; tableNo?: string; server?: string | null;
+  items?: LineItem[] | null; total?: number; status?: string; paymentMethod?: string | null;
+  room?: string | null; created_at?: string;
+};
+
+const FB_STATUS_MAP: Record<string, OrderStatus> = {
+  placed: "in-kitchen", new: "in-kitchen", "in-kitchen": "in-kitchen",
+  preparing: "preparing", ready: "preparing",
+  served: "delivered", paid: "delivered", delivered: "delivered", completed: "delivered",
+  cancelled: "cancelled", canceled: "cancelled",
+};
+
+function normalizeMenu(r: { id: number | string; cat?: string; name?: string; price?: number; veg?: boolean; spice?: string | null; tag?: string | null }): MenuItem {
+  return { id: String(r.id), cat: r.cat ?? "Other", name: r.name ?? "", price: Number(r.price) || 0, veg: r.veg, spice: r.spice, tag: r.tag };
+}
+
+function normalizeOrder(r: FbOrderRow): FoodOrder {
+  const line = Array.isArray(r.items) ? r.items : [];
+  const count = line.reduce((s, it) => s + (Number(it?.qty) || 1), 0) || line.length;
+  const status = FB_STATUS_MAP[String(r.status ?? "").toLowerCase()] ?? "preparing";
+  const time = r.created_at
+    ? new Date(r.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "";
+  return {
+    id: String(r.id),
+    room: r.room || r.tableNo || "—",
+    guest: r.server || "",
+    time,
+    items: count,
+    total: Number(r.total) || 0,
+    status,
+    paidBy: r.paymentMethod || "—",
+    lineItems: line,
+  };
+}
 
 function ModifyOrderModal({ order, onClose, onSave }: {
   order: FoodOrder;

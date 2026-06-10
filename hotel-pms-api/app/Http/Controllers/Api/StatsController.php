@@ -213,7 +213,9 @@ class StatsController extends Controller
     {
         $today = date('Y-m-d');
 
-        $inHouse = Booking::where('status', '!=', 'cancelled')
+        // A room is in-house if a booking is checked-in, or is within its stay dates
+        // and not yet departed. Cancelled and checked-out bookings free the room.
+        $inHouse = Booking::whereNotIn('status', ['cancelled', 'checked-out'])
             ->where(fn ($q) => $q->where('status', 'checked-in')
                 ->orWhere(fn ($q2) => $q2->where('checkIn', '<=', $today)->where('checkOut', '>', $today)))
             ->get()
@@ -222,9 +224,12 @@ class StatsController extends Controller
         $rooms = Room::orderBy('floor')->orderBy('number')->get()->map(function ($r) use ($inHouse) {
             $bk = $inHouse->get($r->number);
             $hk = $r->hkStatus ?: 'clean';
+            // Vacant rooms can be explicitly blocked or out-of-order; otherwise
+            // housekeeping state decides whether they are sellable.
             $status = $bk
                 ? 'occupied'
-                : ($hk === 'dirty' ? 'dirty' : ($hk === 'cleaning' ? 'cleaning' : ($r->status === 'out-of-order' ? 'maintenance' : 'available')));
+                : ($r->status === 'blocked' ? 'blocked'
+                    : ($hk === 'dirty' ? 'dirty' : ($hk === 'cleaning' ? 'cleaning' : ($r->status === 'out-of-order' ? 'maintenance' : 'available'))));
 
             return [
                 'id'            => $r->id,
@@ -233,6 +238,8 @@ class StatsController extends Controller
                 'type'          => $r->category,
                 'status'        => $status,
                 'hkStatus'      => $hk,
+                'hkAssignee'    => $r->hkAssignee ?? null,
+                'hkStartedAt'   => $r->hkStartedAt ?? null,
                 'guestName'     => $bk->guestName ?? null,
                 'source'        => $bk->source ?? null,
                 'checkIn'       => $bk->checkIn ?? null,
@@ -240,6 +247,13 @@ class StatsController extends Controller
                 'paymentStatus' => $bk->paymentStatus ?? null,
                 'vip'           => (bool) ($bk->vip ?? false),
                 'rate'          => (int) $r->baseTariff,
+                // Real booking identifiers so the Room Rack can act on the live
+                // folio/booking (extend, reduce, change, payment, order).
+                'bookingNo'     => $bk->bookingNo ?? null,
+                'bookingId'     => $bk->id ?? null,
+                'nights'        => $bk ? (int) $bk->nights : null,
+                'total'         => $bk ? (int) $bk->total : null,
+                'balance'       => $bk ? (int) $bk->balance : null,
             ];
         });
 

@@ -16,8 +16,25 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { AIInsight } from "@/components/ui/ai-insight";
 import { ROOMS } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
-import { apiGet, apiPut } from "@/lib/api";
+import { apiGet, apiPut, apiPost, apiDelete } from "@/lib/api";
 import type { Room } from "@/lib/types";
+
+// ---- Backend row shapes ----
+type StaffRow = { id: number; name: string; role: string; dept: string; active: boolean };
+type FoundItemRow = {
+  id: number; name: string; category?: string; status?: string;
+  foundLocation?: string | null; foundDate?: string; foundBy?: string | null;
+  storageLocation?: string | null; condition?: string; description?: string | null;
+};
+type LinenRow = { id: number; name: string; issued: number; returned: number; wastage: number; inUse: number };
+
+type Housekeeper = { id: string; name: string; role: string; active: boolean };
+
+// Current clock time as HH:MM for stamping cleaning start.
+const nowHHMM = () => new Date().toTimeString().slice(0, 5);
+const today = () => new Date().toISOString().slice(0, 10);
+// Unique-ish maintenance ticket code (module scope keeps Date.now out of render).
+const ticketCode = () => `MT-${Date.now().toString().slice(-6)}`;
 
 type HKStatus = "dirty" | "cleaning" | "inspected" | "ready" | "maintenance";
 const HK_TONES: Record<HKStatus, "warning" | "info" | "accent" | "success" | "danger"> = {
@@ -69,21 +86,6 @@ const LANES: { id: HKStatus; label: string; icon: typeof Sparkles }[] = [
   { id: "maintenance", label: "Maintenance", icon: Wrench },
 ];
 
-const LOST_ITEMS = [
-  { id: "l1", item: "Apple AirPods Pro (white case)", room: "412", found: "2 days ago", contact: "Not yet" },
-  { id: "l2", item: "Black leather wallet", room: "208", found: "Yesterday", contact: "Owner notified · pickup pending" },
-  { id: "l3", item: "Gold ring with red stone", room: "601", found: "1 hr ago", contact: "—" },
-  { id: "l4", item: "Children's plush toy (giraffe)", room: "305", found: "Yesterday", contact: "Owner notified" },
-];
-
-const LINEN_USAGE = [
-  { item: "Bath towels — Large", issued: 142, returned: 138, wastage: 2, inUse: 2 },
-  { item: "Bath towels — Hand", issued: 86, returned: 82, wastage: 1, inUse: 3 },
-  { item: "Bed sheets — King", issued: 54, returned: 52, wastage: 0, inUse: 2 },
-  { item: "Pillow covers", issued: 108, returned: 105, wastage: 1, inUse: 2 },
-  { item: "Bath mats", issued: 48, returned: 46, wastage: 0, inUse: 2 },
-];
-
 const STATUS_RANK: Record<HKStatus, number> = { dirty: 0, cleaning: 1, inspected: 2, ready: 3, maintenance: 4 };
 const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
@@ -105,38 +107,88 @@ export default function HousekeepingPage() {
   const [taskMenuFor, setTaskMenuFor] = React.useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [logItemOpen, setLogItemOpen] = React.useState(false);
-  const [manageLost, setManageLost] = React.useState<typeof LOST_ITEMS[number] | null>(null);
+  const [manageLost, setManageLost] = React.useState<FoundItemRow | null>(null);
   const [inspectionItems, setInspectionItems] = React.useState<Set<number>>(new Set(Array.from({ length: 12 }, (_, i) => i)));
+  const [inspectRoomId, setInspectRoomId] = React.useState<string>("");
+  const [linenEdit, setLinenEdit] = React.useState<LinenRow | null>(null);
 
-  // Build the housekeeping board from the real room board (live hk status).
+  // Build the housekeeping board from the real room board (live hk status + assignment).
   const [tasks, setTasks] = React.useState(TASKS);
-  React.useEffect(() => {
-    let cancelled = false;
-    apiGet<Room[]>("/room-board").then(board => {
-      if (cancelled) return;
-      setTasks(board.map((r, i) => ({
+  const refreshBoard = React.useCallback(
+    () => apiGet<Room[]>("/room-board").then(board => {
+      setTasks(board.map(r => ({
         id: `tk-${r.id}`,
         room: r.number,
         floor: r.floor,
         type: r.type,
         status: (r.status === "maintenance" ? "maintenance" : r.hkStatus === "clean" ? "ready" : r.hkStatus) as HKStatus,
-        assignee: r.hkStatus === "cleaning" || r.hkStatus === "inspected" ? HOUSEKEEPERS[i % 3].name : null,
-        startedAt: r.hkStatus === "cleaning" ? "13:42" : null,
-        eta: r.hkStatus === "cleaning" ? `${15 + (i % 20)} min` : null,
-        aiPredicted: 25 + (i % 30),
+        assignee: r.hkAssignee ?? null,
+        startedAt: r.hkStartedAt ?? null,
+        eta: null as string | null,
+        aiPredicted: 25 + ((Number(r.id) || 0) % 30),
         priority: "low" as const,
       })));
+    }).catch(() => {}),
+    [],
+  );
+  React.useEffect(() => { refreshBoard(); }, [refreshBoard]);
+
+  // Real housekeeping staff (dept = Housekeeping).
+  const [housekeepers, setHousekeepers] = React.useState<Housekeeper[]>([]);
+  React.useEffect(() => {
+    apiGet<StaffRow[]>("/staff").then(staff => {
+      setHousekeepers(staff.filter(s => s.dept === "Housekeeping").map(s => ({
+        id: String(s.id), name: s.name, role: s.role, active: s.active,
+      })));
     }).catch(() => {});
-    return () => { cancelled = true; };
   }, []);
 
-  // Mark a room Ready (clean) — updates the board and persists hk status.
+  // Lost & Found (found_items) + Linen (linen_items) — live from the database.
+  const [lostItems, setLostItems] = React.useState<FoundItemRow[]>([]);
+  const refreshLost = React.useCallback(() => apiGet<FoundItemRow[]>("/found-items").then(setLostItems).catch(() => {}), []);
+  React.useEffect(() => { refreshLost(); }, [refreshLost]);
+
+  const [linen, setLinen] = React.useState<LinenRow[]>([]);
+  const refreshLinen = React.useCallback(() => apiGet<LinenRow[]>("/linen-items").then(setLinen).catch(() => {}), []);
+  React.useEffect(() => { refreshLinen(); }, [refreshLinen]);
+
+  const roomIdOf = (taskId: string) => (taskId.startsWith("tk-") ? taskId.slice(3) : null);
+
+  // Mark a room Ready (clean) — clears the housekeeper and persists hk status.
   const markReady = (t: { id: string; room: string }) => {
-    const roomId = t.id.startsWith("tk-") ? t.id.slice(3) : null;
-    setTasks(prev => prev.map(x => x.id === t.id ? { ...x, status: "ready" as HKStatus } : x));
+    const roomId = roomIdOf(t.id);
+    setTasks(prev => prev.map(x => x.id === t.id ? { ...x, status: "ready" as HKStatus, assignee: null } : x));
     setTaskMenuFor(null);
     showToast(`Room ${t.room} marked Ready`);
-    if (roomId) apiPut(`/rooms/${roomId}`, { hkStatus: "clean" }).catch(() => showToast("⚠ Save failed — backend offline"));
+    if (roomId) apiPut(`/rooms/${roomId}`, { hkStatus: "clean", hkAssignee: null }).then(refreshBoard).catch(() => showToast("⚠ Save failed — backend offline"));
+  };
+
+  // Assign a housekeeper → room goes into Cleaning, stamped with start time.
+  const assignRoom = (taskId: string, room: string, name: string) => {
+    const roomId = roomIdOf(taskId);
+    const startedAt = nowHHMM();
+    setTasks(prev => prev.map(x => x.id === taskId ? { ...x, assignee: name, status: "cleaning" as HKStatus, startedAt } : x));
+    showToast(`Room ${room} assigned to ${name}`);
+    if (roomId) apiPut(`/rooms/${roomId}`, { hkStatus: "cleaning", hkAssignee: name, hkStartedAt: startedAt }).then(refreshBoard).catch(() => showToast("⚠ Save failed — backend offline"));
+  };
+
+  // Mark a specific room Inspected → Ready (clean), clearing the housekeeper.
+  const markInspected = (roomId: string, roomNo: string) => {
+    apiPut(`/rooms/${roomId}`, { hkStatus: "clean", hkAssignee: null })
+      .then(refreshBoard)
+      .then(() => showToast(`Room ${roomNo} inspected · status → Ready`))
+      .catch(() => showToast("⚠ Save failed — backend offline"));
+  };
+
+  // Report a housekeeping-found issue → real maintenance ticket.
+  const reportIssue = (room: string) => {
+    setTaskMenuFor(null);
+    showToast(`Maintenance ticket created for Room ${room}`);
+    apiPost("/maintenance-tickets", {
+      code: ticketCode(),
+      room, title: `Housekeeping-reported issue · Room ${room}`,
+      priority: "normal", status: "open", reported: today(), category: "Housekeeping",
+    }).catch(() => showToast("⚠ Save failed — backend offline"));
   };
 
   // Close per-row menus when clicking outside
@@ -226,7 +278,7 @@ export default function HousekeepingPage() {
         <KPICard label="Inspected" value={counts.inspected} icon={ClipboardCheck} accent="accent" />
         <KPICard label="Ready to Sell" value={counts.ready} icon={CheckCircle2} accent="success" />
         <KPICard label="Maintenance" value={counts.maintenance} icon={Wrench} accent="danger" />
-        <KPICard label="Active Staff" value={HOUSEKEEPERS.filter(h => h.status === "Active").length} icon={Users} accent="brand" />
+        <KPICard label="Active Staff" value={housekeepers.filter(h => h.active).length} icon={Users} accent="brand" />
       </div>
 
       {/* AI Insight */}
@@ -467,7 +519,7 @@ export default function HousekeepingPage() {
                             onAssign={() => { setAssignModal({ taskId: t.id, room: t.room }); setTaskMenuFor(null); }}
                             onMessage={() => { showToast(`WhatsApp sent to ${t.assignee ?? "unassigned"}`); setTaskMenuFor(null); }}
                             onMarkReady={() => markReady(t)}
-                            onReportIssue={() => { showToast(`Maintenance ticket created for Room ${t.room}`); setTaskMenuFor(null); }}
+                            onReportIssue={() => reportIssue(t.room)}
                           />
                         </td>
                       </tr>
@@ -558,27 +610,33 @@ export default function HousekeepingPage() {
               </div>
             </CardHeader>
             <div className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {HOUSEKEEPERS.map(h => (
-                <div key={h.id} className="rounded-md border border-border p-4">
-                  <div className="flex items-center gap-2.5">
-                    <Avatar name={h.name} size={36} />
-                    <div>
-                      <p className="font-medium text-sm">{h.name}</p>
-                      <Badge tone={h.status === "Active" ? "success" : h.status === "Inspecting" ? "accent" : "neutral"}>{h.status}</Badge>
+              {housekeepers.length === 0 && (
+                <p className="text-sm text-muted-foreground col-span-full py-2">No housekeeping staff found.</p>
+              )}
+              {housekeepers.map(h => {
+                const todayRooms = tasks.filter(t => t.assignee === h.name).length;
+                return (
+                  <div key={h.id} className="rounded-md border border-border p-4">
+                    <div className="flex items-center gap-2.5">
+                      <Avatar name={h.name} size={36} />
+                      <div>
+                        <p className="font-medium text-sm">{h.name}</p>
+                        <Badge tone={h.active ? "success" : "neutral"}>{h.active ? "Active" : "Off"}</Badge>
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-border grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <p className="text-muted-foreground">Cleaning now</p>
+                        <p className="text-base font-semibold tabular">{todayRooms} rooms</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Role</p>
+                        <p className="text-sm font-semibold">{h.role}</p>
+                      </div>
                     </div>
                   </div>
-                  <div className="mt-3 pt-3 border-t border-border grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <p className="text-muted-foreground">Today</p>
-                      <p className="text-base font-semibold tabular">{h.todayRooms} rooms</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Avg time</p>
-                      <p className="text-base font-semibold tabular">{h.avgTime} min</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </Card>
         </>
@@ -596,7 +654,18 @@ export default function HousekeepingPage() {
           />
           <Card>
             <CardHeader>
-              <CardTitle>Inspection Checklist · Standard Room</CardTitle>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <CardTitle>Inspection Checklist</CardTitle>
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs whitespace-nowrap">Room to inspect</Label>
+                  <Select value={inspectRoomId} onChange={e => setInspectRoomId(e.target.value)} className="h-9 w-auto">
+                    <option value="">Select a room…</option>
+                    {tasks.filter(t => t.status !== "ready" && t.status !== "maintenance").map(t => (
+                      <option key={t.id} value={roomIdOf(t.id) ?? ""}>Room {t.room} · {t.status}</option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
             </CardHeader>
             <div className="px-5 pb-5 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5">
               {[
@@ -644,14 +713,16 @@ export default function HousekeepingPage() {
               </div>
               <Button
                 variant="success"
-                disabled={inspectionItems.size < 16}
+                disabled={inspectionItems.size < 16 || !inspectRoomId}
                 onClick={() => {
-                  showToast(`Room marked Inspected · ${inspectionItems.size}/16 items checked · status → Ready`);
+                  const t = tasks.find(x => roomIdOf(x.id) === inspectRoomId);
+                  markInspected(inspectRoomId, t?.room ?? "");
                   setInspectionItems(new Set(Array.from({ length: 12 }, (_, i) => i)));
+                  setInspectRoomId("");
                 }}
               >
                 <CheckCircle2 className="h-4 w-4" />
-                {inspectionItems.size < 16 ? `Mark Inspected (${inspectionItems.size}/16)` : "Mark Inspected"}
+                {!inspectRoomId ? "Select a room" : inspectionItems.size < 16 ? `Mark Inspected (${inspectionItems.size}/16)` : "Mark Inspected"}
               </Button>
             </div>
           </Card>
@@ -664,7 +735,7 @@ export default function HousekeepingPage() {
           <CardHeader className="bg-surface-elevated">
             <div className="flex items-center justify-between">
               <CardTitle>Linen Usage — Today</CardTitle>
-              <Badge tone="info"><Bath className="h-3 w-3" />5 categories tracked</Badge>
+              <Badge tone="info"><Bath className="h-3 w-3" />{linen.length} categories tracked</Badge>
             </div>
           </CardHeader>
           <table className="w-full text-sm">
@@ -676,14 +747,18 @@ export default function HousekeepingPage() {
                 <th className="px-5 py-2.5 font-semibold text-right">Wastage</th>
                 <th className="px-5 py-2.5 font-semibold text-right">In Use</th>
                 <th className="px-5 py-2.5 font-semibold">Status</th>
+                <th></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {LINEN_USAGE.map(l => {
-                const returnRate = (l.returned / l.issued) * 100;
+              {linen.length === 0 && (
+                <tr><td colSpan={7} className="px-5 py-8 text-center text-sm text-muted-foreground">No linen items tracked.</td></tr>
+              )}
+              {linen.map(l => {
+                const returnRate = l.issued > 0 ? (l.returned / l.issued) * 100 : 0;
                 return (
-                  <tr key={l.item} className="hover:bg-surface-sunken/40">
-                    <td className="px-5 py-3 font-medium">{l.item}</td>
+                  <tr key={l.id} className="hover:bg-surface-sunken/40 group">
+                    <td className="px-5 py-3 font-medium">{l.name}</td>
                     <td className="px-5 py-3 text-right tabular">{l.issued}</td>
                     <td className="px-5 py-3 text-right tabular">{l.returned}</td>
                     <td className="px-5 py-3 text-right tabular text-warning">{l.wastage}</td>
@@ -692,6 +767,11 @@ export default function HousekeepingPage() {
                       <Badge tone={returnRate >= 98 ? "success" : returnRate >= 95 ? "warning" : "danger"}>
                         {returnRate.toFixed(1)}% return
                       </Badge>
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <Button variant="ghost" size="sm" className="opacity-60 group-hover:opacity-100" onClick={() => setLinenEdit(l)}>
+                        <Edit className="h-3.5 w-3.5" />Edit
+                      </Button>
                     </td>
                   </tr>
                 );
@@ -705,7 +785,7 @@ export default function HousekeepingPage() {
       {tab === "lost" && (
         <>
           <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">{LOST_ITEMS.length} items currently logged · auto-archive after 90 days</p>
+            <p className="text-sm text-muted-foreground">{lostItems.length} items currently logged · auto-archive after 90 days</p>
             <Button onClick={() => setLogItemOpen(true)}><Plus className="h-4 w-4" />Log Item</Button>
           </div>
           <Card className="p-0 overflow-hidden">
@@ -713,19 +793,22 @@ export default function HousekeepingPage() {
               <thead className="bg-surface-elevated border-b border-border">
                 <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
                   <th className="px-5 py-3 font-semibold">Item</th>
-                  <th className="px-5 py-3 font-semibold">Room</th>
-                  <th className="px-5 py-3 font-semibold">Found</th>
-                  <th className="px-5 py-3 font-semibold">Owner contact</th>
+                  <th className="px-5 py-3 font-semibold">Found in</th>
+                  <th className="px-5 py-3 font-semibold">Date</th>
+                  <th className="px-5 py-3 font-semibold">Status</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {LOST_ITEMS.map(l => (
+                {lostItems.length === 0 && (
+                  <tr><td colSpan={5} className="px-5 py-8 text-center text-sm text-muted-foreground">No items logged.</td></tr>
+                )}
+                {lostItems.map(l => (
                   <tr key={l.id} className="hover:bg-surface-sunken/40">
-                    <td className="px-5 py-3 font-medium">{l.item}</td>
-                    <td className="px-5 py-3 tabular">{l.room}</td>
-                    <td className="px-5 py-3 text-xs text-muted-foreground">{l.found}</td>
-                    <td className="px-5 py-3 text-xs">{l.contact}</td>
+                    <td className="px-5 py-3 font-medium">{l.name}</td>
+                    <td className="px-5 py-3 tabular">{l.foundLocation ?? "—"}</td>
+                    <td className="px-5 py-3 text-xs text-muted-foreground">{l.foundDate ?? "—"}</td>
+                    <td className="px-5 py-3"><Badge tone="info">{l.status ?? "Logged"}</Badge></td>
                     <td className="px-5 py-3 text-right">
                       <Button variant="ghost" size="sm" onClick={() => setManageLost(l)}>Manage</Button>
                     </td>
@@ -742,19 +825,40 @@ export default function HousekeepingPage() {
         <AssignModal
           taskId={assignModal.taskId}
           room={assignModal.room}
+          housekeepers={housekeepers}
           onClose={() => setAssignModal(null)}
-          onAssign={(name) => { setAssignModal(null); showToast(`Room ${assignModal.room} assigned to ${name}`); }}
+          onAssign={(name) => { assignRoom(assignModal.taskId, assignModal.room, name); setAssignModal(null); }}
         />
       )}
 
       {/* Log lost item modal */}
       {logItemOpen && (
-        <LogItemModal onClose={() => setLogItemOpen(false)} onSave={(item) => { setLogItemOpen(false); showToast(`Logged: ${item} · auto-archive in 90 days`); }} />
+        <LogItemModal onClose={() => setLogItemOpen(false)} onSave={(payload) => {
+          setLogItemOpen(false);
+          showToast(`Logged: ${payload.name} · auto-archive in 90 days`);
+          apiPost("/found-items", payload).then(refreshLost).catch(() => showToast("⚠ Save failed — backend offline"));
+        }} />
       )}
 
       {/* Manage lost item modal */}
       {manageLost && (
-        <ManageLostModal item={manageLost} onClose={() => setManageLost(null)} onAction={(action) => { setManageLost(null); showToast(action); }} />
+        <ManageLostModal item={manageLost} onClose={() => setManageLost(null)} onAction={(msg, op) => {
+          const id = manageLost.id;
+          setManageLost(null);
+          showToast(msg);
+          const req = op.remove ? apiDelete(`/found-items/${id}`) : apiPut(`/found-items/${id}`, { status: op.status });
+          req.then(refreshLost).catch(() => showToast("⚠ Save failed — backend offline"));
+        }} />
+      )}
+
+      {/* Linen edit modal */}
+      {linenEdit && (
+        <LinenEditModal item={linenEdit} onClose={() => setLinenEdit(null)} onSave={(patch) => {
+          const id = linenEdit.id;
+          setLinenEdit(null);
+          showToast(`Linen updated: ${linenEdit.name}`);
+          apiPut(`/linen-items/${id}`, patch).then(refreshLinen).catch(() => showToast("⚠ Save failed — backend offline"));
+        }} />
       )}
 
       {/* Toast */}
@@ -816,7 +920,7 @@ function TaskRowActions({
 }
 
 // ===================== LOG LOST ITEM MODAL =====================
-function LogItemModal({ onClose, onSave }: { onClose: () => void; onSave: (item: string) => void }) {
+function LogItemModal({ onClose, onSave }: { onClose: () => void; onSave: (payload: Record<string, unknown>) => void }) {
   const [item, setItem] = React.useState("");
   const [room, setRoom] = React.useState("");
   const [where, setWhere] = React.useState("Bedside drawer");
@@ -923,7 +1027,24 @@ function LogItemModal({ onClose, onSave }: { onClose: () => void; onSave: (item:
 
           <div className="px-5 py-3 border-t border-border bg-surface-elevated flex items-center justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-            <Button onClick={() => onSave(item)} disabled={!valid} variant="success">
+            <Button
+              onClick={() => onSave({
+                name: item.trim(),
+                category: "General",
+                status: contact === "None" ? "Stored" : "Notified",
+                foundLocation: room.trim(),
+                foundDate: new Date().toISOString().slice(0, 10),
+                foundBy,
+                condition: "Good",
+                description: `Found in ${where}`,
+                qty: 1,
+                value: 0,
+                hvi: false,
+                daysHeld: 0,
+              })}
+              disabled={!valid}
+              variant="success"
+            >
               <CheckCircle2 className="h-4 w-4" />Log item
             </Button>
           </div>
@@ -935,9 +1056,9 @@ function LogItemModal({ onClose, onSave }: { onClose: () => void; onSave: (item:
 
 // ===================== MANAGE LOST ITEM MODAL =====================
 function ManageLostModal({ item, onClose, onAction }: {
-  item: typeof LOST_ITEMS[number];
+  item: FoundItemRow;
   onClose: () => void;
-  onAction: (msg: string) => void;
+  onAction: (msg: string, op: { status?: string; remove?: boolean }) => void;
 }) {
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -956,8 +1077,8 @@ function ManageLostModal({ item, onClose, onAction }: {
               <Archive className="h-5 w-5" />
             </span>
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold truncate">{item.item}</h3>
-              <p className="text-xs text-muted-foreground">Room {item.room} · Found {item.found}</p>
+              <h3 className="font-semibold truncate">{item.name}</h3>
+              <p className="text-xs text-muted-foreground">{item.foundLocation ?? "—"} · Found {item.foundDate ?? "—"}</p>
             </div>
             <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
           </div>
@@ -965,32 +1086,94 @@ function ManageLostModal({ item, onClose, onAction }: {
           <div className="px-5 py-4 space-y-2">
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Current status</p>
             <div className="rounded-md border border-border p-3 text-sm">
-              <p>{item.contact}</p>
+              <p>{item.status ?? "Logged"}</p>
             </div>
 
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mt-4">Actions</p>
-            <button type="button" onClick={() => onAction(`WhatsApp sent to guest about ${item.item}`)} className="w-full px-3 py-2.5 text-sm border border-border rounded-md hover:bg-success-soft hover:border-success inline-flex items-center gap-2.5 text-left transition-colors">
+            <button type="button" onClick={() => onAction(`WhatsApp sent to guest about ${item.name}`, { status: "Notified" })} className="w-full px-3 py-2.5 text-sm border border-border rounded-md hover:bg-success-soft hover:border-success inline-flex items-center gap-2.5 text-left transition-colors">
               <MessageCircle className="h-4 w-4 text-success" />Notify guest via WhatsApp
             </button>
-            <button type="button" onClick={() => onAction(`Email sent to guest about ${item.item}`)} className="w-full px-3 py-2.5 text-sm border border-border rounded-md hover:bg-info-soft hover:border-info inline-flex items-center gap-2.5 text-left transition-colors">
+            <button type="button" onClick={() => onAction(`Email sent to guest about ${item.name}`, { status: "Notified" })} className="w-full px-3 py-2.5 text-sm border border-border rounded-md hover:bg-info-soft hover:border-info inline-flex items-center gap-2.5 text-left transition-colors">
               <Mail className="h-4 w-4 text-info" />Notify guest via Email
             </button>
-            <button type="button" onClick={() => onAction(`${item.item} marked as Returned to guest`)} className="w-full px-3 py-2.5 text-sm border border-border rounded-md hover:bg-success-soft hover:border-success inline-flex items-center gap-2.5 text-left transition-colors">
+            <button type="button" onClick={() => onAction(`${item.name} marked as Returned to guest`, { status: "Returned" })} className="w-full px-3 py-2.5 text-sm border border-border rounded-md hover:bg-success-soft hover:border-success inline-flex items-center gap-2.5 text-left transition-colors">
               <ArrowRight className="h-4 w-4 text-success" />Mark Returned to guest
             </button>
-            <button type="button" onClick={() => onAction(`${item.item} marked as Shipped to address on file`)} className="w-full px-3 py-2.5 text-sm border border-border rounded-md hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left transition-colors">
+            <button type="button" onClick={() => onAction(`${item.name} marked as Shipped to address on file`, { status: "Shipped" })} className="w-full px-3 py-2.5 text-sm border border-border rounded-md hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left transition-colors">
               <Send className="h-4 w-4 text-muted-foreground" />Ship to address on file
             </button>
-            <button type="button" onClick={() => onAction(`${item.item} moved to long-term storage`)} className="w-full px-3 py-2.5 text-sm border border-border rounded-md hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left transition-colors">
+            <button type="button" onClick={() => onAction(`${item.name} moved to long-term storage`, { status: "Stored" })} className="w-full px-3 py-2.5 text-sm border border-border rounded-md hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left transition-colors">
               <Archive className="h-4 w-4 text-muted-foreground" />Move to long-term storage
             </button>
-            <button type="button" onClick={() => onAction(`${item.item} removed from log`)} className="w-full px-3 py-2.5 text-sm border border-border rounded-md hover:bg-danger-soft hover:border-danger text-danger inline-flex items-center gap-2.5 text-left transition-colors">
+            <button type="button" onClick={() => onAction(`${item.name} removed from log`, { remove: true })} className="w-full px-3 py-2.5 text-sm border border-border rounded-md hover:bg-danger-soft hover:border-danger text-danger inline-flex items-center gap-2.5 text-left transition-colors">
               <Trash2 className="h-4 w-4" />Remove from log
             </button>
           </div>
 
           <div className="px-5 py-3 border-t border-border bg-surface-elevated flex items-center justify-end">
             <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
+          </div>
+        </Card>
+      </div>
+    </>
+  );
+}
+
+// ===================== LINEN EDIT MODAL =====================
+function LinenEditModal({ item, onClose, onSave }: {
+  item: LinenRow;
+  onClose: () => void;
+  onSave: (patch: { issued: number; returned: number; wastage: number; inUse: number }) => void;
+}) {
+  const [issued, setIssued] = React.useState(item.issued);
+  const [returned, setReturned] = React.useState(item.returned);
+  const [wastage, setWastage] = React.useState(item.wastage);
+  const [inUse, setInUse] = React.useState(item.inUse);
+
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [onClose]);
+
+  const fields: [string, number, (n: number) => void][] = [
+    ["Issued", issued, setIssued],
+    ["Returned", returned, setReturned],
+    ["Wastage", wastage, setWastage],
+    ["In use", inUse, setInUse],
+  ];
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <Card className="pointer-events-auto w-full max-w-md p-0 animate-in shadow-xl overflow-hidden">
+          <div className="px-5 py-4 bg-surface-elevated border-b border-border flex items-center gap-3">
+            <span className="h-10 w-10 rounded-md bg-brand-soft text-brand-soft-foreground inline-flex items-center justify-center shrink-0">
+              <Shirt className="h-5 w-5" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold truncate">{item.name}</h3>
+              <p className="text-xs text-muted-foreground">Update today&apos;s linen counts</p>
+            </div>
+            <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
+          </div>
+
+          <div className="px-5 py-4 grid grid-cols-2 gap-3">
+            {fields.map(([label, value, setter]) => (
+              <div key={label} className="space-y-1.5">
+                <Label className="text-xs">{label}</Label>
+                <Input type="number" min={0} value={value} onChange={e => setter(Math.max(0, Number(e.target.value) || 0))} className="h-9 tabular" />
+              </div>
+            ))}
+          </div>
+
+          <div className="px-5 py-3 border-t border-border bg-surface-elevated flex items-center justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+            <Button variant="success" onClick={() => onSave({ issued, returned, wastage, inUse })}>
+              <CheckCircle2 className="h-4 w-4" />Save
+            </Button>
           </div>
         </Card>
       </div>
@@ -1036,8 +1219,9 @@ function BoardTh({
   );
 }
 
-function AssignModal({ taskId, room, onClose, onAssign }: { taskId: string; room: string; onClose: () => void; onAssign: (name: string) => void }) {
+function AssignModal({ taskId, room, housekeepers, onClose, onAssign }: { taskId: string; room: string; housekeepers: Housekeeper[]; onClose: () => void; onAssign: (name: string) => void }) {
   void taskId;
+  const active = housekeepers.filter(h => h.active);
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
@@ -1056,7 +1240,10 @@ function AssignModal({ taskId, room, onClose, onAssign }: { taskId: string; room
           <div className="space-y-1.5">
             <Label>Housekeeper</Label>
             <div className="space-y-2">
-              {HOUSEKEEPERS.filter(h => h.status === "Active").map(h => (
+              {active.length === 0 && (
+                <p className="text-xs text-muted-foreground px-1 py-3">No active housekeepers found.</p>
+              )}
+              {active.map(h => (
                 <button
                   key={h.id}
                   type="button"
@@ -1066,7 +1253,7 @@ function AssignModal({ taskId, room, onClose, onAssign }: { taskId: string; room
                   <Avatar name={h.name} size={36} />
                   <div className="flex-1">
                     <p className="font-medium text-sm">{h.name}</p>
-                    <p className="text-[11px] text-muted-foreground">{h.todayRooms} rooms today · avg {h.avgTime} min</p>
+                    <p className="text-[11px] text-muted-foreground">{h.role}</p>
                   </div>
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 </button>

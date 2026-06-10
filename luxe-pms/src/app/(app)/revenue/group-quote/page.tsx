@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiPost } from "@/lib/api";
 
 // ============================================================
 // TYPES + SEED DATA
@@ -260,6 +261,52 @@ export default function GroupQuotePage() {
   const confidence = leadDays > 120 ? 62 : leadDays > 60 ? 78 : leadDays > 30 ? 88 : 94;
 
   // ============================================================
+  // PERSISTENCE — turn the quote into a real group booking
+  // ============================================================
+  const [saving, setSaving] = React.useState(false);
+  const TYPE_LABEL: Record<LeadType, string> = {
+    wedding: "Wedding", corporate: "Corporate", conference: "Conference", social: "Social", tour: "Tour",
+  };
+  const saveQuote = async (status: "draft" | "tentative") => {
+    setSaving(true);
+    const departure = new Date(new Date(arrival).getTime() + nights * 86400000).toISOString().slice(0, 10);
+    const total = Math.round(grossQuote);
+    const payload = {
+      code: "GQ-" + Date.now().toString().slice(-6),
+      name: company,
+      type: TYPE_LABEL[leadType],
+      contactName: contact,
+      contactPhone: phone,
+      contactEmail: email,
+      bookedBy: source,
+      arrival,
+      departure,
+      nights,
+      block: blocks.map(b => ({ type: b.type, qty: b.qty, rate: b.rate, assigned: 0 })),
+      totalRooms,
+      totalPax,
+      ratePlan: fbPlan,
+      services: [] as string[],
+      total,
+      advance: 0,
+      balance: total,
+      status,
+      notes: requests,
+      createdAt: new Date().toISOString().slice(0, 10),
+    };
+    try {
+      const row = await apiPost<{ code: string }>("/group-bookings", payload);
+      showToast(status === "draft"
+        ? `Quote saved as draft · ${row.code}`
+        : `Quote ${row.code} sent to ${email} · group created`);
+    } catch {
+      showToast("⚠ Could not save — backend offline");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ============================================================
   // SCENARIO PRESETS
   // ============================================================
   const loadWedding = () => {
@@ -330,7 +377,7 @@ export default function GroupQuotePage() {
           <Button variant="outline" size="sm" onClick={loadCorporate}>
             <Briefcase className="h-3.5 w-3.5" />Corporate preset
           </Button>
-          <Button variant="outline" size="sm" onClick={() => showToast("Quote saved as draft #GQ-2026-1147")}>
+          <Button variant="outline" size="sm" disabled={saving} onClick={() => saveQuote("draft")}>
             <Save className="h-3.5 w-3.5" />Save draft
           </Button>
           <Button size="sm" onClick={() => showToast("Quote PDF generated · sent to anjali.iyer@gmail.com")}>
@@ -951,7 +998,8 @@ export default function GroupQuotePage() {
                 <Button
                   size="sm"
                   className="w-full"
-                  onClick={() => showToast(`Quote #GQ-2026-1147 approved · ${money(grossQuote)} sent to ${email}`)}
+                  disabled={saving}
+                  onClick={() => saveQuote("tentative")}
                 >
                   <Send className="h-3.5 w-3.5" />Approve &amp; send quote
                 </Button>

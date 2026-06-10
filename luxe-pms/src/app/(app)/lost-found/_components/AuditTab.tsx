@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
 
 type ActionType =
   | "created"
@@ -515,6 +516,42 @@ const ENTRIES: AuditEntry[] = [
   },
 ];
 
+// Real audit feed shape returned by GET /api/audit-logs (AuditLogController).
+type ApiAuditLog = {
+  id: string; time: string; date: string; user: string; module: string;
+  action: string; entity: string; before: string; after: string;
+  ip: string; device: string; severity: string;
+};
+
+const ACTION_FROM_BACKEND: Record<string, ActionType> = {
+  Created: "created",
+  Updated: "updated",
+  "Status changed": "status",
+  Deleted: "deleted",
+};
+
+// Maps a backend audit row into the rich AuditEntry shape this tab renders.
+function mapAuditLog(l: ApiAuditLog): AuditEntry {
+  const action = ACTION_FROM_BACKEND[l.action] ?? "updated";
+  const clean = (v?: string) => (v && v !== "—" ? v : undefined);
+  return {
+    id: l.id,
+    ts: l.time,
+    date: l.date,
+    actor: l.user || "System",
+    role: "FO",
+    action,
+    entityType: "item",
+    entityId: l.entity || "—",
+    sentence: `${l.action.toLowerCase()} ${l.entity}`.trim(),
+    oldValue: clean(l.before),
+    newValue: clean(l.after),
+    ip: l.ip,
+    device: l.device,
+    hash: `0x${Number(l.id || 0).toString(16).padStart(8, "0")}`,
+  };
+}
+
 export default function AuditTab({ onToast }: { onToast: (m: string) => void }) {
   const [dateFrom, setDateFrom] = React.useState("2026-06-01");
   const [dateTo, setDateTo] = React.useState("2026-06-02");
@@ -523,16 +560,38 @@ export default function AuditTab({ onToast }: { onToast: (m: string) => void }) 
   const [entityFilter, setEntityFilter] = React.useState<string>("all");
   const [roleFilter, setRoleFilter] = React.useState<string>("all");
   const [openEntry, setOpenEntry] = React.useState<AuditEntry | null>(null);
+  const [rows, setRows] = React.useState<AuditEntry[]>(ENTRIES);
+
+  // Pull the real Lost & Found activity from the append-only audit log.
+  const load = React.useCallback(() => {
+    return apiGet<ApiAuditLog[]>("/audit-logs")
+      .then((logs) => {
+        const lf = logs.filter((l) => l.module === "Lost & Found").map(mapAuditLog);
+        if (lf.length) setRows(lf);
+        return lf.length;
+      })
+      .catch(() => 0);
+  }, []);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<ApiAuditLog[]>("/audit-logs")
+      .then((logs) => {
+        const lf = logs.filter((l) => l.module === "Lost & Found").map(mapAuditLog);
+        if (!cancelled && lf.length) setRows(lf);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const filtered = React.useMemo(() => {
-    return ENTRIES.filter((e) => {
+    return rows.filter((e) => {
       if (actionFilter !== "all" && e.action !== actionFilter) return false;
       if (entityFilter !== "all" && e.entityType !== entityFilter) return false;
       if (roleFilter !== "all" && e.role !== roleFilter) return false;
       if (actorQuery && !e.actor.toLowerCase().includes(actorQuery.toLowerCase())) return false;
       return true;
     });
-  }, [actionFilter, entityFilter, roleFilter, actorQuery]);
+  }, [rows, actionFilter, entityFilter, roleFilter, actorQuery]);
 
   const grouped = React.useMemo(() => {
     const map = new Map<string, AuditEntry[]>();
@@ -544,32 +603,41 @@ export default function AuditTab({ onToast }: { onToast: (m: string) => void }) 
     return Array.from(map.entries());
   }, [filtered]);
 
+  const todayStr = new Date().toISOString().slice(0, 10);
+  // Derive the headline numbers from the real feed.
+  const actorCounts = rows.reduce<Record<string, number>>((acc, e) => {
+    acc[e.actor] = (acc[e.actor] ?? 0) + 1;
+    return acc;
+  }, {});
+  const topActor = Object.entries(actorCounts).sort((a, b) => b[1] - a[1])[0];
+  const criticalCount = rows.filter((e) => e.action === "deleted" || e.action === "disposed").length;
+  const statusChanges = rows.filter((e) => e.action === "status").length;
   const kpis = [
     {
       label: "Actions today",
-      value: ENTRIES.filter((e) => e.date === "Today").length,
-      sub: "across 6 staff members",
+      value: rows.filter((e) => e.date === todayStr || e.date === "Today").length,
+      sub: `across ${new Set(rows.map((e) => e.actor)).size} staff members`,
       icon: Activity,
       tint: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
     },
     {
       label: "Most active staff",
-      value: "Priya K.",
-      sub: "5 actions (HK)",
+      value: topActor ? topActor[0] : "—",
+      sub: topActor ? `${topActor[1]} actions` : "no activity yet",
       icon: UserCheck,
       tint: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
     },
     {
-      label: "Approvals pending",
-      value: 3,
-      sub: "2 returns · 1 disposal",
+      label: "Status changes",
+      value: statusChanges,
+      sub: "moves · returns · disposals",
       icon: Hourglass,
       tint: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
     },
     {
       label: "Critical actions",
-      value: 4,
-      sub: "deletes + disposals (7d)",
+      value: criticalCount,
+      sub: "deletes + disposals",
       icon: AlertTriangle,
       tint: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
     },
@@ -766,7 +834,7 @@ export default function AuditTab({ onToast }: { onToast: (m: string) => void }) 
           <button
             type="button"
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => onToast("Refreshed audit feed")}
+            onClick={() => load().then((n) => onToast(n ? `Refreshed — ${n} entries` : "Refreshed audit feed"))}
           >
             <RefreshCcw className="h-3 w-3" />
             Refresh
@@ -897,7 +965,7 @@ export default function AuditTab({ onToast }: { onToast: (m: string) => void }) 
             Showing
             <span className="tabular font-medium text-foreground"> {filtered.length} </span>
             of
-            <span className="tabular font-medium text-foreground"> {ENTRIES.length} </span>
+            <span className="tabular font-medium text-foreground"> {rows.length} </span>
             recent entries
           </div>
           <Button

@@ -10,6 +10,7 @@ use App\Models\AppUser;
 use App\Models\Booking;
 use App\Models\Channel;
 use App\Models\ComplianceLicense;
+use App\Models\EmailSchedule;
 use App\Models\Enquiry;
 use App\Models\FbPackage;
 use App\Models\Floor;
@@ -27,6 +28,8 @@ use App\Models\Guest;
 use App\Models\HallPackage;
 use App\Models\Holiday;
 use App\Models\InventoryItem;
+use App\Models\LinenItem;
+use App\Models\LostReport;
 use App\Models\LoyaltyCampaign;
 use App\Models\LoyaltyMember;
 use App\Models\LoyaltyReward;
@@ -93,6 +96,9 @@ class ResourceController extends Controller
         'channels'               => Channel::class,
         'web-rooms'              => WebRoom::class,
         'pricing-rules'          => PricingRule::class,
+        'email-schedules'        => EmailSchedule::class,
+        'linen-items'            => LinenItem::class,
+        'lost-reports'           => LostReport::class,
     ];
 
     /** Resources whose index can be scoped by a query param → column. */
@@ -130,6 +136,11 @@ class ResourceController extends Controller
             'extraBedAllowed' => 'boolean', 'extraBedRate' => 'integer|min:0', 'connectingRoom' => 'string|max:50',
             'extension' => 'string|max:50', 'wifiSsid' => 'string|max:100', 'smoking' => 'boolean',
             'accessible' => 'boolean', 'amenities' => 'array', 'status' => 'string|max:50', 'hkStatus' => 'string|max:50',
+            'hkAssignee' => 'string|max:100|nullable', 'hkStartedAt' => 'string|max:50|nullable',
+        ],
+        'linen-items' => [
+            'name' => 'string|max:255', 'issued' => 'integer|min:0', 'returned' => 'integer|min:0',
+            'wastage' => 'integer|min:0', 'inUse' => 'integer|min:0',
         ],
         'rate-plans' => [
             'code' => 'string|max:50', 'name' => 'string|max:255', 'inclBreakfast' => 'boolean',
@@ -331,6 +342,25 @@ class ResourceController extends Controller
             'upcomingBooking' => 'array|nullable', 'preferences' => 'array', 'staffNotes' => 'string|max:2000|nullable',
             'consentMarketing' => 'boolean', 'blocked' => 'boolean',
         ],
+        'email-schedules' => [
+            'label' => 'string|max:255', 'frequency' => 'string|max:20', 'time' => 'string|max:20',
+            'recipients' => 'array', 'recipients.*' => 'string|max:255',
+            'format' => 'string|max:20', 'sections' => 'array', 'sections.*' => 'string|max:100',
+            'enabled' => 'boolean', 'lastSentAt' => 'string|max:100|nullable',
+        ],
+        'lost-reports' => [
+            'reportNo' => 'string|max:50', 'guest' => 'string|max:255', 'phone' => 'string|max:50|nullable',
+            'email' => 'email|max:255|nullable', 'isWalkIn' => 'boolean', 'room' => 'string|max:50|nullable',
+            'stayFrom' => 'string|max:50|nullable', 'stayTo' => 'string|max:50|nullable',
+            'itemCategory' => 'string|max:100', 'itemName' => 'string|max:255', 'brand' => 'string|max:255|nullable',
+            'color' => 'string|max:100|nullable', 'description' => 'string|max:2000|nullable',
+            'identification' => 'string|max:500|nullable', 'hasPhoto' => 'boolean',
+            'lostDate' => 'string|max:50|nullable', 'lostTime' => 'string|max:50|nullable',
+            'lastSeen' => 'string|max:255|nullable', 'reportedOn' => 'string|max:50|nullable',
+            'urgency' => 'string|max:50', 'status' => 'string|max:50', 'contactMode' => 'string|max:50',
+            'remarks' => 'string|max:2000|nullable', 'estValue' => 'integer|nullable', 'hvi' => 'boolean',
+            'timeline' => 'array', 'matches' => 'array',
+        ],
     ];
 
     /** Fields that must be present (and non-empty) when creating a row. */
@@ -359,6 +389,9 @@ class ResourceController extends Controller
         'channels' => ['name'],
         'web-rooms' => ['name'],
         'pricing-rules' => ['name'],
+        'email-schedules' => ['label'],
+        'linen-items' => ['name'],
+        'lost-reports' => ['guest', 'itemName'],
     ];
 
     private function model(string $resource): string
@@ -443,7 +476,7 @@ class ResourceController extends Controller
     private const MODULE_LABELS = [
         'folio-charges' => 'Folio', 'folio-payments' => 'Payment', 'fb-orders' => 'F&B',
         'menu-items' => 'F&B', 'inventory-items' => 'Inventory', 'maintenance-tickets' => 'Maintenance',
-        'found-items' => 'Lost & Found', 'loyalty-members' => 'Loyalty', 'account-entries' => 'Accounts',
+        'found-items' => 'Lost & Found', 'lost-reports' => 'Lost & Found', 'loyalty-members' => 'Loyalty', 'account-entries' => 'Accounts',
         'app-users' => 'Users', 'hall-bookings' => 'Halls', 'group-bookings' => 'Groups',
         'rate-plans' => 'Rate Plans', 'gst-slabs' => 'GST', 'payment-methods' => 'Payment Methods',
         'notification-templates' => 'Notifications',

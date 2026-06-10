@@ -38,6 +38,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet, apiPut } from "@/lib/api";
 
 type SectionId =
   | "general"
@@ -214,6 +215,48 @@ export default function SettingsTab({ onToast }: { onToast: (m: string) => void 
   // Branches
   const [branches, setBranches] = React.useState<Branch[]>(INITIAL_BRANCHES);
 
+  // Hydrate every section from the persisted JSON blob (settings/lost-found).
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Record<string, unknown>>("/settings/lost-found")
+      .then((c) => {
+        if (cancelled || !c || typeof c !== "object" || !Object.keys(c).length) return;
+        if (typeof c.idFormat === "string") setIdFormat(c.idFormat);
+        if (typeof c.storageArea === "string") setStorageArea(c.storageArea);
+        if (typeof c.threshold === "number") setThreshold(c.threshold);
+        if (Array.isArray(c.retention)) setRetention(c.retention as RetentionRow[]);
+        if (typeof c.hviThreshold === "number") setHviThreshold(c.hviThreshold);
+        if (Array.isArray(c.hviItems)) setHviItems(c.hviItems as Toggle[]);
+        if (typeof c.hviApproval === "boolean") setHviApproval(c.hviApproval);
+        if (typeof c.hviOtp === "boolean") setHviOtp(c.hviOtp);
+        if (typeof c.hviSignature === "boolean") setHviSignature(c.hviSignature);
+        if (c.notif && typeof c.notif === "object") setNotif(c.notif as Record<Trigger, Record<Channel, boolean>>);
+        if (typeof c.courierAllowed === "boolean") setCourierAllowed(c.courierAllowed);
+        if (typeof c.photoOnReturn === "boolean") setPhotoOnReturn(c.photoOnReturn);
+        if (typeof c.witnessHvi === "boolean") setWitnessHvi(c.witnessHvi);
+        if (typeof c.policeHandover === "boolean") setPoliceHandover(c.policeHandover);
+        if (typeof c.courierVendor === "string") setCourierVendor(c.courierVendor);
+        if (c.matrix && typeof c.matrix === "object") setMatrix(c.matrix as typeof INITIAL_MATRIX);
+        if (Array.isArray(c.branches)) setBranches(c.branches as Branch[]);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persist the whole config; called whenever a section's Save bar fires.
+  const persist = () => {
+    apiPut("/settings/lost-found", {
+      idFormat, storageArea, threshold,
+      retention, hviThreshold, hviItems, hviApproval, hviOtp, hviSignature,
+      notif, courierAllowed, photoOnReturn, witnessHvi, policeHandover, courierVendor,
+      matrix, branches,
+    }).catch(() => {});
+  };
+  const saveToast = (m: string) => {
+    if (/saved/i.test(m)) persist();
+    onToast(m);
+  };
+
   const idPreview = idFormat
     .replace("{YYYY}", "2026")
     .replace("{MM}", "06")
@@ -327,7 +370,7 @@ export default function SettingsTab({ onToast }: { onToast: (m: string) => void 
               setStorageArea={setStorageArea}
               threshold={threshold}
               setThreshold={setThreshold}
-              onToast={onToast}
+              onToast={saveToast}
             />
           )}
           {active === "retention" && (
@@ -336,7 +379,7 @@ export default function SettingsTab({ onToast }: { onToast: (m: string) => void 
               editingRow={editingRow}
               setEditingRow={setEditingRow}
               updateRetention={updateRetention}
-              onToast={onToast}
+              onToast={saveToast}
             />
           )}
           {active === "highvalue" && (
@@ -351,7 +394,7 @@ export default function SettingsTab({ onToast }: { onToast: (m: string) => void 
               setHviOtp={setHviOtp}
               hviSignature={hviSignature}
               setHviSignature={setHviSignature}
-              onToast={onToast}
+              onToast={saveToast}
             />
           )}
           {active === "notifications" && (
@@ -359,7 +402,7 @@ export default function SettingsTab({ onToast }: { onToast: (m: string) => void 
               notif={notif}
               toggleNotif={toggleNotif}
               channelIcon={channelIcon}
-              onToast={onToast}
+              onToast={saveToast}
             />
           )}
           {active === "return" && (
@@ -374,21 +417,21 @@ export default function SettingsTab({ onToast }: { onToast: (m: string) => void 
               setPoliceHandover={setPoliceHandover}
               courierVendor={courierVendor}
               setCourierVendor={setCourierVendor}
-              onToast={onToast}
+              onToast={saveToast}
             />
           )}
           {active === "permissions" && (
             <PermissionsSection
               matrix={matrix}
               togglePerm={togglePerm}
-              onToast={onToast}
+              onToast={saveToast}
             />
           )}
           {active === "branches" && (
             <BranchesSection
               branches={branches}
               setBranches={setBranches}
-              onToast={onToast}
+              onToast={saveToast}
             />
           )}
         </div>

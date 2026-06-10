@@ -36,6 +36,21 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet, apiPut } from "@/lib/api";
+
+type FoundRow = {
+  id: number | string;
+  name: string;
+  category?: string;
+  status?: string;
+  value?: number;
+  hvi?: boolean;
+  guestName?: string;
+  contact?: string;
+  email?: string;
+  foundLocation?: string;
+  foundDate?: string;
+};
 
 type ReturnMethod =
   | "Guest collects"
@@ -318,12 +333,60 @@ const SEED: ReturnItem[] = [
   },
 ];
 
+// Maps a real found-item (in a return-relevant state) into a return record.
+const RETURN_STATUS: Record<string, ReturnStatus> = {
+  Notified: "Pending verification",
+  Claimed: "Awaiting collection",
+  Returned: "Completed",
+};
+function toReturnItem(i: FoundRow): ReturnItem {
+  return {
+    id: `RR-${i.id}`,
+    itemName: i.name,
+    itemId: String(i.id),
+    category: i.category || "—",
+    value: i.value || 0,
+    isHVI: !!i.hvi,
+    guestName: i.guestName || "—",
+    guestEmail: i.email || "",
+    guestPhone: i.contact || "",
+    guestRoom: i.foundLocation || "",
+    method: "Guest collects",
+    status: RETURN_STATUS[i.status ?? ""] ?? "Pending verification",
+    createdAt: i.foundDate || "",
+    expectedAt: "",
+  };
+}
+
 export default function ReturnsTab({ onToast }: { onToast: (m: string) => void }) {
   const [filter, setFilter] = React.useState<ReturnMethod | "All">("All");
   const [search, setSearch] = React.useState("");
   const [openId, setOpenId] = React.useState<string | null>(null);
 
-  const filtered = SEED.filter((r) => {
+  // Real found-items in a return-relevant state; mock SEED is the offline fallback.
+  const [found, setFound] = React.useState<FoundRow[] | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<FoundRow[]>("/found-items")
+      .then((r) => { if (!cancelled && r.length) setFound(r); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const data: ReturnItem[] = found && found.length
+    ? found.filter((i) => i.status && i.status in RETURN_STATUS).map(toReturnItem)
+    : SEED;
+
+  const markCompleted = (r: ReturnItem) => {
+    apiPut(`/found-items/${r.itemId}`, { status: "Returned" })
+      .then(() => {
+        setFound((prev) => (prev ? prev.map((f) => (String(f.id) === r.itemId ? { ...f, status: "Returned" } : f)) : prev));
+        onToast(`${r.id} marked completed`);
+      })
+      .catch(() => onToast("⚠ Save failed — backend offline"));
+  };
+
+  const filtered = data.filter((r) => {
     if (filter !== "All" && r.method !== filter) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -338,14 +401,14 @@ export default function ReturnsTab({ onToast }: { onToast: (m: string) => void }
   });
 
   // KPIs
-  const pending = SEED.filter(
+  const pending = data.filter(
     (r) => r.status === "Pending verification" || r.status === "Awaiting collection"
   ).length;
-  const returnedThisMonth = SEED.filter((r) => r.status === "Completed").length + 14; // mock
+  const returnedThisMonth = data.filter((r) => r.status === "Completed").length;
   const avgDays = 3.4;
-  const inTransit = SEED.filter((r) => r.status === "In transit").length;
+  const inTransit = data.filter((r) => r.status === "In transit").length;
 
-  const openRow = openId ? SEED.find((r) => r.id === openId) || null : null;
+  const openRow = openId ? data.find((r) => r.id === openId) || null : null;
 
   return (
     <div className="space-y-4">
@@ -550,7 +613,7 @@ export default function ReturnsTab({ onToast }: { onToast: (m: string) => void }
                             variant="outline"
                             onClick={(e) => {
                               e.stopPropagation();
-                              onToast(`${r.id} marked completed`);
+                              markCompleted(r);
                             }}
                           >
                             <CheckCircle2 className="h-3.5 w-3.5" />
@@ -578,7 +641,14 @@ export default function ReturnsTab({ onToast }: { onToast: (m: string) => void }
       <ReceiptPreview onToast={onToast} />
 
       {/* DRAWER */}
-      {openRow && <ReturnDrawer item={openRow} onClose={() => setOpenId(null)} onToast={onToast} />}
+      {openRow && (
+        <ReturnDrawer
+          item={openRow}
+          onClose={() => setOpenId(null)}
+          onToast={onToast}
+          onComplete={markCompleted}
+        />
+      )}
     </div>
   );
 }
@@ -794,10 +864,12 @@ function ReturnDrawer({
   item,
   onClose,
   onToast,
+  onComplete,
 }: {
   item: ReturnItem;
   onClose: () => void;
   onToast: (m: string) => void;
+  onComplete: (r: ReturnItem) => void;
 }) {
   const [idType, setIdType] = React.useState<IdProofType>(item.idProofType || "Aadhaar");
   const [idNum, setIdNum] = React.useState(item.idProofNumber || "");
@@ -822,7 +894,7 @@ function ReturnDrawer({
       onToast("HVI return needs OTP verification before completion");
       return;
     }
-    onToast(`Return completed · receipt RR/2026/0234 generated`);
+    onComplete(item);
     onClose();
   }
 

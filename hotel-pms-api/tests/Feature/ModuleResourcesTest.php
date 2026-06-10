@@ -36,6 +36,8 @@ class ModuleResourcesTest extends TestCase
             'channels'            => ['channels', ['name' => 'Booking.com']],
             'web-rooms'           => ['web-rooms', ['name' => 'Deluxe']],
             'pricing-rules'       => ['pricing-rules', ['name' => 'Weekend premium']],
+            'linen-items'         => ['linen-items', ['name' => 'Bath towels — Large', 'issued' => 100, 'returned' => 98]],
+            'lost-reports'        => ['lost-reports', ['guest' => 'Mr A', 'itemName' => 'Wallet']],
         ];
     }
 

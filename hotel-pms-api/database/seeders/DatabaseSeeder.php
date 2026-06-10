@@ -25,6 +25,8 @@ class DatabaseSeeder extends Seeder
             ErpSeeder::class,
             FbMenuSeeder::class,
             OpsSeeder::class,
+            LostReportSeeder::class,
+            LinenSeeder::class,
             LoyaltySeeder::class,
             LoyaltyConfigSeeder::class,
             AccountSeeder::class,
@@ -38,6 +40,7 @@ class DatabaseSeeder extends Seeder
             WebRoomSeeder::class,
             PricingRuleSeeder::class,
             AuditLogSeeder::class,
+            OwnerFlashSeeder::class,
         ]);
     }
 }

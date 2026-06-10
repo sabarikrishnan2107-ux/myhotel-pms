@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BackupController;
 use App\Http\Controllers\Api\NightAuditController;
+use App\Http\Controllers\Api\OwnerFlashController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\ResourceController;
 use App\Http\Controllers\Api\SettingsController;
@@ -43,6 +44,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/dashboard/occupancy-forecast', [StatsController::class, 'occupancyForecast']);
     Route::get('/dashboard/alerts', [StatsController::class, 'alerts']);
     Route::get('/dashboard/goals', [StatsController::class, 'goals']);
+
+    // Owner's Flash Dashboard — period KPIs, 30-day trend, manual/scheduled send
+    Route::get('/owner/flash', [OwnerFlashController::class, 'flash']);
+    Route::get('/owner/flash-trend', [OwnerFlashController::class, 'flashTrend']);
+    Route::get('/owner/flash-insights', [OwnerFlashController::class, 'flashInsights']);
+    Route::post('/owner/flash/send', [OwnerFlashController::class, 'send']);
 
     // Night audit — post nightly room charges to in-house folios
     Route::post('/night-audit', [NightAuditController::class, 'run']);

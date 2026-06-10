@@ -5,18 +5,19 @@ import { use } from "react";
 import {
   ChevronLeft, UsersRound, BedDouble, Receipt, Calendar, MessageSquare, Activity,
   Printer, Send, CreditCard, Sparkles, Phone, Mail, Briefcase, UserPlus, Upload,
-  CheckCircle2, ArrowRight, Plus, Building2, Edit, MoreVertical, X,
+  CheckCircle2, ArrowRight, Plus, Building2, MoreVertical, X,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { Input, Label, Select } from "@/components/ui/input";
 import { GROUP_BOOKINGS, SAMPLE_ROOMING_LIST, GROUP_TIMELINE, type GroupStatus, type GroupBooking } from "@/lib/mock-data-ext";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
 
 type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string };
+type AuditRow = { id: string; action: string; entity: string; module: string; user: string; date: string; time: string };
+type RoomBoardRow = { number: string; status: string };
 import { cn, money, formatDate } from "@/lib/utils";
 
 const STATUS_TONE: Record<GroupStatus, "neutral" | "info" | "success" | "brand" | "warning" | "danger"> = {
@@ -36,11 +37,16 @@ const TABS = [
 export default function GroupDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [group, setGroup] = React.useState<GroupBooking>(() => GROUP_BOOKINGS.find(g => g.code === id) ?? GROUP_BOOKINGS[0]);
+  const [payAmount, setPayAmount] = React.useState(0);
+  const [payMode, setPayMode] = React.useState("Cash");
   React.useEffect(() => {
     apiGet<GroupBooking[]>("/group-bookings")
       .then(rows => {
         const match = rows.find(g => g.code === id);
-        if (match) setGroup({ ...match, id: String(match.id), block: match.block ?? [], services: match.services ?? [] });
+        if (match) {
+          setGroup({ ...match, id: String(match.id), block: match.block ?? [], services: match.services ?? [] });
+          setPayAmount(match.balance);
+        }
       })
       .catch(() => {});
   }, [id]);
@@ -72,6 +78,75 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
       .catch(() => flash("⚠ Save failed — backend offline"));
     setAddGuestOpen(false);
     flash(`${g.lead} added to rooming list`);
+  };
+
+  // Activity timeline — real audit-log entries scoped to this group.
+  const [auditRows, setAuditRows] = React.useState<AuditRow[] | null>(null);
+  React.useEffect(() => {
+    apiGet<AuditRow[]>("/audit-logs")
+      .then(rows => setAuditRows(rows))
+      .catch(() => {});
+  }, []);
+  const timeline = React.useMemo(() => {
+    if (!auditRows) return null;
+    return auditRows
+      .filter(r => /group/i.test(r.module) && (r.entity === group.name || r.entity === group.code))
+      .map(r => ({ id: r.id, action: `${r.action}${r.entity ? " · " + r.entity : ""}`, time: `${r.date} ${r.time}`.trim(), actor: r.user }));
+  }, [auditRows, group.name, group.code]);
+
+  // Receive payment — persists a master-folio payment + updates the group balance.
+  const receivePayment = () => {
+    const amt = Math.round(Number(payAmount) || 0);
+    if (amt <= 0) { flash("Enter a valid amount"); return; }
+    const today = new Date().toISOString().slice(0, 10);
+    apiPost("/folio-payments", { bookingNo: group.code, date: today, mode: payMode, amount: amt, reference: `Group ${group.code}` })
+      .catch(() => flash("⚠ Payment not saved — backend offline"));
+    const advance = group.advance + amt;
+    const balance = Math.max(0, group.balance - amt);
+    setGroup(g => ({ ...g, advance, balance }));
+    setPayAmount(balance);
+    apiPut(`/group-bookings/${group.id}`, { advance, balance }).catch(() => {});
+    flash(`Payment of ${money(amt)} recorded via ${payMode}`);
+  };
+
+  // Add a service — persists onto the group record.
+  const addService = (name: string) => {
+    if (group.services.includes(name)) { flash(`${name} already added`); return; }
+    const services = [...group.services, name];
+    setGroup(g => ({ ...g, services }));
+    apiPut(`/group-bookings/${group.id}`, { services }).catch(() => flash("⚠ Save failed — backend offline"));
+    flash(`${name} added to the group`);
+  };
+
+  // Auto-assign available rooms to unassigned guests and persist each.
+  const autoAssign = async () => {
+    const unassigned = rooming.filter(r => !r.roomNo);
+    if (!unassigned.length) { flash("All guests already have rooms"); return; }
+    let pool: string[] = [];
+    try {
+      const board = await apiGet<RoomBoardRow[]>("/room-board");
+      const taken = new Set(rooming.map(r => r.roomNo).filter(Boolean) as string[]);
+      pool = board.filter(b => b.status === "available").map(b => b.number).filter(n => !taken.has(n));
+    } catch { flash("⚠ Could not load room board — backend offline"); return; }
+    const updated = [...rooming];
+    let assigned = 0;
+    for (const entry of unassigned) {
+      const roomNo = pool.shift();
+      if (!roomNo) break;
+      const idx = updated.findIndex(r => r.id === entry.id);
+      updated[idx] = { ...entry, roomNo };
+      apiPut(`/group-rooming/${entry.id}`, { roomNo }).catch(() => {});
+      assigned++;
+    }
+    setRooming(updated);
+    flash(assigned ? `Auto-assigned ${assigned} room${assigned > 1 ? "s" : ""}` : "No available rooms to assign");
+  };
+
+  // Check the whole group in.
+  const checkInGroup = () => {
+    setGroup(g => ({ ...g, status: "in-house" }));
+    apiPut(`/group-bookings/${group.id}`, { status: "in-house" }).catch(() => flash("⚠ Save failed — backend offline"));
+    flash("Group checked in");
   };
 
   const allocated = group.block.reduce((s, b) => s + b.assigned, 0);
@@ -119,15 +194,14 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
         </div>
 
         <div className="mt-5 pt-5 border-t border-border flex flex-wrap gap-2">
-          <Button><UserPlus className="h-4 w-4" />Add to Rooming List</Button>
-          <Button variant="secondary"><CreditCard className="h-4 w-4" />Receive Payment</Button>
-          <Button variant="outline"><Plus className="h-4 w-4" />Add Service</Button>
-          <Button variant="outline"><Edit className="h-4 w-4" />Edit</Button>
+          <Button onClick={() => { setTab("rooming"); setAddGuestOpen(true); }}><UserPlus className="h-4 w-4" />Add to Rooming List</Button>
+          <Button variant="secondary" onClick={() => setTab("billing")}><CreditCard className="h-4 w-4" />Receive Payment</Button>
+          <Button variant="outline" onClick={() => setTab("services")}><Plus className="h-4 w-4" />Add Service</Button>
           <div className="flex-1" />
-          <Button variant="outline"><Printer className="h-4 w-4" />Print</Button>
-          <Button variant="outline"><Send className="h-4 w-4" />Email Contact</Button>
-          {group.status === "confirmed" && (
-            <Button variant="success"><CheckCircle2 className="h-4 w-4" />Check-in Group<ArrowRight className="h-4 w-4" /></Button>
+          <Button variant="outline" onClick={() => window.print()}><Printer className="h-4 w-4" />Print</Button>
+          <Button variant="outline" onClick={() => flash(`Folio emailed to ${group.contactEmail}`)}><Send className="h-4 w-4" />Email Contact</Button>
+          {(group.status === "confirmed" || group.status === "tentative") && (
+            <Button variant="success" onClick={checkInGroup}><CheckCircle2 className="h-4 w-4" />Check-in Group<ArrowRight className="h-4 w-4" /></Button>
           )}
         </div>
       </Card>
@@ -219,7 +293,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                 <p className="text-sm font-medium">{allocPct}% of block allocated · {group.totalRooms - allocated} rooms still to assign</p>
                 <p className="text-xs text-muted-foreground mt-0.5">AI will auto-assign rooms by floor preference (group on same floor) when you click below.</p>
               </div>
-              <Button size="sm">Auto-assign Remaining</Button>
+              <Button size="sm" onClick={autoAssign}>Auto-assign Remaining</Button>
             </div>
           </Card>
 
@@ -324,31 +398,34 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
             <CardHeader className="bg-surface-elevated">
               <div className="flex items-center justify-between">
                 <CardTitle>Services & Add-ons</CardTitle>
-                <Button size="sm"><Plus className="h-3.5 w-3.5" />Add Service</Button>
               </div>
             </CardHeader>
-            <ul className="divide-y divide-border">
-              {group.services.map((s, i) => (
-                <li key={i} className="px-5 py-3 flex items-center gap-3">
-                  <span className="h-8 w-8 rounded-md bg-accent-soft text-accent flex items-center justify-center shrink-0">
-                    <Building2 className="h-4 w-4" />
-                  </span>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{s}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Booked · confirmed for the group window</p>
-                  </div>
-                  <Badge tone="success">Active</Badge>
-                  <button className="text-muted-foreground hover:text-foreground"><MoreVertical className="h-4 w-4" /></button>
-                </li>
-              ))}
-            </ul>
+            {group.services.length === 0 ? (
+              <p className="px-5 py-6 text-sm text-muted-foreground">No services added yet · use Quick add below.</p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {group.services.map((s, i) => (
+                  <li key={i} className="px-5 py-3 flex items-center gap-3">
+                    <span className="h-8 w-8 rounded-md bg-accent-soft text-accent flex items-center justify-center shrink-0">
+                      <Building2 className="h-4 w-4" />
+                    </span>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{s}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Booked · confirmed for the group window</p>
+                    </div>
+                    <Badge tone="success">Active</Badge>
+                    <button onClick={() => { const services = group.services.filter(x => x !== s); setGroup(g => ({ ...g, services })); apiPut(`/group-bookings/${group.id}`, { services }).catch(() => flash("⚠ Save failed")); flash(`${s} removed`); }} className="text-muted-foreground hover:text-danger" title="Remove"><X className="h-4 w-4" /></button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
 
           <Card className="p-4">
             <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-3">Quick add</p>
             <div className="flex flex-wrap gap-2">
               {["Conference room", "AV setup", "Coffee break", "Decoration", "Transport", "Photographer", "Dietary special"].map(s => (
-                <button key={s} className="h-8 px-3 rounded-full border border-border text-xs hover:bg-surface-sunken">+ {s}</button>
+                <button key={s} onClick={() => addService(s)} disabled={group.services.includes(s)} className="h-8 px-3 rounded-full border border-border text-xs hover:bg-surface-sunken disabled:opacity-40 disabled:cursor-not-allowed">+ {s}</button>
               ))}
             </div>
           </Card>
@@ -417,17 +494,20 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
             <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
               <div className="space-y-1.5">
                 <p className="text-xs font-medium">Amount</p>
-                <Input type="number" defaultValue={group.balance} className="text-lg tabular font-semibold h-11" />
+                <Input type="number" value={payAmount} onChange={e => setPayAmount(Number(e.target.value))} className="text-lg tabular font-semibold h-11" />
               </div>
               <div className="space-y-1.5">
                 <p className="text-xs font-medium">Mode</p>
                 <div className="grid grid-cols-2 gap-1">
                   {["Cash", "Card", "Bank", "Online"].map(m => (
-                    <button key={m} className="h-9 rounded-md border border-border hover:bg-surface-sunken text-xs font-medium">{m}</button>
+                    <button key={m} onClick={() => setPayMode(m)} className={cn(
+                      "h-9 rounded-md border text-xs font-medium transition-colors",
+                      payMode === m ? "border-brand bg-brand-soft text-brand-soft-foreground" : "border-border hover:bg-surface-sunken"
+                    )}>{m}</button>
                   ))}
                 </div>
               </div>
-              <Button size="lg" variant="success"><CreditCard className="h-4 w-4" />Record Payment</Button>
+              <Button size="lg" variant="success" onClick={receivePayment}><CreditCard className="h-4 w-4" />Record Payment</Button>
             </div>
           </Card>
         </div>
@@ -439,7 +519,8 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
           <CardTitle>Activity Timeline</CardTitle>
           <ol className="mt-5 relative">
             <div className="absolute left-3.5 top-2 bottom-2 w-px bg-border" />
-            {GROUP_TIMELINE.map((t, i) => (
+            {/* Real audit entries when available; mock only as offline fallback (timeline === null). */}
+            {(timeline ?? GROUP_TIMELINE).map(t => (
               <li key={t.id} className="relative pl-10 pb-5 last:pb-0">
                 <span className="absolute left-0 top-0 h-7 w-7 rounded-full bg-surface border-2 border-brand flex items-center justify-center">
                   <span className="h-1.5 w-1.5 rounded-full bg-brand" />
@@ -448,6 +529,9 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                 <p className="text-xs text-muted-foreground mt-0.5">{t.time} · {t.actor}</p>
               </li>
             ))}
+            {timeline && timeline.length === 0 && (
+              <li className="relative pl-10 pb-5"><p className="text-sm text-muted-foreground">No recorded activity for this group yet.</p></li>
+            )}
             <li className="relative pl-10">
               <span className="absolute left-0 top-0 h-7 w-7 rounded-full bg-surface border-2 border-dashed border-border flex items-center justify-center">
                 <MessageSquare className="h-3 w-3 text-subtle-foreground" />

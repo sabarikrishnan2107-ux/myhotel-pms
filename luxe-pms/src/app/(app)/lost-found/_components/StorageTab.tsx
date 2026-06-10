@@ -34,6 +34,41 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet, apiPut } from "@/lib/api";
+
+type FoundRow = {
+  id: number | string;
+  name: string;
+  category?: string;
+  status?: string;
+  value?: number;
+  hvi?: boolean;
+  daysHeld?: number;
+  foundBy?: string;
+  foundDate?: string;
+  storageLocation?: string;
+  storageShelf?: string;
+};
+
+// Buckets a real found-item into one of the fixed storage zones by keyword.
+function areaForFound(i: FoundRow): StorageKey {
+  const loc = (i.storageLocation || "").toLowerCase();
+  const cat = (i.category || "").toLowerCase();
+  if (cat.includes("cash")) return "cash";
+  if (cat.includes("jewel")) return "jewellery";
+  if (loc.includes("fridge") || loc.includes("refrig")) return "fridge";
+  if (cat.includes("passport") || cat.includes("document") || loc.includes("document")) return "documents";
+  if (
+    cat.includes("phone") || cat.includes("laptop") || cat.includes("tablet") ||
+    cat.includes("electronic") || loc.includes("electronic")
+  )
+    return "electronics";
+  if (loc.includes("safe") || loc.includes("vault")) return "manager";
+  if (loc.includes("locker")) return "security";
+  return "general";
+}
+
+const RESOLVED = ["Returned", "Claimed", "Disposed", "Donated"];
 
 type StorageKey =
   | "general"
@@ -227,37 +262,112 @@ const STAFF = [
 
 export default function StorageTab({ onToast }: { onToast: (m: string) => void }) {
   const [drawerArea, setDrawerArea] = React.useState<StorageKey | null>(null);
-  const [assignItem, setAssignItem] = React.useState<string>(UNASSIGNED[0].id);
   const [assignArea, setAssignArea] = React.useState<StorageKey>("general");
   const [assignSlot, setAssignSlot] = React.useState<string>("");
   const [storedBy, setStoredBy] = React.useState<string>(STAFF[2]);
   const [verifiedBy, setVerifiedBy] = React.useState<string>(STAFF[0]);
 
-  const totalLocations = AREAS.length;
-  const totalItems = AREAS.reduce((s, a) => s + a.count, 0);
-  const totalCap = AREAS.reduce((s, a) => s + a.capacity, 0);
+  // Real found-items power every list below; mock arrays stay as offline fallback.
+  const [found, setFound] = React.useState<FoundRow[] | null>(null);
+  const [assignItem, setAssignItem] = React.useState<string>(UNASSIGNED[0].id);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<FoundRow[]>("/found-items")
+      .then((r) => {
+        if (cancelled || !r.length) return;
+        setFound(r);
+        const firstUnassigned = r.find((i) => !i.storageLocation && !RESOLVED.includes(i.status ?? ""));
+        if (firstUnassigned) setAssignItem(String(firstUnassigned.id));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const live = found && found.length > 0;
+
+  const itemsData: StoredItem[] = live
+    ? found!
+        .filter((i) => i.storageLocation && !RESOLVED.includes(i.status ?? ""))
+        .map((i) => ({
+          id: String(i.id),
+          name: i.name,
+          photo: i.hvi ? "bg-linear-to-br from-amber-400 to-orange-500" : "bg-linear-to-br from-slate-300 to-slate-500",
+          storedOn: i.foundDate || "—",
+          storedBy: i.foundBy || "—",
+          slot: i.storageShelf || i.storageLocation || "—",
+          verifiedBy: "—",
+          daysHeld: i.daysHeld ?? 0,
+          area: areaForFound(i),
+          retentionDays: 90,
+          value: i.value,
+          hvi: i.hvi,
+          safeLocker: i.storageShelf || i.storageLocation,
+          dualSig: i.hvi ? "Complete" : undefined,
+        }))
+    : ITEMS;
+
+  const unassignedData = live
+    ? found!
+        .filter((i) => !i.storageLocation && !RESOLVED.includes(i.status ?? ""))
+        .map((i) => ({ id: String(i.id), name: i.name }))
+    : UNASSIGNED;
+
+  const areasData: StorageArea[] = live
+    ? AREAS.map((a) => ({ ...a, count: itemsData.filter((it) => it.area === a.key).length }))
+    : AREAS;
+
+  const totalLocations = areasData.length;
+  const totalItems = live ? itemsData.length : areasData.reduce((s, a) => s + a.count, 0);
+  const totalCap = areasData.reduce((s, a) => s + a.capacity, 0);
   const capUsedPct = Math.round((totalItems / totalCap) * 100);
-  const overdueItems = ITEMS.filter((i) => i.daysHeld > i.retentionDays);
+  const overdueItems = itemsData.filter((i) => i.daysHeld > i.retentionDays);
   const overdueCount = overdueItems.length;
 
-  const nearDisposal = ITEMS.filter((i) => {
+  const nearDisposal = itemsData.filter((i) => {
     const remaining = i.retentionDays - i.daysHeld;
     return remaining >= 0 && remaining <= 7;
   });
 
-  const safeItems = ITEMS.filter((i) => i.area === "manager");
+  const safeItems = itemsData.filter((i) => i.area === "manager");
 
-  const areaItems = (key: StorageKey) => ITEMS.filter((i) => i.area === key);
+  const areaItems = (key: StorageKey) => itemsData.filter((i) => i.area === key);
 
   const submitAssign = () => {
     if (!assignSlot.trim()) {
       onToast("Enter shelf / locker / box / bag number first");
       return;
     }
-    const itemName = UNASSIGNED.find((u) => u.id === assignItem)?.name ?? assignItem;
-    const areaName = AREAS.find((a) => a.key === assignArea)?.name ?? assignArea;
-    onToast(`${itemName} assigned to ${areaName} (${assignSlot})`);
+    const itemName = unassignedData.find((u) => u.id === assignItem)?.name ?? assignItem;
+    const areaName = areasData.find((a) => a.key === assignArea)?.name ?? assignArea;
+    apiPut(`/found-items/${assignItem}`, {
+      storageLocation: areaName,
+      storageShelf: assignSlot,
+      status: "Storage",
+    })
+      .then(() => {
+        setFound((prev) =>
+          prev
+            ? prev.map((f) =>
+                String(f.id) === assignItem
+                  ? { ...f, storageLocation: areaName, storageShelf: assignSlot, status: "Storage" }
+                  : f,
+              )
+            : prev,
+        );
+        onToast(`${itemName} assigned to ${areaName} (${assignSlot})`);
+      })
+      .catch(() => onToast("⚠ Save failed — backend offline"));
     setAssignSlot("");
+  };
+
+  // Persist a status change from the contents drawer (Return / Dispose).
+  const itemAction = (id: string, status: string, label: string) => {
+    apiPut(`/found-items/${id}`, { status })
+      .then(() => {
+        setFound((prev) => (prev ? prev.map((f) => (String(f.id) === id ? { ...f, status } : f)) : prev));
+        onToast(`${label} · ${id}`);
+      })
+      .catch(() => onToast("⚠ Save failed — backend offline"));
   };
 
   return (
@@ -306,7 +416,7 @@ export default function StorageTab({ onToast }: { onToast: (m: string) => void }
           </Button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {AREAS.map((a) => {
+          {areasData.map((a) => {
             const pct = Math.round((a.count / a.capacity) * 100);
             const Icon = a.icon;
             const overCap = pct > 80;
@@ -391,7 +501,8 @@ export default function StorageTab({ onToast }: { onToast: (m: string) => void }
             <div>
               <Label htmlFor="item">Unassigned item</Label>
               <Select id="item" value={assignItem} onChange={(e) => setAssignItem(e.target.value)} className="mt-1">
-                {UNASSIGNED.map((u) => (
+                {unassignedData.length === 0 && <option value="">No unassigned items</option>}
+                {unassignedData.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.id} — {u.name}
                   </option>
@@ -406,7 +517,7 @@ export default function StorageTab({ onToast }: { onToast: (m: string) => void }
                 onChange={(e) => setAssignArea(e.target.value as StorageKey)}
                 className="mt-1"
               >
-                {AREAS.map((a) => (
+                {areasData.map((a) => (
                   <option key={a.key} value={a.key}>
                     {a.name} ({a.count}/{a.capacity})
                   </option>
@@ -415,11 +526,11 @@ export default function StorageTab({ onToast }: { onToast: (m: string) => void }
             </div>
             <div>
               <Label htmlFor="slot">
-                {AREAS.find((a) => a.key === assignArea)?.unit ?? "Slot"} number
+                {areasData.find((a) => a.key === assignArea)?.unit ?? "Slot"} number
               </Label>
               <Input
                 id="slot"
-                placeholder={`e.g. ${AREAS.find((a) => a.key === assignArea)?.unit ?? "Slot"} A-14`}
+                placeholder={`e.g. ${areasData.find((a) => a.key === assignArea)?.unit ?? "Slot"} A-14`}
                 value={assignSlot}
                 onChange={(e) => setAssignSlot(e.target.value)}
                 className="mt-1"
@@ -627,7 +738,7 @@ export default function StorageTab({ onToast }: { onToast: (m: string) => void }
           </div>
         </div>
         <div className="space-y-3">
-          {AREAS.map((a) => {
+          {areasData.map((a) => {
             const cells = Array.from({ length: a.capacity }, (_, idx) => idx < a.count);
             return (
               <div
@@ -679,10 +790,11 @@ export default function StorageTab({ onToast }: { onToast: (m: string) => void }
       {/* 3. Contents drawer */}
       {drawerArea && (
         <ContentsDrawer
-          area={AREAS.find((a) => a.key === drawerArea)!}
+          area={areasData.find((a) => a.key === drawerArea)!}
           items={areaItems(drawerArea)}
           onClose={() => setDrawerArea(null)}
           onAction={onToast}
+          onItemAction={itemAction}
         />
       )}
     </div>
@@ -728,11 +840,13 @@ function ContentsDrawer({
   items,
   onClose,
   onAction,
+  onItemAction,
 }: {
   area: StorageArea;
   items: StoredItem[];
   onClose: () => void;
   onAction: (m: string) => void;
+  onItemAction: (id: string, status: string, label: string) => void;
 }) {
   const [openMenu, setOpenMenu] = React.useState<string | null>(null);
   const Icon = area.icon;
@@ -866,7 +980,7 @@ function ContentsDrawer({
                             icon={PackageCheck}
                             label="Return"
                             onClick={() => {
-                              onAction(`Return flow opened for ${i.id}`);
+                              onItemAction(i.id, "Returned", "Returned");
                               setOpenMenu(null);
                             }}
                           />
@@ -875,7 +989,7 @@ function ContentsDrawer({
                             label="Dispose"
                             danger
                             onClick={() => {
-                              onAction(`Dispose flow opened for ${i.id}`);
+                              onItemAction(i.id, "Disposed", "Disposed");
                               setOpenMenu(null);
                             }}
                           />
