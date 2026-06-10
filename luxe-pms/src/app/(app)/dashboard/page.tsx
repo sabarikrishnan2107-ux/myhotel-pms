@@ -595,9 +595,9 @@ export default function DashboardPage() {
       </section>
 
       {/* ============ MONTHLY GOALS + TOP SOURCES ============ */}
-      <section className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-start">
+      <section className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-stretch">
         {/* Goals — 3 cols */}
-        <Card className="lg:col-span-3 p-4">
+        <Card className="lg:col-span-3 p-4 flex flex-col">
           <div className="flex items-center justify-between mb-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.14em] text-subtle-foreground font-semibold inline-flex items-center gap-1">
@@ -611,7 +611,7 @@ export default function DashboardPage() {
               Forecast<ChevronRight className="h-3 w-3" />
             </Link>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-5 gap-y-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-5 gap-y-3.5 flex-1 auto-rows-fr items-center">
             <GoalProgress
               label="Total Revenue"
               current={130110}
@@ -708,7 +708,7 @@ export default function DashboardPage() {
 
       {/* ============ CHARTS ============ */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2 flex flex-col">
           <CardHeader>
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -726,8 +726,8 @@ export default function DashboardPage() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="pl-0">
-            <div className="h-64">
+          <CardContent className="pl-0 flex-1 flex flex-col">
+            <div className="flex-1 min-h-[260px]">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={OCCUPANCY_FORECAST} margin={{ top: 14, right: 16, bottom: 0, left: 8 }}>
                   <defs>
@@ -806,15 +806,15 @@ export default function DashboardPage() {
           <CardContent className="pl-0">
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={REVENUE_TREND} margin={{ top: 8, right: 16, bottom: 0, left: 8 }} barGap={4}>
+                <BarChart data={REVENUE_TREND} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
                   <XAxis dataKey="month" stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
                   <YAxis stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${Math.round(v / 1000)}k`} />
                   <Tooltip formatter={(value) => money(Number(value), cur)} contentStyle={{ background: "var(--color-surface-elevated)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12, color: "var(--color-foreground)" }} cursor={{ fill: "var(--color-surface-sunken)", opacity: 0.4 }} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="room" fill="var(--color-brand)" name="Room" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="food" fill="var(--color-accent)" name="F&B" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="hall" fill="var(--color-info)" name="Hall" radius={[4, 4, 0, 0]} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+                  <Bar dataKey="room" stackId="rev" fill="var(--color-brand)" name="Room" maxBarSize={44} />
+                  <Bar dataKey="food" stackId="rev" fill="#10b981" name="F&B" maxBarSize={44} />
+                  <Bar dataKey="hall" stackId="rev" fill="var(--color-info)" name="Hall" radius={[4, 4, 0, 0]} maxBarSize={44} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -830,24 +830,32 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <ul className="space-y-2">
-              {ALERTS.map(a => (
-                <li key={a.id} className="flex gap-3 p-3 rounded-md border border-border hover:bg-surface-sunken transition-colors group/alert">
-                  <span className={cn(
-                    "shrink-0 h-7 w-7 rounded-md flex items-center justify-center",
-                    a.level === "danger" && "bg-danger-soft text-danger",
-                    a.level === "warning" && "bg-warning-soft text-warning",
-                    a.level === "info" && "bg-info-soft text-info",
+              {ALERTS.map(a => {
+                const AlertIcon = a.level === "info" ? Bell : AlertTriangle;
+                return (
+                  <li key={a.id} className={cn(
+                    "flex gap-3 p-3 rounded-lg border border-border border-l-2 hover:bg-surface-sunken/50 transition-colors",
+                    a.level === "danger" && "border-l-danger",
+                    a.level === "warning" && "border-l-warning",
+                    a.level === "info" && "border-l-info",
                   )}>
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm leading-snug">{a.text}</p>
-                    <Link href={a.href} className="mt-1 inline-flex items-center gap-1 text-xs text-brand hover:underline font-medium">
-                      Review<ChevronRight className="h-3 w-3" />
-                    </Link>
-                  </div>
-                </li>
-              ))}
+                    <span className={cn(
+                      "shrink-0 h-8 w-8 rounded-lg ring-1 ring-inset flex items-center justify-center",
+                      a.level === "danger" && "bg-danger-soft text-danger ring-danger/20",
+                      a.level === "warning" && "bg-warning-soft text-warning ring-warning/20",
+                      a.level === "info" && "bg-info-soft text-info ring-info/20",
+                    )}>
+                      <AlertIcon className="h-4 w-4" />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm leading-snug">{a.text}</p>
+                      <Link href={a.href} className="mt-1 inline-flex items-center gap-0.5 text-xs text-brand hover:underline font-medium">
+                        Review <ChevronRight className="h-3 w-3" />
+                      </Link>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </CardContent>
         </Card>
