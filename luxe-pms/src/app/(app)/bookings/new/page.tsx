@@ -840,6 +840,18 @@ export default function BookingWizardPage() {
                         nationality: newGuest.nationality ?? "",
                         idType: newGuest.idType ?? "",
                         idNumber: newGuest.idNumber ?? "",
+                        address: newGuest.address ?? "",
+                        birthday: newGuest.dob ?? "",
+                        gender: newGuest.gender ?? "",
+                        company: newGuest.company ?? "",
+                        gst: newGuest.gst ?? "",
+                        vip: newGuest.vip ?? false,
+                        internalNotes: newGuest.remarks ?? "",
+                        // KYC captures (base64 data URLs) — now persisted to the DB.
+                        idFront: newGuest.idFront ?? "",
+                        idBack: newGuest.idBack ?? "",
+                        photo: newGuest.photo ?? "",
+                        signature: newGuest.signature ?? "",
                       }).catch(() => {});
                     }
                     await apiPost("/bookings", {
@@ -1185,10 +1197,10 @@ function ToggleRow({ label, hint, checked, onChange }: { label: string; hint: st
         <p className="text-xs text-muted-foreground">{hint}</p>
       </div>
       <span className={cn(
-        "h-5 w-9 rounded-full relative transition-colors shrink-0",
+        "relative h-6 w-11 rounded-full transition-colors shrink-0 inline-flex items-center",
         checked ? "bg-brand" : "bg-surface-sunken border border-border"
       )}>
-        <span className={cn("absolute top-0.5 h-3.5 w-3.5 rounded-full bg-surface shadow-xs transition-transform", checked ? "translate-x-4" : "translate-x-0.5")} />
+        <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-transform", checked ? "translate-x-[22px]" : "translate-x-0.5")} />
       </span>
     </button>
   );

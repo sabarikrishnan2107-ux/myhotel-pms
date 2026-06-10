@@ -207,6 +207,8 @@ class ResourceController extends Controller
             'lastStay' => 'string|max:50|nullable', 'address' => 'string|max:500|nullable', 'birthday' => 'string|max:50|nullable',
             'anniversary' => 'string|max:50|nullable', 'preferences' => 'array', 'allergies' => 'string|max:500|nullable',
             'internalNotes' => 'string|max:2000|nullable', 'blacklistReason' => 'string|max:500|nullable', 'loyaltyPoints' => 'integer|min:0',
+            'idFront' => 'string|nullable', 'idBack' => 'string|nullable', 'photo' => 'string|nullable', 'signature' => 'string|nullable',
+            'gender' => 'string|max:50|nullable', 'company' => 'string|max:255|nullable', 'gst' => 'string|max:50|nullable',
         ],
         'bookings' => [
             'bookingNo' => 'string|max:50', 'guestName' => 'string|max:255', 'roomNumber' => 'string|max:50|nullable',

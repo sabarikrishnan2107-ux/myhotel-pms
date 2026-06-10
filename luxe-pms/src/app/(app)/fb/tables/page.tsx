@@ -138,6 +138,12 @@ function hrLabel(h: number) {
   return `${String(hh).padStart(2, "0")}:${mm}`;
 }
 
+// "HH:MM" → decimal hours (20:30 → 20.5)
+function parseHr(t: string) {
+  const [h, m] = t.split(":").map(Number);
+  return (h || 0) + ((m || 0) >= 30 ? 0.5 : 0);
+}
+
 // ---------- Backend row normalisers ----------
 // The /table-reservations & /table-waitlist endpoints store ids as numeric and
 // startHr/durHr/waitMin in string columns; normalise back to the UI shapes so
@@ -199,6 +205,14 @@ export default function TablesPage() {
   const [showWalkin, setShowWalkin] = React.useState(false);
   const [detail, setDetail] = React.useState<Reservation | null>(null);
 
+  // Controlled form state for the create modals (so they POST real rows).
+  const NEW_RES_BLANK = { time: "20:00", party: 4, table: "T10", guest: "", phone: "", occasion: "none" as Occasion, source: "Phone" as NonNullable<Reservation["source"]>, notes: "" };
+  const [newRes, setNewRes] = React.useState(NEW_RES_BLANK);
+  const BLOCK_BLANK = { table: "T18", start: "14:00", end: "18:00", type: "maintenance", reason: "" };
+  const [blockForm, setBlockForm] = React.useState(BLOCK_BLANK);
+  const WALK_BLANK = { guest: "", party: 2, waitMin: 15, phone: "" };
+  const [walkForm, setWalkForm] = React.useState(WALK_BLANK);
+
   // KPIs
   const todaysCovers = reservations
     .filter(r => r.status !== "cancelled" && r.status !== "blocked" && r.status !== "no-show")
@@ -240,6 +254,53 @@ export default function TablesPage() {
     apiPost<WalkinRow>("/table-waitlist", w)
       .then(row => setWaitlist(prev => [...prev, toWalkin(row)]))
       .catch(() => setWaitlist(prev => [...prev, { id: `W${Date.now()}`, ...w }]));
+  };
+
+  const addReservation = (r: Omit<Reservation, "id">) => {
+    apiPost<ReservationRow>("/table-reservations", r)
+      .then(row => setReservations(prev => [...prev, toReservation(row)]))
+      .catch(() => setReservations(prev => [...prev, { id: `R${Date.now()}`, ...r }]));
+  };
+
+  // Build + persist a reservation from the New-reservation modal.
+  const submitNewReservation = (withSms: boolean) => {
+    addReservation({
+      table: newRes.table,
+      startHr: parseHr(newRes.time),
+      durHr: 2,
+      guest: newRes.guest.trim() || "Guest",
+      party: Number(newRes.party),
+      phone: newRes.phone.trim() || "—",
+      notes: newRes.notes.trim() || undefined,
+      occasion: newRes.occasion,
+      status: "confirmed",
+      source: newRes.source,
+    });
+    setShowNew(false);
+    setNewRes(NEW_RES_BLANK);
+    showToast(withSms ? `Reservation saved · SMS sent · ${newRes.table} · ${newRes.time}` : `Reservation created · ${newRes.table} · ${newRes.time}`);
+  };
+
+  // Build + persist a blocked slot from the Block-slot modal.
+  const submitBlock = () => {
+    const startHr = parseHr(blockForm.start);
+    const endHr = parseHr(blockForm.end);
+    const label = blockForm.type === "private" ? "Private event" : blockForm.type === "staff-meal" ? "Staff meal" : "Maintenance";
+    addReservation({
+      table: blockForm.table,
+      startHr,
+      durHr: Math.max(0.5, endHr - startHr),
+      guest: blockForm.reason.trim() ? `${label} — ${blockForm.reason.trim()}` : label,
+      party: 0,
+      phone: "—",
+      notes: blockForm.type,
+      occasion: "none",
+      status: "blocked",
+      source: "Direct",
+    });
+    setShowBlock(false);
+    setBlockForm(BLOCK_BLANK);
+    showToast(`Slot blocked · ${blockForm.table} · removed from public booking`);
   };
 
   const updateStatus = (id: string, status: ResStatus) => {
@@ -710,41 +771,38 @@ export default function TablesPage() {
             <div className="p-5 grid grid-cols-2 gap-4">
               <div>
                 <Label>Date</Label>
-                <Input type="date" defaultValue={date} className="mt-1.5" />
+                <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="mt-1.5" />
               </div>
               <div>
                 <Label>Time</Label>
-                <Select defaultValue="20:00" className="mt-1.5">
+                <Select value={newRes.time} onChange={e => setNewRes(s => ({ ...s, time: e.target.value }))} className="mt-1.5">
                   {HOURS.flatMap(h => [`${String(h).padStart(2,"0")}:00`, `${String(h).padStart(2,"0")}:30`]).map(t => <option key={t}>{t}</option>)}
                 </Select>
               </div>
               <div>
                 <Label>Party size</Label>
-                <Select defaultValue="4" className="mt-1.5">
+                <Select value={newRes.party} onChange={e => setNewRes(s => ({ ...s, party: Number(e.target.value) }))} className="mt-1.5">
                   {Array.from({ length: 12 }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n} guest{n>1?"s":""}</option>)}
                 </Select>
               </div>
               <div>
                 <Label>Table <span className="text-muted-foreground text-xs font-normal">(auto-suggested)</span></Label>
-                <Select defaultValue="T10" className="mt-1.5">
-                  <option value="T10">T10 &middot; Garden &middot; 4-seat (suggested)</option>
-                  <option value="T9">T9 &middot; Main Hall &middot; 4-seat</option>
-                  <option value="T13">T13 &middot; Garden &middot; 4-seat</option>
-                  <option value="T7">T7 &middot; Main Hall &middot; 4-seat</option>
+                <Select value={newRes.table} onChange={e => setNewRes(s => ({ ...s, table: e.target.value }))} className="mt-1.5">
+                  {TABLES.map(t => <option key={t} value={t}>{t} &middot; {TABLE_META[t].zone} &middot; {TABLE_META[t].seats}-seat</option>)}
                 </Select>
-                <p className="text-[10px] text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> 4 tables free at this slot</p>
+                <p className="text-[10px] text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> {TABLE_META[newRes.table].seats}-seat · {TABLE_META[newRes.table].zone}</p>
               </div>
               <div>
                 <Label>Guest name</Label>
-                <Input placeholder="e.g. Aarav Sharma" className="mt-1.5" />
+                <Input placeholder="e.g. Aarav Sharma" value={newRes.guest} onChange={e => setNewRes(s => ({ ...s, guest: e.target.value }))} className="mt-1.5" />
               </div>
               <div>
                 <Label>Phone</Label>
-                <Input placeholder="+91 98XXX XXXXX" className="mt-1.5" />
+                <Input placeholder="+91 98XXX XXXXX" value={newRes.phone} onChange={e => setNewRes(s => ({ ...s, phone: e.target.value }))} className="mt-1.5" />
               </div>
               <div>
                 <Label>Occasion</Label>
-                <Select defaultValue="none" className="mt-1.5">
+                <Select value={newRes.occasion} onChange={e => setNewRes(s => ({ ...s, occasion: e.target.value as Occasion }))} className="mt-1.5">
                   <option value="none">None</option>
                   <option value="birthday">Birthday</option>
                   <option value="anniversary">Anniversary</option>
@@ -755,7 +813,7 @@ export default function TablesPage() {
               </div>
               <div>
                 <Label>Source</Label>
-                <Select defaultValue="Phone" className="mt-1.5">
+                <Select value={newRes.source} onChange={e => setNewRes(s => ({ ...s, source: e.target.value as NonNullable<Reservation["source"]> }))} className="mt-1.5">
                   <option>Phone</option>
                   <option>Direct</option>
                   <option>Zomato</option>
@@ -765,15 +823,15 @@ export default function TablesPage() {
               </div>
               <div className="col-span-2">
                 <Label>Special notes</Label>
-                <Input placeholder="Allergies, high-chair, window seat, cake at 21:00…" className="mt-1.5" />
+                <Input placeholder="Allergies, high-chair, window seat, cake at 21:00…" value={newRes.notes} onChange={e => setNewRes(s => ({ ...s, notes: e.target.value }))} className="mt-1.5" />
               </div>
             </div>
             <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2 bg-surface-sunken/30">
               <Button size="sm" variant="ghost" onClick={() => setShowNew(false)}>Cancel</Button>
-              <Button size="sm" variant="outline" onClick={() => { setShowNew(false); showToast("Reservation saved · SMS confirmation sent"); }}>
+              <Button size="sm" variant="outline" onClick={() => submitNewReservation(true)}>
                 Save &amp; send SMS
               </Button>
-              <Button size="sm" onClick={() => { setShowNew(false); showToast("Reservation created · T10 · 20:00"); }}>
+              <Button size="sm" onClick={() => submitNewReservation(false)}>
                 <CheckCircle2 className="h-3.5 w-3.5" /> Create reservation
               </Button>
             </div>
@@ -790,18 +848,19 @@ export default function TablesPage() {
               <Button size="icon" variant="ghost" onClick={() => setShowWalkin(false)}><X className="h-4 w-4" /></Button>
             </div>
             <div className="p-5 space-y-3">
-              <div><Label>Guest name</Label><Input placeholder="e.g. Walk-in: Mehta" className="mt-1.5" /></div>
+              <div><Label>Guest name</Label><Input placeholder="e.g. Walk-in: Mehta" value={walkForm.guest} onChange={e => setWalkForm(s => ({ ...s, guest: e.target.value }))} className="mt-1.5" /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><Label>Party</Label><Select defaultValue="2" className="mt-1.5">{[1,2,3,4,5,6,7,8].map(n => <option key={n}>{n}</option>)}</Select></div>
-                <div><Label>Est wait (min)</Label><Input defaultValue="15" type="number" className="mt-1.5" /></div>
+                <div><Label>Party</Label><Select value={walkForm.party} onChange={e => setWalkForm(s => ({ ...s, party: Number(e.target.value) }))} className="mt-1.5">{[1,2,3,4,5,6,7,8].map(n => <option key={n}>{n}</option>)}</Select></div>
+                <div><Label>Est wait (min)</Label><Input value={walkForm.waitMin} onChange={e => setWalkForm(s => ({ ...s, waitMin: Number(e.target.value) }))} type="number" className="mt-1.5" /></div>
               </div>
-              <div><Label>Phone (for SMS)</Label><Input placeholder="+91 …" className="mt-1.5" /></div>
+              <div><Label>Phone (for SMS)</Label><Input placeholder="+91 …" value={walkForm.phone} onChange={e => setWalkForm(s => ({ ...s, phone: e.target.value }))} className="mt-1.5" /></div>
             </div>
             <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2 bg-surface-sunken/30">
               <Button size="sm" variant="ghost" onClick={() => setShowWalkin(false)}>Cancel</Button>
               <Button size="sm" onClick={() => {
-                addWalkin({ guest: "Walk-in guest", party: 2, phone: "+91 98XXX XXXXX", waitMin: 15, arrivedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) });
+                addWalkin({ guest: walkForm.guest.trim() || "Walk-in guest", party: Number(walkForm.party), phone: walkForm.phone.trim() || "—", waitMin: Number(walkForm.waitMin), arrivedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) });
                 setShowWalkin(false);
+                setWalkForm(WALK_BLANK);
                 showToast("Added to waitlist · #" + (waitlist.length + 1));
               }}>
                 <UserPlus className="h-3.5 w-3.5" /> Add to queue
@@ -820,17 +879,17 @@ export default function TablesPage() {
               <Button size="icon" variant="ghost" onClick={() => setShowBlock(false)}><X className="h-4 w-4" /></Button>
             </div>
             <div className="p-5 space-y-3">
-              <div><Label>Table(s)</Label><Select defaultValue="T18" className="mt-1.5">{TABLES.map(t => <option key={t}>{t}</option>)}</Select></div>
+              <div><Label>Table(s)</Label><Select value={blockForm.table} onChange={e => setBlockForm(s => ({ ...s, table: e.target.value }))} className="mt-1.5">{TABLES.map(t => <option key={t}>{t}</option>)}</Select></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><Label>Start</Label><Select defaultValue="14:00" className="mt-1.5">{HOURS.flatMap(h => [`${String(h).padStart(2,"0")}:00`,`${String(h).padStart(2,"0")}:30`]).map(t => <option key={t}>{t}</option>)}</Select></div>
-                <div><Label>End</Label><Select defaultValue="18:00" className="mt-1.5">{HOURS.flatMap(h => [`${String(h).padStart(2,"0")}:00`,`${String(h).padStart(2,"0")}:30`]).map(t => <option key={t}>{t}</option>)}</Select></div>
+                <div><Label>Start</Label><Select value={blockForm.start} onChange={e => setBlockForm(s => ({ ...s, start: e.target.value }))} className="mt-1.5">{HOURS.flatMap(h => [`${String(h).padStart(2,"0")}:00`,`${String(h).padStart(2,"0")}:30`]).map(t => <option key={t}>{t}</option>)}</Select></div>
+                <div><Label>End</Label><Select value={blockForm.end} onChange={e => setBlockForm(s => ({ ...s, end: e.target.value }))} className="mt-1.5">{HOURS.flatMap(h => [`${String(h).padStart(2,"0")}:00`,`${String(h).padStart(2,"0")}:30`]).map(t => <option key={t}>{t}</option>)}</Select></div>
               </div>
-              <div><Label>Type</Label><Select defaultValue="maintenance" className="mt-1.5"><option value="maintenance">Maintenance</option><option value="private">Private event</option><option value="staff-meal">Staff meal</option></Select></div>
-              <div><Label>Reason</Label><Input placeholder="e.g. Booth re-upholstery" className="mt-1.5" /></div>
+              <div><Label>Type</Label><Select value={blockForm.type} onChange={e => setBlockForm(s => ({ ...s, type: e.target.value }))} className="mt-1.5"><option value="maintenance">Maintenance</option><option value="private">Private event</option><option value="staff-meal">Staff meal</option></Select></div>
+              <div><Label>Reason</Label><Input placeholder="e.g. Booth re-upholstery" value={blockForm.reason} onChange={e => setBlockForm(s => ({ ...s, reason: e.target.value }))} className="mt-1.5" /></div>
             </div>
             <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2 bg-surface-sunken/30">
               <Button size="sm" variant="ghost" onClick={() => setShowBlock(false)}>Cancel</Button>
-              <Button size="sm" onClick={() => { setShowBlock(false); showToast("Slot blocked · removed from public booking"); }}>
+              <Button size="sm" onClick={submitBlock}>
                 <Ban className="h-3.5 w-3.5" /> Block slot
               </Button>
             </div>

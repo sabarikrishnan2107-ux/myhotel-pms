@@ -31,6 +31,25 @@ type Beo = {
   margin: number;      // pct 0-1
   advance: number;     // INR
   status: BeoStatus;
+  // Section detail (persisted columns) — optional on the base type, required in DraftBeo.
+  startTime?: string;
+  endTime?: string;
+  vegPax?: number;
+  nonVegPax?: number;
+  dietary?: string;
+  barPackage?: string;
+  cocktails?: string;
+  avNotes?: string;
+  decorTheme?: string;
+  decorColor?: string;
+  staffService?: number;
+  staffKitchen?: number;
+  staffCaptains?: number;
+  parking?: number;
+  security?: number;
+  florist?: string;
+  photographer?: string;
+  ancillary?: number;
   // Backend carry-fields: the human BEO number lives in `beoNo`, the numeric PK
   // in `_pk`. `id` mirrors `beoNo` so existing JSX/comparisons stay byte-identical.
   beoNo?: string;
@@ -541,26 +560,28 @@ type DraftBeo = Beo & {
 
 function makeDraft(initial: Beo | null): DraftBeo {
   if (initial) {
+    // Use the BEO's saved section detail when present (loaded from the backend);
+    // fall back to sensible demo defaults for any field not yet set.
     return {
       ...initial,
-      startTime: "08:00",
-      endTime: "23:00",
-      vegPax: Math.round(initial.pax * 0.55),
-      nonVegPax: Math.round(initial.pax * 0.45),
-      dietary: "12 Jain, 4 vegan, 2 nut allergies, 8 halal",
-      barPackage: initial.pkg.toLowerCase(),
-      cocktails: "Saffron Sour (signature), Marina Spritz, Bombay Sling",
-      avNotes: "2x line array, 4 lapel mics, 6 wash lights, LED backdrop 12x8 ft",
-      decorTheme: "Royal Rajasthani",
-      decorColor: "Maroon & Gold",
-      staffService: 22,
-      staffKitchen: 14,
-      staffCaptains: 4,
-      parking: 90,
-      security: 6,
-      florist: "Bloom & Bouquet — Bandra",
-      photographer: "ShaadiClicks Studios",
-      ancillary: Math.round(initial.revenue * 0.12),
+      startTime: initial.startTime ?? "08:00",
+      endTime: initial.endTime ?? "23:00",
+      vegPax: initial.vegPax ?? Math.round(initial.pax * 0.55),
+      nonVegPax: initial.nonVegPax ?? Math.round(initial.pax * 0.45),
+      dietary: initial.dietary ?? "12 Jain, 4 vegan, 2 nut allergies, 8 halal",
+      barPackage: initial.barPackage ?? initial.pkg.toLowerCase(),
+      cocktails: initial.cocktails ?? "Saffron Sour (signature), Marina Spritz, Bombay Sling",
+      avNotes: initial.avNotes ?? "2x line array, 4 lapel mics, 6 wash lights, LED backdrop 12x8 ft",
+      decorTheme: initial.decorTheme ?? "Royal Rajasthani",
+      decorColor: initial.decorColor ?? "Maroon & Gold",
+      staffService: initial.staffService ?? 22,
+      staffKitchen: initial.staffKitchen ?? 14,
+      staffCaptains: initial.staffCaptains ?? 4,
+      parking: initial.parking ?? 90,
+      security: initial.security ?? 6,
+      florist: initial.florist ?? "Bloom & Bouquet — Bandra",
+      photographer: initial.photographer ?? "ShaadiClicks Studios",
+      ancillary: initial.ancillary ?? Math.round(initial.revenue * 0.12),
     };
   }
   return {
@@ -627,6 +648,25 @@ function BeoCreator({
     margin: d.margin,
     advance: d.advance,
     status: d.status,
+    // Section detail — round-tripped to the banquet_orders columns.
+    startTime: d.startTime,
+    endTime: d.endTime,
+    vegPax: d.vegPax,
+    nonVegPax: d.nonVegPax,
+    dietary: d.dietary,
+    barPackage: d.barPackage,
+    cocktails: d.cocktails,
+    avNotes: d.avNotes,
+    decorTheme: d.decorTheme,
+    decorColor: d.decorColor,
+    staffService: d.staffService,
+    staffKitchen: d.staffKitchen,
+    staffCaptains: d.staffCaptains,
+    parking: d.parking,
+    security: d.security,
+    florist: d.florist,
+    photographer: d.photographer,
+    ancillary: d.ancillary,
   });
 
   const marginAmount = d.revenue * d.margin;

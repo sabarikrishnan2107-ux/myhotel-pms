@@ -195,6 +195,23 @@ export default function MaintenancePage() {
     showToast(`Renewal request sent to ${v.name}`);
   };
 
+  // ----- Create: new preventive schedule / AMC vendor (persist via POST) -----
+  const [newScheduleOpen, setNewScheduleOpen] = React.useState(false);
+  const [newAmcOpen, setNewAmcOpen] = React.useState(false);
+
+  const addSchedule = (s: Omit<ScheduleItem, "id">) => {
+    apiPost<ScheduleItem>("/maintenance-schedules", s)
+      .then(row => setSchedules(prev => [{ ...row, id: String(row.id) }, ...prev]))
+      .catch(() => setSchedules(prev => [{ id: `sc${Date.now()}`, ...s }, ...prev]));
+    showToast(`Schedule added · ${s.equipment}`);
+  };
+  const addAmc = (v: Omit<AMCVendor, "id">) => {
+    apiPost<AMCVendor>("/amc-contracts", v)
+      .then(row => setAmcVendors(prev => [{ ...row, id: String(row.id) }, ...prev]))
+      .catch(() => setAmcVendors(prev => [{ id: `amc${Date.now()}`, ...v }, ...prev]));
+    showToast(`AMC vendor added · ${v.name}`);
+  };
+
   // Persist a ticket patch (assign / status change) optimistically.
   const persistTicket = (id: Ticket["id"], patch: Partial<Ticket>) => {
     setTickets(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
@@ -412,12 +429,23 @@ export default function MaintenancePage() {
           onOpenDetail={setScheduleDetail}
           onShowToast={showToast}
           onMarkDone={markScheduleDone}
+          onNew={() => setNewScheduleOpen(true)}
         />
       )}
 
       {/* ============ AMC VENDORS TAB ============ */}
       {mainTab === "amc" && (
-        <AmcTab vendors={amcVendors} onOpenDetail={setAmcDetail} onRenew={renewVendor} />
+        <AmcTab vendors={amcVendors} onOpenDetail={setAmcDetail} onRenew={renewVendor} onNew={() => setNewAmcOpen(true)} />
+      )}
+
+      {/* New preventive schedule modal */}
+      {newScheduleOpen && (
+        <NewScheduleModal onClose={() => setNewScheduleOpen(false)} onSave={(s) => { setNewScheduleOpen(false); addSchedule(s); }} />
+      )}
+
+      {/* New AMC vendor modal */}
+      {newAmcOpen && (
+        <NewAmcModal onClose={() => setNewAmcOpen(false)} onSave={(v) => { setNewAmcOpen(false); addAmc(v); }} />
       )}
 
       {/* New Ticket modal */}
@@ -666,13 +694,14 @@ function Th({
 }
 
 // ===================== PREVENTIVE SCHEDULE TAB =====================
-function ScheduleTab({ schedules, freqFilter, setFreqFilter, onOpenDetail, onShowToast, onMarkDone }: {
+function ScheduleTab({ schedules, freqFilter, setFreqFilter, onOpenDetail, onShowToast, onMarkDone, onNew }: {
   schedules: ScheduleItem[];
   freqFilter: "all" | Frequency;
   setFreqFilter: (f: "all" | Frequency) => void;
   onOpenDetail: (item: ScheduleItem) => void;
   onShowToast: (m: string) => void;
   onMarkDone: (s: ScheduleItem) => void;
+  onNew: () => void;
 }) {
   const list = schedules.filter(s => freqFilter === "all" || s.frequency === freqFilter);
   // Group by frequency for upcoming-reminders strip
@@ -682,6 +711,10 @@ function ScheduleTab({ schedules, freqFilter, setFreqFilter, onOpenDetail, onSho
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-muted-foreground">{schedules.length} preventive tasks</h2>
+        <Button size="sm" onClick={onNew}><Plus className="h-4 w-4" />New schedule</Button>
+      </div>
       {/* Upcoming reminders banner */}
       {(overdueItems.length > 0 || todayItems.length > 0) && (
         <Card className={cn(
@@ -857,10 +890,11 @@ function ScheduleTab({ schedules, freqFilter, setFreqFilter, onOpenDetail, onSho
 }
 
 // ===================== AMC VENDORS TAB =====================
-function AmcTab({ vendors, onOpenDetail, onRenew }: {
+function AmcTab({ vendors, onOpenDetail, onRenew, onNew }: {
   vendors: AMCVendor[];
   onOpenDetail: (v: AMCVendor) => void;
   onRenew: (v: AMCVendor) => void;
+  onNew: () => void;
 }) {
   const totalAnnualFee = vendors.reduce((t, v) => t + v.annualFee, 0);
   const expiringSoon = vendors.filter(v => {
@@ -873,6 +907,10 @@ function AmcTab({ vendors, onOpenDetail, onRenew }: {
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-muted-foreground">{vendors.length} AMC contracts</h2>
+        <Button size="sm" onClick={onNew}><Plus className="h-4 w-4" />New AMC vendor</Button>
+      </div>
       {/* Strip summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card className="p-4">
@@ -1342,6 +1380,215 @@ function AmcDetailModal({ vendor, onClose, onAction, onRenew }: {
             >
               <RotateCw className="h-3.5 w-3.5" />Renew
             </Button>
+          </div>
+        </Card>
+      </div>
+    </>
+  );
+}
+
+// ===================== NEW PREVENTIVE SCHEDULE MODAL =====================
+function NewScheduleModal({ onClose, onSave }: {
+  onClose: () => void;
+  onSave: (s: Omit<ScheduleItem, "id">) => void;
+}) {
+  const [equipment, setEquipment] = React.useState("");
+  const [area, setArea] = React.useState("");
+  const [category, setCategory] = React.useState(CATEGORIES[0] ?? "HVAC");
+  const [frequency, setFrequency] = React.useState<Frequency>("monthly");
+  const [assignee, setAssignee] = React.useState("");
+  const [durationMin, setDurationMin] = React.useState(30);
+
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [onClose]);
+
+  const valid = equipment.trim() !== "";
+  const save = () => {
+    const FREQ_DAYS: Record<Frequency, number> = { daily: 1, weekly: 7, monthly: 30, quarterly: 90 };
+    const nd = new Date(TODAY); nd.setDate(nd.getDate() + FREQ_DAYS[frequency]);
+    onSave({
+      equipment: equipment.trim(),
+      area: area.trim() || "—",
+      category,
+      frequency,
+      lastDone: isoDate(TODAY),
+      nextDue: isoDate(nd),
+      assignee: assignee.trim() || "Unassigned",
+      durationMin: Number(durationMin) || 30,
+    });
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <Card className="pointer-events-auto w-full max-w-lg p-0 animate-in shadow-xl overflow-hidden">
+          <div className="px-5 py-4 bg-surface-elevated border-b border-border flex items-center gap-3">
+            <span className="h-10 w-10 rounded-md bg-brand-soft text-brand-soft-foreground inline-flex items-center justify-center shrink-0">
+              <CalendarClock className="h-5 w-5" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold">New preventive schedule</h3>
+              <p className="text-xs text-muted-foreground">Recurs automatically · next due is computed from the frequency</p>
+            </div>
+            <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
+          </div>
+
+          <div className="px-5 py-4 space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Equipment / task *</Label>
+              <Input value={equipment} onChange={e => setEquipment(e.target.value)} placeholder="e.g. Generator test run" className="h-9" autoFocus />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Area</Label>
+                <Input value={area} onChange={e => setArea(e.target.value)} placeholder="e.g. Basement · DG room" className="h-9" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Category</Label>
+                <Select value={category} onChange={e => setCategory(e.target.value)} className="h-9">
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Frequency</Label>
+                <Select value={frequency} onChange={e => setFrequency(e.target.value as Frequency)} className="h-9">
+                  {(["daily", "weekly", "monthly", "quarterly"] as Frequency[]).map(f => <option key={f} value={f}>{FREQ_LABEL[f]}</option>)}
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Assignee</Label>
+                <Input value={assignee} onChange={e => setAssignee(e.target.value)} placeholder="e.g. Ravi K." className="h-9" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Duration (min)</Label>
+                <Input type="number" value={durationMin} onChange={e => setDurationMin(Number(e.target.value))} className="h-9 tabular" />
+              </div>
+            </div>
+          </div>
+
+          <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2 bg-surface-sunken/30">
+            <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button size="sm" disabled={!valid} onClick={save}><CheckCircle2 className="h-3.5 w-3.5" />Add schedule</Button>
+          </div>
+        </Card>
+      </div>
+    </>
+  );
+}
+
+// ===================== NEW AMC VENDOR MODAL =====================
+function NewAmcModal({ onClose, onSave }: {
+  onClose: () => void;
+  onSave: (v: Omit<AMCVendor, "id">) => void;
+}) {
+  const [name, setName] = React.useState("");
+  const [category, setCategory] = React.useState("HVAC / Cooling");
+  const [contactPerson, setContactPerson] = React.useState("");
+  const [phone, setPhone] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [annualFee, setAnnualFee] = React.useState(120000);
+  const [visitFrequency, setVisitFrequency] = React.useState<Frequency>("monthly");
+  const [slaResponseHours, setSlaResponseHours] = React.useState(24);
+
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [onClose]);
+
+  const valid = name.trim() !== "";
+  const save = () => {
+    const FREQ_DAYS: Record<Frequency, number> = { daily: 1, weekly: 7, monthly: 30, quarterly: 90 };
+    const end = new Date(TODAY); end.setFullYear(end.getFullYear() + 1);
+    const nv = new Date(TODAY); nv.setDate(nv.getDate() + FREQ_DAYS[visitFrequency]);
+    onSave({
+      name: name.trim(),
+      category,
+      contactPerson: contactPerson.trim() || "—",
+      phone: phone.trim() || "—",
+      email: email.trim() || "—",
+      address: "",
+      contractStart: isoDate(TODAY),
+      contractEnd: isoDate(end),
+      annualFee: Number(annualFee) || 0,
+      visitFrequency,
+      lastVisit: isoDate(TODAY),
+      nextVisit: isoDate(nv),
+      slaResponseHours: Number(slaResponseHours) || 24,
+      status: "active",
+    });
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <Card className="pointer-events-auto w-full max-w-lg p-0 animate-in shadow-xl overflow-hidden">
+          <div className="px-5 py-4 bg-surface-elevated border-b border-border flex items-center gap-3">
+            <span className="h-10 w-10 rounded-md bg-brand-soft text-brand-soft-foreground inline-flex items-center justify-center shrink-0">
+              <ShieldCheck className="h-5 w-5" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold">New AMC vendor</h3>
+              <p className="text-xs text-muted-foreground">Annual maintenance contract · dates default to a 1-year term</p>
+            </div>
+            <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
+          </div>
+
+          <div className="px-5 py-4 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Vendor name *</Label>
+                <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. CoolBreeze HVAC Pvt" className="h-9" autoFocus />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Category</Label>
+                <Input value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. HVAC / Cooling" className="h-9" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Contact person</Label>
+                <Input value={contactPerson} onChange={e => setContactPerson(e.target.value)} placeholder="e.g. Ananya Iyer" className="h-9" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Phone</Label>
+                <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 …" className="h-9" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Email</Label>
+              <Input value={email} onChange={e => setEmail(e.target.value)} placeholder="amc@vendor.in" className="h-9" />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Annual fee (₹)</Label>
+                <Input type="number" value={annualFee} onChange={e => setAnnualFee(Number(e.target.value))} className="h-9 tabular" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Visit freq.</Label>
+                <Select value={visitFrequency} onChange={e => setVisitFrequency(e.target.value as Frequency)} className="h-9">
+                  {(["daily", "weekly", "monthly", "quarterly"] as Frequency[]).map(f => <option key={f} value={f}>{FREQ_LABEL[f]}</option>)}
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">SLA (hrs)</Label>
+                <Input type="number" value={slaResponseHours} onChange={e => setSlaResponseHours(Number(e.target.value))} className="h-9 tabular" />
+              </div>
+            </div>
+          </div>
+
+          <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2 bg-surface-sunken/30">
+            <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button size="sm" disabled={!valid} onClick={save}><CheckCircle2 className="h-3.5 w-3.5" />Add vendor</Button>
           </div>
         </Card>
       </div>
