@@ -57,7 +57,9 @@ const NOTES = {
 export default function FolioDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const name = hotelName(useProperty());
-  const reservation = RESERVATIONS.find(r => r.bookingNo === id) ?? RESERVATIONS[0];
+  // Real booking from Postgres (falls back to the seed only while offline / not found).
+  const [liveRes, setLiveRes] = React.useState<typeof RESERVATIONS[number] | null>(null);
+  const reservation = liveRes ?? RESERVATIONS.find(r => r.bookingNo === id) ?? RESERVATIONS[0];
   const guest = GUESTS.find(g => g.name === reservation.guestName);
 
   const [tab, setTab] = React.useState<TabId>("overview");
@@ -84,10 +86,12 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
   const [internalNotes, setInternalNotes] = React.useState(NOTES.internal);
   const [noteDraft, setNoteDraft] = React.useState("");
 
-  // Load this booking's folio (charges + payments) from Postgres.
+  // Load this booking + its folio (charges + payments) from Postgres.
   React.useEffect(() => {
     let cancelled = false;
     const q = `?bookingNo=${encodeURIComponent(id)}`;
+    apiGet<typeof RESERVATIONS>("/bookings")
+      .then(rows => { if (!cancelled) { const b = rows.find(r => r.bookingNo === id); if (b) setLiveRes(b); } }).catch(() => {});
     apiGet<typeof SAMPLE_FOLIO_CHARGES>(`/folio-charges${q}`)
       .then(rows => { if (!cancelled) setCharges(rows); }).catch(() => {});
     apiGet<typeof SAMPLE_PAYMENTS>(`/folio-payments${q}`)
