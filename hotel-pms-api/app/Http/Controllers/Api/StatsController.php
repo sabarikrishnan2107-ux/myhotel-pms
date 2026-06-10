@@ -158,8 +158,10 @@ class StatsController extends Controller
                 'text' => "Low stock: {$it->name} (".max(0, $it->min - $it->qty)." below minimum)", 'href' => '/inventory'];
         }
         foreach (ComplianceLicense::where('daysToExpiry', '<=', 30)->orderBy('daysToExpiry')->get() as $lic) {
-            $alerts[] = ['id' => 'lic-'.$lic->id, 'level' => $lic->daysToExpiry <= 7 ? 'danger' : 'warning',
-                'text' => "{$lic->name} expires in {$lic->daysToExpiry} days", 'href' => '/compliance'];
+            $d = (int) $lic->daysToExpiry;
+            $when = $d < 0 ? 'expired '.abs($d).' days ago' : ($d === 0 ? 'expires today' : "expires in {$d} days");
+            $alerts[] = ['id' => 'lic-'.$lic->id, 'level' => $d <= 7 ? 'danger' : 'warning',
+                'text' => "{$lic->name} {$when}", 'href' => '/compliance'];
         }
         foreach (MaintenanceTicket::whereNotIn('status', ['completed', 'closed', 'resolved'])->get() as $m) {
             $alerts[] = ['id' => 'maint-'.$m->id, 'level' => $m->priority === 'high' ? 'danger' : 'warning',

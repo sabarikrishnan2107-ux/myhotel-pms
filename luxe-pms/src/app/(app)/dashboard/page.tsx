@@ -844,7 +844,7 @@ export default function DashboardPage() {
                 <p className="text-sm text-muted-foreground">No open alerts — all systems nominal.</p>
               </div>
             ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
               {alertsData.map(a => {
                 const AlertIcon = a.level === "info" ? Bell : AlertTriangle;
                 return (
