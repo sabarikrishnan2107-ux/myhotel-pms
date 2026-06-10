@@ -501,7 +501,7 @@ export default function DashboardPage() {
           {arrivals.length === 0 ? (
             <p className="px-5 py-10 text-center text-sm text-muted-foreground border-t border-border">No arrivals scheduled today.</p>
           ) : (
-            <ul className="divide-y divide-border border-t border-border">
+            <ul className="divide-y divide-border border-t border-border max-h-[336px] overflow-y-auto">
               {arrivals.map(r => (
                 <li
                   key={r.id}
@@ -566,7 +566,7 @@ export default function DashboardPage() {
           {departures.length === 0 ? (
             <p className="px-5 py-10 text-center text-sm text-muted-foreground border-t border-border">No departures due today.</p>
           ) : (
-            <ul className="divide-y divide-border border-t border-border">
+            <ul className="divide-y divide-border border-t border-border max-h-[336px] overflow-y-auto">
               {departures.map(r => (
                 <li key={r.id} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-sunken transition-colors">
                   <Avatar name={r.guestName} size={38} vip={r.vip} />
