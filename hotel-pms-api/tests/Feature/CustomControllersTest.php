@@ -132,6 +132,45 @@ class CustomControllersTest extends TestCase
         $this->getJson('/api/room-board')->assertOk()->assertJsonCount(1);
     }
 
+    public function test_stats_revenue_breakdown_and_quick_counts(): void
+    {
+        $this->actingUser();
+        $this->getJson('/api/stats')->assertOk()->assertJsonStructure([
+            'revenue'     => ['room', 'food', 'hall', 'advance', 'pending', 'total'],
+            'quickCounts' => ['checkin', 'checkout', 'housekeeping'],
+        ]);
+    }
+
+    public function test_revenue_trend_returns_six_months(): void
+    {
+        $this->actingUser();
+        $this->getJson('/api/dashboard/revenue-trend')
+            ->assertOk()->assertJsonCount(6)
+            ->assertJsonStructure([['month', 'room', 'food', 'hall']]);
+    }
+
+    public function test_occupancy_forecast_returns_thirty_days(): void
+    {
+        $this->actingUser();
+        $this->getJson('/api/dashboard/occupancy-forecast')
+            ->assertOk()->assertJsonCount(30)
+            ->assertJsonStructure([['day', 'occupancy', 'forecast']]);
+    }
+
+    public function test_dashboard_alerts_returns_a_list(): void
+    {
+        $this->actingUser();
+        $this->getJson('/api/dashboard/alerts')->assertOk();
+    }
+
+    public function test_dashboard_goals_returns_metrics(): void
+    {
+        $this->actingUser();
+        $this->getJson('/api/dashboard/goals')
+            ->assertOk()->assertJsonCount(6)
+            ->assertJsonStructure([['label', 'current', 'target', 'format', 'pace']]);
+    }
+
     // ---- Property & settings ----
 
     public function test_property_show_and_update(): void

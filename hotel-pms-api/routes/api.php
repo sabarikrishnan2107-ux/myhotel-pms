@@ -39,6 +39,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // Dashboard KPIs + live room board (aggregated from real data)
     Route::get('/stats', [StatsController::class, 'index']);
     Route::get('/room-board', [StatsController::class, 'roomBoard']);
+    Route::get('/dashboard/revenue-trend', [StatsController::class, 'revenueTrend']);
+    Route::get('/dashboard/occupancy-forecast', [StatsController::class, 'occupancyForecast']);
+    Route::get('/dashboard/alerts', [StatsController::class, 'alerts']);
+    Route::get('/dashboard/goals', [StatsController::class, 'goals']);
 
     // Night audit — post nightly room charges to in-house folios
     Route::post('/night-audit', [NightAuditController::class, 'run']);

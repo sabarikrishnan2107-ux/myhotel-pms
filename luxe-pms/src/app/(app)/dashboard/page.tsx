@@ -21,7 +21,7 @@ import { money, formatTime, cn } from "@/lib/utils";
 import { apiGet } from "@/lib/api";
 import { useProperty, currencySymbol } from "@/lib/use-property";
 import {
-  DASHBOARD_KPIS, TODAY_ARRIVALS, TODAY_DEPARTURES, REVENUE_TREND,
+  TODAY_ARRIVALS, TODAY_DEPARTURES, REVENUE_TREND,
   OCCUPANCY_FORECAST, SOURCE_MIX, ALERTS, ROOMS, GUESTS,
 } from "@/lib/mock-data";
 import type { Reservation, Guest, Room } from "@/lib/types";
@@ -55,17 +55,6 @@ const QUICK_ACTIONS = [
   { href: "/reports", label: "Reports", icon: FileBarChart, tone: "neutral" as const },
 ];
 
-// Sparkline mock data — last 7 days
-const SPARKLINE_DATA = {
-  occupancy: [62, 58, 65, 70, 68, 74, 76],
-  adr: [710, 695, 725, 740, 738, 750, 742],
-  revpar: [440, 405, 470, 518, 502, 555, 528],
-  rooms: [22, 19, 24, 27, 26, 29, 27],
-  fb: [16800, 15400, 18200, 19500, 17900, 20100, 21340],
-  hall: [11000, 8500, 14200, 16800, 12400, 18900, 18200],
-  net: [13200, 11800, 15500, 17900, 15600, 21200, 19840],
-};
-
 const TOP_SOURCES = [
   { name: "Direct / Website", revenue: 38400, bookings: 52 },
   { name: "Booking.com", revenue: 32200, bookings: 41 },
@@ -75,11 +64,14 @@ const TOP_SOURCES = [
   { name: "Expedia", revenue: 8900, bookings: 11 },
 ];
 
-const AI_BRIEFING: { tone: "success" | "info" | "warning" | "danger"; text: React.ReactNode }[] = [
-  { tone: "success", text: <>Pace <span className="font-semibold">+6.4%</span> vs last Monday — driven by Direct &amp; Corporate.</> },
-  { tone: "warning", text: <><span className="font-semibold">2 VIP arrivals</span> today: Mr. Kapoor (Suite 502), Ms. Iyer (Villa 3).</> },
-  { tone: "info", text: <>7-day forecast: <span className="font-semibold">82%</span> avg occupancy, healthy cash flow.</> },
-  { tone: "danger", text: <><span className="font-semibold">Open issue:</span> Room 214 AC complaint pending &gt; 2h.</> },
+// Used only while the goals endpoint is offline.
+const GOALS_FALLBACK: GoalRow[] = [
+  { label: "Total Revenue", current: 0, target: 160000, format: "money", pace: "behind" },
+  { label: "Occupancy", current: 0, target: 75, format: "pct", pace: "behind" },
+  { label: "ADR", current: 0, target: 720, format: "money", pace: "behind" },
+  { label: "Direct Bookings", current: 0, target: 60, format: "number", pace: "behind" },
+  { label: "F&B Revenue", current: 0, target: 24000, format: "money", pace: "behind" },
+  { label: "Outstanding", current: 0, target: 50000, format: "money", pace: "ahead" },
 ];
 
 type ActivityTone = "success" | "info" | "warning" | "danger" | "brand" | "accent";
@@ -155,7 +147,9 @@ type DashStats = {
   rooms: { total: number; occupied: number; available: number; occupancyPct: number };
   bookings: { total: number; inHouse: number; arrivalsToday: number; departuresToday: number };
   guests: { total: number; vip: number };
-  revenue: { totalBooked: number; collected: number; outstanding: number; folioPayments: number };
+  revenue: { totalBooked: number; collected: number; outstanding: number; folioPayments: number;
+    room: number; food: number; hall: number; advance: number; pending: number; total: number };
+  quickCounts: { checkin: number; checkout: number; housekeeping: number };
   arrivals: Reservation[];
   departures: Reservation[];
   sourceMix: { source: string; bookings: number; revenue: number }[];
@@ -171,6 +165,11 @@ type AuditRow = {
   module: string; action: string; entity: string; severity: string;
 };
 
+type TrendRow = { month: string; room: number; food: number; hall: number };
+type ForecastRow = { day: number; occupancy: number; forecast: number };
+type AlertRow = { id: string; level: "danger" | "warning" | "info"; text: string; href: string };
+type GoalRow = { label: string; current: number; target: number; format: "money" | "pct" | "number"; pace: "ahead" | "ontrack" | "behind" };
+
 export default function DashboardPage() {
   const [stats, setStats] = React.useState<DashStats | null>(null);
   React.useEffect(() => {
@@ -179,10 +178,6 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // Real KPIs from Postgres when available, falling back to mock for decorative widgets.
-  const k = stats
-    ? { ...DASHBOARD_KPIS, occupancyPct: stats.rooms.occupancyPct, occupied: stats.rooms.occupied, totalRooms: stats.rooms.total, available: stats.rooms.available }
-    : DASHBOARD_KPIS;
   const arrivals = stats?.arrivals ?? TODAY_ARRIVALS;
   const departures = stats?.departures ?? TODAY_DEPARTURES;
 
@@ -205,6 +200,20 @@ export default function DashboardPage() {
   React.useEffect(() => {
     let cancelled = false;
     apiGet<AuditRow[]>("/audit-logs").then(a => { if (!cancelled) setAudit(a); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Real analytics: revenue trend, occupancy forecast, alerts, monthly goals.
+  const [trend, setTrend] = React.useState<TrendRow[] | null>(null);
+  const [forecast, setForecast] = React.useState<ForecastRow[] | null>(null);
+  const [liveAlerts, setLiveAlerts] = React.useState<AlertRow[] | null>(null);
+  const [goals, setGoals] = React.useState<GoalRow[] | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<TrendRow[]>("/dashboard/revenue-trend").then(d => { if (!cancelled) setTrend(d); }).catch(() => {});
+    apiGet<ForecastRow[]>("/dashboard/occupancy-forecast").then(d => { if (!cancelled) setForecast(d); }).catch(() => {});
+    apiGet<AlertRow[]>("/dashboard/alerts").then(d => { if (!cancelled) setLiveAlerts(d); }).catch(() => {});
+    apiGet<GoalRow[]>("/dashboard/goals").then(d => { if (!cancelled) setGoals(d); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -257,6 +266,33 @@ export default function DashboardPage() {
     ? stats.sourceMix.map(s => ({ name: s.source, revenue: s.revenue, bookings: s.bookings }))
     : TOP_SOURCES;
 
+  // Real analytics with mock fallback (only used while the backend is offline).
+  const rev = stats?.revenue;
+  const quick = stats?.quickCounts;
+  const trendData: TrendRow[] = trend?.length ? trend : (REVENUE_TREND as unknown as TrendRow[]);
+  const forecastData: ForecastRow[] = forecast?.length ? forecast : (OCCUPANCY_FORECAST as unknown as ForecastRow[]);
+  const alertsData = liveAlerts ?? ALERTS;
+  const sourceMixDonut = React.useMemo(() => {
+    const sm = stats?.sourceMix ?? [];
+    const total = sm.reduce((s, x) => s + x.revenue, 0) || 1;
+    return sm.length ? sm.map(x => ({ name: x.source, value: Math.round((x.revenue / total) * 100) })) : SOURCE_MIX;
+  }, [stats]);
+
+  // AI briefing distilled from the real numbers (no external model — just live facts).
+  const aiBriefing = React.useMemo(() => {
+    const out: { tone: "success" | "info" | "warning" | "danger"; text: React.ReactNode }[] = [];
+    out.push({ tone: occPct >= 70 ? "success" : "info", text: <><span className="font-semibold">{occPct}%</span> occupancy today — {roomCounts.occupied} of {roomCounts.total} rooms sold.</> });
+    const outstanding = stats?.revenue.outstanding ?? 0;
+    if (outstanding > 0) out.push({ tone: "warning", text: <><span className="font-semibold">{money(outstanding, cur)}</span> outstanding across in-house folios.</> });
+    const hk = roomCounts.dirty + roomCounts.cleaning;
+    out.push(hk > 0
+      ? { tone: "info", text: <><span className="font-semibold">{hk}</span> room{hk === 1 ? "" : "s"} awaiting housekeeping.</> }
+      : { tone: "success", text: <>All rooms clean and inspection-ready.</> });
+    const top = stats?.sourceMix?.[0];
+    if (top) out.push({ tone: "info", text: <>Top source <span className="font-semibold">{top.source}</span> — {money(top.revenue, cur)} from {top.bookings} bookings.</> });
+    return out.slice(0, 4);
+  }, [stats, occPct, roomCounts, cur]);
+
   // Live activity feed from the real audit trail (falls back to mock).
   const activity = React.useMemo(() => {
     if (!audit || audit.length === 0) return ACTIVITY;
@@ -301,6 +337,9 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
           {QUICK_ACTIONS.map(a => {
             const Icon = a.icon;
+            const liveCount = quick
+              ? (a.href === "/checkin" ? quick.checkin : a.href === "/checkout" ? quick.checkout : a.href === "/housekeeping" ? quick.housekeeping : a.count)
+              : a.count;
             return (
               <Link key={a.href} href={a.href}>
                 <Card className={cn(
@@ -319,9 +358,9 @@ export default function DashboardPage() {
                     <Icon className="h-5 w-5" />
                   </div>
                   <p className="text-sm font-medium mt-2.5">{a.label}</p>
-                  {a.count !== undefined && (
+                  {liveCount !== undefined && liveCount > 0 && (
                     <span className="absolute top-3 right-3 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-semibold bg-brand text-brand-foreground shadow-xs">
-                      {a.count}
+                      {liveCount}
                     </span>
                   )}
                 </Card>
@@ -436,14 +475,14 @@ export default function DashboardPage() {
               </span>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold">AI Daily Briefing</p>
-                <p className="text-[11px] text-muted-foreground">Live insight stream · 2m ago</p>
+                <p className="text-[11px] text-muted-foreground">Live insight stream · just now</p>
               </div>
               <span className="inline-flex items-center gap-1 rounded-md bg-info-soft text-info px-2 py-0.5 text-[10px] font-semibold">
                 <span className="h-1.5 w-1.5 rounded-full bg-info animate-pulse" /> AI
               </span>
             </div>
             <ul className="space-y-2.5 text-[13px] flex-1">
-              {AI_BRIEFING.map((b, i) => (
+              {aiBriefing.map((b, i) => (
                 <li key={i} className="flex items-start gap-2 leading-snug">
                   <span className={cn(
                     "h-1.5 w-1.5 rounded-full mt-1.5 shrink-0",
@@ -467,16 +506,16 @@ export default function DashboardPage() {
         </Card>
       </section>
 
-      {/* ============ REVENUE KPIs WITH SPARKLINES ============ */}
+      {/* ============ REVENUE BREAKDOWN ============ */}
       <section>
-        <SectionHeader title="Revenue · Today" hint="Each card shows trailing 7-day trend" icon={TrendingUp} />
+        <SectionHeader title="Revenue" hint="Live booked revenue across departments" icon={TrendingUp} />
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-          <KPISpark icon={BedDouble} label="Room" value={money(k.roomRevenue, cur)} delta={4.2} spark={SPARKLINE_DATA.rooms} color="var(--color-brand)" accent="brand" />
-          <KPISpark icon={UtensilsCrossed} label="F&B" value={money(k.foodRevenue, cur)} delta={6.8} spark={SPARKLINE_DATA.fb} color="var(--color-accent)" accent="accent" />
-          <KPISpark icon={Building2} label="Hall" value={money(k.hallRevenue, cur)} delta={2.4} spark={SPARKLINE_DATA.hall} color="var(--color-info)" accent="info" />
-          <KPISpark icon={Wallet} label="Advance" value={money(k.advanceReceived, cur)} delta={null} accent="success" />
-          <KPISpark icon={Receipt} label="Pending" value={money(k.pendingPayments, cur)} delta={null} accent="warning" hint="Outstanding" />
-          <KPISpark icon={TrendingUp} label="Net Profit" value={money(k.todayProfit, cur)} delta={8.4} spark={SPARKLINE_DATA.net} color="var(--color-success)" accent="brand" />
+          <KPISpark icon={BedDouble} label="Room" value={money(rev?.room ?? 0, cur)} delta={null} accent="brand" />
+          <KPISpark icon={UtensilsCrossed} label="F&B" value={money(rev?.food ?? 0, cur)} delta={null} accent="accent" />
+          <KPISpark icon={Building2} label="Hall" value={money(rev?.hall ?? 0, cur)} delta={null} accent="info" />
+          <KPISpark icon={Wallet} label="Advance" value={money(rev?.advance ?? 0, cur)} delta={null} accent="success" hint="Collected" />
+          <KPISpark icon={Receipt} label="Outstanding" value={money(rev?.pending ?? 0, cur)} delta={null} accent="warning" hint="To collect" />
+          <KPISpark icon={TrendingUp} label="Total" value={money(rev?.total ?? 0, cur)} delta={null} accent="brand" hint="Room + F&B + Hall" />
         </div>
       </section>
 
@@ -612,48 +651,16 @@ export default function DashboardPage() {
             </Link>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-5 gap-y-3.5 flex-1 auto-rows-fr items-center">
-            <GoalProgress
-              label="Total Revenue"
-              current={130110}
-              target={160000}
-              format={v => money(v, cur)}
-              pace="ontrack"
-            />
-            <GoalProgress
-              label="Occupancy"
-              current={70}
-              target={75}
-              format={v => `${v}%`}
-              pace="behind"
-            />
-            <GoalProgress
-              label="ADR"
-              current={742}
-              target={720}
-              format={v => money(v, cur)}
-              pace="ahead"
-            />
-            <GoalProgress
-              label="Direct Bookings"
-              current={142}
-              target={180}
-              format={v => `${v}`}
-              pace="behind"
-            />
-            <GoalProgress
-              label="F&B Revenue"
-              current={21340}
-              target={24000}
-              format={v => money(v, cur)}
-              pace="ontrack"
-            />
-            <GoalProgress
-              label="Net Profit"
-              current={53810}
-              target={55000}
-              format={v => money(v, cur)}
-              pace="ahead"
-            />
+            {(goals ?? GOALS_FALLBACK).map(g => (
+              <GoalProgress
+                key={g.label}
+                label={g.label}
+                current={g.current}
+                target={g.target}
+                format={g.format === "money" ? (v => money(v, cur)) : g.format === "pct" ? (v => `${v}%`) : (v => `${v}`)}
+                pace={g.pace}
+              />
+            ))}
           </div>
         </Card>
 
@@ -729,7 +736,7 @@ export default function DashboardPage() {
           <CardContent className="pl-0 flex-1 flex flex-col">
             <div className="flex-1 min-h-[260px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={OCCUPANCY_FORECAST} margin={{ top: 14, right: 16, bottom: 0, left: 8 }}>
+                <AreaChart data={forecastData} margin={{ top: 14, right: 16, bottom: 0, left: 8 }}>
                   <defs>
                     <linearGradient id="fcBooked" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="var(--color-brand)" stopOpacity={0.45} />
@@ -761,8 +768,8 @@ export default function DashboardPage() {
             <div className="relative h-44">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={SOURCE_MIX} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={72} paddingAngle={2}>
-                    {SOURCE_MIX.map((_, i) => (
+                  <Pie data={sourceMixDonut} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={72} paddingAngle={2}>
+                    {sourceMixDonut.map((_, i) => (
                       <Cell key={i} fill={SOURCE_COLORS[i % SOURCE_COLORS.length]} stroke="var(--color-surface)" strokeWidth={2} />
                     ))}
                   </Pie>
@@ -770,14 +777,14 @@ export default function DashboardPage() {
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-2xl font-semibold tabular leading-none">{SOURCE_MIX[0]?.value}%</span>
-                <span className="text-[10px] text-muted-foreground mt-1 max-w-[88px] truncate text-center">{SOURCE_MIX[0]?.name}</span>
+                <span className="text-2xl font-semibold tabular leading-none">{sourceMixDonut[0]?.value}%</span>
+                <span className="text-[10px] text-muted-foreground mt-1 max-w-[88px] truncate text-center">{sourceMixDonut[0]?.name}</span>
               </div>
             </div>
             <ul className="mt-3 space-y-2">
-              {SOURCE_MIX.map((s, i) => {
+              {sourceMixDonut.map((s, i) => {
                 const color = SOURCE_COLORS[i % SOURCE_COLORS.length];
-                const maxVal = SOURCE_MIX[0]?.value || 1;
+                const maxVal = sourceMixDonut[0]?.value || 1;
                 return (
                   <li key={s.name} className="flex items-center gap-2.5 text-xs">
                     <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: color }} />
@@ -806,7 +813,7 @@ export default function DashboardPage() {
           <CardContent className="pl-0">
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={REVENUE_TREND} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
+                <BarChart data={trendData} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
                   <XAxis dataKey="month" stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
                   <YAxis stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${Math.round(v / 1000)}k`} />
@@ -825,12 +832,20 @@ export default function DashboardPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Alerts</CardTitle>
-              <Badge tone="danger">{ALERTS.length}</Badge>
+              <Badge tone="danger">{alertsData.length}</Badge>
             </div>
           </CardHeader>
           <CardContent>
+            {alertsData.length === 0 ? (
+              <div className="flex items-center gap-3 p-4 rounded-lg border border-border bg-surface-sunken/40">
+                <span className="h-8 w-8 rounded-lg bg-success-soft text-success flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="h-4 w-4" />
+                </span>
+                <p className="text-sm text-muted-foreground">No open alerts — all systems nominal.</p>
+              </div>
+            ) : (
             <ul className="space-y-2">
-              {ALERTS.map(a => {
+              {alertsData.map(a => {
                 const AlertIcon = a.level === "info" ? Bell : AlertTriangle;
                 return (
                   <li key={a.id} className={cn(
@@ -857,6 +872,7 @@ export default function DashboardPage() {
                 );
               })}
             </ul>
+            )}
           </CardContent>
         </Card>
       </section>
