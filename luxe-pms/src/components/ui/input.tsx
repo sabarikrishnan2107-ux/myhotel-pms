@@ -30,7 +30,7 @@ export function Select({ className, children, ...props }: React.SelectHTMLAttrib
   return (
     <select
       className={cn(
-        "flex h-10 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm",
+        "flex h-10 w-full rounded-md border border-border bg-surface px-3 text-sm",
         "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 outline-hidden",
         className
       )}
