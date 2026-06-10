@@ -1,5 +1,9 @@
 "use client";
 import * as React from "react";
+import { apiGet, apiPut } from "@/lib/api";
+
+// Backend key for the persisted notification-preferences blob.
+const PREFS_KEY = "notification-prefs";
 
 // ========================= TYPES =========================
 export type NotifCategory = "booking" | "payment" | "housekeeping" | "maintenance" | "guest" | "system" | "security" | "marketing";
@@ -108,6 +112,34 @@ const NotifCtx = React.createContext<Ctx | null>(null);
 export function NotificationsProvider({ children }: { children: React.ReactNode }) {
   const [notifs, setNotifs] = React.useState<Notif[]>(SEED_NOTIFS);
   const [prefs, setPrefs] = React.useState<NotifPreferences>(DEFAULT_PREFS);
+  const loadedRef = React.useRef(false);
+
+  // Load persisted preferences once (real backend; defaults stay if offline/unset).
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Partial<NotifPreferences>>(`/settings/${PREFS_KEY}`)
+      .then(sv => {
+        if (cancelled || !sv || Array.isArray(sv) || typeof sv !== "object") return;
+        setPrefs(prev => {
+          const channels = { ...prev.channels };
+          if (sv.channels) {
+            for (const c of ALL_CATEGORIES) {
+              if (sv.channels[c]) channels[c] = { ...prev.channels[c], ...sv.channels[c] };
+            }
+          }
+          return { ...prev, ...sv, channels };
+        });
+      })
+      .catch(() => {})
+      .finally(() => { loadedRef.current = true; });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persist on every change once the initial load has settled.
+  React.useEffect(() => {
+    if (!loadedRef.current) return;
+    apiPut(`/settings/${PREFS_KEY}`, prefs).catch(() => {});
+  }, [prefs]);
 
   const visibleNotifs = notifs.filter(n => !n.dismissed);
   const unreadCount = visibleNotifs.filter(n => !n.read).length;

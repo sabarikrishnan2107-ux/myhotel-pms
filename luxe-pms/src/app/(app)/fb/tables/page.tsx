@@ -11,6 +11,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { useProperty, hotelName } from "@/lib/use-property";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 
 // ---------- Types ----------
 type ResStatus = "confirmed" | "seated" | "completed" | "no-show" | "cancelled" | "blocked";
@@ -137,6 +138,32 @@ function hrLabel(h: number) {
   return `${String(hh).padStart(2, "0")}:${mm}`;
 }
 
+// ---------- Backend row normalisers ----------
+// The /table-reservations & /table-waitlist endpoints store ids as numeric and
+// startHr/durHr/waitMin in string columns; normalise back to the UI shapes so
+// the Gantt math (numeric +/-) and string ids keep working unchanged.
+type ReservationRow = Omit<Reservation, "id" | "startHr" | "durHr"> & {
+  id: string | number;
+  startHr: number | string;
+  durHr: number | string;
+};
+type WalkinRow = Omit<Walkin, "id" | "waitMin"> & {
+  id: string | number;
+  waitMin: number | string;
+};
+
+const toReservation = (r: ReservationRow): Reservation => ({
+  ...r,
+  id: String(r.id),
+  startHr: Number(r.startHr),
+  durHr: Number(r.durHr),
+});
+const toWalkin = (w: WalkinRow): Walkin => ({
+  ...w,
+  id: String(w.id),
+  waitMin: Number(w.waitMin),
+});
+
 // ---------- Page ----------
 export default function TablesPage() {
   const name = hotelName(useProperty());
@@ -149,6 +176,23 @@ export default function TablesPage() {
   const [search, setSearch] = React.useState("");
   const [reservations, setReservations] = React.useState<Reservation[]>(INITIAL_RESERVATIONS);
   const [waitlist, setWaitlist] = React.useState<Walkin[]>(INITIAL_WAITLIST);
+
+  // Replace the seeded mock with real backend data; .catch keeps the mock so the
+  // page is byte-for-byte identical offline.
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<ReservationRow[]>("/table-reservations")
+      .then(d => { if (!cancelled && d.length) setReservations(d.map(toReservation)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<WalkinRow[]>("/table-waitlist")
+      .then(d => { if (!cancelled && d.length) setWaitlist(d.map(toWalkin)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const [showNew, setShowNew] = React.useState(false);
   const [showBlock, setShowBlock] = React.useState(false);
@@ -178,21 +222,37 @@ export default function TablesPage() {
   // Actions
   const seatNow = (w: Walkin) => {
     setWaitlist(prev => prev.filter(x => x.id !== w.id));
+    apiDelete(`/table-waitlist/${w.id}`).catch(() => {});
     showToast(`${w.guest} (${w.party}) seated · Walk-in logged`);
   };
   const sendSms = (w: Walkin) => {
     setWaitlist(prev => prev.map(x => x.id === w.id ? { ...x, notified: true } : x));
+    apiPut(`/table-waitlist/${w.id}`, { notified: true }).catch(() => {});
     showToast(`SMS sent to ${w.guest} · "Your table is ready"`);
   };
   const removeWait = (w: Walkin) => {
     setWaitlist(prev => prev.filter(x => x.id !== w.id));
+    apiDelete(`/table-waitlist/${w.id}`).catch(() => {});
     showToast(`${w.guest} removed from waitlist`);
+  };
+
+  const addWalkin = (w: Omit<Walkin, "id">) => {
+    apiPost<WalkinRow>("/table-waitlist", w)
+      .then(row => setWaitlist(prev => [...prev, toWalkin(row)]))
+      .catch(() => setWaitlist(prev => [...prev, { id: `W${Date.now()}`, ...w }]));
   };
 
   const updateStatus = (id: string, status: ResStatus) => {
     setReservations(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+    apiPut(`/table-reservations/${id}`, { status }).catch(() => {});
     const r = reservations.find(x => x.id === id);
     showToast(`${r?.guest ?? "Reservation"} → ${STATUS_LABEL[status]}`);
+  };
+
+  const releaseBlock = (b: Reservation) => {
+    setReservations(prev => prev.filter(x => x.id !== b.id));
+    apiDelete(`/table-reservations/${b.id}`).catch(() => {});
+    showToast(`Block on ${b.table} released`);
   };
 
   return (
@@ -527,7 +587,7 @@ export default function TablesPage() {
                       <div className="text-muted-foreground">{b.notes}</div>
                     </td>
                     <td className="px-4 py-2.5 text-right">
-                      <Button size="sm" variant="ghost" onClick={() => { setReservations(prev => prev.filter(x => x.id !== b.id)); showToast(`Block on ${b.table} released`); }}>
+                      <Button size="sm" variant="ghost" onClick={() => releaseBlock(b)}>
                         Release
                       </Button>
                     </td>
@@ -740,8 +800,7 @@ export default function TablesPage() {
             <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2 bg-surface-sunken/30">
               <Button size="sm" variant="ghost" onClick={() => setShowWalkin(false)}>Cancel</Button>
               <Button size="sm" onClick={() => {
-                const id = `W${Date.now()}`;
-                setWaitlist(prev => [...prev, { id, guest: "Walk-in guest", party: 2, phone: "+91 98XXX XXXXX", waitMin: 15, arrivedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
+                addWalkin({ guest: "Walk-in guest", party: 2, phone: "+91 98XXX XXXXX", waitMin: 15, arrivedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) });
                 setShowWalkin(false);
                 showToast("Added to waitlist · #" + (waitlist.length + 1));
               }}>

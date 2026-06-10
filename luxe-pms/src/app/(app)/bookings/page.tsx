@@ -16,7 +16,7 @@ import { RESERVATIONS, GUESTS, ROOMS } from "@/lib/mock-data";
 import { money, formatDate, cn } from "@/lib/utils";
 import { apiGet, apiPut } from "@/lib/api";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
-import type { Reservation, PaymentStatus, BookingSource } from "@/lib/types";
+import type { Reservation, PaymentStatus, BookingSource, Guest, Room } from "@/lib/types";
 
 type BookingState = "confirmed" | "checked-in" | "checked-out" | "cancelled" | "no-show";
 
@@ -76,13 +76,21 @@ export default function BookingsPage() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2800); };
 
-  // Reservations from Postgres (falls back to seeds if the API is down).
+  // Reservations, guests and rooms from Postgres (fall back to seeds if the API is down).
   const [bookings, setBookings] = React.useState<Reservation[]>(RESERVATIONS);
+  const [guests, setGuests] = React.useState<Guest[]>(GUESTS);
+  const [rooms, setRooms] = React.useState<Room[]>(ROOMS);
   React.useEffect(() => {
     let cancelled = false;
     apiGet<Reservation[]>("/bookings")
       .then(rows => { if (!cancelled) setBookings(rows); })
       .catch(() => { if (!cancelled) showToast("⚠ Backend offline — showing local data"); });
+    apiGet<Guest[]>("/guests")
+      .then(rows => { if (!cancelled && rows.length) setGuests(rows); })
+      .catch(() => {});
+    apiGet<Room[]>("/room-board")
+      .then(rows => { if (!cancelled && rows.length) setRooms(rows); })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -94,7 +102,7 @@ export default function BookingsPage() {
   const guest = React.useMemo(() => {
     if (!selected) return null;
     return (
-      GUESTS.find(g => g.name === selected.guestName) ??
+      guests.find(g => g.name === selected.guestName) ??
       {
         id: `g-${selected.id}`,
         name: selected.guestName,
@@ -110,7 +118,7 @@ export default function BookingsPage() {
         lastStay: selected.checkIn,
       }
     );
-  }, [selected]);
+  }, [selected, guests]);
 
   const filtered = React.useMemo(() => {
     return effective.filter(r => {
@@ -407,6 +415,7 @@ export default function BookingsPage() {
       {modifyTarget && (
         <ModifyBookingDialog
           reservation={modifyTarget}
+          rooms={rooms}
           onClose={() => setModifyTarget(null)}
           onSave={(patch) => handleModify(modifyTarget, patch)}
         />
@@ -433,8 +442,9 @@ export default function BookingsPage() {
 }
 
 // ===================== MODIFY DIALOG =====================
-function ModifyBookingDialog({ reservation, onClose, onSave }: {
+function ModifyBookingDialog({ reservation, rooms, onClose, onSave }: {
   reservation: Reservation;
+  rooms: Room[];
   onClose: () => void;
   onSave: (patch: Partial<Reservation>) => void;
 }) {
@@ -469,9 +479,9 @@ function ModifyBookingDialog({ reservation, onClose, onSave }: {
   const set = <K extends keyof ModifyDraft>(k: K, v: ModifyDraft[K]) => setDraft(d => ({ ...d, [k]: v }));
 
   // Available rooms — same type or upgrade options
-  const availableRooms = ROOMS.filter(r => r.status === "available" || r.number === reservation.roomNumber);
+  const availableRooms = rooms.filter(r => r.status === "available" || r.number === reservation.roomNumber);
 
-  const totalDiff = draft.nights * (ROOMS.find(r => r.number === draft.roomNumber)?.rate ?? 0) - reservation.total;
+  const totalDiff = draft.nights * (rooms.find(r => r.number === draft.roomNumber)?.rate ?? 0) - reservation.total;
 
   const valid = draft.nights >= 1 && new Date(draft.checkOut) > new Date(draft.checkIn) && draft.adults >= 1;
 
@@ -527,7 +537,7 @@ function ModifyBookingDialog({ reservation, onClose, onSave }: {
             <div className="space-y-1.5">
               <Label className="text-xs"><BedDouble className="h-3 w-3 inline mr-1" />Room</Label>
               <Select value={draft.roomNumber} onChange={e => {
-                const room = ROOMS.find(r => r.number === e.target.value);
+                const room = rooms.find(r => r.number === e.target.value);
                 if (room) { set("roomNumber", room.number); set("roomType", room.type); }
               }} className="h-10">
                 <option value={reservation.roomNumber}>Room {reservation.roomNumber} · {reservation.roomType} (current)</option>

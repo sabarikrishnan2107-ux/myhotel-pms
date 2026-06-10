@@ -19,7 +19,7 @@ import { Badge, PaymentBadge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
-import { GUESTS, ROOMS } from "@/lib/mock-data";
+import { useGuests, useRooms } from "@/lib/use-directory";
 import type { Reservation, PaymentStatus, BookingSource, Guest } from "@/lib/types";
 import { cn, money, formatTime } from "@/lib/utils";
 import { apiGet, apiPut } from "@/lib/api";
@@ -39,8 +39,8 @@ async function persistCheckIn(bookingNo: string, roomNumber?: string) {
 }
 
 /** Join a reservation with its guest profile to enable phone/email/ID search */
-function enrich(r: Reservation) {
-  const guest = GUESTS.find(g => g.name === r.guestName);
+function enrich(r: Reservation, guests: Guest[]) {
+  const guest = guests.find(g => g.name === r.guestName);
   const [firstName, ...rest] = r.guestName.split(" ");
   const lastName = rest.join(" ");
   return {
@@ -141,7 +141,8 @@ export default function CheckinPage() {
       ))
       .catch(() => {});
   }, []);
-  const enriched = React.useMemo(() => arrivals.map(enrich), [arrivals]);
+  const guests = useGuests();
+  const enriched = React.useMemo(() => arrivals.map(r => enrich(r, guests)), [arrivals, guests]);
 
   // Auto-open check-in modal when navigated with ?book=BK100245 (e.g. from dashboard)
   React.useEffect(() => {
@@ -158,7 +159,7 @@ export default function CheckinPage() {
   const selectedGuest: Guest | null = React.useMemo(() => {
     if (!selected) return null;
     return (
-      GUESTS.find(g => g.name === selected.guestName) ?? {
+      guests.find(g => g.name === selected.guestName) ?? {
         id: `g-${selected.id}`,
         name: selected.guestName,
         phone: "—",
@@ -173,7 +174,7 @@ export default function CheckinPage() {
         lastStay: selected.checkIn,
       }
     );
-  }, [selected]);
+  }, [selected, guests]);
   const [source, setSource] = React.useState<"all" | BookingSource>("all");
   const [payment, setPayment] = React.useState<"all" | PaymentStatus>("all");
   const [slot, setSlot] = React.useState<Slot>("all");
@@ -705,7 +706,9 @@ function CheckinProcessModal({
     { id: 4, label: "Complete", icon: CheckCircle2, hint: "Finalize" },
   ] as const;
 
-  const guest = GUESTS.find(g => g.name === reservation.guestName);
+  const guests = useGuests();
+  const rooms = useRooms();
+  const guest = guests.find(g => g.name === reservation.guestName);
   // ID on file? Walk-ins from /bookings/new have KYC captured. Express walk-ins from /checkin do NOT — they capture here.
   // OTA/Website/Phone/Agent/Corporate pre-bookings typically don't capture KYC at booking.
   const idOnFile = forceKycCapture ? false : reservation.source === "Walk-in";
@@ -739,8 +742,8 @@ function CheckinProcessModal({
   // currently-available room of that type (plus the pre-assigned one if any).
   const isUnassigned = !reservation.roomNumber || reservation.roomNumber === "Unassigned";
   const availableForType = React.useMemo(
-    () => ROOMS.filter(r => r.type === reservation.roomType && (r.status === "available" || r.number === reservation.roomNumber)),
-    [reservation.roomType, reservation.roomNumber],
+    () => rooms.filter(r => r.type === reservation.roomType && (r.status === "available" || r.number === reservation.roomNumber)),
+    [rooms, reservation.roomType, reservation.roomNumber],
   );
   const [assignedRoom, setAssignedRoom] = React.useState(isUnassigned ? "" : reservation.roomNumber);
   const selectedRoomObj = availableForType.find(r => r.number === assignedRoom);
@@ -1533,7 +1536,8 @@ function WalkInModal({
   const [children, setChildren] = React.useState(0);
 
   // ----- room -----
-  const availableRooms = React.useMemo(() => ROOMS.filter(r => r.status === "available"), []);
+  const rooms = useRooms();
+  const availableRooms = React.useMemo(() => rooms.filter(r => r.status === "available"), [rooms]);
   const [roomNumber, setRoomNumber] = React.useState(availableRooms[0]?.number ?? "");
   const room = availableRooms.find(r => r.number === roomNumber);
 

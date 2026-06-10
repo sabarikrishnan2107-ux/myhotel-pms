@@ -47,6 +47,12 @@ use App\Models\Staff;
 use App\Models\Vendor;
 use App\Models\Webhook;
 use App\Models\WebRoom;
+use App\Models\BanquetOrder;
+use App\Models\TableReservation;
+use App\Models\TableWaitlistEntry;
+use App\Models\MaintenanceSchedule;
+use App\Models\AmcContract;
+use App\Models\PosTable;
 use Illuminate\Http\Request;
 
 /**
@@ -99,6 +105,12 @@ class ResourceController extends Controller
         'email-schedules'        => EmailSchedule::class,
         'linen-items'            => LinenItem::class,
         'lost-reports'           => LostReport::class,
+        'banquet-orders'         => BanquetOrder::class,
+        'table-reservations'     => TableReservation::class,
+        'table-waitlist'         => TableWaitlistEntry::class,
+        'maintenance-schedules'  => MaintenanceSchedule::class,
+        'amc-contracts'          => AmcContract::class,
+        'pos-tables'             => PosTable::class,
     ];
 
     /** Resources whose index can be scoped by a query param → column. */
@@ -361,6 +373,101 @@ class ResourceController extends Controller
             'remarks' => 'string|max:2000|nullable', 'estValue' => 'integer|nullable', 'hvi' => 'boolean',
             'timeline' => 'array', 'matches' => 'array',
         ],
+        'banquet-orders' => [
+            'beoNo' => 'string|max:50',
+            'eventName' => 'string|max:255',
+            'type' => 'string|max:50',
+            'date' => 'string|max:50',
+            'venue' => 'string|max:255',
+            'host' => 'string|max:255',
+            'pax' => 'integer|min:0',
+            'pkg' => 'string|max:50',
+            'revenue' => 'integer|min:0',
+            'margin' => 'numeric|min:0|max:1',
+            'advance' => 'integer|min:0',
+            'status' => 'string|max:50',
+            'startTime' => 'string|max:20|nullable',
+            'endTime' => 'string|max:20|nullable',
+            'vegPax' => 'integer|min:0',
+            'nonVegPax' => 'integer|min:0',
+            'dietary' => 'string|max:2000|nullable',
+            'barPackage' => 'string|max:100|nullable',
+            'cocktails' => 'string|max:2000|nullable',
+            'avNotes' => 'string|max:2000|nullable',
+            'decorTheme' => 'string|max:255|nullable',
+            'decorColor' => 'string|max:255|nullable',
+            'staffService' => 'integer|min:0',
+            'staffKitchen' => 'integer|min:0',
+            'staffCaptains' => 'integer|min:0',
+            'parking' => 'integer|min:0',
+            'security' => 'integer|min:0',
+            'florist' => 'string|max:255|nullable',
+            'photographer' => 'string|max:255|nullable',
+            'ancillary' => 'integer|min:0',
+            'timeline' => 'array',
+            'courses' => 'array',
+            'bars' => 'array',
+            'avEquipment' => 'array',
+            'decorVendors' => 'array',
+            'staffing' => 'array',
+            'vendors' => 'array',
+        ],
+        'table-reservations' => [
+            'table' => 'string|max:50',
+            'startHr' => 'numeric|min:0',
+            'durHr' => 'numeric|min:0',
+            'guest' => 'string|max:255',
+            'party' => 'integer|min:0',
+            'phone' => 'string|max:50',
+            'notes' => 'string|max:2000|nullable',
+            'occasion' => 'string|max:50',
+            'status' => 'string|max:50',
+            'source' => 'string|max:50|nullable',
+        ],
+        'table-waitlist' => [
+            'guest' => 'string|max:255',
+            'party' => 'integer|min:0',
+            'phone' => 'string|max:50',
+            'waitMin' => 'integer|min:0',
+            'arrivedAt' => 'string|max:50',
+            'notified' => 'boolean',
+        ],
+        'maintenance-schedules' => [
+            'equipment' => 'string|max:255',
+            'area' => 'string|max:255|nullable',
+            'category' => 'string|max:100|nullable',
+            'frequency' => 'string|max:50',
+            'lastDone' => 'string|max:50|nullable',
+            'nextDue' => 'string|max:50|nullable',
+            'assignee' => 'string|max:100|nullable',
+            'durationMin' => 'integer|min:0',
+        ],
+        'amc-contracts' => [
+            'name' => 'string|max:255',
+            'category' => 'string|max:100|nullable',
+            'contactPerson' => 'string|max:255|nullable',
+            'phone' => 'string|max:50|nullable',
+            'email' => 'email|max:255|nullable',
+            'address' => 'string|max:500|nullable',
+            'contractStart' => 'string|max:50|nullable',
+            'contractEnd' => 'string|max:50|nullable',
+            'annualFee' => 'integer|min:0',
+            'visitFrequency' => 'string|max:50',
+            'lastVisit' => 'string|max:50|nullable',
+            'nextVisit' => 'string|max:50|nullable',
+            'slaResponseHours' => 'integer|min:0',
+            'status' => 'string|max:50',
+            'notes' => 'string|max:2000|nullable',
+        ],
+        'pos-tables' => [
+            'code' => 'string|max:20',
+            'seats' => 'integer|min:1',
+            'status' => 'string|max:50',
+            'server' => 'string|max:100|nullable',
+            'covers' => 'integer|min:0|nullable',
+            'seatedAt' => 'string|max:20|nullable',
+            'zone' => 'string|max:100|nullable',
+        ],
     ];
 
     /** Fields that must be present (and non-empty) when creating a row. */
@@ -392,6 +499,12 @@ class ResourceController extends Controller
         'email-schedules' => ['label'],
         'linen-items' => ['name'],
         'lost-reports' => ['guest', 'itemName'],
+        'banquet-orders' => ['eventName'],
+        'table-reservations' => ['guest', 'table'],
+        'table-waitlist' => ['guest'],
+        'maintenance-schedules' => ['equipment'],
+        'amc-contracts' => ['name'],
+        'pos-tables' => ['code'],
     ];
 
     private function model(string $resource): string

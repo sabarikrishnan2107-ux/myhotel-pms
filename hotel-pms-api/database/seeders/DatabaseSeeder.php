@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
             FolioSeeder::class,
             ErpSeeder::class,
             FbMenuSeeder::class,
+            FbOrderSeeder::class,
             OpsSeeder::class,
             LostReportSeeder::class,
             LinenSeeder::class,
@@ -41,6 +42,12 @@ class DatabaseSeeder extends Seeder
             PricingRuleSeeder::class,
             AuditLogSeeder::class,
             OwnerFlashSeeder::class,
+            BanquetOrderSeeder::class,
+            TableReservationSeeder::class,
+            TableWaitlistEntrySeeder::class,
+            MaintenanceScheduleSeeder::class,
+            AmcContractSeeder::class,
+            PosTableSeeder::class,
         ]);
     }
 }

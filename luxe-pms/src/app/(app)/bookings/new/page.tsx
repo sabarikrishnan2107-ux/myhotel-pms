@@ -16,6 +16,7 @@ import { GUESTS, ROOMS } from "@/lib/mock-data";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
 import { NewGuestForm, type NewGuestData } from "@/components/guests/new-guest-form";
+import type { Guest, Room } from "@/lib/types";
 
 // Dynamic pricing — weekday / weekend / holiday multipliers (read from Master Setup in production)
 const PRICING_MULTIPLIERS = {
@@ -95,8 +96,13 @@ export default function BookingWizardPage() {
   const [roomType, setRoomType] = React.useState("Deluxe");
   // Managed room types (name → base rate) from Configuration → Room Types.
   const [roomTypes, setRoomTypes] = React.useState<{ name: string; baseTariff: number }[]>([]);
+  // Real guests + rooms from Postgres (seeded with mock as an offline fallback).
+  const [guests, setGuests] = React.useState<Guest[]>(GUESTS);
+  const [rooms, setRooms] = React.useState<Room[]>(ROOMS);
   React.useEffect(() => {
     apiGet<{ name: string; baseTariff: number }[]>("/room-types").then(setRoomTypes).catch(() => {});
+    apiGet<Guest[]>("/guests").then(rows => { if (rows.length) setGuests(rows); }).catch(() => {});
+    apiGet<Room[]>("/room-board").then(rows => { if (rows.length) setRooms(rows); }).catch(() => {});
   }, []);
   const [ratePlan, setRatePlan] = React.useState("CP");
   const [breakfast, setBreakfast] = React.useState(true);
@@ -152,11 +158,11 @@ export default function BookingWizardPage() {
   // If the URL specified a room, find it and pre-select its type + the room itself
   React.useEffect(() => {
     if (!urlRoom) return;
-    const room = ROOMS.find(r => r.number === urlRoom);
+    const room = rooms.find(r => r.number === urlRoom);
     if (room) {
       setRoomType(room.type);   // pre-select the room's type; specific room is assigned at check-in
     }
-  }, [urlRoom]);
+  }, [urlRoom, rooms]);
 
   // ISO date helpers
   const addDays = (iso: string, days: number) => {
@@ -210,7 +216,7 @@ export default function BookingWizardPage() {
   const total = subtotal + extras + tax;
   const advance = Math.round((total * paymentPct) / 100);
 
-  const filteredGuests = GUESTS.filter(g => `${g.name} ${g.phone} ${g.email}`.toLowerCase().includes(search.toLowerCase())).slice(0, 5);
+  const filteredGuests = guests.filter(g => `${g.name} ${g.phone} ${g.email}`.toLowerCase().includes(search.toLowerCase())).slice(0, 5);
 
   const canNext = () => {
     if (step === 1) return guest !== null || newGuest !== null;
@@ -223,11 +229,11 @@ export default function BookingWizardPage() {
       return { name: newGuest.name, phone: newGuest.phone, vip: newGuest.vip, photo: newGuest.photo };
     }
     if (guest) {
-      const g = GUESTS.find(x => x.id === guest);
+      const g = guests.find(x => x.id === guest);
       if (g) return { name: g.name, phone: g.phone, vip: g.vip, photo: null as string | null };
     }
     return null;
-  }, [guest, newGuest]);
+  }, [guest, newGuest, guests]);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto">

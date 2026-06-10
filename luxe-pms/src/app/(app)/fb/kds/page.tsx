@@ -247,23 +247,31 @@ export default function KDSPage() {
   // Load live kitchen orders from the POS (placed via the real fb_orders API).
   React.useEffect(() => {
     let cancelled = false;
-    type ApiOrder = { id: number; orderNo: string; tableNo: string; server?: string; status: string; items?: { name: string; qty: number }[] };
+    type ApiOrder = { id: number; orderNo: string; tableNo: string; server?: string; status: string; items?: { name: string; qty: number }[]; created_at?: string };
     apiGet<ApiOrder[]>("/fb-orders").then(rows => {
       if (cancelled) return;
       const live = rows
         .filter(r => r.status !== "paid")
-        .map(r => ({
-          id: String(r.id),
-          orderNo: r.orderNo,
-          table: r.tableNo,
-          station: "hot" as Exclude<Station, "all">,
-          course: 1 as Course,
-          items: (r.items ?? []).map(it => ({ name: it.name, qty: it.qty })),
-          receivedMinAgo: 0,
-          targetMin: 15,
-          column: (r.status === "placed" ? "new" : r.status) as ColumnKey,
-          server: r.server || "—",
-        }));
+        .map(r => {
+          // Real elapsed: minutes since the order was placed (created_at).
+          const minsAgo = r.created_at
+            ? Math.max(0, Math.round((Date.now() - new Date(r.created_at).getTime()) / 60000))
+            : 0;
+          const column = (r.status === "placed" ? "new" : r.status) as ColumnKey;
+          return {
+            id: String(r.id),
+            orderNo: r.orderNo?.startsWith("#") ? r.orderNo : `#${r.orderNo}`,
+            table: r.tableNo,
+            station: "hot" as Exclude<Station, "all">,
+            course: 1 as Course,
+            items: (r.items ?? []).map(it => ({ name: it.name, qty: it.qty })),
+            receivedMinAgo: minsAgo,
+            targetMin: 15,
+            column,
+            server: r.server || "—",
+            ...(column === "served" ? { servedAtMinAgo: minsAgo } : {}),
+          };
+        });
       if (live.length) setOrders(live);
     }).catch(() => {});
     return () => { cancelled = true; };

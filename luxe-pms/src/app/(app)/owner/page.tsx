@@ -6,6 +6,7 @@ import {
   Mail, Send, Calendar, Clock, AlertTriangle, CheckCircle2, Eye, Download,
   RefreshCw, Plus, X, ChevronRight, Sparkles, Building2, Wallet, Receipt,
   Trash2, Pencil, FileBarChart, Settings, ArrowUpRight, ArrowDownRight,
+  ChevronUp, ChevronDown, EyeOff, RotateCcw,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -172,6 +173,17 @@ const SCHEDULES_SEED: EmailSchedule[] = [
   { id: "s4", label: "Banquet weekend recap",       frequency: "weekly",  time: "09:00", recipients: ["sales@thepearl.in"], format: "html", sections: ["Banquet bookings", "F&B revenue"], enabled: false },
 ];
 
+// KPI tiles that the owner can show/hide and reorder (persisted to settings).
+const KPI_DEFS: { id: string; label: string }[] = [
+  { id: "revenue", label: "Total revenue" },
+  { id: "occupancy", label: "Occupancy" },
+  { id: "adr", label: "ADR" },
+  { id: "revpar", label: "RevPAR" },
+  { id: "gop", label: "GOP margin" },
+  { id: "cash", label: "Cash on hand" },
+];
+const DEFAULT_KPI_ORDER = KPI_DEFS.map((k) => k.id);
+
 // ============================================================
 // MAIN PAGE
 // ============================================================
@@ -189,6 +201,12 @@ export default function OwnerFlashPage() {
   const [flashByPeriod, setFlashByPeriod] = React.useState<Partial<Record<FlashPeriod, FlashData>>>({});
   const [trend, setTrend] = React.useState<TrendRow[] | null>(null);
   const [insights, setInsights] = React.useState<InsightRow[] | null>(null);
+
+  // Toolbar: live refresh, CSV export, and persisted KPI layout (customize).
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [showCustomize, setShowCustomize] = React.useState(false);
+  const [kpiOrder, setKpiOrder] = React.useState<string[]>(DEFAULT_KPI_ORDER);
+  const [kpiHidden, setKpiHidden] = React.useState<string[]>([]);
 
   // Flash snapshot — fetched per period, cached so switching back is instant.
   React.useEffect(() => {
@@ -223,6 +241,19 @@ export default function OwnerFlashPage() {
     let cancelled = false;
     apiGet<ScheduleRow[]>("/email-schedules")
       .then(rows => { if (!cancelled && Array.isArray(rows) && rows.length) setSchedules(rows.map(normalizeSchedule)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persisted dashboard layout (which KPI tiles show, and in what order).
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<{ kpiOrder?: string[]; kpiHidden?: string[] }>("/settings/owner-flash")
+      .then(c => {
+        if (cancelled || !c) return;
+        if (Array.isArray(c.kpiOrder) && c.kpiOrder.length) setKpiOrder(c.kpiOrder);
+        if (Array.isArray(c.kpiHidden)) setKpiHidden(c.kpiHidden);
+      })
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
@@ -299,6 +330,95 @@ export default function OwnerFlashPage() {
   const gop = ((f.revenue.total - f.revenue.tax - f.costs.total) / Math.max(1, f.revenue.total - f.revenue.tax)) * 100;
   const cashOnHand = f.payments.cash + f.payments.card + f.payments.upi + f.payments.bank;
 
+  // Refresh: re-pull the live snapshot + alerts (and trend/insights if loaded).
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      const jobs: Promise<unknown>[] = [
+        apiGet<FlashData>(`/owner/flash?period=${period}`).then(d => setFlashByPeriod(prev => ({ ...prev, [period]: d }))),
+        apiGet<AlertRow[]>("/dashboard/alerts").then(rows => {
+          if (!Array.isArray(rows) || !rows.length) return;
+          const tones: Alert["tone"][] = ["danger", "warning", "info", "success"];
+          setAlerts(rows.map(r => ({
+            id: String(r.id),
+            tone: (tones as string[]).includes(r.level) ? (r.level as Alert["tone"]) : "warning",
+            title: r.text,
+            detail: r.href ? `Open ${r.href}` : "",
+          })));
+        }),
+      ];
+      if (trend) jobs.push(apiGet<TrendRow[]>("/owner/flash-trend").then(d => { if (Array.isArray(d) && d.length) setTrend(d); }));
+      if (insights) jobs.push(apiGet<InsightRow[]>("/owner/flash-insights").then(d => { if (Array.isArray(d)) setInsights(d); }));
+      await Promise.all(jobs);
+      showToast("Refreshed · live data updated");
+    } catch {
+      showToast("⚠ Refresh failed — backend offline");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Export: build a CSV of the current period's flash and download it client-side.
+  const exportCsv = () => {
+    const rows: (string | number)[][] = [
+      ["Owner's Flash", PERIOD_LABEL[period]],
+      [],
+      ["Metric", "Value"],
+      ["Total revenue", f.revenue.total],
+      ["Occupancy %", occupancy.toFixed(1)],
+      ["ADR", Math.round(adr)],
+      ["RevPAR", Math.round(revpar)],
+      ["GOP margin %", gop.toFixed(1)],
+      ["Cash on hand", cashOnHand],
+      [],
+      ["Revenue breakdown", ""],
+      ["Room revenue", f.revenue.rooms],
+      ["F&B revenue", f.revenue.fb],
+      ["Banquet & halls", f.revenue.banquet],
+      ["Other (spa, etc)", f.revenue.other],
+      ["Tax collected", f.revenue.tax],
+      ["Total revenue", f.revenue.total],
+      [],
+      ["Operating costs", ""],
+      ["Payroll", f.costs.payroll],
+      ["OTA commissions", f.costs.otaCommission],
+      ["Utilities", f.costs.utilities],
+      ["Supplies & F&B", f.costs.supplies],
+      ["Misc", f.costs.misc],
+      ["Total costs", f.costs.total],
+    ];
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `owner-flash-${period}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast(`Exported · owner-flash-${period}.csv`);
+  };
+
+  // Customize: persist the chosen KPI order + hidden set to settings.
+  const applyLayout = (order: string[], hidden: string[]) => {
+    setKpiOrder(order);
+    setKpiHidden(hidden);
+    apiPut("/settings/owner-flash", { kpiOrder: order, kpiHidden: hidden }).catch(() => {});
+    showToast("Dashboard layout saved");
+  };
+
+  // KPI tiles keyed by id so the layout config can order/hide them.
+  const kpiNodes: Record<string, React.ReactNode> = {
+    revenue: <KpiCard label="Total revenue" value={money(f.revenue.total)} change={f.vs.revenueChange} icon={IndianRupee} accent="brand" sub={`${PERIOD_LABEL[period]} · all channels`} />,
+    occupancy: <KpiCard label="Occupancy" value={`${occupancy.toFixed(1)}%`} change={f.vs.occChange} icon={BedDouble} accent="info" sub={`${f.rooms.sold}/${f.rooms.total} rooms`} />,
+    adr: <KpiCard label="ADR" value={money(adr)} change={f.vs.adrChange} icon={TrendingUp} accent="success" sub="Avg daily rate" />,
+    revpar: <KpiCard label="RevPAR" value={money(revpar)} change={f.vs.revenueChange - f.vs.occChange} icon={BarChart3} accent="accent" sub="Rev per room" />,
+    gop: <KpiCard label="GOP margin" value={`${gop.toFixed(1)}%`} change={null} icon={Wallet} accent="warning" sub="Gross op. profit" />,
+    cash: <KpiCard label="Cash on hand" value={money(cashOnHand)} change={null} icon={Receipt} accent="neutral" sub="All channels" />,
+  };
+  const visibleKpis = kpiOrder.filter((id) => kpiNodes[id] && !kpiHidden.includes(id));
+
   return (
     <div className="p-4 sm:p-6 lg:p-7 space-y-4">
       {/* HEADER */}
@@ -327,13 +447,13 @@ export default function OwnerFlashPage() {
               <ChevronRight className="h-3 w-3 text-muted-foreground" />
             </button>
             <div className="h-9 inline-flex items-center gap-1 p-1 rounded-lg border border-border bg-surface/60">
-              <button onClick={() => showToast("Refreshed · live data updated")} className="h-7 inline-flex items-center gap-1.5 px-2.5 rounded-md hover:bg-surface-sunken text-xs font-medium transition-colors">
-                <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />Refresh
+              <button onClick={refresh} disabled={refreshing} className="h-7 inline-flex items-center gap-1.5 px-2.5 rounded-md hover:bg-surface-sunken text-xs font-medium transition-colors disabled:opacity-60">
+                <RefreshCw className={cn("h-3.5 w-3.5 text-muted-foreground", refreshing && "animate-spin")} />Refresh
               </button>
-              <button onClick={() => showToast("PDF generated · download starting")} className="h-7 inline-flex items-center gap-1.5 px-2.5 rounded-md hover:bg-surface-sunken text-xs font-medium transition-colors">
+              <button onClick={exportCsv} className="h-7 inline-flex items-center gap-1.5 px-2.5 rounded-md hover:bg-surface-sunken text-xs font-medium transition-colors">
                 <Download className="h-3.5 w-3.5 text-muted-foreground" />Export
               </button>
-              <button onClick={() => showToast("Dashboard customization · drag KPIs to reorder")} className="h-7 inline-flex items-center gap-1.5 px-2.5 rounded-md hover:bg-surface-sunken text-xs font-medium transition-colors">
+              <button onClick={() => setShowCustomize(true)} className="h-7 inline-flex items-center gap-1.5 px-2.5 rounded-md hover:bg-surface-sunken text-xs font-medium transition-colors">
                 <Settings className="h-3.5 w-3.5 text-muted-foreground" />Customize
               </button>
             </div>
@@ -382,14 +502,11 @@ export default function OwnerFlashPage() {
       {/* FLASH SNAPSHOT TAB */}
       {tab === "flash" && (
         <>
-          {/* KPI STRIP */}
+          {/* KPI STRIP (order + visibility configurable via Customize) */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-            <KpiCard label="Total revenue"   value={money(f.revenue.total)}   change={f.vs.revenueChange} icon={IndianRupee} accent="brand"   sub={`${PERIOD_LABEL[period]} · all channels`} />
-            <KpiCard label="Occupancy"       value={`${occupancy.toFixed(1)}%`} change={f.vs.occChange} icon={BedDouble}   accent="info"    sub={`${f.rooms.sold}/${f.rooms.total} rooms`} />
-            <KpiCard label="ADR"             value={money(adr)}               change={f.vs.adrChange} icon={TrendingUp}  accent="success" sub="Avg daily rate" />
-            <KpiCard label="RevPAR"          value={money(revpar)}            change={f.vs.revenueChange - f.vs.occChange} icon={BarChart3} accent="accent" sub="Rev per room" />
-            <KpiCard label="GOP margin"      value={`${gop.toFixed(1)}%`}     change={null} icon={Wallet} accent="warning" sub="Gross op. profit" />
-            <KpiCard label="Cash on hand"    value={money(cashOnHand)}        change={null} icon={Receipt} accent="neutral" sub="All channels" />
+            {visibleKpis.map((id) => (
+              <React.Fragment key={id}>{kpiNodes[id]}</React.Fragment>
+            ))}
           </div>
 
           {/* REVENUE + COSTS BREAKDOWN */}
@@ -622,6 +739,16 @@ export default function OwnerFlashPage() {
         <SendNowModal
           onClose={() => setSendNowModal(false)}
           onSend={sendNow}
+        />
+      )}
+
+      {/* CUSTOMIZE MODAL */}
+      {showCustomize && (
+        <CustomizeModal
+          order={kpiOrder}
+          hidden={kpiHidden}
+          onClose={() => setShowCustomize(false)}
+          onSave={(order, hidden) => { applyLayout(order, hidden); setShowCustomize(false); }}
         />
       )}
 
@@ -994,6 +1121,78 @@ function SendNowModal({ onClose, onSend }: { onClose: () => void; onSend: (email
         <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-border">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button onClick={() => onSend(emails.split(",").map(e => e.trim()).filter(Boolean))}><Send className="h-3.5 w-3.5" />Send now</Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// CUSTOMIZE MODAL — reorder + show/hide KPI tiles (persisted)
+// ============================================================
+function CustomizeModal({
+  order, hidden, onClose, onSave,
+}: {
+  order: string[];
+  hidden: string[];
+  onClose: () => void;
+  onSave: (order: string[], hidden: string[]) => void;
+}) {
+  // Start from the saved order, then append any KPIs not yet listed.
+  const [ord, setOrd] = React.useState<string[]>(() => {
+    const known = order.filter((id) => KPI_DEFS.some((k) => k.id === id));
+    const missing = KPI_DEFS.map((k) => k.id).filter((id) => !known.includes(id));
+    return [...known, ...missing];
+  });
+  const [hid, setHid] = React.useState<string[]>(hidden);
+  const label = (id: string) => KPI_DEFS.find((k) => k.id === id)?.label ?? id;
+
+  const move = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= ord.length) return;
+    const next = [...ord];
+    [next[i], next[j]] = [next[j], next[i]];
+    setOrd(next);
+  };
+  const toggle = (id: string) =>
+    setHid((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+      <Card className="w-full max-w-md p-5">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-lg font-semibold inline-flex items-center gap-2"><Settings className="h-4 w-4 text-brand" />Customize KPI tiles</h2>
+          <button onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">Reorder with the arrows, toggle the eye to show or hide. Saved to your profile.</p>
+
+        <div className="space-y-1.5">
+          {ord.map((id, i) => {
+            const isHidden = hid.includes(id);
+            return (
+              <div key={id} className={cn("flex items-center gap-2 rounded-lg border border-border px-2.5 py-2", isHidden && "opacity-55")}>
+                <span className="tabular text-[10px] text-muted-foreground w-4 text-center">{i + 1}</span>
+                <span className="flex-1 text-sm font-medium">{label(id)}</span>
+                <button onClick={() => toggle(id)} title={isHidden ? "Show" : "Hide"} className="h-7 w-7 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center text-muted-foreground">
+                  {isHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </button>
+                <button onClick={() => move(i, -1)} disabled={i === 0} title="Move up" className="h-7 w-7 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center text-muted-foreground disabled:opacity-30">
+                  <ChevronUp className="h-3.5 w-3.5" />
+                </button>
+                <button onClick={() => move(i, 1)} disabled={i === ord.length - 1} title="Move down" className="h-7 w-7 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center text-muted-foreground disabled:opacity-30">
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center justify-between gap-2 mt-5 pt-4 border-t border-border">
+          <Button variant="ghost" onClick={() => { setOrd(DEFAULT_KPI_ORDER); setHid([]); }}><RotateCcw className="h-3.5 w-3.5" />Reset</Button>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button onClick={() => onSave(ord, hid)}>Save layout</Button>
+          </div>
         </div>
       </Card>
     </div>
