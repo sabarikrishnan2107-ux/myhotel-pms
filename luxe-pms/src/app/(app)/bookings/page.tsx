@@ -21,13 +21,16 @@ import type { Reservation, PaymentStatus, BookingSource } from "@/lib/types";
 type BookingState = "confirmed" | "checked-in" | "checked-out" | "cancelled" | "no-show";
 
 // Derive a booking lifecycle state from the reservation date + status (mocked)
-function deriveState(r: Reservation, cancelledIds: Set<string>): BookingState {
-  if (cancelledIds.has(r.id)) return "cancelled";
-  const today = new Date("2026-05-24");
-  const ci = new Date(r.checkIn);
-  const co = new Date(r.checkOut);
-  if (co < today) return "checked-out";
-  if (ci <= today && co >= today) return "checked-in";
+function deriveState(r: Reservation, cancelledIds: Set<string>, today: string): BookingState {
+  // Prefer the backend lifecycle status; fall back to date-derivation against today.
+  const status = (r as { status?: string }).status;
+  if (cancelledIds.has(r.id) || status === "cancelled") return "cancelled";
+  if (status === "checked-in") return "checked-in";
+  if (status === "checked-out") return "checked-out";
+  if (status === "no-show") return "no-show";
+  if (!today) return "confirmed";
+  if (r.checkOut <= today) return "checked-out";      // departed
+  if (r.checkIn <= today && r.checkOut > today) return "checked-in"; // in-house
   return "confirmed";
 }
 
@@ -56,6 +59,10 @@ export default function BookingsPage() {
   const [paymentFilter, setPaymentFilter] = React.useState<"all" | PaymentStatus>("all");
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [actionMenuFor, setActionMenuFor] = React.useState<string | null>(null);
+
+  // Real "today" (client-only, avoids hydration mismatch) for lifecycle derivation.
+  const [today, setToday] = React.useState("");
+  React.useEffect(() => { setToday(new Date().toLocaleDateString("en-CA")); }, []);
 
   // Local state — booking modifications & cancellations (no backend yet)
   const [cancelledIds, setCancelledIds] = React.useState<Set<string>>(new Set());
@@ -110,13 +117,13 @@ export default function BookingsPage() {
       if (search && !`${r.bookingNo} ${r.guestName} ${r.roomNumber}`.toLowerCase().includes(search.toLowerCase())) return false;
       if (sourceFilter !== "all" && r.source !== sourceFilter) return false;
       if (paymentFilter !== "all" && r.paymentStatus !== paymentFilter) return false;
-      const state = deriveState(r, cancelledIds);
+      const state = deriveState(r, cancelledIds, today);
       if (stateFilter !== "all" && state !== stateFilter) return false;
       return true;
     });
-  }, [effective, search, sourceFilter, paymentFilter, stateFilter, cancelledIds]);
+  }, [effective, search, sourceFilter, paymentFilter, stateFilter, cancelledIds, today]);
 
-  const allStates = effective.map(r => deriveState(r, cancelledIds));
+  const allStates = effective.map(r => deriveState(r, cancelledIds, today));
   const kpis = {
     total: effective.length,
     confirmed: allStates.filter(s => s === "confirmed").length,
@@ -262,7 +269,7 @@ export default function BookingsPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {filtered.map(r => {
-                const state = deriveState(r, cancelledIds);
+                const state = deriveState(r, cancelledIds, today);
                 const isCancelled = state === "cancelled";
                 const isOpen = actionMenuFor === r.id;
                 const isModified = modifiedIds.has(r.id);
