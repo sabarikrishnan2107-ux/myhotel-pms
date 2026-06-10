@@ -112,11 +112,6 @@ export default function RackPage() {
     return true;
   });
 
-  const byFloor = filtered.reduce<Record<number, Room[]>>((acc, r) => {
-    (acc[r.floor] ??= []).push(r);
-    return acc;
-  }, {});
-
   const counts = STATUS_FILTERS.reduce<Record<string, number>>((acc, f) => {
     acc[f.value] = f.value === "all" ? rooms.length : rooms.filter(r => r.status === f.value).length;
     return acc;
@@ -272,27 +267,16 @@ export default function RackPage() {
           <p className="text-xs text-muted-foreground mt-1">Try clearing filters above or searching for a specific room.</p>
         </Card>
       ) : view === "cards" ? (
-        <div className="space-y-8">
-          {Object.entries(byFloor)
-            .sort(([a], [b]) => Number(b) - Number(a))
-            .map(([f, rooms]) => (
-              <section key={f}>
-                <div className="flex items-center gap-3 mb-3">
-                  <h2 className="text-sm font-semibold tracking-tight">Floor {f}</h2>
-                  <span className="text-xs text-muted-foreground">{rooms.length} rooms</span>
-                  <div className="flex-1 h-px bg-border ml-2" />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
-                  {rooms.map(room => (
-                    <RoomCard
-                      key={room.id}
-                      room={room}
-                      onOpenGuest={openGuestFor}
-                      onAction={openAction}
-                    />
-                  ))}
-                </div>
-              </section>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6 gap-3 items-start">
+          {[...filtered]
+            .sort((a, b) => b.floor - a.floor || Number(a.number) - Number(b.number))
+            .map(room => (
+              <RoomCard
+                key={room.id}
+                room={room}
+                onOpenGuest={openGuestFor}
+                onAction={openAction}
+              />
             ))}
         </div>
       ) : (
