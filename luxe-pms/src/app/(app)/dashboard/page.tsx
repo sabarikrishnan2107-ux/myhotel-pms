@@ -172,9 +172,12 @@ type GoalRow = { label: string; current: number; target: number; format: "money"
 
 export default function DashboardPage() {
   const [stats, setStats] = React.useState<DashStats | null>(null);
+  const [offline, setOffline] = React.useState(false);
   React.useEffect(() => {
     let cancelled = false;
-    apiGet<DashStats>("/stats").then(s => { if (!cancelled) setStats(s); }).catch(() => {});
+    apiGet<DashStats>("/stats")
+      .then(s => { if (!cancelled) { setStats(s); setOffline(false); } })
+      .catch(() => { if (!cancelled) setOffline(true); });
     return () => { cancelled = true; };
   }, []);
 
@@ -321,6 +324,13 @@ export default function DashboardPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-7">
+      {offline && (
+        <div className="rounded-lg border border-warning/40 bg-warning-soft/40 px-4 py-2.5 text-sm flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
+          <span><span className="font-semibold text-warning">Backend offline</span> — showing sample data. Start the API on <span className="font-mono">:8000</span> to see live numbers.</span>
+        </div>
+      )}
+
       {/* ============ EXECUTIVE KPIs ============ */}
       <section className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <ExecKpi label="Total Rooms" value={roomCounts.total} sub="across all floors" icon={Hotel} accent="neutral" />
