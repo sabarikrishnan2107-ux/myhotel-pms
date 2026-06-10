@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { MENU_CATEGORIES, MENU_ITEMS, FOOD_ORDERS } from "@/lib/mock-data-ext";
 import { RESERVATIONS } from "@/lib/mock-data";
+import { apiGet } from "@/lib/api";
 import { money } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
@@ -409,6 +410,16 @@ function NewOrderModal({
   const [hallName, setHallName] = React.useState("Banquet A");
   const [walkinName, setWalkinName] = React.useState("");
 
+  // Real in-house guests from Postgres for the room-charge picker (mock fallback offline).
+  const [inHouse, setInHouse] = React.useState<typeof IN_HOUSE>(IN_HOUSE);
+  React.useEffect(() => {
+    apiGet<typeof IN_HOUSE>("/bookings").then(rows => {
+      const today = new Date().toLocaleDateString("en-CA");
+      const live = rows.filter(r => (r as { status?: string }).status === "checked-in" || (r.checkIn <= today && r.checkOut > today));
+      if (live.length) setInHouse(live);
+    }).catch(() => {});
+  }, []);
+
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
@@ -418,8 +429,8 @@ function NewOrderModal({
 
   const filteredGuests = React.useMemo(() => {
     const q = search.trim().toLowerCase();
-    return IN_HOUSE.filter(r => !q || `${r.guestName} ${r.roomNumber} ${r.bookingNo}`.toLowerCase().includes(q));
-  }, [search]);
+    return inHouse.filter(r => !q || `${r.guestName} ${r.roomNumber} ${r.bookingNo}`.toLowerCase().includes(q));
+  }, [search, inHouse]);
 
   const canStart =
     (target === "room" && (selectedRes !== null || manualRoom.trim() !== "")) ||

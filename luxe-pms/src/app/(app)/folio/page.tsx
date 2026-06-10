@@ -12,7 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { KPICard } from "@/components/ui/kpi-card";
 import { RESERVATIONS } from "@/lib/mock-data";
-import type { PaymentStatus } from "@/lib/types";
+import type { PaymentStatus, Reservation } from "@/lib/types";
+import { apiGet } from "@/lib/api";
 import { money, formatTime, cn } from "@/lib/utils";
 
 type SortKey = "balance-desc" | "balance-asc" | "checkin-asc" | "name-asc";
@@ -27,8 +28,16 @@ export default function FolioListPage() {
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
+  // Bookings from Postgres (falls back to seeds only while the API is offline).
+  const [bookings, setBookings] = React.useState<Reservation[]>(RESERVATIONS);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Reservation[]>("/bookings").then(rows => { if (!cancelled) setBookings(rows); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // Active folios = anything not fully paid
-  const allFolios = RESERVATIONS.filter(r => r.paymentStatus !== "paid" || r.balance > 0);
+  const allFolios = bookings.filter(r => r.paymentStatus !== "paid" || r.balance > 0);
 
   const filtered = React.useMemo(() => {
     const list = allFolios.filter(r => {
@@ -50,7 +59,7 @@ export default function FolioListPage() {
   const unpaidCount = allFolios.filter(r => r.paymentStatus === "unpaid").length;
   const partialCount = allFolios.filter(r => r.paymentStatus === "partial").length;
   const avgBalance = allFolios.length > 0 ? Math.round(totalOutstanding / allFolios.length) : 0;
-  const sources = Array.from(new Set(RESERVATIONS.map(r => r.source)));
+  const sources = Array.from(new Set(bookings.map(r => r.source)));
   const activeFilters = (paymentFilter !== "all" ? 1 : 0) + (sourceFilter !== "all" ? 1 : 0) + (search ? 1 : 0);
 
   return (
