@@ -28,8 +28,8 @@ import type { Reservation, Guest, Room } from "@/lib/types";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
 import { Eye } from "lucide-react";
 import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
-  BarChart, Bar, PieChart, Pie, Cell, Legend,
+  ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid,
+  BarChart, Bar, PieChart, Pie, Cell, Legend, ComposedChart, Line, ReferenceLine,
 } from "recharts";
 
 const SOURCE_COLORS = [
@@ -710,11 +710,13 @@ export default function DashboardPage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <CardTitle>Occupancy Forecast — Next 30 days</CardTitle>
-                <p className="text-xs text-muted-foreground mt-1">Live pace vs AI forecast model</p>
+                <p className="text-xs text-muted-foreground mt-1">Booked occupancy (bars, shaded by demand) vs AI forecast (line)</p>
               </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <span className="h-1 w-4 rounded-full bg-brand" /> Booked
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 shrink-0 justify-end">
+                <span className="hidden sm:inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <span className="h-2.5 w-2.5 rounded-sm bg-danger" />
+                  <span className="h-2.5 w-2.5 rounded-sm bg-warning" />
+                  <span className="h-2.5 w-2.5 rounded-sm bg-brand" /> Booked
                 </span>
                 <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
                   <span className="w-4 border-t-2 border-dashed border-info" /> Forecast
@@ -726,24 +728,19 @@ export default function DashboardPage() {
           <CardContent className="pl-0">
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={OCCUPANCY_FORECAST} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
-                  <defs>
-                    <linearGradient id="grad1" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="var(--color-brand)" stopOpacity={0.4} />
-                      <stop offset="100%" stopColor="var(--color-brand)" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="grad2" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="var(--color-info)" stopOpacity={0.12} />
-                      <stop offset="100%" stopColor="var(--color-info)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
+                <ComposedChart data={OCCUPANCY_FORECAST} margin={{ top: 12, right: 16, bottom: 0, left: 8 }} barCategoryGap="22%">
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
                   <XAxis dataKey="day" stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} interval={2} />
                   <YAxis stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} unit="%" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} />
-                  <Tooltip contentStyle={{ background: "var(--color-surface-elevated)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12, color: "var(--color-foreground)" }} />
-                  <Area type="monotone" dataKey="forecast" stroke="var(--color-info)" strokeWidth={2} fill="url(#grad2)" strokeDasharray="5 4" name="Forecast" dot={false} activeDot={{ r: 4 }} />
-                  <Area type="monotone" dataKey="occupancy" stroke="var(--color-brand)" strokeWidth={2.5} fill="url(#grad1)" name="Booked" dot={false} activeDot={{ r: 4 }} />
-                </AreaChart>
+                  <Tooltip formatter={(value) => `${value}%`} contentStyle={{ background: "var(--color-surface-elevated)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12, color: "var(--color-foreground)" }} cursor={{ fill: "var(--color-surface-sunken)", opacity: 0.4 }} />
+                  <ReferenceLine y={75} stroke="var(--color-success)" strokeDasharray="5 4" strokeOpacity={0.7} label={{ value: "Target 75%", position: "insideTopRight", fill: "var(--color-success)", fontSize: 10 }} />
+                  <Bar dataKey="occupancy" name="Booked" radius={[3, 3, 0, 0]} maxBarSize={20}>
+                    {OCCUPANCY_FORECAST.map((d, i) => (
+                      <Cell key={i} fill={d.occupancy < 40 ? "var(--color-danger)" : d.occupancy < 65 ? "var(--color-warning)" : "var(--color-brand)"} />
+                    ))}
+                  </Bar>
+                  <Line type="monotone" dataKey="forecast" name="Forecast" stroke="var(--color-info)" strokeWidth={2} strokeDasharray="5 4" dot={false} activeDot={{ r: 4 }} />
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
