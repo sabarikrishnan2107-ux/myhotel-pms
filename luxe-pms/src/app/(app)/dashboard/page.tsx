@@ -660,7 +660,7 @@ export default function DashboardPage() {
               Forecast<ChevronRight className="h-3 w-3" />
             </Link>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-5 gap-y-3.5 flex-1 auto-rows-fr items-center">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-5 gap-y-3.5 flex-1 content-center">
             {(goals ?? GOALS_FALLBACK).map(g => (
               <GoalProgress
                 key={g.label}
@@ -684,7 +684,7 @@ export default function DashboardPage() {
               </h2>
             </div>
           </div>
-          <ol className="space-y-0.5">
+          <ol className="space-y-0.5 max-h-[300px] overflow-y-auto pr-1 -mr-1">
             {topSources.map((s, i) => {
               const maxRev = topSources[0].revenue;
               return (
@@ -791,7 +791,7 @@ export default function DashboardPage() {
                 <span className="text-[10px] text-muted-foreground mt-1 max-w-[88px] truncate text-center">{sourceMixDonut[0]?.name}</span>
               </div>
             </div>
-            <ul className="mt-3 space-y-2">
+            <ul className="mt-3 space-y-2 max-h-[200px] overflow-y-auto pr-1 -mr-1">
               {sourceMixDonut.map((s, i) => {
                 const color = SOURCE_COLORS[i % SOURCE_COLORS.length];
                 const maxVal = sourceMixDonut[0]?.value || 1;
