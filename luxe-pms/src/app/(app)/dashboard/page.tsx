@@ -5,7 +5,7 @@ import {
   BedDouble, Sparkles, Wrench, TrendingUp, Wallet, Receipt, ChevronRight,
   AlertTriangle, Building2, UtensilsCrossed, LogIn, LogOut, LayoutGrid, CalendarRange,
   Bot, FileBarChart, Bell, Crown, CalendarPlus, BrushCleaning, Banknote,
-  Activity as ActivityIcon, CheckCircle2, Clock, Target, Trophy, ArrowRight,
+  Activity as ActivityIcon, CheckCircle2, Clock, Target, Trophy,
   CreditCard, RefreshCw, Star, Trash2,
   Hotel, DoorOpen, PlaneLanding, PlaneTakeoff,
 } from "lucide-react";
@@ -844,32 +844,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </section>
-
-      {/* ============ AI FOOTER INSIGHT ============ */}
-      <Card className="p-6 bg-linear-to-br from-brand-soft/40 via-surface to-accent-soft/30 border-l-4 border-l-brand">
-        <div className="flex items-start gap-4">
-          <span className="h-12 w-12 shrink-0 rounded-md bg-brand text-brand-foreground flex items-center justify-center shadow-md">
-            <Sparkles className="h-6 w-6" />
-          </span>
-          <div className="flex-1">
-            <p className="text-[10px] uppercase tracking-[0.18em] font-semibold text-brand-soft-foreground">AI Revenue Insight</p>
-            <p className="mt-2 text-base leading-relaxed">
-              At the current pace and 6-month trend, you&apos;re projected to close {period ? period.label.split(" ")[0] : "this month"} at{" "}
-              <span className="font-semibold tabular">{money(142400, cur)}</span> — that&apos;s{" "}
-              <span className="font-semibold text-success">+12.4%</span> above the same month last year.
-              Consider locking OTA rates for the coming week; competitor rates are softening by an average of 4-6%.
-            </p>
-            <div className="mt-3 flex items-center gap-2">
-              <Link href="/reports/r10" className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline">
-                See full revenue forecast <ChevronRight className="h-4 w-4" />
-              </Link>
-              <Link href="/revenue/strategy" className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">
-                Open strategy <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
-          </div>
-        </div>
-      </Card>
 
       {/* Booking detail drawer — opens on row double-click or Eye icon */}
       <GuestDetailDrawer
