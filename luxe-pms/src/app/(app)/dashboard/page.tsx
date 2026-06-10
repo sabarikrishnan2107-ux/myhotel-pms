@@ -595,15 +595,15 @@ export default function DashboardPage() {
       </section>
 
       {/* ============ MONTHLY GOALS + TOP SOURCES ============ */}
-      <section className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+      <section className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-start">
         {/* Goals — 3 cols */}
-        <Card className="lg:col-span-3 p-5">
-          <div className="flex items-center justify-between mb-4">
+        <Card className="lg:col-span-3 p-4">
+          <div className="flex items-center justify-between mb-3">
             <div>
-              <p className="text-xs uppercase tracking-[0.16em] text-subtle-foreground font-semibold inline-flex items-center gap-1">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-subtle-foreground font-semibold inline-flex items-center gap-1">
                 <Target className="h-3 w-3 text-brand" /> Monthly Goals
               </p>
-              <h2 className="text-lg font-semibold mt-0.5">
+              <h2 className="text-base font-semibold mt-0.5">
                 {period ? `${period.label} — day ${period.day} of ${period.days}` : "This month"}
               </h2>
             </div>
@@ -611,7 +611,7 @@ export default function DashboardPage() {
               Forecast<ChevronRight className="h-3 w-3" />
             </Link>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-5 gap-y-3.5">
             <GoalProgress
               label="Total Revenue"
               current={130110}
@@ -658,20 +658,20 @@ export default function DashboardPage() {
         </Card>
 
         {/* Top Sources leaderboard — 2 cols */}
-        <Card className="lg:col-span-2 p-5">
-          <div className="flex items-center justify-between mb-4">
+        <Card className="lg:col-span-2 p-4">
+          <div className="flex items-center justify-between mb-3">
             <div>
-              <p className="text-xs uppercase tracking-[0.16em] text-subtle-foreground font-semibold">Top Sources MTD</p>
-              <h2 className="text-lg font-semibold mt-0.5 inline-flex items-center gap-1.5">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-subtle-foreground font-semibold">Top Sources MTD</p>
+              <h2 className="text-base font-semibold mt-0.5 inline-flex items-center gap-1.5">
                 <Trophy className="h-4 w-4 text-brand" />Best Performers
               </h2>
             </div>
           </div>
-          <ol className="space-y-1">
+          <ol className="space-y-0.5">
             {topSources.map((s, i) => {
               const maxRev = topSources[0].revenue;
               return (
-                <li key={s.name} className="group flex items-center gap-3 -mx-2 px-2 py-1.5 rounded-md hover:bg-surface-sunken/40 transition-colors">
+                <li key={s.name} className="group flex items-center gap-2.5 -mx-2 px-2 py-1 rounded-md hover:bg-surface-sunken/40 transition-colors">
                   <span className={cn(
                     "h-7 w-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0",
                     i === 0 ? "bg-brand text-brand-foreground" :
