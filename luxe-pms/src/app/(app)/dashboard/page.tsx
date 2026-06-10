@@ -32,13 +32,16 @@ import {
   BarChart, Bar, PieChart, Pie, Cell, Legend, ComposedChart, Line, ReferenceLine,
 } from "recharts";
 
+// Distinct categorical palette so every source slice is easy to tell apart.
 const SOURCE_COLORS = [
-  "var(--color-brand)",
-  "var(--color-accent)",
-  "var(--color-info)",
-  "var(--color-warning)",
-  "var(--color-status-checkout-pending)",
-  "var(--color-status-inspected)",
+  "var(--color-brand)", // gold
+  "#3b82f6",            // blue
+  "#10b981",            // emerald
+  "#ec4899",            // pink
+  "#8b5cf6",            // violet
+  "#06b6d4",            // cyan
+  "#f97316",            // orange
+  "#64748b",            // slate
 ];
 
 const QUICK_ACTIONS = [
@@ -769,15 +772,20 @@ export default function DashboardPage() {
               </div>
             </div>
             <ul className="mt-3 space-y-2">
-              {SOURCE_MIX.map((s, i) => (
-                <li key={s.name} className="flex items-center justify-between text-xs">
-                  <span className="flex items-center gap-2 min-w-0">
-                    <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: SOURCE_COLORS[i % SOURCE_COLORS.length] }} />
-                    <span className="text-muted-foreground truncate">{s.name}</span>
-                  </span>
-                  <span className="font-semibold tabular shrink-0">{s.value}%</span>
-                </li>
-              ))}
+              {SOURCE_MIX.map((s, i) => {
+                const color = SOURCE_COLORS[i % SOURCE_COLORS.length];
+                const maxVal = SOURCE_MIX[0]?.value || 1;
+                return (
+                  <li key={s.name} className="flex items-center gap-2.5 text-xs">
+                    <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: color }} />
+                    <span className="text-muted-foreground truncate w-24 shrink-0">{s.name}</span>
+                    <span className="flex-1 h-1.5 bg-surface-sunken rounded-full overflow-hidden">
+                      <span className="block h-full rounded-full" style={{ width: `${(s.value / maxVal) * 100}%`, background: color }} />
+                    </span>
+                    <span className="font-semibold tabular shrink-0 w-8 text-right">{s.value}%</span>
+                  </li>
+                );
+              })}
             </ul>
           </CardContent>
         </Card>
