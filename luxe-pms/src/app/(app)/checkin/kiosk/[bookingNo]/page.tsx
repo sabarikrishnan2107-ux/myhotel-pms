@@ -28,7 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { useProperty, hotelName } from "@/lib/use-property";
-import { apiGet, apiPut } from "@/lib/api";
+import { apiGet, apiPut, sendEmail } from "@/lib/api";
 
 // Booking row shape we read from the API for this kiosk session.
 type ApiBooking = {
@@ -258,7 +258,16 @@ export default function CheckinKioskPage({
         {step.key === "complete" && (
           <CompleteStep
             booking={booking}
-            onEmail={() => showToast(`Receipt sent to ${booking.email}`)}
+            onEmail={async () => {
+              showToast("Emailing receipt…");
+              try {
+                const guests = await apiGet<{ name: string; email?: string }[]>("/guests");
+                const to = guests.find(g => g.name === booking.guest)?.email;
+                if (!to) { showToast("No email on file for this guest"); return; }
+                await sendEmail({ to, subject: `Check-in Receipt · ${booking.bookingNo}`, heading: "Check-in Receipt", greeting: booking.guest, intro: "You're checked in. Here is your receipt.", rows: [{ label: "Booking No", value: booking.bookingNo }], context: "Kiosk receipt" });
+                showToast(`Receipt sent to ${to}`);
+              } catch { showToast("Couldn't email receipt"); }
+            }}
             onPrint={() => showToast("Sending to lobby printer")}
             onRestart={restart}
           />

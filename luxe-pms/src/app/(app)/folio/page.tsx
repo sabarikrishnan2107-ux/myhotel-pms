@@ -13,7 +13,7 @@ import { Input, Select } from "@/components/ui/input";
 import { KPICard } from "@/components/ui/kpi-card";
 import { RESERVATIONS } from "@/lib/mock-data";
 import type { PaymentStatus, Reservation } from "@/lib/types";
-import { apiGet } from "@/lib/api";
+import { apiGet, sendEmail } from "@/lib/api";
 import { money, formatTime, cn } from "@/lib/utils";
 
 type SortKey = "balance-desc" | "balance-asc" | "checkin-asc" | "name-asc";
@@ -211,9 +211,16 @@ export default function FolioListPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
                         setRemindedAt(prev => ({ ...prev, [r.id]: Date.now() }));
-                        showToast(`Reminder sent to ${r.guestName} · Email + WhatsApp`);
+                        showToast(`Emailing ${r.guestName}…`);
+                        try {
+                          const guests = await apiGet<{ name: string; email?: string }[]>("/guests");
+                          const to = guests.find(g => g.name === r.guestName)?.email;
+                          if (!to) { showToast(`No email on file for ${r.guestName}`); return; }
+                          await sendEmail({ to, subject: `Payment Reminder · ${r.bookingNo}`, heading: "Payment Reminder", greeting: r.guestName, intro: "This is a friendly reminder regarding the outstanding balance on your folio.", rows: [{ label: "Booking No", value: r.bookingNo }, { label: "Balance due", value: money(r.balance) }], context: "Folio reminder" });
+                          showToast(`Reminder emailed to ${r.guestName}`);
+                        } catch { showToast(`Couldn't email ${r.guestName}`); }
                       }}
                       className={cn(
                         "h-8 w-8 rounded-md border inline-flex items-center justify-center transition-colors relative",

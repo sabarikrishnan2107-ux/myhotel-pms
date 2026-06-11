@@ -20,6 +20,7 @@ import type { Reservation } from "@/lib/types";
 
 export default function CheckoutPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const propName = hotelName(useProperty());
 
   // Load the real booking + its folio (charges & payments) for this bookingNo.
   const [reservation, setReservation] = React.useState<Reservation>(
@@ -153,10 +154,33 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
             <Button variant="outline" onClick={() => setShowReceipt(true)}>
               <Receipt className="h-4 w-4" />Print Payment Receipt
             </Button>
-            <Button variant="outline" onClick={() => showToast(`Opening GST invoice PDF for ${reservation.bookingNo}`)}>
+            <Button variant="outline" onClick={() => { setShowInvoice(true); showToast("Opening invoice — choose \"Save as PDF\" in the print dialog"); setTimeout(() => window.print(), 450); }}>
               <FileText className="h-4 w-4" />View PDF
             </Button>
-            <Button variant="outline" onClick={() => showToast(`Invoice emailed to ${guest?.email ?? "guest"}`)}>
+            <Button variant="outline" onClick={async () => {
+              const onFile = guest?.email && guest.email !== "—" ? guest.email : "";
+              const to = onFile || (typeof window !== "undefined" ? (window.prompt("No email on file for this guest. Send the invoice to:", "") || "").trim() : "");
+              if (!to) { showToast("Invoice email cancelled — no recipient"); return; }
+              showToast(`Emailing invoice to ${to}…`);
+              try {
+                await apiPost("/email/invoice", {
+                  to,
+                  invoiceNo: `INV-2026-${reservation.bookingNo.slice(2)}`,
+                  hotel: propName,
+                  guestName: reservation.guestName,
+                  date: new Date().toLocaleDateString("en-CA"),
+                  paymentMode,
+                  items: (billCharges ?? []).map(c => ({ label: c.description ?? "Charge", amount: c.amount ?? 0 })),
+                  subtotal: charges - tax,
+                  tax,
+                  discount: discountAmt,
+                  grandTotal,
+                  paid: paid + Math.max(0, balance),
+                  balance: Math.max(0, balance),
+                });
+                showToast(`Invoice PDF emailed to ${to}`);
+              } catch { showToast("Couldn't email invoice"); }
+            }}>
               <Mail className="h-4 w-4" />Email Invoice
             </Button>
             <Button variant="outline" onClick={() => showToast(`Sent to WhatsApp ${guest?.phone ?? ""}`)}>

@@ -11,6 +11,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { useProperty, hotelName } from "@/lib/use-property";
+import { apiGet } from "@/lib/api";
 
 // ----------------------- Types & Mock Pantry -----------------------
 type Ingredient = {
@@ -369,6 +370,23 @@ export default function RecipesPage() {
   const [draftPrice, setDraftPrice] = React.useState("450");
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
+
+  // ----- live data: replace seed with real Postgres rows when available -----
+  React.useEffect(() => {
+    apiGet<Recipe[]>("/recipes")
+      .then(rows => {
+        if (Array.isArray(rows) && rows.length) {
+          const norm = rows.map(r => ({
+            ...r,
+            id: String(r.id),
+            ingredients: (r.ingredients ?? []).map(i => ({ ...i, id: String(i.id) })),
+          }));
+          setRecipes(norm);
+          setSelectedId(prev => (norm.some(r => r.id === prev) ? prev : norm[0].id));
+        }
+      })
+      .catch(() => { /* offline — keep SEED_RECIPES fallback */ });
+  }, []);
 
   // ----- derived -----
   const filtered = recipes.filter(r => {

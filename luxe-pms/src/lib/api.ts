@@ -87,6 +87,22 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// Sends a branded email through the backend's single configured mail account
+// (Gmail SMTP). Every "email customer/guest/staff" action funnels through here.
+export type EmailRow = { label: string; value?: string };
+export async function sendEmail(payload: {
+  to: string;
+  subject: string;
+  heading: string;
+  greeting?: string;
+  intro?: string;
+  rows?: EmailRow[];
+  note?: string;
+  context?: string;
+}): Promise<{ sent: true; to: string }> {
+  return apiPost("/email/send", payload);
+}
+
 export async function apiUpload(file: File): Promise<{ url: string; path: string }> {
   const form = new FormData();
   form.append("file", file);

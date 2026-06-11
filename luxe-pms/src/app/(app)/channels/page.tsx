@@ -29,17 +29,19 @@ const TABS = [
 type TabId = typeof TABS[number]["id"];
 
 // Sample OTA bookings
-const OTA_BOOKINGS = [
-  { id: "ob1", channel: "Booking.com", booking: "BDC-44218", guest: "Hans Müller", room: "302", checkIn: "26 May", nights: 3, status: "confirmed" as const, total: 2400 },
-  { id: "ob2", channel: "Agoda", booking: "AGD-87124", guest: "Lin Cheng", room: "104", checkIn: "27 May", nights: 2, status: "confirmed" as const, total: 1700 },
-  { id: "ob3", channel: "Expedia", booking: "EXP-99841", guest: "Priya Reddy", room: "Pending", checkIn: "28 May", nights: 4, status: "pending" as const, total: 3400 },
-  { id: "ob4", channel: "Booking.com", booking: "BDC-44219", guest: "James OBrien", room: "405", checkIn: "25 May", nights: 1, status: "modified" as const, total: 1200 },
-  { id: "ob5", channel: "MakeMyTrip", booking: "MMT-31202", guest: "Arjun Patel", room: "208", checkIn: "29 May", nights: 5, status: "confirmed" as const, total: 3850 },
+type OtaBooking = { id: string; channel: string; booking: string; guest: string; room: string; checkIn: string; nights: number; status: "confirmed" | "pending" | "modified" | "cancelled"; total: number };
+const OTA_BOOKINGS: OtaBooking[] = [
+  { id: "ob1", channel: "Booking.com", booking: "BDC-44218", guest: "Hans Müller", room: "302", checkIn: "26 May", nights: 3, status: "confirmed", total: 2400 },
+  { id: "ob2", channel: "Agoda", booking: "AGD-87124", guest: "Lin Cheng", room: "104", checkIn: "27 May", nights: 2, status: "confirmed", total: 1700 },
+  { id: "ob3", channel: "Expedia", booking: "EXP-99841", guest: "Priya Reddy", room: "Pending", checkIn: "28 May", nights: 4, status: "pending", total: 3400 },
+  { id: "ob4", channel: "Booking.com", booking: "BDC-44219", guest: "James OBrien", room: "405", checkIn: "25 May", nights: 1, status: "modified", total: 1200 },
+  { id: "ob5", channel: "MakeMyTrip", booking: "MMT-31202", guest: "Arjun Patel", room: "208", checkIn: "29 May", nights: 5, status: "confirmed", total: 3850 },
 ];
 
 const ROOM_TYPES = ["Queen", "Deluxe", "Suite", "King", "Family", "Executive"];
 
-const RATE_MAP = ROOM_TYPES.map(t => ({
+type RateMapRow = { type: string; pms: number; bdc: number; agoda: number; expedia: number };
+const RATE_MAP: RateMapRow[] = ROOM_TYPES.map(t => ({
   type: t,
   pms: ({ Queen: 450, Deluxe: 650, Suite: 1200, King: 850, Family: 950, Executive: 1500 } as Record<string, number>)[t]!,
   bdc: ({ Queen: 480, Deluxe: 695, Suite: 1280, King: 905, Family: 1015, Executive: 1600 } as Record<string, number>)[t]!,
@@ -56,24 +58,37 @@ const AVAILABILITY = Array.from({ length: 7 }, (_, i) => {
   };
 });
 
-const SYNC_LOGS = [
-  { id: "l1", time: "13:42", channel: "Booking.com", action: "Rates pushed", detail: "Deluxe AED 695 · 6 dates", status: "success" as const },
-  { id: "l2", time: "13:35", channel: "Booking.com", action: "Reservation received", detail: "BDC-44218 · 3N · Hans Müller", status: "success" as const },
-  { id: "l3", time: "13:30", channel: "Agoda", action: "Availability pulled", detail: "All room types · 30 days", status: "success" as const },
-  { id: "l4", time: "13:18", channel: "Expedia", action: "Booking modified", detail: "EXP-99841 · dates pushed +1", status: "warning" as const },
-  { id: "l5", time: "12:50", channel: "Goibibo", action: "Connection retry", detail: "Token refresh succeeded", status: "warning" as const },
-  { id: "l6", time: "12:30", channel: "Airbnb", action: "Sync attempted", detail: "Channel disconnected — skipped", status: "error" as const },
+type SyncLog = { id: string; time: string; channel: string; action: string; detail: string; status: "success" | "warning" | "error" };
+const SYNC_LOGS: SyncLog[] = [
+  { id: "l1", time: "13:42", channel: "Booking.com", action: "Rates pushed", detail: "Deluxe AED 695 · 6 dates", status: "success" },
+  { id: "l2", time: "13:35", channel: "Booking.com", action: "Reservation received", detail: "BDC-44218 · 3N · Hans Müller", status: "success" },
+  { id: "l3", time: "13:30", channel: "Agoda", action: "Availability pulled", detail: "All room types · 30 days", status: "success" },
+  { id: "l4", time: "13:18", channel: "Expedia", action: "Booking modified", detail: "EXP-99841 · dates pushed +1", status: "warning" },
+  { id: "l5", time: "12:50", channel: "Goibibo", action: "Connection retry", detail: "Token refresh succeeded", status: "warning" },
+  { id: "l6", time: "12:30", channel: "Airbnb", action: "Sync attempted", detail: "Channel disconnected — skipped", status: "error" },
 ];
 
 export default function ChannelsPage() {
   const [tab, setTab] = React.useState<TabId>("connections");
   const [channels, setChannels] = React.useState<ChannelRow[]>(() => CHANNELS.map(c => ({ ...c })));
+  const [otaBookings, setOtaBookings] = React.useState<OtaBooking[]>(OTA_BOOKINGS);
+  const [rateMap, setRateMap] = React.useState<RateMapRow[]>(RATE_MAP);
+  const [syncLogs, setSyncLogs] = React.useState<SyncLog[]>(SYNC_LOGS);
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2600); };
 
   React.useEffect(() => {
     apiGet<ChannelRow[]>("/channels")
       .then(rows => { if (rows.length) setChannels(rows.map(c => ({ ...c, id: String(c.id) }))); })
+      .catch(() => {});
+    apiGet<OtaBooking[]>("/ota-bookings")
+      .then(rows => { if (rows.length) setOtaBookings(rows.map(r => ({ ...r, id: String(r.id) }))); })
+      .catch(() => {});
+    apiGet<RateMapRow[]>("/channel-rate-maps")
+      .then(rows => { if (rows.length) setRateMap(rows); })
+      .catch(() => {});
+    apiGet<SyncLog[]>("/channel-sync-logs")
+      .then(rows => { if (rows.length) setSyncLogs(rows.map(r => ({ ...r, id: String(r.id) }))); })
       .catch(() => {});
   }, []);
 
@@ -208,8 +223,8 @@ export default function ChannelsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {OTA_BOOKINGS.map(o => (
-                  <tr key={o.id} className="hover:bg-surface-sunken/50 transition-colors">
+                {otaBookings.map(o => (
+                  <tr key={String(o.id)} className="hover:bg-surface-sunken/50 transition-colors">
                     <td className="px-4 py-3"><Badge tone="brand">{o.channel}</Badge></td>
                     <td className="px-4 py-3 tabular text-xs">{o.booking}</td>
                     <td className="px-4 py-3">
@@ -222,7 +237,7 @@ export default function ChannelsPage() {
                     <td className="px-4 py-3 text-muted-foreground">{o.checkIn}</td>
                     <td className="px-4 py-3 text-right tabular">{o.nights}</td>
                     <td className="px-4 py-3"><Badge tone={o.status === "confirmed" ? "success" : o.status === "modified" ? "warning" : "info"}>{o.status}</Badge></td>
-                    <td className="px-4 py-3 text-right tabular font-medium">{money(o.total)}</td>
+                    <td className="px-4 py-3 text-right tabular font-medium">{money(Number(o.total))}</td>
                     <td className="px-4 py-3 text-right"><Button variant="ghost" size="sm">Open<ChevronRight className="h-3 w-3" /></Button></td>
                   </tr>
                 ))}
@@ -252,15 +267,15 @@ export default function ChannelsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {RATE_MAP.map(r => (
+                {rateMap.map(r => (
                   <tr key={r.type}>
                     <td className="px-4 py-3 font-medium">{r.type}</td>
-                    <td className="px-4 py-3 text-right tabular text-muted-foreground">{money(r.pms)}</td>
-                    <td className="px-4 py-3 text-right tabular font-medium">{money(r.bdc)}</td>
-                    <td className="px-4 py-3 text-right tabular font-medium">{money(r.agoda)}</td>
-                    <td className="px-4 py-3 text-right tabular font-medium">{money(r.expedia)}</td>
+                    <td className="px-4 py-3 text-right tabular text-muted-foreground">{money(Number(r.pms))}</td>
+                    <td className="px-4 py-3 text-right tabular font-medium">{money(Number(r.bdc))}</td>
+                    <td className="px-4 py-3 text-right tabular font-medium">{money(Number(r.agoda))}</td>
+                    <td className="px-4 py-3 text-right tabular font-medium">{money(Number(r.expedia))}</td>
                     <td className="px-4 py-3 text-right">
-                      <Badge tone="brand">+{Math.round(((r.bdc - r.pms) / r.pms) * 100)}%</Badge>
+                      <Badge tone="brand">+{Math.round(((Number(r.bdc) - Number(r.pms)) / Number(r.pms)) * 100)}%</Badge>
                     </td>
                     <td className="px-4 py-3 text-right"><Button variant="ghost" size="sm">Edit</Button></td>
                   </tr>
@@ -368,8 +383,8 @@ export default function ChannelsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {SYNC_LOGS.map(l => (
-                <tr key={l.id} className="hover:bg-surface-sunken/40">
+              {syncLogs.map(l => (
+                <tr key={String(l.id)} className="hover:bg-surface-sunken/40">
                   <td className="px-4 py-3 text-muted-foreground tabular">{l.time}</td>
                   <td className="px-4 py-3"><Badge tone="neutral">{l.channel}</Badge></td>
                   <td className="px-4 py-3 font-medium">{l.action}</td>

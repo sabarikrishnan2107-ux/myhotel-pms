@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
 
 // ============================================================
 // TYPES + DETERMINISTIC SEED
@@ -118,6 +119,35 @@ const LEAD_SEED: LeadBucket[] = [
   { label: "90+ d",    rooms: 2,  revenue: 31_500 },
 ];
 
+// ---- Real backend shape: GET /api/revenue/pickup ----------------------------
+// { days:[{date,pickupRooms,pickupRevenue,cancellations}],
+//   sources:[{source,rooms,revenue,cancellations}],
+//   leadBuckets:[{label,rooms,revenue}] }
+type PickupApiDay = { date: string; pickupRooms: number; pickupRevenue: number; cancellations: number };
+type PickupApiSource = { source: string; rooms: number; revenue: number; cancellations: number };
+type PickupApiLead = { label: string; rooms: number; revenue: number };
+type PickupApiResponse = { days: PickupApiDay[]; sources: PickupApiSource[]; leadBuckets: PickupApiLead[] };
+
+// Presentational fallbacks (icon + swatch) re-attached to backend source rows by
+// index — the API supplies only source/rooms/revenue/cancellations.
+const SOURCE_PRESENTATION: { icon: SourceRow["icon"]; color: string }[] = SOURCES_SEED.map(s => ({ icon: s.icon, color: s.color }));
+const SOURCE_FALLBACK_PRESENTATION = { icon: Globe, color: "bg-emerald-500" } as const;
+
+// Map a backend day → the UI's DayRow. The endpoint exposes gross pickup +
+// cancellation COUNT only; it has no cancellation-revenue or modification data,
+// so those collapse to 0 (the modifications column simply reads 0/₹0).
+function apiDayToRow(d: PickupApiDay): DayRow {
+  return {
+    date: new Date(`${d.date}T00:00:00`),
+    grossNewRooms: Number(d.pickupRooms) || 0,
+    grossNewRevenue: Number(d.pickupRevenue) || 0,
+    cancellationRooms: Number(d.cancellations) || 0,
+    cancellationRevenue: 0,
+    modificationDeltaRooms: 0,
+    modificationDeltaRevenue: 0,
+  };
+}
+
 // ============================================================
 // PAGE
 // ============================================================
@@ -133,7 +163,51 @@ export default function PickupReportPage() {
   // Anchor date — deterministic so server / client / workflow agree
   const TODAY = React.useMemo(() => new Date(2026, 5, 2), []); // 2 Jun 2026
 
-  const rows: DayRow[] = React.useMemo(() => seedRows(TODAY, period), [TODAY, period]);
+  // Offline-seeded day rows for the selected period (deterministic fallback).
+  const seededRows: DayRow[] = React.useMemo(() => seedRows(TODAY, period), [TODAY, period]);
+
+  // Live data, seeded from the inline consts and replaced by the real endpoint
+  // when GET /api/revenue/pickup resolves. `apiDays` stays null until then so we
+  // fall back to the period-aware seeded rows above.
+  const [apiDays, setApiDays] = React.useState<DayRow[] | null>(null);
+  const [sources, setSources] = React.useState<SourceRow[]>(SOURCES_SEED);
+  const [leadBuckets, setLeadBuckets] = React.useState<LeadBucket[]>(LEAD_SEED);
+
+  React.useEffect(() => {
+    let alive = true;
+    apiGet<PickupApiResponse>("/revenue/pickup")
+      .then(res => {
+        if (!alive) return;
+        if (Array.isArray(res.days) && res.days.length) {
+          setApiDays(res.days.map(apiDayToRow));
+        }
+        if (Array.isArray(res.sources) && res.sources.length) {
+          setSources(res.sources.map((s, i) => ({
+            source: s.source,
+            rooms: Number(s.rooms) || 0,
+            revenue: Number(s.revenue) || 0,
+            cancellations: Number(s.cancellations) || 0,
+            icon: (SOURCE_PRESENTATION[i] ?? SOURCE_FALLBACK_PRESENTATION).icon,
+            color: (SOURCE_PRESENTATION[i] ?? SOURCE_FALLBACK_PRESENTATION).color,
+          })));
+        }
+        if (Array.isArray(res.leadBuckets) && res.leadBuckets.length) {
+          setLeadBuckets(res.leadBuckets.map(b => ({
+            label: b.label,
+            rooms: Number(b.rooms) || 0,
+            revenue: Number(b.revenue) || 0,
+          })));
+        }
+      })
+      .catch(() => { /* offline → keep seeded fallback */ });
+    return () => { alive = false; };
+  }, []);
+
+  // Real endpoint returns a fixed 14-day window; when present it drives the
+  // table/summary regardless of the period toggle, else the seeded rows do.
+  const rows: DayRow[] = apiDays ?? seededRows;
+
+  // Heatmap (pickup by stay-date) has no backend equivalent → stays seeded.
   const stayCells = React.useMemo(() => seedStayHeatmap(TODAY, 60), [TODAY]);
 
   // Today's row = last in array
@@ -198,12 +272,12 @@ export default function PickupReportPage() {
   }
 
   // Source totals
-  const totalSourceRooms = SOURCES_SEED.reduce((s, x) => s + x.rooms, 0);
-  const totalSourceRev = SOURCES_SEED.reduce((s, x) => s + x.revenue, 0);
+  const totalSourceRooms = sources.reduce((s, x) => s + x.rooms, 0);
+  const totalSourceRev = sources.reduce((s, x) => s + x.revenue, 0);
 
   // Lead time totals + max for bar scaling
-  const totalLeadRooms = LEAD_SEED.reduce((s, x) => s + x.rooms, 0);
-  const maxLeadRooms = Math.max(...LEAD_SEED.map(x => x.rooms));
+  const totalLeadRooms = leadBuckets.reduce((s, x) => s + x.rooms, 0);
+  const maxLeadRooms = Math.max(...leadBuckets.map(x => x.rooms));
 
   // LY comparison (deterministic seeded)
   const thisWeekNet = rows.slice(-7).reduce((s, r) => s + (r.grossNewRooms - r.cancellationRooms + r.modificationDeltaRooms), 0);
@@ -590,7 +664,7 @@ export default function PickupReportPage() {
           {/* DONUT placeholder via conic-gradient */}
           <div className="px-4 flex items-center justify-center py-2">
             <div className="relative h-40 w-40 rounded-full" style={{
-              background: buildConicGradient(SOURCES_SEED.map(s => ({ value: s.rooms, color: tailwindToHex(s.color) }))),
+              background: buildConicGradient(sources.map(s => ({ value: s.rooms, color: tailwindToHex(s.color) }))),
             }}>
               <div className="absolute inset-3 rounded-full bg-surface flex flex-col items-center justify-center">
                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Total</span>
@@ -612,7 +686,7 @@ export default function PickupReportPage() {
                 </tr>
               </thead>
               <tbody>
-                {SOURCES_SEED.map(s => {
+                {sources.map(s => {
                   const Icon = s.icon;
                   const mix = (s.rooms / totalSourceRooms) * 100;
                   return (
@@ -640,7 +714,7 @@ export default function PickupReportPage() {
                   <td className="px-4 py-2.5 text-right text-emerald-600 tabular">+{totalSourceRooms}</td>
                   <td className="px-4 py-2.5 text-right tabular">{money(totalSourceRev)}</td>
                   <td className="px-4 py-2.5 text-right tabular">100%</td>
-                  <td className="px-4 py-2.5 text-right text-rose-600 tabular">−{SOURCES_SEED.reduce((s, x) => s + x.cancellations, 0)}</td>
+                  <td className="px-4 py-2.5 text-right text-rose-600 tabular">−{sources.reduce((s, x) => s + x.cancellations, 0)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -663,7 +737,7 @@ export default function PickupReportPage() {
           </div>
 
           <div className="px-4 pb-4 space-y-2.5">
-            {LEAD_SEED.map(b => {
+            {leadBuckets.map(b => {
               const widthPct = (b.rooms / maxLeadRooms) * 100;
               const sharePct = (b.rooms / totalLeadRooms) * 100;
               return (

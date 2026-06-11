@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
-import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
+import { apiGet, apiPost, apiPut, apiDelete, sendEmail } from "@/lib/api";
 
 // ============================================================
 // TYPES + SEED
@@ -308,6 +308,15 @@ export default function OwnerFlashPage() {
     showToast("Schedule deleted");
     try { await apiDelete(`/email-schedules/${id}`); } catch { /* offline */ }
   };
+  const flashRows = () => {
+    const d = flashByPeriod[period] ?? FLASH_BY_PERIOD[period];
+    const occ = Math.round((d.rooms.sold / d.rooms.total) * 100);
+    return [
+      { label: "Occupancy", value: `${occ}%` },
+      { label: "Rooms sold", value: `${d.rooms.sold} / ${d.rooms.total}` },
+      { label: "Room revenue", value: money(d.revenue.rooms) },
+    ];
+  };
   const sendSchedule = async (id: string) => {
     const s = schedules.find(x => x.id === id);
     if (!s) return;
@@ -315,11 +324,22 @@ export default function OwnerFlashPage() {
       const res = await apiPost<{ at: string }>("/owner/flash/send", { scheduleId: id });
       setSchedules(prev => prev.map(x => x.id === id ? { ...x, lastSentAt: res.at } : x));
     } catch { /* offline */ }
-    showToast(`${s.label} sent to ${s.recipients[0] ?? "recipients"}`);
+    const recips = (s.recipients ?? []).filter(Boolean);
+    await Promise.all(recips.map(to => sendEmail({
+      to, subject: `${s.label} — Owner's Flash`, heading: s.label,
+      intro: "Your scheduled Owner's Flash report is ready. Key figures are summarised below.",
+      rows: flashRows(), context: "Owner's Flash",
+    }).catch(() => {})));
+    showToast(`${s.label} sent to ${recips[0] ?? "recipients"}`);
   };
   const sendNow = async (emails: string[]) => {
     setSendNowModal(false);
     try { await apiPost("/owner/flash/send", { recipients: emails }); } catch { /* offline */ }
+    await Promise.all(emails.filter(Boolean).map(to => sendEmail({
+      to, subject: "Owner's Flash Report", heading: "Owner's Flash Report",
+      intro: "Here is the latest Owner's Flash report. Key figures are summarised below.",
+      rows: flashRows(), context: "Owner's Flash",
+    }).catch(() => {})));
     showToast(`Flash report sent to ${emails.length} recipient${emails.length === 1 ? "" : "s"}`);
   };
 

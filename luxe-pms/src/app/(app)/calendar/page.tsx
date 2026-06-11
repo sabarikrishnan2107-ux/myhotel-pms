@@ -16,6 +16,7 @@ import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
 
 const CELL_W = 80;
 const ROW_H = 56;
+const LANE_H = 27;   // height of one stacked booking lane within a room row
 const LABEL_W = 200;
 const VIEW_SPANS = { Day: 1, Week: 7, "2 Weeks": 14, Month: 30 } as const;
 type ViewSpan = keyof typeof VIEW_SPANS;
@@ -49,6 +50,25 @@ function blockLeft(startCol: number) {
 function blockWidth(nights: number) {
   // From 12:00 day N to 11:00 day (N+nights) → nights * 24 - 1 hours = (nights * 24 - 1) * HOUR_W
   return nights * CELL_W - HOUR_W;
+}
+
+// Greedy interval partitioning: stack a room's overlapping bookings into
+// separate horizontal lanes so none render on top of each other. A booking
+// ending at 11:00 AM and the next starting at 12:00 PM the same day do NOT
+// overlap, so back-to-back stays share a lane (b.startCol >= a checkout col).
+function assignLanes(blocks: CalBlock[]) {
+  const sorted = [...blocks].sort(
+    (a, b) => a.startCol - b.startCol || (a.startCol + a.nights) - (b.startCol + b.nights),
+  );
+  const laneEnds: number[] = [];   // checkout col of the last block placed in each lane
+  const laneOf = new Map<string, number>();
+  for (const b of sorted) {
+    let lane = laneEnds.findIndex(end => b.startCol >= end);
+    if (lane === -1) { lane = laneEnds.length; laneEnds.push(0); }
+    laneOf.set(b.id, lane);
+    laneEnds[lane] = b.startCol + b.nights;
+  }
+  return { laneOf, laneCount: Math.max(1, laneEnds.length) };
 }
 
 const PAYMENT_BG: Record<PaymentStatus, string> = {
@@ -403,12 +423,19 @@ export default function CalendarPage() {
             {/* Rows */}
             <div>
               {sortedRooms.map(room => {
-                const roomBlocks = visibleBlocks.filter(b => b.roomNumber === room.number);
+                // Only blocks that actually intersect the visible window, so
+                // off-window stays don't add phantom lanes or row height.
+                const roomBlocks = visibleBlocks.filter(
+                  b => b.roomNumber === room.number && b.startCol < DAYS && b.startCol + b.nights > 0,
+                );
+                const { laneOf, laneCount } = assignLanes(roomBlocks);
+                const rowHeight = Math.max(ROW_H, laneCount * LANE_H + 8);
+                const stackTop = (rowHeight - laneCount * LANE_H) / 2;
                 return (
                   <div
                     key={room.id}
                     className="flex border-b border-border transition-colors hover:bg-surface-sunken/30"
-                    style={{ height: ROW_H }}
+                    style={{ height: rowHeight }}
                   >
                     <div
                       style={{ width: LABEL_W }}
@@ -420,7 +447,7 @@ export default function CalendarPage() {
                         <p className="text-[10px] text-muted-foreground">Floor {room.floor}</p>
                       </div>
                     </div>
-                    <div className="relative flex-1" style={{ height: ROW_H }}>
+                    <div className="relative flex-1 overflow-hidden" style={{ height: rowHeight }}>
                       {/* Day grid with noon tick — display only */}
                       <div className="absolute inset-0 flex">
                         {days.map((d, i) => {
@@ -452,33 +479,30 @@ export default function CalendarPage() {
                       {roomBlocks.map((b) => {
                         const left = blockLeft(b.startCol);
                         const w = blockWidth(b.nights);
+                        const top = stackTop + (laneOf.get(b.id) ?? 0) * LANE_H;
                         return (
                           <div
                             key={b.id}
                             onDoubleClick={(e) => { e.stopPropagation(); openGuestForBlock(b); }}
                             className={cn(
-                              "absolute top-1.5 bottom-1.5 rounded-md border text-left overflow-hidden hover:shadow-md hover:z-10 transition-shadow cursor-pointer group/block select-none",
+                              "absolute rounded-md border text-left overflow-hidden hover:shadow-md hover:z-10 transition-shadow cursor-pointer group/block select-none",
                               PAYMENT_BG[b.paymentStatus]
                             )}
-                            style={{ left, width: w }}
-                            title={`${b.guestName} · ${b.nights}N · ${b.source}\nDouble-click to view full profile`}
+                            style={{ left, width: w, top, height: LANE_H - 4 }}
+                            title={`${b.guestName} · ${b.nights}N · ${b.source} · 12 PM → 11 AM\nDouble-click to view full profile`}
                           >
                             {/* Left status bar */}
                             <div className={cn("absolute left-0 top-0 bottom-0 w-0.5", PAYMENT_BAR[b.paymentStatus])} />
 
-                            {/* Check-in / out markers */}
-                            <span className="absolute left-2.5 top-0.5 text-[8px] font-mono text-muted-foreground/80 tabular leading-none pointer-events-none">12P</span>
-                            <span className="absolute right-2.5 top-0.5 text-[8px] font-mono text-muted-foreground/80 tabular leading-none pointer-events-none">11A</span>
-
-                            {/* Guest name + source */}
-                            <div className="pl-2.5 pr-2.5 pt-2.5 pointer-events-none">
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="text-xs font-medium truncate">{b.guestName}</p>
-                                {b.vip && <span className="text-[10px] text-brand shrink-0">★</span>}
-                              </div>
-                              <p className="text-[10px] text-muted-foreground truncate">
-                                {w >= 70 ? `${b.nights}N · ${b.source}` : `${b.nights}N`}
-                              </p>
+                            {/* Single-line label — name, VIP, and nights/source when wide enough */}
+                            <div className="h-full flex items-center gap-1 pl-2.5 pr-1.5 pointer-events-none">
+                              <p className="text-[11px] font-medium leading-none truncate">{b.guestName}</p>
+                              {b.vip && <span className="text-[10px] text-brand shrink-0 leading-none">★</span>}
+                              {w >= 96 && (
+                                <span className="ml-auto text-[9px] text-muted-foreground tabular shrink-0 leading-none">
+                                  {w >= 150 ? `${b.nights}N · ${b.source}` : `${b.nights}N`}
+                                </span>
+                              )}
                             </div>
                           </div>
                         );

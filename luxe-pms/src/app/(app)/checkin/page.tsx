@@ -741,17 +741,29 @@ function CheckinProcessModal({
   // Step 2 — Room assignment. Booking reserves a room TYPE; here we pick a
   // currently-available room of that type (plus the pre-assigned one if any).
   const isUnassigned = !reservation.roomNumber || reservation.roomNumber === "Unassigned";
+  // Assignable at check-in = ready rooms plus housekeeping-pending ones
+  // (dirty / cleaning). Occupied / blocked / out-of-order rooms are excluded.
   const availableForType = React.useMemo(
-    () => rooms.filter(r => r.type === reservation.roomType && (r.status === "available" || r.number === reservation.roomNumber)),
+    () => rooms.filter(r => r.type === reservation.roomType
+      && (r.status === "available" || r.status === "dirty" || r.status === "cleaning" || r.number === reservation.roomNumber)),
     [rooms, reservation.roomType, reservation.roomNumber],
   );
   const [assignedRoom, setAssignedRoom] = React.useState(isUnassigned ? "" : reservation.roomNumber);
   const selectedRoomObj = availableForType.find(r => r.number === assignedRoom);
+  const selectedHkPending = !!selectedRoomObj && (selectedRoomObj.status === "dirty" || selectedRoomObj.status === "cleaning");
   const [keyCardEncoded, setKeyCardEncoded] = React.useState(false);
 
   // Step 3 — Payment
   const [collectAmount, setCollectAmount] = React.useState(reservation.balance);
   const [paymentMode, setPaymentMode] = React.useState("UPI");
+  const [paymentRef, setPaymentRef] = React.useState("");
+  // Cash needs no reference; every other mode must record a transaction ref.
+  const PAY_REF_FIELD: Record<string, { label: string; placeholder: string }> = {
+    UPI: { label: "UPI transaction reference", placeholder: "e.g. 4123-4567-8901" },
+    Card: { label: "Card auth code / last 4 digits", placeholder: "e.g. Auth 8821 · **** 4321" },
+    "Net Banking": { label: "Bank reference / UTR no.", placeholder: "e.g. UTR 3219872650" },
+  };
+  const needsRef = collectAmount > 0 && paymentMode !== "Cash";
 
   // Step 4 — Welcome
   const [channels, setChannels] = React.useState<string[]>(["whatsapp", "email"]);
@@ -770,7 +782,12 @@ function CheckinProcessModal({
     if (step === 1) return assignedRoom && keyCardEncoded;
     // Step 2: allow partial advance — collectAmount can be anything from 0 to balance (or more).
     // Front-desk staff can defer remaining balance to checkout.
-    if (step === 2) return reservation.balance === 0 || collectAmount >= 0;
+    if (step === 2) {
+      if (reservation.balance === 0 || collectAmount === 0) return true;
+      // Non-cash collections must capture a reference number.
+      if (needsRef && !paymentRef.trim()) return false;
+      return collectAmount >= 0;
+    }
     return true;
   };
 
@@ -1068,9 +1085,11 @@ function CheckinProcessModal({
                       <p className="text-2xl font-semibold tabular">{assignedRoom || "—"}</p>
                       <p className="text-xs text-muted-foreground">{reservation.roomType}{selectedRoomObj ? ` · Floor ${selectedRoomObj.floor}` : ""} · {reservation.nights} nights</p>
                     </div>
-                    {assignedRoom
-                      ? <Badge tone="success"><CheckCircle2 className="h-3 w-3" />Inspected · Ready</Badge>
-                      : <Badge tone="warning">Pick a room</Badge>}
+                    {!assignedRoom
+                      ? <Badge tone="warning">Pick a room</Badge>
+                      : selectedHkPending
+                        ? <Badge tone="warning"><AlertCircle className="h-3 w-3" />Housekeeping pending</Badge>
+                        : <Badge tone="success"><CheckCircle2 className="h-3 w-3" />Inspected · Ready</Badge>}
                   </div>
                   <div className="mt-3 pt-3 border-t border-border">
                     <Label className="text-xs">{isUnassigned ? `Available ${reservation.roomType} rooms` : "Reassign to another room (optional)"}</Label>
@@ -1078,12 +1097,23 @@ function CheckinProcessModal({
                       <option value="">Select an available {reservation.roomType} room…</option>
                       {availableForType.map(r => (
                         <option key={r.id} value={r.number}>
-                          Room {r.number} · {r.type} · Floor {r.floor}{r.number === reservation.roomNumber ? " (pre-assigned)" : ""}
+                          Room {r.number} · {r.type} · Floor {r.floor}{
+                            r.number === reservation.roomNumber ? " (pre-assigned)"
+                            : r.status === "dirty" ? " · needs cleaning"
+                            : r.status === "cleaning" ? " · being cleaned"
+                            : ""
+                          }
                         </option>
                       ))}
                     </Select>
+                    {selectedHkPending && (
+                      <p className="text-xs text-warning mt-1.5 inline-flex items-start gap-1">
+                        <AlertCircle className="h-3 w-3 mt-0.5 shrink-0" />
+                        Room {assignedRoom} is {selectedRoomObj?.status === "dirty" ? "not yet cleaned" : "being cleaned"} — housekeeping is still pending. You can assign it now; HK will be notified to prioritise before the guest arrives.
+                      </p>
+                    )}
                     {availableForType.length === 0 && (
-                      <p className="text-xs text-warning mt-1.5">No {reservation.roomType} rooms are currently available — free one up or change the room type.</p>
+                      <p className="text-xs text-warning mt-1.5">No {reservation.roomType} rooms are assignable right now (all occupied or out of order) — free one up or change the room type.</p>
                     )}
                   </div>
                 </div>
@@ -1225,7 +1255,7 @@ function CheckinProcessModal({
                             <button
                               key={m}
                               type="button"
-                              onClick={() => setPaymentMode(m)}
+                              onClick={() => { setPaymentMode(m); setPaymentRef(""); }}
                               className={cn(
                                 "h-10 rounded-md border text-xs font-medium transition-colors",
                                 paymentMode === m ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
@@ -1235,6 +1265,25 @@ function CheckinProcessModal({
                             </button>
                           ))}
                         </div>
+
+                        {/* Cash needs no reference; UPI / Card / Net Banking must record one. */}
+                        {needsRef && (
+                          <div className="space-y-1.5 pt-1.5 animate-in">
+                            <Label>
+                              {PAY_REF_FIELD[paymentMode]?.label ?? "Transaction reference"} <span className="text-danger">*</span>
+                            </Label>
+                            <Input
+                              value={paymentRef}
+                              onChange={e => setPaymentRef(e.target.value)}
+                              placeholder={PAY_REF_FIELD[paymentMode]?.placeholder ?? "Reference no."}
+                              className="h-10 font-mono tabular"
+                              autoFocus
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              Recorded on the folio &amp; receipt for {paymentMode} reconciliation.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
                   </>
@@ -1314,8 +1363,8 @@ function CheckinProcessModal({
                       : collectAmount === 0
                         ? `Skipped advance · ${money(reservation.balance)} outstanding`
                         : collectAmount < reservation.balance
-                          ? `Partial ${money(collectAmount)} via ${paymentMode} · ${money(reservation.balance - collectAmount)} due at checkout`
-                          : `Collecting ${money(collectAmount)} via ${paymentMode}`}
+                          ? `Partial ${money(collectAmount)} via ${paymentMode}${paymentMode !== "Cash" && paymentRef ? ` · ref ${paymentRef}` : ""} · ${money(reservation.balance - collectAmount)} due at checkout`
+                          : `Collecting ${money(collectAmount)} via ${paymentMode}${paymentMode !== "Cash" && paymentRef ? ` · ref ${paymentRef}` : ""}`}
                   />
                   <SummaryRow icon={Send} label="Welcome via" value={channels.length === 0 ? "Skipped" : channels.map(c => c[0].toUpperCase() + c.slice(1)).join(" + ")} />
                 </div>

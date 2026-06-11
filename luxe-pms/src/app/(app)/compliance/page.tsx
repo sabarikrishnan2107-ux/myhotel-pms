@@ -115,6 +115,18 @@ export default function CompliancePage() {
       .then(rows => setFormC(rows.map(f => ({ ...f, id: String(f.id) }))))
       .catch(() => {});
   }, []);
+  const [gstRows, setGstRows] = React.useState<GstRow[]>(GSTR1_ROWS);
+  React.useEffect(() => {
+    apiGet<GstRow[]>("/gst-returns")
+      .then(rows => { if (rows.length) setGstRows(rows.map(r => ({ ...r, taxable: Number(r.taxable), igst: Number(r.igst), cgst: Number(r.cgst), sgst: Number(r.sgst) }))); })
+      .catch(() => {});
+  }, []);
+  const [tdsRows, setTdsRows] = React.useState<TdsRow[]>(TDS_SEED);
+  React.useEffect(() => {
+    apiGet<TdsRow[]>("/tds-entries")
+      .then(rows => { if (rows.length) setTdsRows(rows.map(r => ({ ...r, id: String(r.id), amount: Number(r.amount), rate: Number(r.rate), tds: Number(r.tds) }))); })
+      .catch(() => {});
+  }, []);
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
@@ -196,10 +208,10 @@ export default function CompliancePage() {
       </div>
 
       {/* OVERVIEW */}
-      {tab === "overview" && <OverviewTab licenses={licenses} setTab={setTab} formCCount={formC.length} formCPending={formCPending} />}
+      {tab === "overview" && <OverviewTab licenses={licenses} setTab={setTab} formCCount={formC.length} formCPending={formCPending} gstRows={gstRows} tdsRows={tdsRows} />}
 
       {/* GSTR */}
-      {tab === "gstr" && <GstrTab onToast={showToast} />}
+      {tab === "gstr" && <GstrTab onToast={showToast} gstRows={gstRows} />}
 
       {/* FORM C */}
       {tab === "formC" && <FormCTab forms={formC} setForms={setFormC} onToast={showToast} />}
@@ -210,7 +222,7 @@ export default function CompliancePage() {
       )}
 
       {/* TDS / TCS */}
-      {tab === "tds" && <TdsTab onToast={showToast} />}
+      {tab === "tds" && <TdsTab onToast={showToast} tdsRows={tdsRows} />}
 
       {/* E-INVOICE */}
       {tab === "einvoice" && <EinvoiceTab onToast={showToast} />}
@@ -228,10 +240,10 @@ export default function CompliancePage() {
 // ============================================================
 // OVERVIEW TAB
 // ============================================================
-function OverviewTab({ licenses, setTab, formCCount, formCPending }: { licenses: License[]; setTab: (t: ComplianceTab) => void; formCCount: number; formCPending: number }) {
-  const totalTax = GSTR1_ROWS.reduce((t, r) => t + r.igst + r.cgst + r.sgst, 0);
-  const totalTaxable = GSTR1_ROWS.reduce((t, r) => t + r.taxable, 0);
-  const tdsTotal = TDS_SEED.reduce((t, r) => t + r.tds, 0);
+function OverviewTab({ licenses, setTab, formCCount, formCPending, gstRows, tdsRows }: { licenses: License[]; setTab: (t: ComplianceTab) => void; formCCount: number; formCPending: number; gstRows: GstRow[]; tdsRows: TdsRow[] }) {
+  const totalTax = gstRows.reduce((t, r) => t + r.igst + r.cgst + r.sgst, 0);
+  const totalTaxable = gstRows.reduce((t, r) => t + r.taxable, 0);
+  const tdsTotal = tdsRows.reduce((t, r) => t + r.tds, 0);
   const upcomingLicenses = [...licenses].sort((a, b) => a.daysToExpiry - b.daysToExpiry).slice(0, 6);
 
   return (
@@ -266,7 +278,7 @@ function OverviewTab({ licenses, setTab, formCCount, formCPending }: { licenses:
             <span className="h-8 w-8 rounded-md bg-accent-soft text-accent inline-flex items-center justify-center mb-2"><IndianRupee className="h-4 w-4" /></span>
             <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">TDS deducted (May)</p>
             <p className="text-xl font-bold tabular mt-0.5">{money(tdsTotal)}</p>
-            <p className="text-[10px] text-muted-foreground">across {TDS_SEED.length} sections</p>
+            <p className="text-[10px] text-muted-foreground">across {tdsRows.length} sections</p>
           </Card>
         </button>
       </div>
@@ -352,14 +364,14 @@ function OverviewTab({ licenses, setTab, formCCount, formCPending }: { licenses:
 // ============================================================
 // GSTR TAB
 // ============================================================
-function GstrTab({ onToast }: { onToast: (m: string) => void }) {
+function GstrTab({ onToast, gstRows }: { onToast: (m: string) => void; gstRows: GstRow[] }) {
   const [returnType, setReturnType] = React.useState<"gstr1" | "gstr3b">("gstr1");
   const [period, setPeriod] = React.useState("2026-05");
 
-  const totalTaxable = GSTR1_ROWS.reduce((t, r) => t + r.taxable, 0);
-  const totalIgst = GSTR1_ROWS.reduce((t, r) => t + r.igst, 0);
-  const totalCgst = GSTR1_ROWS.reduce((t, r) => t + r.cgst, 0);
-  const totalSgst = GSTR1_ROWS.reduce((t, r) => t + r.sgst, 0);
+  const totalTaxable = gstRows.reduce((t, r) => t + r.taxable, 0);
+  const totalIgst = gstRows.reduce((t, r) => t + r.igst, 0);
+  const totalCgst = gstRows.reduce((t, r) => t + r.cgst, 0);
+  const totalSgst = gstRows.reduce((t, r) => t + r.sgst, 0);
   const totalTax = totalIgst + totalCgst + totalSgst;
 
   // Mock ITC for 3B
@@ -418,7 +430,7 @@ function GstrTab({ onToast }: { onToast: (m: string) => void }) {
               </tr>
             </thead>
             <tbody>
-              {GSTR1_ROWS.map((r, i) => (
+              {gstRows.map((r, i) => (
                 <tr key={i} className="border-t border-border hover:bg-surface-sunken/30">
                   <td className="p-3">{r.label}</td>
                   <td className="p-3 text-right tabular">{money(r.taxable)}</td>
@@ -774,9 +786,9 @@ function LicenseEditModal({ license, onClose, onSave }: { license: License | nul
 // ============================================================
 // TDS / TCS TAB
 // ============================================================
-function TdsTab({ onToast }: { onToast: (m: string) => void }) {
-  const total = TDS_SEED.reduce((t, r) => t + r.tds, 0);
-  const totalTaxable = TDS_SEED.reduce((t, r) => t + r.amount, 0);
+function TdsTab({ onToast, tdsRows }: { onToast: (m: string) => void; tdsRows: TdsRow[] }) {
+  const total = tdsRows.reduce((t, r) => t + r.tds, 0);
+  const totalTaxable = tdsRows.reduce((t, r) => t + r.amount, 0);
 
   return (
     <div className="space-y-4">
@@ -794,7 +806,7 @@ function TdsTab({ onToast }: { onToast: (m: string) => void }) {
         <Card className="p-3 text-center">
           <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Taxable payments</p>
           <p className="text-xl font-bold tabular mt-0.5">{money(totalTaxable)}</p>
-          <p className="text-[10px] text-muted-foreground">across {TDS_SEED.length} entries</p>
+          <p className="text-[10px] text-muted-foreground">across {tdsRows.length} entries</p>
         </Card>
         <Card className="p-3 text-center">
           <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Effective rate</p>
@@ -821,7 +833,7 @@ function TdsTab({ onToast }: { onToast: (m: string) => void }) {
             </tr>
           </thead>
           <tbody>
-            {TDS_SEED.map(r => (
+            {tdsRows.map(r => (
               <tr key={r.id} className="border-t border-border hover:bg-surface-sunken/30">
                 <td className="p-3"><Badge tone="brand">{r.section}</Badge></td>
                 <td className="p-3 text-xs">{r.description}</td>

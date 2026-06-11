@@ -411,7 +411,8 @@ export default function InventoryPage() {
   const [tab, setTab] = React.useState<TabId>("items");
   const [items, setItems] = React.useState<Item[]>(INVENTORY_ITEMS);
   const [movements, setMovements] = React.useState<Movement[]>(INITIAL_MOVEMENTS);
-  const [pos] = React.useState<PO[]>(INITIAL_POS);
+  const [pos, setPos] = React.useState<PO[]>(INITIAL_POS);
+  const [wastage, setWastage] = React.useState(WASTAGE_LOG);
 
   // Filters
   const [search, setSearch] = React.useState("");
@@ -473,6 +474,10 @@ export default function InventoryPage() {
   React.useEffect(() => {
     let cancelled = false;
     apiGet<Item[]>("/inventory-items").then(r => { if (!cancelled) setItems(r); }).catch(() => {});
+    apiGet<Purchase[]>("/inventory-purchases").then(r => { if (!cancelled && r.length) setPurchases(r); }).catch(() => {});
+    apiGet<Movement[]>("/stock-movements").then(r => { if (!cancelled && r.length) setMovements(r); }).catch(() => {});
+    apiGet<PO[]>("/purchase-orders").then(r => { if (!cancelled && r.length) setPos(r); }).catch(() => {});
+    apiGet<typeof WASTAGE_LOG>("/inventory-wastage").then(r => { if (!cancelled && r.length) setWastage(r); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -696,7 +701,7 @@ export default function InventoryPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {movements.map(m => (
-                <tr key={m.id} className="hover:bg-surface-sunken/40">
+                <tr key={String(m.id)} className="hover:bg-surface-sunken/40">
                   <td className="px-5 py-3 text-muted-foreground tabular">{m.time}</td>
                   <td className="px-5 py-3 font-medium">{m.itemName}</td>
                   <td className="px-5 py-3">
@@ -705,10 +710,10 @@ export default function InventoryPage() {
                     </Badge>
                   </td>
                   <td className={cn("px-5 py-3 text-right tabular font-semibold inline-flex items-center justify-end gap-0.5 w-full",
-                    m.qty > 0 ? "text-success" : "text-warning"
+                    Number(m.qty) > 0 ? "text-success" : "text-warning"
                   )}>
-                    {m.qty > 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
-                    {Math.abs(m.qty)}
+                    {Number(m.qty) > 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                    {Math.abs(Number(m.qty))}
                   </td>
                   <td className="px-5 py-3 text-xs text-muted-foreground">{m.reason}</td>
                   <td className="px-5 py-3 text-xs">{m.by}</td>
@@ -742,11 +747,11 @@ export default function InventoryPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {pos.map(p => (
-                <tr key={p.id} className="hover:bg-surface-sunken/40">
+                <tr key={String(p.id)} className="hover:bg-surface-sunken/40">
                   <td className="px-5 py-3 font-medium tabular">{p.po}</td>
                   <td className="px-5 py-3">{p.vendor}</td>
-                  <td className="px-5 py-3 text-right tabular">{p.items}</td>
-                  <td className="px-5 py-3 text-right tabular font-medium">{money(p.amount)}</td>
+                  <td className="px-5 py-3 text-right tabular">{Number(p.items)}</td>
+                  <td className="px-5 py-3 text-right tabular font-medium">{money(Number(p.amount))}</td>
                   <td className="px-5 py-3 text-muted-foreground">{p.date}</td>
                   <td className="px-5 py-3">
                     <Badge tone={p.status === "Received" ? "success" : p.status === "Sent" ? "info" : p.status === "Draft" ? "neutral" : "danger"}>{p.status}</Badge>
@@ -776,12 +781,12 @@ export default function InventoryPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {WASTAGE_LOG.map(w => (
-                <tr key={w.id}>
+              {wastage.map(w => (
+                <tr key={String(w.id)}>
                   <td className="px-5 py-3 text-muted-foreground">{w.date}</td>
                   <td className="px-5 py-3 font-medium">{w.item}</td>
                   <td className="px-5 py-3 text-right tabular">{w.qty}</td>
-                  <td className="px-5 py-3 text-right tabular text-danger font-medium">{money(w.cost)}</td>
+                  <td className="px-5 py-3 text-right tabular text-danger font-medium">{money(Number(w.cost))}</td>
                   <td className="px-5 py-3 text-xs text-muted-foreground">{w.reason}</td>
                 </tr>
               ))}
@@ -789,7 +794,7 @@ export default function InventoryPage() {
             <tfoot className="bg-surface-elevated border-t border-border">
               <tr>
                 <td colSpan={3} className="px-5 py-2.5 text-right text-xs uppercase tracking-wider font-semibold text-muted-foreground">Total wastage (MTD)</td>
-                <td className="px-5 py-2.5 text-right tabular font-semibold text-danger">{money(WASTAGE_LOG.reduce((s, w) => s + w.cost, 0))}</td>
+                <td className="px-5 py-2.5 text-right tabular font-semibold text-danger">{money(wastage.reduce((s, w) => s + Number(w.cost), 0))}</td>
                 <td></td>
               </tr>
             </tfoot>
@@ -1286,7 +1291,7 @@ export default function InventoryPage() {
                         const totals = purchaseTotals(p);
                         const balance = totals.grandTotal - p.paidAmount;
                         return (
-                          <tr key={p.id} className="hover:bg-surface-sunken/40 transition-colors cursor-pointer" onClick={() => setViewPurchase(p)}>
+                          <tr key={String(p.id)} className="hover:bg-surface-sunken/40 transition-colors cursor-pointer" onClick={() => setViewPurchase(p)}>
                             <td className="px-3 py-2 tabular text-xs">{p.date}</td>
                             <td className="px-3 py-2 font-mono tabular text-xs">{p.billNo}</td>
                             <td className="px-3 py-2">
@@ -1318,6 +1323,7 @@ export default function InventoryPage() {
                                   if (window.confirm(`Delete purchase ${p.billNo} from ${p.vendor}?`)) {
                                     setPurchases(prev => prev.filter(x => x.id !== p.id));
                                     showToast(`Purchase ${p.billNo} removed`);
+                                    apiDelete(`/inventory-purchases/${p.id}`).catch(() => showToast("⚠ Save failed — backend offline"));
                                   }
                                 }} className="h-7 w-7 rounded-md border border-border hover:bg-danger-soft hover:text-danger inline-flex items-center justify-center text-muted-foreground" title="Delete">
                                   <Trash2 className="h-3 w-3" />
@@ -1390,11 +1396,19 @@ export default function InventoryPage() {
           onClose={() => setEditPurchase(null)}
           onSave={(data, addAnother) => {
             if (editPurchase === "new") {
-              setPurchases(prev => [{ ...data, id: `pur-${Date.now().toString(36)}` }, ...prev]);
+              const tempId = `pur-${Date.now().toString(36)}`;
+              setPurchases(prev => [{ ...data, id: tempId }, ...prev]);
               showToast(`Purchase ${data.billNo} recorded`);
+              apiPost<Purchase>("/inventory-purchases", data)
+                .then(created => setPurchases(prev => prev.map(x => x.id === tempId ? { ...created, id: String(created.id) } : x)))
+                .catch(() => showToast("⚠ Save failed — backend offline"));
             } else if (editPurchase && typeof editPurchase === "object") {
-              setPurchases(prev => prev.map(x => x.id === editPurchase.id ? { ...data, id: x.id } : x));
+              const id = editPurchase.id;
+              setPurchases(prev => prev.map(x => x.id === id ? { ...data, id } : x));
               showToast(`Purchase ${data.billNo} updated`);
+              apiPut<Purchase>(`/inventory-purchases/${id}`, data)
+                .then(updated => setPurchases(prev => prev.map(x => x.id === id ? { ...updated, id: String(updated.id) } : x)))
+                .catch(() => showToast("⚠ Save failed — backend offline"));
             }
             if (!addAnother) setEditPurchase(null);
             else setEditPurchase("new");

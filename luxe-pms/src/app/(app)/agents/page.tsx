@@ -12,7 +12,39 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { KPICard } from "@/components/ui/kpi-card";
 import { AGENTS } from "@/lib/mock-data-ext";
+import { sendEmail, apiGet, apiPost, apiPut } from "@/lib/api";
 import { money, cn, formatDate } from "@/lib/utils";
+
+// ========================= BACKEND ROW SHAPES =========================
+// GET /agents — the agent master (creditLimit/commissionPct stored as ₹/%).
+type AgentRow = {
+  id: number | string;
+  type: "Agent" | "Corporate";
+  name: string;
+  contact?: string;
+  phone?: string;
+  email?: string;
+  gstin?: string;
+  creditLimit?: number;
+  commissionPct?: number;
+  creditTerms?: string;
+  active?: boolean;
+};
+// GET /agent-ledger — per-agent transactions in chronological order; the last
+// row for an agent carries the running `balance` (its outstanding).
+type AgentLedgerRow = {
+  id: number | string;
+  agentName: string;
+  date: string;
+  type: string;
+  bookingNo?: string | null;
+  description?: string;
+  debit?: number;
+  credit?: number;
+  balance?: number;
+  mode?: string | null;
+  reference?: string | null;
+};
 
 // ========================= EXTENDED TYPE =========================
 type AgentBase = typeof AGENTS[number];
@@ -41,31 +73,90 @@ const BLOCK_REASONS = ["Non-payment", "Disputed bookings", "Contract expired", "
 type SortKey = "outstanding-desc" | "bookings-desc" | "credit-desc" | "name-asc";
 type StatusFilter = "all" | "active" | "overdue" | "blocked";
 
+// Layers the deterministic enrichment fields (pan/address/contacts/etc.) on top
+// of a base agent. Used both for the offline mock seed and for real /agents rows
+// so the UI shape stays identical regardless of data source.
+function enrichAgent(a: AgentBase, i: number): AgentExt {
+  return {
+    ...a,
+    pan: `AABCT${1000 + i * 13}E`,
+    address: i % 2 === 0 ? "Office 401, Sky Tower" : "Suite 12, Marina Plaza",
+    city: i < 3 ? "Mumbai" : "Bengaluru",
+    country: "India",
+    website: a.email.split("@")[1] ? `https://${a.email.split("@")[1]}` : undefined,
+    paymentTerms: a.type === "Corporate" ? "Net 30" : "Net 15",
+    tdsRate: a.type === "Corporate" ? 2 : 5,
+    bankAccount: `••••••${1000 + i * 17}`.slice(-8),
+    bankIfsc: "HDFC0001234",
+    contractStart: "2025-04-01",
+    contractEnd: "2027-03-31",
+    blocked: false,
+    contacts: i === 0 ? [
+      { name: "Mr. Sharma", role: "Owner", phone: a.phone, email: a.email },
+      { name: "Ms. Reddy", role: "Accounts", phone: "+91 98765 12345", email: "accounts@" + (a.email.split("@")[1] || "example.com") },
+    ] : [],
+    rating: 3 + (i % 3),
+    internalNotes: i === 0 ? "Long-standing partner — pays on time, prefers WhatsApp updates." : undefined,
+  };
+}
+
 export default function AgentsPage() {
-  // Hydrate with extension fields
-  const [agents, setAgents] = React.useState<AgentExt[]>(() =>
-    AGENTS.map((a, i) => ({
-      ...a,
-      pan: `AABCT${1000 + i * 13}E`,
-      address: i % 2 === 0 ? "Office 401, Sky Tower" : "Suite 12, Marina Plaza",
-      city: i < 3 ? "Mumbai" : "Bengaluru",
-      country: "India",
-      website: a.email.split("@")[1] ? `https://${a.email.split("@")[1]}` : undefined,
-      paymentTerms: a.type === "Corporate" ? "Net 30" : "Net 15",
-      tdsRate: a.type === "Corporate" ? 2 : 5,
-      bankAccount: `••••••${1000 + i * 17}`.slice(-8),
-      bankIfsc: "HDFC0001234",
-      contractStart: "2025-04-01",
-      contractEnd: "2027-03-31",
-      blocked: false,
-      contacts: i === 0 ? [
-        { name: "Mr. Sharma", role: "Owner", phone: a.phone, email: a.email },
-        { name: "Ms. Reddy", role: "Accounts", phone: "+91 98765 12345", email: "accounts@" + (a.email.split("@")[1] || "example.com") },
-      ] : [],
-      rating: 3 + (i % 3),
-      internalNotes: i === 0 ? "Long-standing partner — pays on time, prefers WhatsApp updates." : undefined,
-    }))
-  );
+  // Seed from the AGENTS mock (offline fallback); replaced by real-derived rows
+  // once /agents + /agent-ledger resolve in the effect below.
+  const [agents, setAgents] = React.useState<AgentExt[]>(() => AGENTS.map(enrichAgent));
+
+  // Fetch the agent master and the ledger in parallel, then build the list from
+  // the real /agents rows: map gstin→gst, creditLimit→credit, commissionPct→
+  // commission, creditTerms→terms; derive outstanding from the latest ledger
+  // balance (fallback sum(debit)-sum(credit)) and bookings from Invoice rows.
+  React.useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      apiGet<AgentRow[]>("/agents"),
+      apiGet<AgentLedgerRow[]>("/agent-ledger"),
+    ])
+      .then(([rows, ledger]) => {
+        if (cancelled || !Array.isArray(rows) || rows.length === 0) return;
+
+        // Latest running balance per agent (rows arrive ordered by id =
+        // chronological per agent), plus a sum fallback and an Invoice count.
+        const latestBalance = new Map<string, number>();
+        const netByName = new Map<string, number>();
+        const invoiceCount = new Map<string, number>();
+        for (const l of ledger ?? []) {
+          const name = l.agentName;
+          if (typeof l.balance === "number") latestBalance.set(name, l.balance);
+          netByName.set(name, (netByName.get(name) ?? 0) + (l.debit ?? 0) - (l.credit ?? 0));
+          if (l.type === "Invoice") invoiceCount.set(name, (invoiceCount.get(name) ?? 0) + 1);
+        }
+
+        const mapped: AgentExt[] = rows.map((r, i) => {
+          const base: AgentBase = {
+            id: String(r.id),
+            type: r.type,
+            name: r.name,
+            contact: r.contact ?? "",
+            phone: r.phone ?? "",
+            email: r.email ?? "",
+            gst: r.gstin ?? "",
+            credit: r.creditLimit ?? 0,
+            outstanding: latestBalance.get(r.name) ?? netByName.get(r.name) ?? 0,
+            commission: r.commissionPct ?? 0,
+            bookings: invoiceCount.get(r.name) ?? 0,
+          };
+          const ext = enrichAgent(base, i);
+          // Preserve backend-driven fields over the deterministic defaults.
+          return {
+            ...ext,
+            paymentTerms: (r.creditTerms as AgentExt["paymentTerms"]) || ext.paymentTerms,
+            blocked: r.active === false,
+          };
+        });
+        setAgents(mapped);
+      })
+      .catch(() => { /* backend offline — keep mock seed */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const [filter, setFilter] = React.useState<"all" | "Agent" | "Corporate">("all");
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
@@ -110,14 +201,35 @@ export default function AgentsPage() {
   const overdueCount = agents.filter(a => a.outstanding > 0).length;
   const topPerformer = [...agents].sort((a, b) => b.bookings - a.bookings)[0];
 
+  // AgentExt → backend /agents body (gst→gstin, credit→creditLimit,
+  // commission→commissionPct, terms/paymentTerms→creditTerms, blocked→!active).
+  const toAgentBody = (a: AgentExt) => ({
+    type: a.type,
+    name: a.name,
+    contact: a.contact,
+    phone: a.phone,
+    email: a.email,
+    gstin: a.gst,
+    creditLimit: a.credit,
+    commissionPct: a.commission,
+    creditTerms: a.paymentTerms || "Net 15",
+    active: !a.blocked,
+  });
+
   const handleSave = (data: AgentExt) => {
     if (editAgent === "new") {
       const newId = `a-${Date.now().toString(36).slice(-6)}`;
       setAgents(prev => [{ ...data, id: newId, outstanding: 0, bookings: 0 }, ...prev]);
       showToast(`${data.name} added · ${data.type} account`);
+      apiPost<AgentRow>("/agents", toAgentBody(data))
+        .then(created => setAgents(prev => prev.map(a => a.id === newId ? { ...a, id: String(created.id) } : a)))
+        .catch(() => showToast("⚠ Save failed — backend offline"));
     } else if (editAgent && typeof editAgent === "object") {
-      setAgents(prev => prev.map(a => a.id === editAgent.id ? { ...a, ...data, id: a.id } : a));
+      const id = editAgent.id;
+      setAgents(prev => prev.map(a => a.id === id ? { ...a, ...data, id } : a));
       showToast(`${data.name} updated`);
+      apiPut<AgentRow>(`/agents/${String(id)}`, toAgentBody({ ...editAgent, ...data }))
+        .catch(() => showToast("⚠ Update failed — backend offline"));
     }
     setEditAgent(null);
   };
@@ -126,11 +238,15 @@ export default function AgentsPage() {
     setAgents(prev => prev.map(x => x.id === a.id ? { ...x, blocked: true, blockReason: `${reason}${notes ? " · " + notes : ""}` } : x));
     setBlockFor(null);
     showToast(`${a.name} blocked · ${reason}`);
+    apiPut<AgentRow>(`/agents/${String(a.id)}`, { active: false })
+      .catch(() => showToast("⚠ Block didn't sync — backend offline"));
   };
 
   const handleUnblock = (a: AgentExt) => {
     setAgents(prev => prev.map(x => x.id === a.id ? { ...x, blocked: false, blockReason: undefined } : x));
     showToast(`${a.name} unblocked — bookings re-enabled`);
+    apiPut<AgentRow>(`/agents/${String(a.id)}`, { active: true })
+      .catch(() => showToast("⚠ Unblock didn't sync — backend offline"));
   };
 
   const downloadSoa = (a: AgentExt) => {
@@ -371,7 +487,15 @@ export default function AgentsPage() {
                               <div className="absolute right-0 top-full mt-1 w-48 bg-surface border border-border rounded-md shadow-xl z-40 py-1 text-sm">
                                 <button onClick={() => { setEditAgent(a); setActionFor(null); }} className="w-full px-3 py-1.5 hover:bg-surface-sunken text-left inline-flex items-center gap-2"><Edit className="h-3.5 w-3.5" />Edit profile</button>
                                 <button onClick={() => { showToast(`Booking flow opened for ${a.name}`); setActionFor(null); }} className="w-full px-3 py-1.5 hover:bg-surface-sunken text-left inline-flex items-center gap-2"><CalendarPlus className="h-3.5 w-3.5" />New booking</button>
-                                <button onClick={() => { showToast(`Reminder sent · ${money(a.outstanding)} due to ${a.name}`); setActionFor(null); }} className="w-full px-3 py-1.5 hover:bg-surface-sunken text-left inline-flex items-center gap-2" disabled={a.outstanding === 0}><Send className="h-3.5 w-3.5" />Send reminder</button>
+                                <button onClick={() => {
+                                  setActionFor(null);
+                                  const to = a.email;
+                                  if (!to) { showToast(`No email on file for ${a.name}`); return; }
+                                  showToast(`Emailing ${a.name}…`);
+                                  sendEmail({ to, subject: "Payment Reminder", heading: "Payment Reminder", greeting: a.name, intro: "This is a friendly reminder regarding the outstanding balance on your account.", rows: [{ label: "Outstanding", value: money(a.outstanding) }], context: "Agent payment reminder" })
+                                    .then(() => showToast(`Reminder sent to ${a.name} · ${money(a.outstanding)} due`))
+                                    .catch(() => showToast(`Couldn't email ${a.name}`));
+                                }} className="w-full px-3 py-1.5 hover:bg-surface-sunken text-left inline-flex items-center gap-2" disabled={a.outstanding === 0}><Send className="h-3.5 w-3.5" />Send reminder</button>
                                 <hr className="my-1 border-border" />
                                 {a.blocked ? (
                                   <button onClick={() => { handleUnblock(a); setActionFor(null); }} className="w-full px-3 py-1.5 hover:bg-surface-sunken text-left inline-flex items-center gap-2 text-success"><CheckCircle2 className="h-3.5 w-3.5" />Unblock account</button>

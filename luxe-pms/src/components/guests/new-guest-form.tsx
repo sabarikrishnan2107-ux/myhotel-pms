@@ -266,7 +266,7 @@ export function NewGuestForm({ onCancel, onSave }: Props) {
               "h-5 w-9 rounded-full relative transition-colors shrink-0",
               data.vip ? "bg-brand" : "bg-surface-sunken border border-border"
             )}>
-              <span className={cn("absolute top-0.5 h-3.5 w-3.5 rounded-full bg-surface shadow-xs transition-transform", data.vip ? "translate-x-4" : "translate-x-0.5")} />
+              <span className={cn("absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-xs transition-transform", data.vip ? "translate-x-4" : "translate-x-0.5")} />
             </span>
           </button>
           <Field label="Remarks">

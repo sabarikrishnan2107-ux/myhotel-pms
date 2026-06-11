@@ -5,13 +5,54 @@ import {
   X, Phone, Mail, MessageCircle, MapPin, IdCard, Briefcase, Crown, Ban,
   BedDouble, Receipt, UtensilsCrossed, FileText, Edit, ChevronRight,
   CheckCircle2, AlertCircle, Globe2, Calendar, Hash, Download, Sparkles,
-  CalendarRange, Users, CreditCard, Bed, Tag, Clock, Building2, Printer, LogIn, LogOut,
+  CalendarRange, Users, Bed, Tag, Clock, Printer, LogIn, LogOut,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, PaymentBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Guest, Reservation } from "@/lib/types";
 import { cn, money, formatDate, formatTime } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
+
+// Raw backend row shapes for the live history tabs.
+type FolioPaymentRow = { id?: number | string; date?: string; mode?: string; reference?: string | null; amount?: number };
+type FbOrderRow ={ id?: number | string; items?: { name: string; qty: number }[] | null; room?: string | null; tableNo?: string; total?: number; created_at?: string; status?: string };
+type BookingRow = Reservation & { status?: string; created_at?: string };
+
+// Friendly rate-plan labels + which plans include breakfast (derived from the
+// booking's real ratePlan code instead of a hardcoded "CP — Continental").
+const RATE_PLAN_LABEL: Record<string, string> = {
+  EP: "EP — European (room only)",
+  CP: "CP — Continental",
+  MAP: "MAP — Modified American",
+  AP: "AP — American (all meals)",
+  Corporate: "Corporate rate",
+  "Non-refundable": "Non-refundable",
+};
+const RATE_PLAN_HAS_BREAKFAST = new Set(["CP", "MAP", "AP", "Corporate", "Non-refundable"]);
+
+// Open a captured document/image (stored as a base64 data URL) in a new tab.
+// data: URLs can't be navigated to directly in modern browsers, so convert to a Blob URL.
+function openCapture(dataUrl: string) {
+  const m = /^data:([^;]+);base64,([\s\S]*)$/.exec(dataUrl);
+  if (!m) { window.open(dataUrl, "_blank", "noopener,noreferrer"); return; }
+  try {
+    const bin = atob(m[2]);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([bytes], { type: m[1] }));
+    window.open(url, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch {
+    window.open(dataUrl, "_blank", "noopener,noreferrer");
+  }
+}
+// Friendly filename + extension for a capture, based on its mime type.
+function captureName(dataUrl: string, base: string) {
+  const mime = /^data:([^;]+);/.exec(dataUrl)?.[1] ?? "";
+  const ext = mime.includes("pdf") ? "pdf" : mime.includes("png") ? "png" : mime.includes("jpeg") ? "jpg" : "bin";
+  return `${base}.${ext}`;
+}
 
 const TABS = [
   { id: "booking", label: "Booking", icon: CalendarRange, requiresReservation: true },
@@ -52,12 +93,57 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
     };
   }, [open, onClose]);
 
+  // Live history from the backend — folio payments/charges (by booking),
+  // F&B orders (by room) and the guest's other bookings (stay history).
+  const [payRows, setPayRows] = React.useState<FolioPaymentRow[]>([]);
+  const [fbRows, setFbRows] = React.useState<FbOrderRow[]>([]);
+  const [stayRows, setStayRows] = React.useState<BookingRow[]>([]);
+  const bookingNo = reservation?.bookingNo;
+  const roomNumber = reservation?.roomNumber;
+  const guestName = guest?.name;
+  React.useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    if (bookingNo) {
+      apiGet<FolioPaymentRow[]>(`/folio-payments?bookingNo=${encodeURIComponent(bookingNo)}`)
+        .then(r => { if (!cancelled) setPayRows(Array.isArray(r) ? r : []); }).catch(() => {});
+    }
+    if (guestName) {
+      apiGet<BookingRow[]>("/bookings")
+        .then(r => { if (!cancelled) setStayRows((Array.isArray(r) ? r : []).filter(b => b.guestName === guestName)); }).catch(() => {});
+    }
+    if (roomNumber) {
+      apiGet<FbOrderRow[]>("/fb-orders")
+        .then(r => { if (!cancelled) setFbRows((Array.isArray(r) ? r : []).filter(o => o.room === roomNumber || o.tableNo === roomNumber)); }).catch(() => {});
+    }
+    return () => { cancelled = true; };
+  }, [open, bookingNo, roomNumber, guestName]);
+
   if (!guest) return null;
 
-  // Synthesized mock history derived from the guest profile
-  const stays = makeStays(guest);
-  const payments = makePayments(guest);
-  const foodOrders = makeFood(guest);
+  // Map the live rows to the shapes the tabs render.
+  const stays = stayRows.map(b => ({
+    bookingNo: b.bookingNo,
+    room: b.roomNumber,
+    type: b.roomType,
+    nights: b.nights,
+    source: b.source,
+    dates: `${formatDate(b.checkIn)} → ${formatDate(b.checkOut)}`,
+    amount: b.total,
+  }));
+  const payments = payRows.map(p => ({
+    date: p.date ? formatDate(p.date) : "—",
+    desc: "Folio payment",
+    mode: p.mode ?? "—",
+    ref: p.reference || "—",
+    amount: p.amount ?? 0,
+  }));
+  const foodOrders = fbRows.map(o => ({
+    items: (o.items ?? []).map(it => `${it.name}${it.qty > 1 ? ` × ${it.qty}` : ""}`).join(", ") || "—",
+    room: o.room || o.tableNo || "—",
+    when: o.created_at ? formatDate(o.created_at) : (o.status ?? ""),
+    total: o.total ?? 0,
+  }));
 
   return (
     <>
@@ -102,7 +188,7 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
                 {guest.vip && <Badge tone="brand"><Crown className="h-3 w-3" />VIP</Badge>}
                 {guest.blacklist && <Badge tone="danger"><Ban className="h-3 w-3" />Blacklisted</Badge>}
               </div>
-              <p className="text-xs text-muted-foreground mt-1 tabular">Guest #{guest.id.toUpperCase()}</p>
+              <p className="text-xs text-muted-foreground mt-1 tabular">Guest #{String(guest.id).toUpperCase()}</p>
               {reservation && (
                 <p className="text-xs text-muted-foreground mt-2">
                   Current: Room <span className="font-medium text-foreground">{reservation.roomNumber}</span> · {reservation.roomType} · {reservation.bookingNo}
@@ -192,8 +278,10 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
                 } />
                 <Row icon={Tag} label="Rate plan" value={
                   <span className="inline-flex items-center gap-2">
-                    <span>CP — Continental</span>
-                    <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 bg-success-soft text-success rounded">+ Breakfast</span>
+                    <span>{RATE_PLAN_LABEL[reservation.ratePlan] ?? reservation.ratePlan}</span>
+                    {RATE_PLAN_HAS_BREAKFAST.has(reservation.ratePlan) && (
+                      <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 bg-success-soft text-success rounded">+ Breakfast</span>
+                    )}
                   </span>
                 } />
                 <Row icon={Calendar} label="Day-rate breakdown" value={
@@ -218,38 +306,40 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
                 </div>
               </Section>
 
-              {/* Stay options & extras */}
+              {/* Stay options & extras — derived from the booking's real fields */}
               <Section title="Stay options & extras">
                 <div className="flex flex-wrap gap-1.5">
                   {reservation.vip && <Badge tone="brand"><Crown className="h-3 w-3" />VIP treatment</Badge>}
-                  <Badge tone="info">Breakfast included</Badge>
-                  <Badge tone="neutral">Non-smoking</Badge>
-                  <Badge tone="accent">Late check-out OK</Badge>
+                  {RATE_PLAN_HAS_BREAKFAST.has(reservation.ratePlan) && <Badge tone="info">Breakfast included</Badge>}
                   {reservation.children > 0 && <Badge tone="info">Child amenities</Badge>}
+                  {!reservation.vip && !RATE_PLAN_HAS_BREAKFAST.has(reservation.ratePlan) && reservation.children === 0 && (
+                    <span className="text-xs text-muted-foreground">Standard stay — no extras on file</span>
+                  )}
                 </div>
               </Section>
 
-              {/* Special instructions */}
-              <Section title="Special instructions / guest requests">
-                <div className="rounded-md bg-warning-soft/40 border border-warning/30 p-3 text-sm leading-relaxed">
-                  <p className="inline-flex items-center gap-1.5 text-warning text-[11px] font-semibold uppercase tracking-wider mb-1.5">
-                    <AlertCircle className="h-3 w-3" />Visible to HK, F&amp;B, Concierge
-                  </p>
-                  <p className="text-sm">
-                    {reservation.vip
-                      ? "Anniversary celebration on Day 2 — please arrange champagne, rose petals on bed at 18:00. Early breakfast at 06:30 for airport transfer."
-                      : "Quiet room preferred, away from elevator. Allergic to peanuts. Will need extra pillows."}
-                  </p>
-                </div>
-              </Section>
+              {/* Special instructions — only what's recorded on the booking */}
+              {(reservation as { notes?: string }).notes && (
+                <Section title="Special instructions / guest requests">
+                  <div className="rounded-md bg-warning-soft/40 border border-warning/30 p-3 text-sm leading-relaxed">
+                    <p className="inline-flex items-center gap-1.5 text-warning text-[11px] font-semibold uppercase tracking-wider mb-1.5">
+                      <AlertCircle className="h-3 w-3" />Visible to HK, F&amp;B, Concierge
+                    </p>
+                    <p className="text-sm">{(reservation as { notes?: string }).notes}</p>
+                  </div>
+                </Section>
+              )}
 
-              {/* Booking metadata */}
+              {/* Booking metadata — real source / confirmation / booked-on */}
               <Section title="Booking record">
-                <Row icon={Building2} label="Property" value="The Pearl Marina · Main Tower" />
                 <Row icon={Globe2} label="Source" value={reservation.source} />
                 <Row icon={Hash} label="Confirmation #" value={<span className="font-mono tabular">{reservation.bookingNo}</span>} />
-                <Row icon={Calendar} label="Booked on" value="04 May 2026 · 14:22 IST" />
-                <Row icon={Users} label="Booked by" value="Khalid R. · Reception · Shift #4218" />
+                {(reservation as { status?: string }).status && (
+                  <Row icon={CheckCircle2} label="Status" value={<span className="capitalize">{(reservation as { status?: string }).status}</span>} />
+                )}
+                {(reservation as { created_at?: string }).created_at && (
+                  <Row icon={Calendar} label="Booked on" value={formatDate((reservation as { created_at?: string }).created_at!)} />
+                )}
               </Section>
             </div>
           )}
@@ -260,7 +350,9 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
                 <Row icon={Phone} label="Phone" value={guest.phone} />
                 <Row icon={Mail} label="Email" value={guest.email} />
                 <Row icon={MapPin} label="Address" value={
-                  guest.nationality === "India" ? "MG Road, Bandra West, Mumbai 400050, India"
+                  guest.address
+                    ? guest.address
+                    : guest.nationality === "India" ? "MG Road, Bandra West, Mumbai 400050, India"
                     : guest.nationality === "—" ? "—"
                     : `${guest.nationality} (full address on file)`
                 } />
@@ -269,22 +361,51 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
 
               <Section title="Identification">
                 <Row icon={IdCard} label={guest.idType} value={guest.idNumber} />
-                <Row icon={FileText} label="Document" value={
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs">passport_scan_FRONT.pdf</span>
-                    <button className="text-brand hover:underline text-xs inline-flex items-center gap-0.5">
-                      <Download className="h-3 w-3" />View
-                    </button>
-                  </div>
+                <Row icon={FileText} label="ID document" value={
+                  guest.idFront || guest.idBack ? (
+                    <div className="flex flex-col gap-1">
+                      {guest.idFront && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs truncate">{captureName(guest.idFront, `${guest.idType}_front`)}</span>
+                          <button type="button" onClick={() => openCapture(guest.idFront!)} className="text-brand hover:underline text-xs inline-flex items-center gap-0.5 shrink-0">
+                            <Download className="h-3 w-3" />View
+                          </button>
+                        </div>
+                      )}
+                      {guest.idBack && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs truncate">{captureName(guest.idBack, `${guest.idType}_back`)}</span>
+                          <button type="button" onClick={() => openCapture(guest.idBack!)} className="text-brand hover:underline text-xs inline-flex items-center gap-0.5 shrink-0">
+                            <Download className="h-3 w-3" />View
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">No document on file</span>
+                  )
                 } />
+                {guest.photo && (
+                  <Row icon={IdCard} label="Guest photo" value={
+                    <button type="button" onClick={() => openCapture(guest.photo!)} title="Open full size" className="block">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={guest.photo} alt="Guest" className="h-12 w-12 rounded-md object-cover border border-border hover:ring-2 hover:ring-brand transition" />
+                    </button>
+                  } />
+                )}
                 <Row icon={Edit} label="Digital signature" value={
-                  <span className="font-display italic text-base">{guest.name.split(" ")[0]}</span>
+                  guest.signature ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={guest.signature} alt="Signature" className="h-12 max-w-[180px] object-contain rounded bg-white/90 border border-border px-1" />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Not captured</span>
+                  )
                 } />
               </Section>
 
               <Section title="Business">
-                <Row icon={Briefcase} label="Company / Organization" value={guest.vip ? "Pearl Holdings LLC" : "—"} />
-                <Row icon={Hash} label="GST / Tax number" value={guest.vip ? "100123456700003" : "—"} />
+                <Row icon={Briefcase} label="Company / Organization" value={guest.company || "—"} />
+                <Row icon={Hash} label="GST / Tax number" value={guest.gst || "—"} />
               </Section>
 
               <Section title="Preferences & Flags">
@@ -302,7 +423,10 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
 
           {tab === "stays" && (
             <div className="space-y-3">
-              <p className="text-xs text-muted-foreground">{stays.length} stays · most recent first</p>
+              <p className="text-xs text-muted-foreground">{stays.length} {stays.length === 1 ? "booking" : "bookings"} on record</p>
+              {stays.length === 0 && (
+                <p className="text-sm text-muted-foreground italic py-4 text-center">No bookings found for this guest.</p>
+              )}
               <ul className="space-y-2">
                 {stays.map((s, i) => (
                   <li key={i} className="rounded-md border border-border p-3 hover:bg-surface-sunken transition-colors">
@@ -327,7 +451,10 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
 
           {tab === "payments" && (
             <div className="space-y-3">
-              <p className="text-xs text-muted-foreground">{payments.length} payments · {money(payments.reduce((s, p) => s + p.amount, 0))} total</p>
+              <p className="text-xs text-muted-foreground">{payments.length} payment{payments.length === 1 ? "" : "s"} · {money(payments.reduce((s, p) => s + p.amount, 0))} collected</p>
+              {payments.length === 0 && (
+                <p className="text-sm text-muted-foreground italic py-4 text-center">No payments recorded for this booking yet.</p>
+              )}
               <ul className="divide-y divide-border">
                 {payments.map((p, i) => (
                   <li key={i} className="py-3 flex items-center gap-3">
@@ -347,7 +474,10 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
 
           {tab === "food" && (
             <div className="space-y-3">
-              <p className="text-xs text-muted-foreground">{foodOrders.length} in-room dining orders</p>
+              <p className="text-xs text-muted-foreground">{foodOrders.length} F&amp;B order{foodOrders.length === 1 ? "" : "s"} · Room {roomNumber ?? "—"}</p>
+              {foodOrders.length === 0 && (
+                <p className="text-sm text-muted-foreground italic py-4 text-center">No F&amp;B orders for this room.</p>
+              )}
               <ul className="space-y-2">
                 {foodOrders.map((o, i) => (
                   <li key={i} className="rounded-md border border-border p-3">
@@ -495,38 +625,4 @@ function Stat({ label, value }: { label: string; value: string }) {
       <p className="mt-1 text-base font-semibold tabular">{value}</p>
     </div>
   );
-}
-
-// ---------- mock history derivation ----------
-function makeStays(g: Guest) {
-  const n = Math.min(8, Math.max(1, Math.floor(g.lifetimeNights / 4)));
-  const types = ["Deluxe", "King", "Suite", "Queen"];
-  const sources = ["Website", "OTA: Booking.com", "Agent", "Direct"];
-  return Array.from({ length: n }, (_, i) => ({
-    bookingNo: `BK${String(99000 - i * 137 - (parseInt(g.id.slice(1)) * 11))}`,
-    room: `${(3 + i) % 6 + 1}0${(i * 3 % 9) + 1}`,
-    type: types[i % types.length],
-    nights: 2 + (i % 4),
-    source: sources[i % sources.length],
-    dates: `${10 + i % 18} ${["Feb", "Jan", "Dec", "Nov", "Oct", "Sep", "Aug", "Jul"][i % 8]} 202${6 - Math.floor(i / 3)}`,
-    amount: Math.round(g.lifetimeSpend / n + i * 137) - 80,
-  }));
-}
-
-function makePayments(g: Guest) {
-  return [
-    { date: g.lastStay ?? "—", desc: "Folio settlement", mode: "Card", ref: "Visa ****4421", amount: Math.round(g.lifetimeSpend * 0.18) },
-    { date: "12 Feb 2026", desc: "Advance — BK98423", mode: "Bank transfer", ref: "Ref 8821-0094", amount: Math.round(g.lifetimeSpend * 0.12) },
-    { date: "08 Jan 2026", desc: "Folio settlement", mode: "Card", ref: "Mastercard ****0118", amount: Math.round(g.lifetimeSpend * 0.21) },
-    { date: "15 Nov 2025", desc: "Spa add-on", mode: "Cash", ref: "Reception", amount: Math.round(g.lifetimeSpend * 0.04) },
-  ];
-}
-
-function makeFood(g: Guest) {
-  return [
-    { items: "Eggs Benedict × 2, Cappuccino × 2", room: "305", when: "Today 09:42", total: 232 },
-    { items: "Wagyu Burger, Truffle Pizza", room: "305", when: "Yesterday 20:15", total: 270 },
-    { items: "Caesar Salad, Tiramisu, Espresso", room: "412", when: g.lastStay ? formatDate(g.lastStay) : "—", total: 150 },
-    { items: "Continental Breakfast × 1", room: "412", when: "Last visit", total: 95 },
-  ];
 }

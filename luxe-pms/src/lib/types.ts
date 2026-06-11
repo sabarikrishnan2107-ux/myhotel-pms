@@ -67,6 +67,15 @@ export interface Guest {
   lifetimeNights: number;
   lifetimeSpend: number;
   lastStay?: string;
+  // KYC captures + extra profile fields (persisted from the intake form).
+  address?: string;
+  gender?: string;
+  company?: string;
+  gst?: string;
+  idFront?: string | null;
+  idBack?: string | null;
+  photo?: string | null;
+  signature?: string | null;
 }
 
 export interface Reservation {

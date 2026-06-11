@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Image from "next/image";
-import { Camera, RotateCcw, Upload, X, CheckCircle2 } from "lucide-react";
+import { Camera, RotateCcw, Upload, X, CheckCircle2, ScanFace, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -11,7 +11,68 @@ interface Props {
   aspect?: "square" | "portrait" | "landscape";
 }
 
-type Mode = "idle" | "live" | "captured" | "error";
+type Mode = "idle" | "live" | "processing" | "captured" | "error";
+
+// Native Shape-Detection FaceDetector (Chromium/Edge). Typed minimally; we
+// feature-detect at runtime and gracefully fall back when it's unavailable.
+type FaceBox = { x: number; y: number; width: number; height: number };
+type DetectedFace = { boundingBox: FaceBox };
+type FaceDetectorLike = { detect: (src: CanvasImageSource) => Promise<DetectedFace[]> };
+type FaceDetectorCtor = new (opts?: { fastMode?: boolean; maxDetectedFaces?: number }) => FaceDetectorLike;
+
+async function detectFaceBox(canvas: HTMLCanvasElement): Promise<FaceBox | null> {
+  const Ctor = (window as unknown as { FaceDetector?: FaceDetectorCtor }).FaceDetector;
+  if (!Ctor) return null;
+  try {
+    const fd = new Ctor({ fastMode: true, maxDetectedFaces: 1 });
+    const faces = await fd.detect(canvas);
+    return faces?.[0]?.boundingBox ?? null;
+  } catch {
+    return null;
+  }
+}
+
+const OUT_SIZE = 640; // output square edge in px
+
+// Crop the frame to a square focused on the face and return a JPEG data URL.
+// Uses the detected face box (padded) when available; otherwise an optional
+// guided center crop (the on-screen oval keeps the face centred).
+async function faceFocusedDataUrl(
+  source: HTMLCanvasElement,
+  { centerFallback }: { centerFallback: boolean },
+): Promise<string | null> {
+  const cw = source.width, ch = source.height;
+  if (!cw || !ch) return null;
+  const box = await detectFaceBox(source);
+
+  let sx: number, sy: number, size: number;
+  if (box) {
+    // Pad the face box so we keep hair + a little shoulder, then square it off.
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    size = Math.min(Math.max(box.width, box.height) * 1.8, cw, ch);
+    sx = cx - size / 2;
+    sy = cy - size / 2 - box.height * 0.1; // bias up slightly for headroom
+  } else {
+    if (!centerFallback) return null;
+    // No detector: crop the central square (biased up a touch) — the oval
+    // guide during preview keeps the face roughly here.
+    size = Math.min(cw, ch) * 0.8;
+    sx = (cw - size) / 2;
+    sy = (ch - size) / 2 - ch * 0.05;
+  }
+  // Clamp inside the frame.
+  sx = Math.max(0, Math.min(cw - size, sx));
+  sy = Math.max(0, Math.min(ch - size, sy));
+
+  const out = document.createElement("canvas");
+  out.width = OUT_SIZE;
+  out.height = OUT_SIZE;
+  const octx = out.getContext("2d");
+  if (!octx) return null;
+  octx.drawImage(source, sx, sy, size, size, 0, 0, OUT_SIZE, OUT_SIZE);
+  return out.toDataURL("image/jpeg", 0.92);
+}
 
 export function PhotoCapture({ label = "Capture photo", onChange, aspect = "square" }: Props) {
   const videoRef = React.useRef<HTMLVideoElement>(null);
@@ -44,16 +105,19 @@ export function PhotoCapture({ label = "Capture photo", onChange, aspect = "squa
     }
   };
 
-  const capture = () => {
+  const capture = async () => {
     const v = videoRef.current;
-    if (!v) return;
+    if (!v || !v.videoWidth) return;
+    setMode("processing");
     const canvas = document.createElement("canvas");
     canvas.width = v.videoWidth;
     canvas.height = v.videoHeight;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) { setMode("live"); return; }
     ctx.drawImage(v, 0, 0);
-    const url = canvas.toDataURL("image/jpeg", 0.92);
+    // Focus the face: detect + crop (guided center-crop fallback for capture).
+    const url = (await faceFocusedDataUrl(canvas, { centerFallback: true }))
+      ?? canvas.toDataURL("image/jpeg", 0.92);
     setCaptured(url);
     onChange?.(url);
     setMode("captured");
@@ -77,11 +141,27 @@ export function PhotoCapture({ label = "Capture photo", onChange, aspect = "squa
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = ev => {
-      const url = ev.target?.result as string;
-      setCaptured(url);
-      onChange?.(url);
-      setMode("captured");
+    reader.onload = async ev => {
+      const original = ev.target?.result as string;
+      // Try to face-crop the upload too; if no face is detected, keep the
+      // original (don't blindly center-crop an arbitrary photo).
+      const img = new window.Image();
+      img.onload = async () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        let url = original;
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          url = (await faceFocusedDataUrl(canvas, { centerFallback: false })) ?? original;
+        }
+        setCaptured(url);
+        onChange?.(url);
+        setMode("captured");
+      };
+      img.onerror = () => { setCaptured(original); onChange?.(original); setMode("captured"); };
+      img.src = original;
     };
     reader.readAsDataURL(file);
   };
@@ -94,8 +174,26 @@ export function PhotoCapture({ label = "Capture photo", onChange, aspect = "squa
         "relative rounded-md border-2 border-dashed border-border bg-surface-sunken overflow-hidden",
         aspectClass
       )}>
-        {mode === "live" && (
+        {(mode === "live" || mode === "processing") && (
           <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted />
+        )}
+        {/* Face-alignment guide while the camera is live */}
+        {mode === "live" && (
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute inset-0 bg-black/25" style={{ WebkitMaskImage: "radial-gradient(ellipse 38% 46% at 50% 44%, transparent 98%, black 100%)", maskImage: "radial-gradient(ellipse 38% 46% at 50% 44%, transparent 98%, black 100%)" }} />
+            <div className="absolute left-1/2 top-[44%] -translate-x-1/2 -translate-y-1/2 h-[80%] w-[64%] rounded-[50%] border-2 border-white/70 border-dashed" />
+            <div className="absolute bottom-2 inset-x-0 flex justify-center">
+              <span className="text-[10px] font-medium text-white bg-black/55 rounded-full px-2 py-0.5 inline-flex items-center gap-1">
+                <ScanFace className="h-3 w-3" /> Align your face in the oval
+              </span>
+            </div>
+          </div>
+        )}
+        {mode === "processing" && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/45 text-white">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            <p className="text-[11px] mt-2">Focusing on face…</p>
+          </div>
         )}
         {mode === "captured" && captured && (
           <Image src={captured} alt="Captured photo" fill unoptimized className="object-cover" />
@@ -132,12 +230,13 @@ export function PhotoCapture({ label = "Capture photo", onChange, aspect = "squa
             </label>
           </>
         )}
-        {mode === "live" && (
+        {(mode === "live" || mode === "processing") && (
           <>
-            <Button type="button" size="sm" onClick={capture} className="flex-1">
-              <Camera className="h-3.5 w-3.5" />Capture
+            <Button type="button" size="sm" onClick={capture} disabled={mode === "processing"} className="flex-1">
+              {mode === "processing" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+              {mode === "processing" ? "Capturing…" : "Capture"}
             </Button>
-            <Button type="button" size="sm" variant="outline" onClick={reset}>Cancel</Button>
+            <Button type="button" size="sm" variant="outline" onClick={reset} disabled={mode === "processing"}>Cancel</Button>
           </>
         )}
         {mode === "captured" && (

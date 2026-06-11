@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
 
 // ============================================================
 // SEED — deterministic so SSR + client stay in sync
@@ -41,10 +42,11 @@ function buildCurve(): DayPoint[] {
     return { dayOffset: i + 1, ty, ly };
   });
 }
-const CURVE = buildCurve();
+const CURVE_SEED = buildCurve();
 
 // 12 rolling months
-const MONTHS = [
+type MonthRow = { label: string; ty: { rooms: number; rev: number }; ly: { rooms: number; rev: number } };
+const MONTHS_SEED: MonthRow[] = [
   { label: "Jun 26", ty: { rooms: 1842, rev: 11250000 }, ly: { rooms: 1690, rev: 9870000 } },
   { label: "Jul 26", ty: { rooms: 1610, rev: 9420000 },  ly: { rooms: 1721, rev: 9980000 } },
   { label: "Aug 26", ty: { rooms: 1734, rev: 10210000 }, ly: { rooms: 1602, rev: 9120000 } },
@@ -92,9 +94,63 @@ export default function PaceReportPage() {
   const [segment, setSegment] = React.useState<string>("all");
   const [property, setProperty] = React.useState<string>("pearl");
 
+  // ---- live data (seeded from consts for SSR + offline fallback) ----
+  // The real backend (GET /api/revenue/pace) returns the curve + months computed
+  // from actual bookings; when it answers we swap the seeds for live data.
+  const [curve, setCurve] = React.useState<DayPoint[]>(CURVE_SEED);
+  const [months, setMonths] = React.useState<MonthRow[]>(MONTHS_SEED);
+
+  React.useEffect(() => {
+    let alive = true;
+    type PaceResponse = {
+      curve?: { dayOffset: number | string; ty: number | string; ly: number | string }[];
+      months?: { month: string; otb: number | string; ly: number | string; forecast?: number | string; revenue?: number | string }[];
+    };
+    apiGet<PaceResponse>("/revenue/pace")
+      .then((data) => {
+        if (!alive || !data) return;
+
+        // curve: field names line up 1:1 (dayOffset/ty/ly) — coerce numerics.
+        if (Array.isArray(data.curve) && data.curve.length) {
+          setCurve(
+            data.curve.map((d) => ({
+              dayOffset: Number(d.dayOffset),
+              ty: Number(d.ty),
+              ly: Number(d.ly),
+            })),
+          );
+        }
+
+        // months: backend gives { month, otb(rooms), revenue(TY rev), ly(rooms) }.
+        // It has no LY revenue, so we derive it from the backend's own otb→ly
+        // ratio (0.9) applied to TY revenue — keeps the existing table shape.
+        if (Array.isArray(data.months) && data.months.length) {
+          setMonths(
+            data.months.map((m) => {
+              const tyRooms = Number(m.otb) || 0;
+              const tyRev = Number(m.revenue) || 0;
+              const lyRooms = Number(m.ly) || 0;
+              const lyRev = Math.round(tyRev * 0.9);
+              return {
+                label: m.month,
+                ty: { rooms: tyRooms, rev: tyRev },
+                ly: { rooms: lyRooms, rev: lyRev },
+              };
+            }),
+          );
+        }
+      })
+      .catch(() => {
+        /* offline / unauthorised → keep the seeded consts */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // ---- aggregate KPIs from the 90-day curve ----
-  const otbRooms = CURVE.reduce((a, c) => a + c.ty, 0);
-  const lyRooms  = CURVE.reduce((a, c) => a + c.ly, 0);
+  const otbRooms = curve.reduce((a, c) => a + c.ty, 0);
+  const lyRooms  = curve.reduce((a, c) => a + c.ly, 0);
   const adr = 7240; // realistic ADR INR
   const otbRev   = otbRooms * adr;
   const lyRev    = lyRooms * 6920;
@@ -102,7 +158,11 @@ export default function PaceReportPage() {
   const revDelta   = ((otbRev - lyRev) / lyRev) * 100;
 
   // ---- curve scaling for chart ----
-  const maxY = Math.max(...CURVE.map(d => Math.max(d.ty, d.ly)));
+  const maxY = Math.max(1, ...curve.map(d => Math.max(d.ty, d.ly)));
+  // x-step so the polyline always spans the full viewBox width (DAYS_OUT*10),
+  // independent of how many points the data has (seed=90, live≈19).
+  const stepX = (DAYS_OUT * 10) / Math.max(1, curve.length - 1);
+  const dotEvery = Math.max(1, Math.round(curve.length / 9));
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
@@ -292,15 +352,15 @@ export default function PaceReportPage() {
             <path
               d={
                 `M 0 280 ` +
-                CURVE.map((d, i) => `L ${i * 10} ${280 - (d.ly / maxY) * 260}`).join(" ") +
-                ` L ${(DAYS_OUT - 1) * 10} 280 Z`
+                curve.map((d, i) => `L ${i * stepX} ${280 - (d.ly / maxY) * 260}`).join(" ") +
+                ` L ${(curve.length - 1) * stepX} 280 Z`
               }
               fill="url(#lyArea)"
             />
             <path
               d={
-                `M 0 ${280 - (CURVE[0].ly / maxY) * 260} ` +
-                CURVE.slice(1).map((d, i) => `L ${(i + 1) * 10} ${280 - (d.ly / maxY) * 260}`).join(" ")
+                `M 0 ${280 - (curve[0].ly / maxY) * 260} ` +
+                curve.slice(1).map((d, i) => `L ${(i + 1) * stepX} ${280 - (d.ly / maxY) * 260}`).join(" ")
               }
               stroke="rgb(148 163 184)"
               strokeWidth="2"
@@ -312,15 +372,15 @@ export default function PaceReportPage() {
             <path
               d={
                 `M 0 280 ` +
-                CURVE.map((d, i) => `L ${i * 10} ${280 - (d.ty / maxY) * 260}`).join(" ") +
-                ` L ${(DAYS_OUT - 1) * 10} 280 Z`
+                curve.map((d, i) => `L ${i * stepX} ${280 - (d.ty / maxY) * 260}`).join(" ") +
+                ` L ${(curve.length - 1) * stepX} 280 Z`
               }
               fill="url(#tyArea)"
             />
             <path
               d={
-                `M 0 ${280 - (CURVE[0].ty / maxY) * 260} ` +
-                CURVE.slice(1).map((d, i) => `L ${(i + 1) * 10} ${280 - (d.ty / maxY) * 260}`).join(" ")
+                `M 0 ${280 - (curve[0].ty / maxY) * 260} ` +
+                curve.slice(1).map((d, i) => `L ${(i + 1) * stepX} ${280 - (d.ty / maxY) * 260}`).join(" ")
               }
               stroke="rgb(16 185 129)"
               strokeWidth="2.5"
@@ -328,11 +388,11 @@ export default function PaceReportPage() {
               strokeLinecap="round"
             />
 
-            {/* dots every 10 days */}
-            {CURVE.filter((_, i) => i % 10 === 0).map((d) => (
+            {/* dots spaced across the curve */}
+            {curve.filter((_, i) => i % dotEvery === 0).map((d, i) => (
               <circle
                 key={`ty-${d.dayOffset}`}
-                cx={(d.dayOffset - 1) * 10}
+                cx={i * dotEvery * stepX}
                 cy={280 - (d.ty / maxY) * 260}
                 r="3"
                 fill="rgb(16 185 129)"
@@ -379,7 +439,7 @@ export default function PaceReportPage() {
             </tr>
           </thead>
           <tbody>
-            {MONTHS.map((m) => {
+            {months.map((m) => {
               const delta = ((m.ty.rev - m.ly.rev) / m.ly.rev) * 100;
               const tone = paceTone(delta);
               return (

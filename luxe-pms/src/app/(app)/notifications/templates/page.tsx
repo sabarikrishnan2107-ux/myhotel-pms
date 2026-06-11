@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet, apiPut } from "@/lib/api";
 
 type Status = "Approved" | "Pending" | "Rejected";
 type Category = "Booking" | "Marketing" | "Utility";
@@ -311,6 +312,22 @@ export default function WhatsAppTemplatesPage() {
   const [templates, setTemplates] = React.useState<Template[]>(SEED_TEMPLATES);
   const [selectedId, setSelectedId] = React.useState<string>(SEED_TEMPLATES[0].id);
   const [search, setSearch] = React.useState("");
+
+  // Load real templates from the backend; fall back to SEED_TEMPLATES offline.
+  React.useEffect(() => {
+    apiGet<Template[]>("/whatsapp-templates")
+      .then((rows) => {
+        if (rows.length > 0) {
+          const coerced = rows.map((t) => ({ ...t, id: String(t.id) }));
+          setTemplates(coerced);
+          setSelectedId(coerced[0].id);
+        }
+      })
+      .catch(() => {
+        /* offline / API down → keep SEED_TEMPLATES */
+      });
+  }, []);
+
   const [filterStatus, setFilterStatus] = React.useState<"All" | Status>("All");
   const [filterCategory, setFilterCategory] = React.useState<"All" | Category>("All");
   const [filterLang, setFilterLang] = React.useState<"All" | Language>("All");
@@ -365,6 +382,16 @@ export default function WhatsAppTemplatesPage() {
     updateSelected({
       buttons: selected.buttons.map((b) => (b.id === id ? { ...b, ...patch } : b)),
     });
+  };
+
+  // Persist the currently-edited template to the backend (offline = local-only).
+  const saveSelected = () => {
+    const { id: _id, ...body } = selected;
+    void _id;
+    apiPut(`/whatsapp-templates/${selected.id}`, body).catch(() => {
+      /* offline / API down → keep local edits only */
+    });
+    showToast("Draft saved");
   };
 
   const sampleMap = getSampleMap(selected);
@@ -778,7 +805,7 @@ export default function WhatsAppTemplatesPage() {
                 <Button size="sm" variant="ghost" onClick={() => showToast("Changes discarded")}>
                   Discard
                 </Button>
-                <Button size="sm" onClick={() => showToast("Draft saved")}>
+                <Button size="sm" onClick={saveSelected}>
                   <Save className="h-4 w-4" />
                   Save Draft
                 </Button>

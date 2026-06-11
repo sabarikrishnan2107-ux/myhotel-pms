@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   Plus, Search, MousePointerClick, Eye, Edit, X, AlertTriangle, CheckCircle2,
@@ -14,7 +15,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { RESERVATIONS, GUESTS, ROOMS } from "@/lib/mock-data";
 import { money, formatDate, cn } from "@/lib/utils";
-import { apiGet, apiPut } from "@/lib/api";
+import { apiGet, apiPut, sendEmail } from "@/lib/api";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
 import type { Reservation, PaymentStatus, BookingSource, Guest, Room } from "@/lib/types";
 
@@ -59,6 +60,19 @@ export default function BookingsPage() {
   const [paymentFilter, setPaymentFilter] = React.useState<"all" | PaymentStatus>("all");
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [actionMenuFor, setActionMenuFor] = React.useState<string | null>(null);
+  // Fixed-position coordinates for the row action menu (rendered in a portal so
+  // it escapes the table's overflow clipping).
+  const [menuPos, setMenuPos] = React.useState<{ top: number; left: number } | null>(null);
+  const openActionMenu = (e: React.MouseEvent<HTMLButtonElement>, id: string) => {
+    e.stopPropagation();
+    if (actionMenuFor === id) { setActionMenuFor(null); return; }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const MENU_W = 224, EST_H = 296;
+    const top = rect.bottom + EST_H > window.innerHeight ? Math.max(8, rect.top - EST_H) : rect.bottom + 4;
+    const left = Math.max(8, rect.right - MENU_W);
+    setMenuPos({ top, left });
+    setActionMenuFor(id);
+  };
 
   // Real "today" (client-only, avoids hydration mismatch) for lifecycle derivation.
   const [today, setToday] = React.useState("");
@@ -163,15 +177,22 @@ export default function BookingsPage() {
     setActionMenuFor(null);
   };
 
-  // Close menu on outside click
+  // Close the menu on outside click, scroll, or resize (its coords are fixed at open time).
   React.useEffect(() => {
     if (!actionMenuFor) return;
     const onClick = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
       if (!t.closest("[data-action-menu]")) setActionMenuFor(null);
     };
+    const close = () => setActionMenuFor(null);
     document.addEventListener("click", onClick);
-    return () => document.removeEventListener("click", onClick);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("click", onClick);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
   }, [actionMenuFor]);
 
   return (
@@ -352,7 +373,7 @@ export default function BookingsPage() {
                         <div className="relative">
                           <button
                             type="button"
-                            onClick={e => { e.stopPropagation(); setActionMenuFor(isOpen ? null : r.id); }}
+                            onClick={e => openActionMenu(e, r.id)}
                             className={cn(
                               "h-8 w-8 rounded-md border inline-flex items-center justify-center transition-colors",
                               isOpen ? "bg-brand-soft border-brand text-brand-soft-foreground" : "border-border hover:bg-surface-sunken text-muted-foreground"
@@ -361,8 +382,12 @@ export default function BookingsPage() {
                           >
                             <MoreHorizontal className="h-3.5 w-3.5" />
                           </button>
-                          {isOpen && (
-                            <div className="absolute right-0 top-full mt-1 z-30 w-56 rounded-md border border-border bg-surface shadow-lg py-1 animate-in slide-in-from-top-1">
+                          {isOpen && menuPos && typeof document !== "undefined" && createPortal(
+                            <div
+                              data-action-menu
+                              style={{ position: "fixed", top: menuPos.top, left: menuPos.left }}
+                              className="z-50 w-56 rounded-md border border-border bg-surface shadow-lg py-1 animate-in slide-in-from-top-1"
+                            >
                               {state === "confirmed" && (
                                 <Link href={`/checkin?book=${r.bookingNo}`} onClick={() => setActionMenuFor(null)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5">
                                   <LogIn className="h-3.5 w-3.5 text-info" />Check guest in
@@ -377,7 +402,28 @@ export default function BookingsPage() {
                               <button type="button" onClick={() => { showToast(`WhatsApp confirmation sent to ${r.guestName}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
                                 <MessageCircle className="h-3.5 w-3.5 text-success" />Resend WhatsApp
                               </button>
-                              <button type="button" onClick={() => { showToast(`Email confirmation re-sent to ${r.guestName}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                              <button type="button" onClick={() => {
+                                setActionMenuFor(null);
+                                const to = guests.find(g => g.name === r.guestName)?.email;
+                                if (!to || to === "—") { showToast(`No email on file for ${r.guestName}`); return; }
+                                showToast(`Emailing ${r.guestName}…`);
+                                sendEmail({
+                                  to,
+                                  subject: `Booking Confirmation · ${r.bookingNo}`,
+                                  heading: "Booking Confirmation",
+                                  greeting: r.guestName,
+                                  intro: "Here are your booking details. Please contact us if anything needs to change.",
+                                  rows: [
+                                    { label: "Booking No", value: r.bookingNo },
+                                    { label: "Room", value: `${r.roomNumber ?? "—"} · ${r.roomType ?? ""}` },
+                                    { label: "Check-in", value: String(r.checkIn ?? "") },
+                                    { label: "Check-out", value: String(r.checkOut ?? "") },
+                                    { label: "Total", value: money(r.total) },
+                                  ],
+                                  context: "Booking confirmation",
+                                }).then(() => showToast(`Email confirmation sent to ${r.guestName}`))
+                                  .catch(() => showToast(`Couldn't email ${r.guestName}`));
+                              }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
                                 <Mail className="h-3.5 w-3.5 text-brand" />Resend Email
                               </button>
                               <div className="my-1 h-px bg-border" />
@@ -387,7 +433,8 @@ export default function BookingsPage() {
                               <button type="button" onClick={() => { setCancelTarget(r); setActionMenuFor(null); }} disabled={isCancelled || state === "checked-out"} className="w-full px-3 py-2 text-sm hover:bg-danger-soft text-danger inline-flex items-center gap-2.5 text-left disabled:opacity-40 disabled:cursor-not-allowed">
                                 <Ban className="h-3.5 w-3.5" />Cancel booking
                               </button>
-                            </div>
+                            </div>,
+                            document.body
                           )}
                         </div>
                       </div>

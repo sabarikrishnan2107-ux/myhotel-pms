@@ -382,7 +382,7 @@ function Toggle({ on, onChange, label, hint }: { on: boolean; onChange: (v: bool
         "h-5 w-9 rounded-full relative transition-colors shrink-0",
         on ? "bg-brand" : "bg-surface-sunken border border-border"
       )}>
-        <span className={cn("absolute top-0.5 h-3.5 w-3.5 rounded-full bg-surface shadow-xs transition-transform", on ? "translate-x-4" : "translate-x-0.5")} />
+        <span className={cn("absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-xs transition-transform", on ? "translate-x-4" : "translate-x-0.5")} />
       </span>
     </button>
   );
