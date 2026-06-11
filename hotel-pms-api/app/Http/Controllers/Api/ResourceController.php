@@ -53,6 +53,28 @@ use App\Models\TableWaitlistEntry;
 use App\Models\MaintenanceSchedule;
 use App\Models\AmcContract;
 use App\Models\PosTable;
+use App\Models\Recipe;
+use App\Models\BarItem;
+use App\Models\BarPourCost;
+use App\Models\BarVariance;
+use App\Models\BarPurchaseOrder;
+use App\Models\BarCocktail;
+use App\Models\LoyaltyRedemption;
+use App\Models\LoyaltyTransaction;
+use App\Models\LoyaltyEarningRule;
+use App\Models\LoyaltySetting;
+use App\Models\InventoryPurchase;
+use App\Models\StockMovement;
+use App\Models\PurchaseOrder;
+use App\Models\InventoryWastage;
+use App\Models\OtaBooking;
+use App\Models\ChannelRateMap;
+use App\Models\ChannelSyncLog;
+use App\Models\GstReturn;
+use App\Models\TdsEntry;
+use App\Models\AuditRun;
+use App\Models\WhatsappTemplate;
+use App\Models\AgentLedger;
 use Illuminate\Http\Request;
 
 /**
@@ -111,6 +133,28 @@ class ResourceController extends Controller
         'maintenance-schedules'  => MaintenanceSchedule::class,
         'amc-contracts'          => AmcContract::class,
         'pos-tables'             => PosTable::class,
+        'recipes'                => Recipe::class,
+        'bar-items'              => BarItem::class,
+        'bar-pour-costs'         => BarPourCost::class,
+        'bar-variances'          => BarVariance::class,
+        'bar-purchase-orders'    => BarPurchaseOrder::class,
+        'bar-cocktails'          => BarCocktail::class,
+        'loyalty-redemptions'    => LoyaltyRedemption::class,
+        'loyalty-transactions'   => LoyaltyTransaction::class,
+        'loyalty-earning-rules'  => LoyaltyEarningRule::class,
+        'loyalty-settings'       => LoyaltySetting::class,
+        'inventory-purchases'    => InventoryPurchase::class,
+        'stock-movements'        => StockMovement::class,
+        'purchase-orders'        => PurchaseOrder::class,
+        'inventory-wastage'      => InventoryWastage::class,
+        'ota-bookings'           => OtaBooking::class,
+        'channel-rate-maps'      => ChannelRateMap::class,
+        'channel-sync-logs'      => ChannelSyncLog::class,
+        'gst-returns'            => GstReturn::class,
+        'tds-entries'            => TdsEntry::class,
+        'audit-runs'             => AuditRun::class,
+        'whatsapp-templates'     => WhatsappTemplate::class,
+        'agent-ledger'           => AgentLedger::class,
     ];
 
     /** Resources whose index can be scoped by a query param → column. */
@@ -310,7 +354,7 @@ class ResourceController extends Controller
             'notes' => 'string|max:2000|nullable', 'createdAt' => 'string|max:50|nullable',
         ],
         'hall-bookings' => [
-            'customer' => 'string|max:255', 'phone' => 'string|max:50|nullable', 'hall' => 'string|max:255',
+            'customer' => 'string|max:255', 'phone' => 'string|max:50|nullable', 'email' => 'email|max:255|nullable', 'hall' => 'string|max:255',
             'date' => 'string|max:50', 'start' => 'string|max:50', 'end' => 'string|max:50',
             'guests' => 'integer|min:0', 'package' => 'string|max:255|nullable', 'advance' => 'integer|min:0',
             'total' => 'integer|min:0', 'status' => 'string|max:50', 'notes' => 'string|max:2000|nullable',
@@ -470,6 +514,236 @@ class ResourceController extends Controller
             'seatedAt' => 'string|max:20|nullable',
             'zone' => 'string|max:100|nullable',
         ],
+        'recipes' => [
+            'name' => 'string|max:255',
+            'category' => 'string|max:100',
+            'menuPrice' => 'integer|min:0',
+            'portions' => 'integer|min:1',
+            'prepMin' => 'integer|min:0',
+            'cookMin' => 'integer|min:0',
+            'labour' => 'integer|min:0',
+            'overhead' => 'integer|min:0',
+            'description' => 'string|max:2000|nullable',
+            'ingredients' => 'array',
+            'allergens' => 'array',
+            'nutrition' => 'array',
+        ],
+        'bar-items' => [
+            'brand' => 'string|max:255',
+            'category' => 'string|max:50',
+            'size' => 'string|max:50',
+            'opened' => 'numeric|min:0',
+            'sealed' => 'integer|min:0',
+            'par' => 'integer|min:0',
+            'reorderQty' => 'integer|min:0',
+            'unitCost' => 'integer|min:0',
+        ],
+        'bar-pour-costs' => [
+            'category' => 'string|max:50',
+            'soldValue' => 'integer|min:0',
+            'theoreticalCost' => 'integer|min:0',
+            'actualCost' => 'integer|min:0',
+        ],
+        'bar-variances' => [
+            'sku' => 'string|max:255',
+            'category' => 'string|max:50',
+            'theoreticalMl' => 'integer|min:0',
+            'actualMl' => 'integer|min:0',
+            'unitCost' => 'integer|min:0',
+            'flag' => 'string|max:20|nullable',
+            'note' => 'string|max:2000|nullable',
+        ],
+        'bar-purchase-orders' => [
+            'poNo' => 'string|max:50',
+            'vendor' => 'string|max:255',
+            'items' => 'string|max:500',
+            'itemCount' => 'integer|min:0',
+            'value' => 'integer|min:0',
+            'raised' => 'string|max:50|nullable',
+            'eta' => 'string|max:50|nullable',
+            'status' => 'string|max:50',
+        ],
+        'bar-cocktails' => [
+            'name' => 'string|max:255',
+            'category' => 'string|max:50',
+            'menuPrice' => 'integer|min:0',
+            'glassCost' => 'integer|min:0',
+            'recipe' => 'array',
+        ],
+        'loyalty-redemptions' => [
+            'date' => 'string|max:50',
+            'memberId' => 'string|max:50',
+            'memberName' => 'string|max:255',
+            'rewardId' => 'string|max:50|nullable',
+            'rewardName' => 'string|max:255',
+            'pointsUsed' => 'integer|min:0',
+            'bookingNo' => 'string|max:50|nullable',
+            'status' => 'string|max:50',
+            'staff' => 'string|max:100',
+            'approver' => 'string|max:100|nullable',
+            'notes' => 'string|max:2000|nullable',
+        ],
+        'loyalty-transactions' => [
+            'memberId' => 'string|max:50',
+            'date' => 'string|max:50',
+            'kind' => 'string|max:50',
+            'source' => 'string|max:255',
+            'bookingNo' => 'string|max:50|nullable',
+            'amount' => 'integer',
+            'balance' => 'integer',
+            'staff' => 'string|max:100|nullable',
+            'notes' => 'string|max:2000|nullable',
+            'expiresOn' => 'string|max:50|nullable',
+        ],
+        'loyalty-earning-rules' => [
+            'source' => 'string|max:255',
+            'multiplier' => 'numeric|min:0',
+            'enabled' => 'boolean',
+            'notes' => 'string|max:2000|nullable',
+        ],
+        'loyalty-settings' => [
+            'name' => 'string|max:255',
+            'pointsValueRupees' => 'numeric|min:0',
+            'pointsExpiryMonths' => 'integer|min:1',
+            'taxBeforeDiscount' => 'boolean',
+            'approvalRequiredAbove' => 'integer|min:0',
+            'manualAdjustNeedsApproval' => 'boolean',
+            'redemptionOtp' => 'boolean',
+        ],
+        'inventory-purchases' => [
+            'date' => 'string|max:50',
+            'billNo' => 'string|max:100',
+            'billDate' => 'string|max:50',
+            'vendor' => 'string|max:255',
+            'vendorGstin' => 'string|max:50|nullable',
+            'vendorPan' => 'string|max:50|nullable',
+            'vendorPhone' => 'string|max:50|nullable',
+            'category' => 'string|max:100',
+            'department' => 'string|max:100',
+            'lines' => 'array',
+            'discount' => 'integer',
+            'freight' => 'integer',
+            'roundOff' => 'integer',
+            'interState' => 'boolean',
+            'paymentStatus' => 'string|max:50',
+            'paymentMode' => 'string|max:100|nullable',
+            'paymentDate' => 'string|max:50|nullable',
+            'paymentRef' => 'string|max:100|nullable',
+            'paidAmount' => 'integer|min:0',
+            'receivedBy' => 'string|max:255',
+            'qcStatus' => 'string|max:50',
+            'storage' => 'string|max:100',
+            'billPhoto' => 'string|nullable',
+            'goodsPhotos' => 'array|nullable',
+            'notes' => 'string|max:2000|nullable',
+        ],
+        'stock-movements' => [
+            'time' => 'string|max:50',
+            'itemName' => 'string|max:255',
+            'type' => 'string|max:50',
+            'qty' => 'integer',
+            'reason' => 'string|max:500|nullable',
+            'by' => 'string|max:100|nullable',
+        ],
+        'purchase-orders' => [
+            'po' => 'string|max:50',
+            'vendor' => 'string|max:255',
+            'items' => 'integer|min:0',
+            'amount' => 'integer|min:0',
+            'date' => 'string|max:50',
+            'status' => 'string|max:50',
+        ],
+        'inventory-wastage' => [
+            'date' => 'string|max:50',
+            'item' => 'string|max:255',
+            'qty' => 'integer|min:0',
+            'cost' => 'integer|min:0',
+            'reason' => 'string|max:500|nullable',
+        ],
+        'ota-bookings' => [
+            'channel' => 'string|max:255',
+            'booking' => 'string|max:50',
+            'guest' => 'string|max:255',
+            'room' => 'string|max:50|nullable',
+            'checkIn' => 'string|max:50|nullable',
+            'nights' => 'integer|min:0',
+            'status' => 'string|max:50',
+            'total' => 'integer|min:0',
+        ],
+        'channel-rate-maps' => [
+            'type' => 'string|max:100',
+            'pms' => 'integer|min:0',
+            'bdc' => 'integer|min:0',
+            'agoda' => 'integer|min:0',
+            'expedia' => 'integer|min:0',
+        ],
+        'channel-sync-logs' => [
+            'time' => 'string|max:50',
+            'channel' => 'string|max:255',
+            'action' => 'string|max:255',
+            'detail' => 'string|max:500|nullable',
+            'status' => 'string|max:50',
+        ],
+        'gst-returns' => [
+            'label' => 'string|max:255',
+            'taxable' => 'integer',
+            'igst' => 'integer',
+            'cgst' => 'integer',
+            'sgst' => 'integer',
+        ],
+        'tds-entries' => [
+            'section' => 'string|max:50',
+            'description' => 'string|max:500',
+            'partyType' => 'string|max:100|nullable',
+            'amount' => 'integer|min:0',
+            'rate' => 'numeric|min:0',
+            'tds' => 'integer|min:0',
+        ],
+        'audit-runs' => [
+            'date' => 'string|max:50',
+            'runAt' => 'string|max:50',
+            'duration' => 'string|max:50',
+            'status' => 'string|max:50',
+            'occupancy' => 'integer|min:0|max:100',
+            'revenue' => 'integer|min:0',
+            'noShows' => 'integer|min:0',
+            'cashVariance' => 'integer',
+            'anomalies' => 'array',
+            'anomalies.*' => 'string|max:500',
+            'irn' => 'boolean',
+            'backup' => 'boolean',
+            'steps' => 'array',
+            'steps.*.name' => 'string|max:255',
+            'steps.*.duration' => 'string|max:50',
+            'steps.*.status' => 'string|max:20',
+        ],
+        'whatsapp-templates' => [
+            'name' => 'string|max:255',
+            'status' => 'string|max:50',
+            'category' => 'string|max:100',
+            'language' => 'string|max:50',
+            'body' => 'string|max:2000',
+            'header' => 'string|max:500|nullable',
+            'footer' => 'string|max:500|nullable',
+            'rejectionReason' => 'string|max:500|nullable',
+            'submittedOn' => 'string|max:50|nullable',
+            'buttons' => 'array',
+            'usage30d' => 'integer|min:0',
+            'lastEdited' => 'string|max:50',
+            'editedBy' => 'string|max:100',
+        ],
+        'agent-ledger' => [
+            'agentName' => 'string|max:255',
+            'date' => 'string|max:50',
+            'type' => 'string|max:50',
+            'description' => 'string|max:500',
+            'bookingNo' => 'string|max:50|nullable',
+            'mode' => 'string|max:100|nullable',
+            'reference' => 'string|max:255|nullable',
+            'debit' => 'integer',
+            'credit' => 'integer',
+            'balance' => 'integer',
+        ],
     ];
 
     /** Fields that must be present (and non-empty) when creating a row. */
@@ -507,6 +781,28 @@ class ResourceController extends Controller
         'maintenance-schedules' => ['equipment'],
         'amc-contracts' => ['name'],
         'pos-tables' => ['code'],
+        'recipes' => ['name'],
+        'bar-items' => ['brand', 'category'],
+        'bar-pour-costs' => ['category'],
+        'bar-variances' => ['sku', 'category'],
+        'bar-purchase-orders' => ['poNo', 'vendor'],
+        'bar-cocktails' => ['name'],
+        'loyalty-redemptions' => ['memberName', 'rewardName'],
+        'loyalty-transactions' => ['memberId', 'source'],
+        'loyalty-earning-rules' => ['source'],
+        'loyalty-settings' => ['name'],
+        'inventory-purchases' => ['billNo', 'vendor'],
+        'stock-movements' => ['itemName'],
+        'purchase-orders' => ['po', 'vendor'],
+        'inventory-wastage' => ['item'],
+        'ota-bookings' => ['channel', 'guest'],
+        'channel-rate-maps' => ['type'],
+        'channel-sync-logs' => ['action'],
+        'gst-returns' => ['label'],
+        'tds-entries' => ['section', 'description'],
+        'audit-runs' => ['date'],
+        'whatsapp-templates' => ['name'],
+        'agent-ledger' => ['agentName'],
     ];
 
     private function model(string $resource): string
@@ -526,6 +822,14 @@ class ResourceController extends Controller
 
         $data = $request->validate($rules);
         unset($data['id'], $data['created_at'], $data['updated_at']);
+
+        // On create, drop nulls so columns fall back to their schema default
+        // (Laravel's ConvertEmptyStringsToNull turns "" into null, which would
+        // otherwise violate NOT NULL columns like guests.email). On update we
+        // keep nulls so a field can be explicitly cleared.
+        if ($creating) {
+            $data = array_filter($data, static fn ($v) => $v !== null);
+        }
 
         return $data;
     }

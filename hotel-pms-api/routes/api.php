@@ -3,6 +3,9 @@
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BackupController;
+use App\Http\Controllers\Api\EmailController;
+use App\Http\Controllers\Api\HallBookingMailController;
+use App\Http\Controllers\Api\InvoiceMailController;
 use App\Http\Controllers\Api\NightAuditController;
 use App\Http\Controllers\Api\OwnerFlashController;
 use App\Http\Controllers\Api\PropertyController;
@@ -45,6 +48,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/dashboard/alerts', [StatsController::class, 'alerts']);
     Route::get('/dashboard/goals', [StatsController::class, 'goals']);
 
+    // Revenue management — booking pace + pickup analytics (real Booking aggregates)
+    Route::get('/revenue/pace', [StatsController::class, 'pace']);
+    Route::get('/revenue/pickup', [StatsController::class, 'pickup']);
+
     // Owner's Flash Dashboard — period KPIs, 30-day trend, manual/scheduled send
     Route::get('/owner/flash', [OwnerFlashController::class, 'flash']);
     Route::get('/owner/flash-trend', [OwnerFlashController::class, 'flashTrend']);
@@ -67,6 +74,16 @@ Route::middleware('auth:sanctum')->group(function () {
     // Single-row settings sections (JSON by key)
     Route::get('/settings/{key}', [SettingsController::class, 'show']);
     Route::put('/settings/{key}', [SettingsController::class, 'update']);
+
+    // Generic branded email — every "email" action across the app posts here so
+    // they all deliver through the one configured mail account (.env MAIL_*).
+    Route::post('/email/send', [EmailController::class, 'send']);
+
+    // Tax-invoice email with a generated PDF attachment (checkout "Email Invoice").
+    Route::post('/email/invoice', [InvoiceMailController::class, 'send']);
+
+    // Hall booking confirmation email (synchronous; uses the configured mail driver)
+    Route::post('/hall-bookings/{id}/send-email', [HallBookingMailController::class, 'send']);
 
     // List sections (generic CRUD)
     $resources = implode('|', ResourceController::resources());
