@@ -3,6 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV, GROUP_LABEL, type NavItem } from "@/lib/nav";
+import { getRole, rolesFor, type Role } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { Sparkles, X } from "lucide-react";
 
@@ -18,6 +19,13 @@ interface SidebarProps {
 export function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const [expanded, setExpanded] = React.useState(false);
+
+  // Role is read client-side after mount to avoid SSR/localStorage mismatch.
+  const [role, setRoleState] = React.useState<Role>("manager");
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- role only exists client-side
+    setRoleState(getRole());
+  }, [pathname]);
 
   const grouped = React.useMemo(() => {
     const groups: Record<string, NavItem[]> = {};
@@ -85,7 +93,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           </div>
 
           <nav className="flex-1 overflow-y-auto py-4">
-            {(["operations", "billing", "people", "erp", "system", "demo"] as const).map((group) => (
+            {(["operations", "billing", "people", "erp", "system", "demo"] as const).map((group) => {
+              const items = (grouped[group] ?? []).filter(item => rolesFor(item).includes(role));
+              if (items.length === 0) return null;
+              return (
               <div key={group} className="px-2 mb-4">
                 <p className={cn(
                   "px-3 text-[10px] uppercase tracking-[0.16em] text-[hsl(var(--sidebar-muted))]/70 font-semibold mb-1.5 transition-opacity duration-150 whitespace-nowrap",
@@ -94,7 +105,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                   {GROUP_LABEL[group]}
                 </p>
                 <ul className="space-y-0.5">
-                  {grouped[group]?.map((item) => {
+                  {items.map((item) => {
                     const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
                     const Icon = item.icon;
                     return (
@@ -158,7 +169,8 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                   })}
                 </ul>
               </div>
-            ))}
+              );
+            })}
           </nav>
 
           {/* Status footer */}

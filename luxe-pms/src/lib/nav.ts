@@ -11,17 +11,25 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import type { Role } from "./auth";
+
 export type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
   badge?: string;
   group: "operations" | "billing" | "people" | "erp" | "system" | "demo";
+  // Roles allowed to see/visit this item. Omit for operational items that
+  // both staff and manager get. See `rolesFor` in ./auth.
+  roles?: Role[];
 };
+
+const MANAGER: Role[] = ["manager"];
+const GUEST: Role[] = ["guest", "manager"]; // manager can preview guest pages
 
 export const NAV: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, group: "operations" },
-  { href: "/owner", label: "Owner's Flash", icon: Crown, group: "operations" },
+  { href: "/owner", label: "Owner's Flash", icon: Crown, group: "operations", roles: MANAGER },
   { href: "/rack", label: "Room Rack", icon: LayoutGrid, group: "operations" },
   { href: "/calendar", label: "Reservation Calendar", icon: CalendarRange, group: "operations" },
   { href: "/bookings", label: "Bookings", icon: BookOpen, group: "operations" },
@@ -39,37 +47,37 @@ export const NAV: NavItem[] = [
   { href: "/maintenance", label: "Maintenance", icon: Wrench, group: "operations" },
   { href: "/lost-found", label: "Lost & Found", icon: Search, group: "operations" },
 
-  { href: "/agents", label: "Agents & Corporate", icon: Briefcase, group: "people" },
-  { href: "/accounts", label: "Accounts", icon: Wallet, group: "billing" },
-  { href: "/pricing", label: "AI Pricing Engine", icon: Brain, group: "billing" },
+  { href: "/agents", label: "Agents & Corporate", icon: Briefcase, group: "people", roles: MANAGER },
+  { href: "/accounts", label: "Accounts", icon: Wallet, group: "billing", roles: MANAGER },
+  { href: "/pricing", label: "AI Pricing Engine", icon: Brain, group: "billing", roles: MANAGER },
   { href: "/cashier", label: "Cashier Shift", icon: ClipboardCheck, group: "billing" },
 
   { href: "/inventory", label: "Inventory", icon: Boxes, group: "erp" },
   { href: "/vendors", label: "Vendors", icon: Truck, group: "erp" },
-  { href: "/staff", label: "Staff", icon: UserCog, group: "people" },
+  { href: "/staff", label: "Staff", icon: UserCog, group: "people", roles: MANAGER },
 
-  { href: "/channels", label: "OTA / Channel Manager", icon: Globe, group: "erp" },
-  { href: "/website", label: "Website Booking", icon: MonitorSmartphone, group: "erp" },
+  { href: "/channels", label: "OTA / Channel Manager", icon: Globe, group: "erp", roles: MANAGER },
+  { href: "/website", label: "Website Booking", icon: MonitorSmartphone, group: "erp", roles: MANAGER },
   { href: "/notifications", label: "Notifications", icon: Bell, group: "system" },
-  { href: "/night-audit", label: "Night Audit", icon: Moon, group: "system" },
-  { href: "/reports", label: "Reports", icon: FileBarChart, group: "system" },
-  { href: "/ai", label: "AI Assistant", icon: Bot, group: "system" },
+  { href: "/night-audit", label: "Night Audit", icon: Moon, group: "system", roles: MANAGER },
+  { href: "/reports", label: "Reports", icon: FileBarChart, group: "system", roles: MANAGER },
+  { href: "/ai", label: "AI Assistant", icon: Bot, group: "system", roles: MANAGER },
 
-  { href: "/setup", label: "Setup & Settings", icon: SlidersHorizontal, group: "system" },
-  { href: "/users", label: "User Management", icon: KeySquare, group: "system" },
-  { href: "/audit-logs", label: "Audit Logs", icon: ScrollText, group: "system" },
-  { href: "/compliance", label: "Compliance (India)", icon: ShieldCheck, group: "system" },
-  { href: "/checkin/kiosk/BK100278", label: "Kiosk Check-in (demo)", icon: QrCode, group: "demo" },
-  { href: "/portal/g123", label: "Guest Portal (demo)", icon: Smartphone, group: "demo" },
-  { href: "/menu/412", label: "In-room Menu (demo)", icon: QrCode, group: "demo" },
+  { href: "/setup", label: "Setup & Settings", icon: SlidersHorizontal, group: "system", roles: MANAGER },
+  { href: "/users", label: "User Management", icon: KeySquare, group: "system", roles: MANAGER },
+  { href: "/audit-logs", label: "Audit Logs", icon: ScrollText, group: "system", roles: MANAGER },
+  { href: "/compliance", label: "Compliance (India)", icon: ShieldCheck, group: "system", roles: MANAGER },
+  { href: "/checkin/kiosk/BK100278", label: "Kiosk Check-in (demo)", icon: QrCode, group: "demo", roles: GUEST },
+  { href: "/portal/g123", label: "Guest Portal (demo)", icon: Smartphone, group: "demo", roles: GUEST },
+  { href: "/menu/412", label: "In-room Menu (demo)", icon: QrCode, group: "demo", roles: GUEST },
   { href: "/checkout/express", label: "Express Checkout", icon: Zap, group: "billing" },
-  { href: "/notifications/templates", label: "WhatsApp Templates", icon: MessageSquare, group: "system" },
-  { href: "/setup/backup-drill", label: "Backup Drill", icon: DatabaseBackup, group: "system" },
-  { href: "/revenue/pace", label: "Pace Report", icon: TrendingUp, group: "billing" },
-  { href: "/revenue/pickup", label: "Pickup Report", icon: Activity, group: "billing" },
-  { href: "/revenue/restrictions", label: "Stay Restrictions", icon: Lock, group: "billing" },
-  { href: "/revenue/group-quote", label: "Group Pricing", icon: Calculator, group: "billing" },
-  { href: "/revenue/comp-shop", label: "Competitor Rate Shop", icon: Search, group: "billing" },
+  { href: "/notifications/templates", label: "WhatsApp Templates", icon: MessageSquare, group: "system", roles: MANAGER },
+  { href: "/setup/backup-drill", label: "Backup Drill", icon: DatabaseBackup, group: "system", roles: MANAGER },
+  { href: "/revenue/pace", label: "Pace Report", icon: TrendingUp, group: "billing", roles: MANAGER },
+  { href: "/revenue/pickup", label: "Pickup Report", icon: Activity, group: "billing", roles: MANAGER },
+  { href: "/revenue/restrictions", label: "Stay Restrictions", icon: Lock, group: "billing", roles: MANAGER },
+  { href: "/revenue/group-quote", label: "Group Pricing", icon: Calculator, group: "billing", roles: MANAGER },
+  { href: "/revenue/comp-shop", label: "Competitor Rate Shop", icon: Search, group: "billing", roles: MANAGER },
   { href: "/fb/pos", label: "Restaurant POS", icon: Utensils, group: "operations" },
   { href: "/fb/kds", label: "Kitchen Display", icon: Tv, group: "operations" },
   { href: "/fb/recipes", label: "Recipes & Cost", icon: ChefHat, group: "erp" },

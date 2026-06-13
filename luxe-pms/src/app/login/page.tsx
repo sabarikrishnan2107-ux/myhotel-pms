@@ -2,11 +2,19 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { QRCodeSVG } from "qrcode.react";
 import { Sparkles, ArrowRight, ShieldCheck, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/shell/theme-toggle";
 import { login, getToken } from "@/lib/api";
+import { setRole, isRole, ROLE_HOME, ROLE_LABEL, type Role } from "@/lib/auth";
+
+// All demo roles share the one demo account for the API token; the role is a
+// client-side overlay that decides nav + access (see lib/auth).
+const DEMO_EMAIL = "admin@hotel.com";
+const DEMO_PASSWORD = "password123";
+const QR_ROLES: Role[] = ["guest", "staff", "manager"];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,11 +25,31 @@ export default function LoginPage() {
   const [needCode, setNeedCode] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [origin, setOrigin] = React.useState("");
 
-  // Already signed in? Skip the form.
-  React.useEffect(() => {
-    if (getToken()) router.replace("/dashboard");
+  // Sign in as a role using the shared demo account, then route to its home.
+  const loginAs = React.useCallback(async (r: Role) => {
+    setError(null);
+    setLoading(true);
+    try {
+      await login(DEMO_EMAIL, DEMO_PASSWORD);
+      setRole(r);
+      router.replace(ROLE_HOME[r]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+      setLoading(false);
+    }
   }, [router]);
+
+  // On open: `?as=role` (from a scanned QR) auto-signs in as that role.
+  // Otherwise an existing session skips the form.
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- window only exists client-side
+    setOrigin(window.location.origin);
+    const as = new URLSearchParams(window.location.search).get("as");
+    if (isRole(as)) { loginAs(as); return; }
+    if (getToken()) router.replace("/dashboard");
+  }, [router, loginAs]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,6 +62,7 @@ export default function LoginPage() {
         setLoading(false);
         return;
       }
+      setRole("manager"); // email/password sign-in = full access
       router.replace("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
@@ -180,6 +209,30 @@ export default function LoginPage() {
               <Button type="button" variant="outline" size="lg" className="w-full">
                 Sign in with SSO
               </Button>
+
+              {/* QR quick access — scan with a phone or tap to enter as a role */}
+              <div className="pt-2">
+                <p className="text-[11px] uppercase tracking-wider text-subtle-foreground font-medium text-center mb-3">
+                  Quick access · scan or tap
+                </p>
+                <div className="grid grid-cols-3 gap-2.5">
+                  {QR_ROLES.map(r => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => loginAs(r)}
+                      disabled={loading}
+                      className="group flex flex-col items-center gap-2 rounded-lg border border-border bg-surface p-2.5 hover:border-ring hover:bg-surface-sunken transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={`Enter as ${ROLE_LABEL[r]}`}
+                    >
+                      <span className="rounded-md bg-white p-1.5">
+                        <QRCodeSVG value={`${origin}/login?as=${r}`} size={60} marginSize={0} />
+                      </span>
+                      <span className="text-xs font-medium">{ROLE_LABEL[r]}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               <p className="text-center text-xs text-muted-foreground pt-2">
                 Need an account? <Link href="#" className="text-brand hover:underline">Talk to your administrator</Link>
