@@ -13,7 +13,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { useProperty, hotelName } from "@/lib/use-property";
-import { apiGet } from "@/lib/api";
+import { apiGet, apiPut } from "@/lib/api";
 
 type Category = "Whisky" | "Vodka" | "Gin" | "Rum" | "Wine" | "Beer" | "Liqueur" | "Soft";
 type TabKey = "inventory" | "pourcost" | "variance" | "po" | "menu";
@@ -494,7 +494,19 @@ export default function BarInventoryPage() {
         <StockTakeModal
           inventory={inventory}
           onClose={() => setStockTakeOpen(false)}
-          onSubmit={() => { setStockTakeOpen(false); showToast("Stock take recorded · variance report queued."); }}
+          onSubmit={(counts) => {
+            setStockTakeOpen(false);
+            // Persist the physical counts back to each bar item (numeric id = backend-backed).
+            setInventory(prev => prev.map(it => {
+              const c = counts[String(it.id)];
+              if (!c) return it;
+              const opened = parseFloat(c.opened) || 0;
+              const sealed = parseFloat(c.sealed) || 0;
+              if (/^\d+$/.test(String(it.id))) apiPut(`/bar-items/${it.id}`, { opened, sealed }).catch(() => {});
+              return { ...it, opened, sealed };
+            }));
+            showToast("Stock take saved · counts updated");
+          }}
         />
       )}
 
@@ -1256,7 +1268,7 @@ function KPIInline({ label, value, tone }: { label: string; value: string; tone?
 }
 
 // ===================== STOCK TAKE MODAL =====================
-function StockTakeModal({ inventory, onClose, onSubmit }: { inventory: StockItem[]; onClose: () => void; onSubmit: () => void }) {
+function StockTakeModal({ inventory, onClose, onSubmit }: { inventory: StockItem[]; onClose: () => void; onSubmit: (counts: Record<string, { opened: string; sealed: string }>) => void }) {
   const sample = inventory.slice(0, 12);
   const [counts, setCounts] = React.useState<Record<string, { opened: string; sealed: string }>>(
     Object.fromEntries(sample.map((s) => [String(s.id), { opened: String(s.opened), sealed: String(s.sealed) }]))
@@ -1326,7 +1338,7 @@ function StockTakeModal({ inventory, onClose, onSubmit }: { inventory: StockItem
         </div>
         <div className="p-5 border-t border-border flex items-center justify-end gap-2">
           <Button size="sm" variant="outline" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={onSubmit}>
+          <Button size="sm" onClick={() => onSubmit(counts)}>
             <Save className="h-4 w-4 mr-1.5" />Submit stock take
           </Button>
         </div>
