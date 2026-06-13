@@ -43,6 +43,15 @@ class PropertyController extends Controller
             'logo'            => ['sometimes', 'nullable', 'string', 'max:255'],
         ]);
 
+        // The property_settings columns are NOT NULL (with '' / 0 defaults), so a
+        // cleared field arrives as null (ConvertEmptyStringsToNull) and would break
+        // the insert. Store blanks as '' (or 0 for the numeric advance) to match.
+        foreach ($data as $key => $value) {
+            if ($value === null) {
+                $data[$key] = $key === 'default_advance' ? 0 : '';
+            }
+        }
+
         $settings = PropertySetting::firstOrCreate(['id' => 1]);
         $settings->update($data);
 
