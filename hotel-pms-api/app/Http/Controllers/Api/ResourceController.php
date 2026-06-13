@@ -469,6 +469,8 @@ class ResourceController extends Controller
             'occasion' => 'string|max:50',
             'status' => 'string|max:50',
             'source' => 'string|max:50|nullable',
+            'seatedAt' => 'string|max:50|nullable',
+            'completedAt' => 'string|max:50|nullable',
         ],
         'table-waitlist' => [
             'guest' => 'string|max:255',

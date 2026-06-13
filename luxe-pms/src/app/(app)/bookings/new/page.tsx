@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { GUESTS, ROOMS } from "@/lib/mock-data";
 import { cn, money } from "@/lib/utils";
-import { apiGet, apiPost, sendEmail } from "@/lib/api";
+import { apiGet, apiPost, apiPut, sendEmail } from "@/lib/api";
 import { NewGuestForm, type NewGuestData } from "@/components/guests/new-guest-form";
 import type { Guest, Room } from "@/lib/types";
 
@@ -864,7 +864,11 @@ export default function BookingWizardPage() {
                   // the mode back to "search", so checking it dropped every new profile.
                   try {
                     if (newGuest) {
-                      await apiPost("/guests", {
+                      // Save the core profile FIRST (small payload, always succeeds) so
+                      // name/phone/email/ID can never be lost. The large base64 KYC
+                      // captures are attached in a second request — if they're too big
+                      // or fail, the core profile is already safely stored.
+                      const createdGuest = await apiPost<{ id: number }>("/guests", {
                         name: selectedGuestDisplay!.name,
                         phone: selectedGuestDisplay!.phone ?? "",
                         email: newGuest.email ?? "",
@@ -878,12 +882,14 @@ export default function BookingWizardPage() {
                         gst: newGuest.gst ?? "",
                         vip: newGuest.vip ?? false,
                         internalNotes: newGuest.remarks ?? "",
-                        // KYC captures (base64 data URLs) — now persisted to the DB.
-                        idFront: newGuest.idFront ?? "",
-                        idBack: newGuest.idBack ?? "",
-                        photo: newGuest.photo ?? "",
-                        signature: newGuest.signature ?? "",
-                      }).catch(() => {});
+                      }).catch(() => null);
+                      const captures = {
+                        idFront: newGuest.idFront ?? "", idBack: newGuest.idBack ?? "",
+                        photo: newGuest.photo ?? "", signature: newGuest.signature ?? "",
+                      };
+                      if (createdGuest?.id && (captures.idFront || captures.idBack || captures.photo || captures.signature)) {
+                        await apiPut(`/guests/${createdGuest.id}`, captures).catch(() => {});
+                      }
                     }
                     await apiPost("/bookings", {
                       bookingNo,

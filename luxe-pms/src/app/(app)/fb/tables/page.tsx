@@ -29,6 +29,8 @@ type Reservation = {
   occasion: Occasion;
   status: ResStatus;
   source?: "Walk-in" | "Phone" | "Zomato" | "Dineout" | "Direct";
+  seatedAt?: string | null;     // ISO datetime stamped when the party is seated
+  completedAt?: string | null;  // ISO datetime stamped when the table is closed
 };
 
 type Walkin = {
@@ -85,13 +87,6 @@ const INITIAL_WAITLIST: Walkin[] = [
   { id: "W2", guest: "Aarti Deshmukh", party: 4, phone: "+91 99887 56712", waitMin: 18, arrivedAt: "20:14" },
   { id: "W3", guest: "Verma Group",    party: 6, phone: "+91 98865 33221", waitMin: 35, arrivedAt: "20:22", notified: true },
   { id: "W4", guest: "Diya Patel",     party: 2, phone: "+91 90043 88220", waitMin: 12, arrivedAt: "20:28" },
-];
-
-const TURN_TIMES = [
-  { party: "1–2 pax", lunch: 62,  earlyDinner: 78,  dinner: 95,  late: 70 },
-  { party: "3–4 pax", lunch: 78,  earlyDinner: 95,  dinner: 118, late: 88 },
-  { party: "5–6 pax", lunch: 95,  earlyDinner: 112, dinner: 135, late: 102 },
-  { party: "7–8 pax", lunch: 115, earlyDinner: 135, dinner: 162, late: 120 },
 ];
 
 // ---------- Helpers ----------
@@ -213,15 +208,52 @@ export default function TablesPage() {
   const WALK_BLANK = { guest: "", party: 2, waitMin: 15, phone: "" };
   const [walkForm, setWalkForm] = React.useState(WALK_BLANK);
 
-  // KPIs
-  const todaysCovers = reservations
-    .filter(r => r.status !== "cancelled" && r.status !== "blocked" && r.status !== "no-show")
+  // KPIs — all derived from the live reservations now (no hardcoded numbers).
+  const activeRes = reservations.filter(r => r.status !== "blocked");
+  const decided = activeRes.length; // denominator for reliability rates
+  const todaysCovers = activeRes
+    .filter(r => r.status !== "cancelled" && r.status !== "no-show")
     .reduce((s, r) => s + r.party, 0);
-  const walkinsCount = reservations.filter(r => r.source === "Walk-in").length + 14; // demo total seated walk-ins
+  const confirmedCount = reservations.filter(r => r.status === "confirmed").length;
+  const seatedCount = reservations.filter(r => r.status === "seated").length;
+  const walkinsCount = reservations.filter(r => r.source === "Walk-in" && r.status !== "cancelled" && r.status !== "blocked").length;
   const waitlistCount = waitlist.length;
-  const avgDwell = 102; // minutes
-  const noShowRate = 4.2;
-  const cancelRate = 6.8;
+
+  // Real dwell analytics from seated→completed timestamps (rolling 30 days).
+  const THIRTY_D = 30 * 24 * 60 * 60 * 1000;
+  const [nowMs] = React.useState(() => Date.now()); // stable "now" for the 30-day window
+  const dwellOf = (r: Reservation): number | null => {
+    if (!r.seatedAt || !r.completedAt) return null;
+    const s = +new Date(r.seatedAt), e = +new Date(r.completedAt);
+    if (isNaN(s) || isNaN(e) || e < s || nowMs - e > THIRTY_D) return null;
+    return (e - s) / 60000; // minutes
+  };
+  const dwells = reservations.map(dwellOf).filter((x): x is number => x !== null);
+  const avgDwell = dwells.length ? Math.round(dwells.reduce((a, b) => a + b, 0) / dwells.length) : null;
+  const rate = (n: number) => decided ? Math.round((n / decided) * 1000) / 10 : 0;
+  const noShowRate = rate(reservations.filter(r => r.status === "no-show").length);
+  const cancelRate = rate(reservations.filter(r => r.status === "cancelled").length);
+
+  // Turn times: avg dwell by party-size × day-part (only cells with real data).
+  const partyBucket = (p: number) => p <= 2 ? "1–2 pax" : p <= 4 ? "3–4 pax" : p <= 6 ? "5–6 pax" : "7–8 pax";
+  const dayPart = (h: number): "lunch" | "earlyDinner" | "dinner" | "late" =>
+    h < 16 ? "lunch" : h < 19 ? "earlyDinner" : h < 21 ? "dinner" : "late";
+  const turnBuckets = ["1–2 pax", "3–4 pax", "5–6 pax", "7–8 pax"];
+  const turnAgg: Record<string, Record<string, number[]>> = {};
+  turnBuckets.forEach(b => { turnAgg[b] = { lunch: [], earlyDinner: [], dinner: [], late: [] }; });
+  reservations.forEach(r => {
+    const d = dwellOf(r);
+    if (d === null) return;
+    turnAgg[partyBucket(r.party)][dayPart(r.startHr)].push(d);
+  });
+  const avgCell = (arr: number[]) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+  const turnTimes = turnBuckets.map(party => ({
+    party,
+    lunch: avgCell(turnAgg[party].lunch),
+    earlyDinner: avgCell(turnAgg[party].earlyDinner),
+    dinner: avgCell(turnAgg[party].dinner),
+    late: avgCell(turnAgg[party].late),
+  }));
 
   const filteredTables = TABLES.filter(t => zone === "All" || TABLE_META[t].zone === zone);
 
@@ -237,6 +269,22 @@ export default function TablesPage() {
   const seatNow = (w: Walkin) => {
     setWaitlist(prev => prev.filter(x => x.id !== w.id));
     apiDelete(`/table-waitlist/${w.id}`).catch(() => {});
+    // Log the seated walk-in as a real reservation so covers & turn-times count it.
+    const now = new Date();
+    const startHr = now.getHours() + (now.getMinutes() >= 30 ? 0.5 : 0);
+    addReservation({
+      table: "—",
+      startHr,
+      durHr: 2,
+      guest: w.guest,
+      party: w.party,
+      phone: w.phone ?? "—",
+      notes: "Walk-in (seated from waitlist)",
+      occasion: "none",
+      status: "seated",
+      source: "Walk-in",
+      seatedAt: now.toISOString(),
+    });
     showToast(`${w.guest} (${w.party}) seated · Walk-in logged`);
   };
   const sendSms = (w: Walkin) => {
@@ -304,8 +352,13 @@ export default function TablesPage() {
   };
 
   const updateStatus = (id: string, status: ResStatus) => {
-    setReservations(prev => prev.map(r => r.id === id ? { ...r, status } : r));
-    apiPut(`/table-reservations/${id}`, { status }).catch(() => {});
+    // Stamp the dwell timestamps so turn-time analytics are real.
+    const nowISO = new Date().toISOString();
+    const stamp: Partial<Reservation> =
+      status === "seated" ? { seatedAt: nowISO } :
+      status === "completed" ? { completedAt: nowISO } : {};
+    setReservations(prev => prev.map(r => r.id === id ? { ...r, status, ...stamp } : r));
+    apiPut(`/table-reservations/${id}`, { status, ...stamp }).catch(() => {});
     const r = reservations.find(x => x.id === id);
     showToast(`${r?.guest ?? "Reservation"} → ${STATUS_LABEL[status]}`);
   };
@@ -344,10 +397,10 @@ export default function TablesPage() {
 
       {/* KPI STRIP */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Kpi icon={<Users className="h-4 w-4" />} tone="brand" label="Today's covers booked" value={String(todaysCovers)} sub="22 confirmed · 7 seated" />
-        <Kpi icon={<UserPlus className="h-4 w-4" />} tone="success" label="Walk-ins today" value={String(walkinsCount)} sub="vs 11 yesterday" />
+        <Kpi icon={<Users className="h-4 w-4" />} tone="brand" label="Today's covers booked" value={String(todaysCovers)} sub={`${confirmedCount} confirmed · ${seatedCount} seated`} />
+        <Kpi icon={<UserPlus className="h-4 w-4" />} tone="success" label="Walk-ins today" value={String(walkinsCount)} sub="logged today" />
         <Kpi icon={<Clock className="h-4 w-4" />} tone="warning" label="Waitlist" value={String(waitlistCount)} sub={`${waitlist.reduce((s,w)=>s+w.party,0)} pax · avg ${Math.round(waitlist.reduce((s,w)=>s+w.waitMin,0)/Math.max(1,waitlist.length))} min`} />
-        <Kpi icon={<Timer className="h-4 w-4" />} tone="info" label="Avg dwell" value={`${avgDwell} min`} sub="↑ 6 min vs last Tue" />
+        <Kpi icon={<Timer className="h-4 w-4" />} tone="info" label="Avg dwell" value={avgDwell != null ? `${avgDwell} min` : "—"} sub={avgDwell != null ? `over ${dwells.length} visit${dwells.length === 1 ? "" : "s"}` : "no completed visits yet"} />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-5">
@@ -567,13 +620,13 @@ export default function TablesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {TURN_TIMES.map(t => (
+                  {turnTimes.map(t => (
                     <tr key={t.party} className="border-t border-border">
                       <td className="px-4 py-2.5 font-medium">{t.party}</td>
-                      <td className="px-3 py-2.5 text-right tabular">{t.lunch} min</td>
-                      <td className="px-3 py-2.5 text-right tabular">{t.earlyDinner} min</td>
-                      <td className="px-3 py-2.5 text-right tabular font-semibold">{t.dinner} min</td>
-                      <td className="px-4 py-2.5 text-right tabular">{t.late} min</td>
+                      <td className="px-3 py-2.5 text-right tabular">{t.lunch != null ? `${t.lunch} min` : "—"}</td>
+                      <td className="px-3 py-2.5 text-right tabular">{t.earlyDinner != null ? `${t.earlyDinner} min` : "—"}</td>
+                      <td className="px-3 py-2.5 text-right tabular font-semibold">{t.dinner != null ? `${t.dinner} min` : "—"}</td>
+                      <td className="px-4 py-2.5 text-right tabular">{t.late != null ? `${t.late} min` : "—"}</td>
                     </tr>
                   ))}
                 </tbody>
