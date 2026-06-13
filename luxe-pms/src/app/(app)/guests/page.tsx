@@ -324,7 +324,7 @@ export default function GuestsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <Badge tone="neutral"><Globe className="h-2.5 w-2.5" />{g.nationality}</Badge>
-                        <p className="text-[11px] text-muted-foreground tabular mt-1">{g.idType}: {g.idNumber.length > 6 ? `${g.idNumber.slice(0, 4)}•••${g.idNumber.slice(-2)}` : g.idNumber}</p>
+                        <p className="text-[11px] text-muted-foreground tabular mt-1">{g.idType || "ID"}: {g.idNumber && g.idNumber.length > 6 ? `${g.idNumber.slice(0, 4)}•••${g.idNumber.slice(-2)}` : (g.idNumber || "—")}</p>
                       </td>
                       <td className="px-4 py-3">
                         {loy.tier ? <Badge tone={loy.tone}><Star className="h-2.5 w-2.5" />{loy.tier}</Badge> : <span className="text-xs text-muted-foreground">—</span>}

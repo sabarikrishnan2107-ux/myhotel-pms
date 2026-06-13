@@ -871,7 +871,10 @@ class ResourceController extends Controller
         $rules = [];
         foreach (self::RULES[$resource] ?? [] as $field => $rule) {
             $required = $creating && in_array($field, self::REQUIRED_ON_CREATE[$resource] ?? [], true);
-            $rules[$field] = ($required ? 'required|' : 'sometimes|') . $rule;
+            // Optional fields are `nullable` so a blank input (e.g. an empty ID number that
+            // ConvertEmptyStringsToNull turns into null) passes a non-nullable string rule
+            // instead of 422-ing. On create, nulls are dropped below so DB defaults apply.
+            $rules[$field] = ($required ? 'required|' : 'sometimes|nullable|') . $rule;
         }
 
         $data = $request->validate($rules);

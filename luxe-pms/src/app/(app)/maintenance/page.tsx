@@ -244,7 +244,7 @@ export default function MaintenancePage() {
       if (statusFilter !== "all" && t.status !== statusFilter) return false;
       return true;
     });
-  }, [q, priority, category, technician, statusFilter]);
+  }, [tickets, q, priority, category, technician, statusFilter]);
 
   const sorted = React.useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
