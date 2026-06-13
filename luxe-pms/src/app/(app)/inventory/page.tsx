@@ -443,6 +443,16 @@ export default function InventoryPage() {
   const [rCond, setRCond] = React.useState<"all" | RoomCondition>("all");
   const [editRoom, setEditRoom] = React.useState<RoomAmenity | "new" | null>(null);
 
+  // Load amenities from Postgres (replace the seed fallback once live data resolves).
+  React.useEffect(() => {
+    apiGet<KitchenAmenity[]>("/kitchen-amenities")
+      .then(rows => { if (rows.length) setKitchen(rows.map(r => ({ ...r, id: String(r.id) }))); })
+      .catch(() => {});
+    apiGet<RoomAmenity[]>("/room-amenities")
+      .then(rows => { if (rows.length) setRoomAm(rows.map(r => ({ ...r, id: String(r.id) }))); })
+      .catch(() => {});
+  }, []);
+
   // Shared grid/list view mode for amenity tabs
   const [amenityView, setAmenityView] = React.useState<"grid" | "list">("grid");
 
@@ -908,7 +918,7 @@ export default function InventoryPage() {
                           </Button>
                           <Button size="sm" variant="ghost" onClick={() => {
                             if (window.confirm(`Remove ${k.name} from registry?`)) {
-                              setKitchen(prev => prev.filter(x => x.id !== k.id));
+                              setKitchen(prev => prev.filter(x => x.id !== k.id)); if (/^\d+$/.test(String(k.id))) apiDelete(`/kitchen-amenities/${k.id}`).catch(() => {});
                               showToast(`${k.name} removed`);
                             }
                           }}>
@@ -974,7 +984,7 @@ export default function InventoryPage() {
                                 </button>
                                 <button type="button" onClick={() => {
                                   if (window.confirm(`Remove ${k.name} from registry?`)) {
-                                    setKitchen(prev => prev.filter(x => x.id !== k.id));
+                                    setKitchen(prev => prev.filter(x => x.id !== k.id)); if (/^\d+$/.test(String(k.id))) apiDelete(`/kitchen-amenities/${k.id}`).catch(() => {});
                                     showToast(`${k.name} removed`);
                                   }
                                 }} className="h-7 w-7 rounded-md border border-border hover:bg-danger-soft hover:text-danger inline-flex items-center justify-center text-muted-foreground" title="Delete">
@@ -1103,7 +1113,7 @@ export default function InventoryPage() {
                           </Button>
                           <Button size="sm" variant="ghost" onClick={() => {
                             if (window.confirm(`Remove ${r.name} from registry?`)) {
-                              setRoomAm(prev => prev.filter(x => x.id !== r.id));
+                              setRoomAm(prev => prev.filter(x => x.id !== r.id)); if (/^\d+$/.test(String(r.id))) apiDelete(`/room-amenities/${r.id}`).catch(() => {});
                               showToast(`${r.name} removed`);
                             }
                           }}>
@@ -1171,7 +1181,7 @@ export default function InventoryPage() {
                                 </button>
                                 <button type="button" onClick={() => {
                                   if (window.confirm(`Remove ${r.name} from registry?`)) {
-                                    setRoomAm(prev => prev.filter(x => x.id !== r.id));
+                                    setRoomAm(prev => prev.filter(x => x.id !== r.id)); if (/^\d+$/.test(String(r.id))) apiDelete(`/room-amenities/${r.id}`).catch(() => {});
                                     showToast(`${r.name} removed`);
                                   }
                                 }} className="h-7 w-7 rounded-md border border-border hover:bg-danger-soft hover:text-danger inline-flex items-center justify-center text-muted-foreground" title="Delete">
@@ -1364,11 +1374,17 @@ export default function InventoryPage() {
           onClose={() => setEditKitchen(null)}
           onSave={(data) => {
             if (editKitchen === "new") {
-              setKitchen(prev => [{ ...data, id: `k-${Date.now().toString(36)}` }, ...prev]);
+              const tempId = `k-${Date.now().toString(36)}`;
+              setKitchen(prev => [{ ...data, id: tempId }, ...prev]);
               showToast(`Added ${data.name}`);
+              apiPost<KitchenAmenity>("/kitchen-amenities", data)
+                .then(created => setKitchen(prev => prev.map(x => x.id === tempId ? { ...created, id: String(created.id) } : x)))
+                .catch(() => showToast("⚠ Save failed — backend offline"));
             } else if (editKitchen && typeof editKitchen === "object") {
-              setKitchen(prev => prev.map(x => x.id === editKitchen.id ? { ...x, ...data, id: x.id } : x));
+              const id = editKitchen.id;
+              setKitchen(prev => prev.map(x => x.id === id ? { ...x, ...data, id } : x));
               showToast(`Updated ${data.name}`);
+              if (/^\d+$/.test(String(id))) apiPut(`/kitchen-amenities/${id}`, data).catch(() => showToast("⚠ Save failed — backend offline"));
             }
             setEditKitchen(null);
           }}
@@ -1380,11 +1396,17 @@ export default function InventoryPage() {
           onClose={() => setEditRoom(null)}
           onSave={(data) => {
             if (editRoom === "new") {
-              setRoomAm(prev => [{ ...data, id: `r-${Date.now().toString(36)}` }, ...prev]);
+              const tempId = `r-${Date.now().toString(36)}`;
+              setRoomAm(prev => [{ ...data, id: tempId }, ...prev]);
               showToast(`Added ${data.name}`);
+              apiPost<RoomAmenity>("/room-amenities", data)
+                .then(created => setRoomAm(prev => prev.map(x => x.id === tempId ? { ...created, id: String(created.id) } : x)))
+                .catch(() => showToast("⚠ Save failed — backend offline"));
             } else if (editRoom && typeof editRoom === "object") {
-              setRoomAm(prev => prev.map(x => x.id === editRoom.id ? { ...x, ...data, id: x.id } : x));
+              const id = editRoom.id;
+              setRoomAm(prev => prev.map(x => x.id === id ? { ...x, ...data, id } : x));
               showToast(`Updated ${data.name}`);
+              if (/^\d+$/.test(String(id))) apiPut(`/room-amenities/${id}`, data).catch(() => showToast("⚠ Save failed — backend offline"));
             }
             setEditRoom(null);
           }}

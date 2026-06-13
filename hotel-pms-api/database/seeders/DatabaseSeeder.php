@@ -74,6 +74,8 @@ class DatabaseSeeder extends Seeder
             EmailScheduleSeeder::class,
             RateRestrictionSeeder::class,
             NotificationContentSeeder::class,
+            KitchenAmenitySeeder::class,
+            RoomAmenitySeeder::class,
         ]);
     }
 }

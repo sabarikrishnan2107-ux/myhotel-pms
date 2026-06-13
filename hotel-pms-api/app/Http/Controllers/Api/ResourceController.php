@@ -78,6 +78,8 @@ use App\Models\AgentLedger;
 use App\Models\RateRestriction;
 use App\Models\NotifTemplate;
 use App\Models\NotifLog;
+use App\Models\KitchenAmenity;
+use App\Models\RoomAmenity;
 use Illuminate\Http\Request;
 
 /**
@@ -161,6 +163,8 @@ class ResourceController extends Controller
         'rate-restrictions'      => RateRestriction::class,
         'notif-templates'        => NotifTemplate::class,
         'notif-logs'             => NotifLog::class,
+        'kitchen-amenities'      => KitchenAmenity::class,
+        'room-amenities'         => RoomAmenity::class,
     ];
 
     /** Resources whose index can be scoped by a query param → column. */
@@ -777,6 +781,18 @@ class ResourceController extends Controller
             'template' => 'string|max:255',
             'status' => 'string|max:50',
         ],
+        'kitchen-amenities' => [
+            'name' => 'string|max:255', 'category' => 'string|max:50', 'qty' => 'integer|min:0',
+            'unit' => 'string|max:50', 'purchaseDate' => 'string|max:50|nullable', 'purchasePrice' => 'integer|min:0',
+            'vendor' => 'string|max:255|nullable', 'condition' => 'string|max:50', 'location' => 'string|max:100',
+            'photo' => 'string|nullable', 'remark' => 'string|max:2000|nullable',
+        ],
+        'room-amenities' => [
+            'name' => 'string|max:255', 'category' => 'string|max:50', 'qty' => 'integer|min:0',
+            'unit' => 'string|max:50', 'purchaseDate' => 'string|max:50|nullable', 'purchasePrice' => 'integer|min:0',
+            'vendor' => 'string|max:255|nullable', 'condition' => 'string|max:50', 'location' => 'string|max:100',
+            'photo' => 'string|nullable', 'remark' => 'string|max:2000|nullable', 'perRoom' => 'integer|min:0|nullable',
+        ],
     ];
 
     /** Fields that must be present (and non-empty) when creating a row. */
@@ -839,6 +855,8 @@ class ResourceController extends Controller
         'rate-restrictions' => ['kind', 'value'],
         'notif-templates' => ['name'],
         'notif-logs' => ['to'],
+        'kitchen-amenities' => ['name'],
+        'room-amenities' => ['name'],
     ];
 
     private function model(string $resource): string
