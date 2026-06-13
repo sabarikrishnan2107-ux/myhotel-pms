@@ -3,8 +3,6 @@ import * as React from "react";
 import {
   Hand,
   ShieldCheck,
-  Camera,
-  PenLine,
   KeyRound,
   Receipt,
   CheckCircle2,
@@ -19,7 +17,6 @@ import {
   Printer,
   IdCard,
   ArrowLeft,
-  Eraser,
   MapPin,
   Lock,
 } from "lucide-react";
@@ -29,6 +26,8 @@ import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { useProperty, hotelName } from "@/lib/use-property";
 import { apiGet, apiPut, sendEmail } from "@/lib/api";
+import { PhotoCapture } from "@/components/guests/photo-capture";
+import { SignaturePad } from "@/components/guests/signature-pad";
 
 // Booking row shape we read from the API for this kiosk session.
 type ApiBooking = {
@@ -37,13 +36,32 @@ type ApiBooking = {
   adults?: number; children?: number; total?: number; status?: string;
 };
 
-// Mark the kiosk's booking checked-in in Postgres (looked up by bookingNo).
-async function persistKioskCheckIn(bookingNo: string) {
+// KYC captured at the kiosk (base64 data URLs) — saved onto the guest profile.
+type KioskKyc = {
+  idType: string;
+  idFront: string | null;
+  idBack: string | null;
+  signature: string | null;
+};
+
+// Mark the kiosk's booking checked-in in Postgres (looked up by bookingNo) and
+// attach the captured ID scans + signature to the guest profile.
+async function persistKioskCheckIn(bookingNo: string, guestName: string, kyc: KioskKyc) {
   try {
     const list = await apiGet<ApiBooking[]>("/bookings");
     const bk = list.find(b => b.bookingNo === bookingNo);
     if (bk) await apiPut(`/bookings/${bk.id}`, { status: "checked-in" });
   } catch { /* offline — the kiosk still shows the confirmation */ }
+  try {
+    const guests = await apiGet<{ id: number; name: string }[]>("/guests");
+    const g = guests.find(x => x.name === guestName);
+    if (g) await apiPut(`/guests/${g.id}`, {
+      idType: kyc.idType,
+      idFront: kyc.idFront ?? "",
+      idBack: kyc.idBack ?? "",
+      signature: kyc.signature ?? "",
+    });
+  } catch { /* offline — captures stay on screen for this session */ }
 }
 
 type StepKey = "welcome" | "verify" | "id" | "signature" | "room" | "folio" | "complete";
@@ -92,9 +110,9 @@ export default function CheckinKioskPage({
   const [stepIdx, setStepIdx] = React.useState(0);
   const [toast, setToast] = React.useState<string | null>(null);
   const [idType, setIdType] = React.useState<IdType>("Aadhaar");
-  const [frontCaptured, setFrontCaptured] = React.useState(false);
-  const [backCaptured, setBackCaptured] = React.useState(false);
-  const [signed, setSigned] = React.useState(false);
+  const [idFront, setIdFront] = React.useState<string | null>(null);
+  const [idBack, setIdBack] = React.useState<string | null>(null);
+  const [signature, setSignature] = React.useState<string | null>(null);
 
   // Load the real booking for this kiosk session; fall back to mock if offline/not found.
   const [booking, setBooking] = React.useState(BOOKING);
@@ -136,9 +154,9 @@ export default function CheckinKioskPage({
   const back = () => setStepIdx((i) => Math.max(0, i - 1));
   const restart = () => {
     setStepIdx(0);
-    setFrontCaptured(false);
-    setBackCaptured(false);
-    setSigned(false);
+    setIdFront(null);
+    setIdBack(null);
+    setSignature(null);
     showToast("Kiosk reset");
   };
 
@@ -219,30 +237,17 @@ export default function CheckinKioskPage({
               setIdType(t);
               showToast(`${t} selected`);
             }}
-            frontCaptured={frontCaptured}
-            backCaptured={backCaptured}
-            onCaptureFront={() => {
-              setFrontCaptured(true);
-              showToast("Front captured");
-            }}
-            onCaptureBack={() => {
-              setBackCaptured(true);
-              showToast("Back captured");
-            }}
+            idFront={idFront}
+            idBack={idBack}
+            onCaptureFront={setIdFront}
+            onCaptureBack={setIdBack}
             onContinue={() => next("ID submitted for verification")}
           />
         )}
         {step.key === "signature" && (
           <SignatureStep
-            signed={signed}
-            onSign={() => {
-              setSigned(true);
-              showToast("Signature drawn");
-            }}
-            onClear={() => {
-              setSigned(false);
-              showToast("Signature cleared");
-            }}
+            signature={signature}
+            onSign={setSignature}
             onDone={() => next("Signature saved")}
           />
         )}
@@ -252,7 +257,10 @@ export default function CheckinKioskPage({
         {step.key === "folio" && (
           <FolioStep
             booking={booking}
-            onAuthorize={() => { persistKioskCheckIn(booking.bookingNo); next("Folio authorized · checked in"); }}
+            onAuthorize={() => {
+              persistKioskCheckIn(booking.bookingNo, booking.guest, { idType, idFront, idBack, signature });
+              next("Folio authorized · checked in");
+            }}
           />
         )}
         {step.key === "complete" && (
@@ -410,21 +418,21 @@ function VerifyRow({
 function IdStep({
   idType,
   onTypeChange,
-  frontCaptured,
-  backCaptured,
+  idFront,
+  idBack,
   onCaptureFront,
   onCaptureBack,
   onContinue,
 }: {
   idType: IdType;
   onTypeChange: (t: IdType) => void;
-  frontCaptured: boolean;
-  backCaptured: boolean;
-  onCaptureFront: () => void;
-  onCaptureBack: () => void;
+  idFront: string | null;
+  idBack: string | null;
+  onCaptureFront: (dataUrl: string | null) => void;
+  onCaptureBack: (dataUrl: string | null) => void;
   onContinue: () => void;
 }) {
-  const ready = frontCaptured && backCaptured;
+  const ready = idFront !== null && idBack !== null;
   return (
     <Card className="p-8 lg:p-12 space-y-8">
       <div className="space-y-2">
@@ -459,18 +467,16 @@ function IdStep({
         </div>
       </div>
 
-      {/* Camera tiles */}
+      {/* Camera tiles — live webcam capture (or upload) of each side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <CameraTile
-          label="Front of document"
-          captured={frontCaptured}
-          onCapture={onCaptureFront}
-        />
-        <CameraTile
-          label="Back of document"
-          captured={backCaptured}
-          onCapture={onCaptureBack}
-        />
+        <div className="space-y-2">
+          <div className="text-base font-medium">Front of document</div>
+          <PhotoCapture label="Front of document" aspect="landscape" focus="none" onChange={onCaptureFront} />
+        </div>
+        <div className="space-y-2">
+          <div className="text-base font-medium">Back of document</div>
+          <PhotoCapture label="Back of document" aspect="landscape" focus="none" onChange={onCaptureBack} />
+        </div>
       </div>
 
       <div className="flex items-center justify-between pt-4 border-t border-border">
@@ -493,57 +499,14 @@ function IdStep({
   );
 }
 
-function CameraTile({
-  label,
-  captured,
-  onCapture,
-}: {
-  label: string;
-  captured: boolean;
-  onCapture: () => void;
-}) {
-  return (
-    <button
-      onClick={onCapture}
-      className={cn(
-        "relative w-full aspect-[4/3] rounded-2xl border-2 border-dashed transition-all flex flex-col items-center justify-center gap-3 group",
-        captured
-          ? "border-success bg-success/5"
-          : "border-border bg-surface-sunken/40 hover:border-brand hover:bg-surface-sunken",
-      )}
-    >
-      {captured ? (
-        <>
-          <div className="w-20 h-20 rounded-full bg-success/15 flex items-center justify-center">
-            <CheckCircle2 className="w-12 h-12 text-success" />
-          </div>
-          <div className="text-2xl font-semibold">Captured</div>
-          <div className="text-base text-muted-foreground">{label}</div>
-          <Badge tone="success">Verified</Badge>
-        </>
-      ) : (
-        <>
-          <div className="w-20 h-20 rounded-full bg-background flex items-center justify-center group-hover:scale-110 transition-transform">
-            <Camera className="w-10 h-10 text-muted-foreground" />
-          </div>
-          <div className="text-2xl font-semibold">Tap to capture</div>
-          <div className="text-base text-muted-foreground">{label}</div>
-        </>
-      )}
-    </button>
-  );
-}
-
 /* ───────────── Step 4: Signature ───────────── */
 function SignatureStep({
-  signed,
+  signature,
   onSign,
-  onClear,
   onDone,
 }: {
-  signed: boolean;
-  onSign: () => void;
-  onClear: () => void;
+  signature: string | null;
+  onSign: (dataUrl: string | null) => void;
   onDone: () => void;
 }) {
   return (
@@ -556,58 +519,14 @@ function SignatureStep({
         </p>
       </div>
 
-      {/* Drawing area placeholder */}
-      <button
-        onClick={onSign}
-        className={cn(
-          "w-full h-72 lg:h-80 rounded-2xl border-2 border-dashed flex items-center justify-center transition-all relative overflow-hidden",
-          signed
-            ? "border-success bg-success/5"
-            : "border-border bg-surface-sunken/40 hover:border-brand",
-        )}
-      >
-        {signed ? (
-          <div className="flex flex-col items-center gap-3">
-            <svg
-              viewBox="0 0 360 100"
-              className="w-72 h-24 text-foreground"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M10 70 Q 40 10, 70 60 T 140 50 Q 180 20, 220 70 T 350 40" />
-            </svg>
-            <div className="text-lg text-muted-foreground">
-              Akash Bhatt · Signed
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-3">
-            <PenLine className="w-12 h-12 text-muted-foreground" />
-            <div className="text-2xl font-semibold">Tap and draw here</div>
-            <div className="text-base text-muted-foreground">
-              x ___________________________
-            </div>
-          </div>
-        )}
-      </button>
+      {/* Live signature pad — strokes are saved as a PNG */}
+      <SignaturePad height={300} onChange={onSign} />
 
-      <div className="flex items-center justify-between pt-4 border-t border-border">
-        <Button
-          variant="outline"
-          size="lg"
-          onClick={onClear}
-          className="text-lg px-8 py-6 h-auto rounded-xl"
-        >
-          <Eraser className="w-5 h-5 mr-2" />
-          Clear
-        </Button>
+      <div className="flex items-center justify-end pt-4 border-t border-border">
         <Button
           size="lg"
           onClick={onDone}
-          disabled={!signed}
+          disabled={signature === null}
           className="text-xl px-10 py-7 h-auto rounded-2xl"
         >
           Done

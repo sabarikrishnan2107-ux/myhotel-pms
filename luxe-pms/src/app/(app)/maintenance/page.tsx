@@ -201,15 +201,13 @@ export default function MaintenancePage() {
 
   const addSchedule = (s: Omit<ScheduleItem, "id">) => {
     apiPost<ScheduleItem>("/maintenance-schedules", s)
-      .then(row => setSchedules(prev => [{ ...row, id: String(row.id) }, ...prev]))
-      .catch(() => setSchedules(prev => [{ id: `sc${Date.now()}`, ...s }, ...prev]));
-    showToast(`Schedule added · ${s.equipment}`);
+      .then(row => { setSchedules(prev => [{ ...row, id: String(row.id) }, ...prev]); showToast(`Schedule added · ${s.equipment}`); })
+      .catch(() => { setSchedules(prev => [{ id: `sc${Date.now()}`, ...s }, ...prev]); showToast("⚠ Save failed — added locally only"); });
   };
   const addAmc = (v: Omit<AMCVendor, "id">) => {
     apiPost<AMCVendor>("/amc-contracts", v)
-      .then(row => setAmcVendors(prev => [{ ...row, id: String(row.id) }, ...prev]))
-      .catch(() => setAmcVendors(prev => [{ id: `amc${Date.now()}`, ...v }, ...prev]));
-    showToast(`AMC vendor added · ${v.name}`);
+      .then(row => { setAmcVendors(prev => [{ ...row, id: String(row.id) }, ...prev]); showToast(`AMC vendor added · ${v.name}`); })
+      .catch(() => { setAmcVendors(prev => [{ id: `amc${Date.now()}`, ...v }, ...prev]); showToast("⚠ Save failed — added locally only"); });
   };
 
   // Persist a ticket patch (assign / status change) optimistically.
@@ -1514,7 +1512,9 @@ function NewAmcModal({ onClose, onSave }: {
       category,
       contactPerson: contactPerson.trim() || "—",
       phone: phone.trim() || "—",
-      email: email.trim() || "—",
+      // Email must stay a valid address (or empty) — the backend rejects a
+      // placeholder like "—" with 422, which would silently drop the save.
+      email: email.trim(),
       address: "",
       contractStart: isoDate(TODAY),
       contractEnd: isoDate(end),

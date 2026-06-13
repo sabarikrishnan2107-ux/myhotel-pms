@@ -6,7 +6,7 @@ import {
   LogIn, Search, LayoutGrid, List, Filter, Calendar, Users, BedDouble,
   CreditCard, IdCard, Sparkles, ChevronRight, Crown, Camera, Send, Zap,
   Phone, Mail, Hash, User, X, Eye, CheckCircle2, KeyRound, MessageCircle,
-  ChevronLeft, Printer, AlertCircle, Upload, FileCheck2, ScanLine, Pen, RotateCw,
+  ChevronLeft, Printer, AlertCircle, Upload, FileCheck2, ScanLine, Pen,
   Plus, BedDouble as BedIcon, Globe, ChevronsRight, Minus,
   Banknote, Smartphone, Building2, Wallet, UtensilsCrossed,
   CalendarPlus, CalendarMinus, Bed, Download, FileText,
@@ -19,10 +19,12 @@ import { Badge, PaymentBadge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
+import { PhotoCapture } from "@/components/guests/photo-capture";
+import { SignaturePad } from "@/components/guests/signature-pad";
 import { useGuests, useRooms } from "@/lib/use-directory";
 import type { Reservation, PaymentStatus, BookingSource, Guest } from "@/lib/types";
 import { cn, money, formatTime } from "@/lib/utils";
-import { apiGet, apiPut } from "@/lib/api";
+import { apiGet, apiPut, sendEmail } from "@/lib/api";
 import { useProperty, hotelName } from "@/lib/use-property";
 
 // Mark a booking checked-in in Postgres (looked up by its bookingNo).
@@ -36,6 +38,29 @@ async function persistCheckIn(bookingNo: string, roomNumber?: string) {
       await apiPut(`/bookings/${bk.id}`, patch);
     }
   } catch { /* offline — UI still reflects the check-in locally */ }
+}
+
+// KYC captured at check-in (base64 data URLs + ID details) — persist it onto the
+// guest record so it shows on the profile and the next stay starts with ID on file.
+type KycCapture = {
+  idType: string; idNumber: string;
+  idFront: string | null; idBack: string | null;
+  photo: string | null; signature: string | null;
+};
+async function persistKyc(guestName: string, kyc: KycCapture) {
+  try {
+    const list = await apiGet<{ id: number; name: string }[]>("/guests");
+    const g = list.find(x => x.name === guestName);
+    if (!g) return;   // no matching profile — booking-only guest, nothing to attach to
+    await apiPut(`/guests/${g.id}`, {
+      idType: kyc.idType,
+      idNumber: kyc.idNumber,
+      idFront: kyc.idFront ?? "",
+      idBack: kyc.idBack ?? "",
+      photo: kyc.photo ?? "",
+      signature: kyc.signature ?? "",
+    });
+  } catch { /* offline — captures stay in the UI for this session */ }
 }
 
 /** Join a reservation with its guest profile to enable phone/email/ID search */
@@ -793,7 +818,48 @@ function CheckinProcessModal({
 
   const handleComplete = () => {
     setDone(true);
-    setTimeout(() => onComplete(reservation, `${reservation.guestName} checked in · Room ${assignedRoom}`, assignedRoom), 1600);
+    // Save the KYC we just collected (ID details + scans + live face + signature)
+    // onto the guest profile. Only when KYC was captured here (pre-booked guest).
+    if (!idOnFile) {
+      persistKyc(reservation.guestName, {
+        idType: collectedIdType,
+        idNumber: collectedIdNumber,
+        idFront: idFrontFile,
+        idBack: idBackFile,
+        photo: facePhoto,
+        signature,
+      });
+    }
+
+    // Send the welcome email if the guest chose the Email channel. Until now the
+    // channel toggles were cosmetic — nothing was actually dispatched.
+    let emailNote = "";
+    const guestEmail = guest?.email && guest.email !== "—" ? guest.email.trim() : "";
+    if (channels.includes("email")) {
+      if (guestEmail) {
+        emailNote = ` · welcome email sent to ${guestEmail}`;
+        sendEmail({
+          to: guestEmail,
+          subject: `Welcome to ${name} · Room ${assignedRoom}`,
+          heading: `Welcome to ${name}`,
+          greeting: reservation.guestName.split(" ")[0],
+          intro: `You're checked into Room ${assignedRoom} until ${formatTime(reservation.checkOut)}. We hope you enjoy your stay!`,
+          rows: [
+            { label: "Booking", value: reservation.bookingNo },
+            { label: "Room", value: `${assignedRoom} · ${reservation.roomType}` },
+            { label: "Check-out", value: formatTime(reservation.checkOut) },
+            { label: "Wi-Fi", value: "PearlGuest · OTP via SMS" },
+            { label: "Concierge", value: "Dial 0 from your room" },
+          ],
+          note: "Need anything during your stay? Our front desk is available 24/7.",
+          context: "Check-in welcome",
+        }).catch(() => {});
+      } else {
+        emailNote = " · no email on file — welcome email skipped";
+      }
+    }
+
+    setTimeout(() => onComplete(reservation, `${reservation.guestName} checked in · Room ${assignedRoom}${emailNote}`, assignedRoom), 1600);
   };
 
   if (done) {
@@ -1019,22 +1085,20 @@ function CheckinProcessModal({
 
                 {/* Live face capture + signature */}
                 <div className="grid grid-cols-2 gap-3">
-                  <KYCCaptureSlot
-                    label="Live face photo"
-                    icon={Camera}
-                    captured={facePhoto}
-                    onCapture={() => setFacePhoto("data:face")}
-                    onRetake={() => setFacePhoto(null)}
-                    required
-                  />
-                  <KYCCaptureSlot
-                    label="Digital signature"
-                    icon={Pen}
-                    captured={signature}
-                    onCapture={() => setSignature("data:signature")}
-                    onRetake={() => setSignature(null)}
-                    required
-                  />
+                  <div className="space-y-1.5">
+                    <Label className="text-xs inline-flex items-center gap-1.5">
+                      <Camera className="h-3.5 w-3.5 text-muted-foreground" />
+                      Live face photo <span className="text-danger">*</span>
+                    </Label>
+                    <PhotoCapture label="Live face photo" aspect="square" onChange={setFacePhoto} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs inline-flex items-center gap-1.5">
+                      <Pen className="h-3.5 w-3.5 text-muted-foreground" />
+                      Digital signature <span className="text-danger">*</span>
+                    </Label>
+                    <SignaturePad height={150} onChange={setSignature} />
+                  </div>
                 </div>
 
                 {/* Consent */}
@@ -1474,52 +1538,6 @@ function KYCUploadSlot({
         className="hidden"
         onChange={e => handleFile(e.target.files?.[0] ?? null)}
       />
-    </button>
-  );
-}
-
-// Live capture slot — webcam / signature pad (mocked: click to "capture")
-function KYCCaptureSlot({
-  label, icon: Icon, captured, onCapture, onRetake, required,
-}: {
-  label: string;
-  icon: typeof Camera;
-  captured: string | null;
-  onCapture: () => void;
-  onRetake: () => void;
-  required?: boolean;
-}) {
-  if (captured) {
-    return (
-      <div className="rounded-md border-2 border-success bg-success-soft/40 p-2">
-        <div className="h-24 rounded-md bg-linear-to-br from-success/20 to-success/5 border border-success/30 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-1">
-            <CheckCircle2 className="h-7 w-7 text-success" />
-            <p className="text-[10px] text-success font-semibold uppercase tracking-wider">Captured</p>
-          </div>
-        </div>
-        <div className="mt-2 flex items-center justify-between">
-          <p className="text-[11px] text-success font-medium inline-flex items-center gap-1">
-            <CheckCircle2 className="h-3 w-3" />{label}
-          </p>
-          <button type="button" onClick={onRetake} className="text-[10px] text-muted-foreground hover:text-foreground underline inline-flex items-center gap-1">
-            <RotateCw className="h-2.5 w-2.5" />Retake
-          </button>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <button
-      type="button"
-      onClick={onCapture}
-      className="rounded-md border-2 border-dashed border-border hover:border-brand hover:bg-brand-soft/20 p-3 text-center flex flex-col items-center justify-center gap-1.5 transition-colors min-h-[124px] group"
-    >
-      <Icon className="h-6 w-6 text-muted-foreground group-hover:text-brand transition-colors" />
-      <p className="text-[11px] font-medium leading-tight">
-        {label} {required && <span className="text-danger">*</span>}
-      </p>
-      <p className="text-[10px] text-muted-foreground">Tap to capture</p>
     </button>
   );
 }

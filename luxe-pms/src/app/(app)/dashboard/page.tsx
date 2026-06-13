@@ -646,7 +646,7 @@ export default function DashboardPage() {
       {/* ============ MONTHLY GOALS + TOP SOURCES ============ */}
       <section className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-stretch">
         {/* Goals — 3 cols */}
-        <Card className="lg:col-span-3 p-4 flex flex-col">
+        <Card className="lg:col-span-3 p-5 flex flex-col">
           <div className="flex items-center justify-between mb-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.14em] text-subtle-foreground font-semibold inline-flex items-center gap-1">
@@ -660,7 +660,7 @@ export default function DashboardPage() {
               Forecast<ChevronRight className="h-3 w-3" />
             </Link>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-5 gap-y-3.5 flex-1 content-center">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-6 flex-1 content-center">
             {(goals ?? GOALS_FALLBACK).map(g => (
               <GoalProgress
                 key={g.label}

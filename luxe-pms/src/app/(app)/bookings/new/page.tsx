@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { GUESTS, ROOMS } from "@/lib/mock-data";
 import { cn, money } from "@/lib/utils";
-import { apiGet, apiPost } from "@/lib/api";
+import { apiGet, apiPost, sendEmail } from "@/lib/api";
 import { NewGuestForm, type NewGuestData } from "@/components/guests/new-guest-form";
 import type { Guest, Room } from "@/lib/types";
 
@@ -121,6 +121,16 @@ export default function BookingWizardPage() {
   const [paymentPct, setPaymentPct] = React.useState(30);
   const [source, setSource] = React.useState("Walk-in");
   const [paymentMode, setPaymentMode] = React.useState("UPI");
+  const [paymentRef, setPaymentRef] = React.useState("");
+  // Cash / Pay-at-hotel need no reference; electronic modes must record one
+  // (only when an advance is actually being collected now).
+  const PAY_REF_FIELD: Record<string, { label: string; placeholder: string }> = {
+    Card: { label: "Card auth code / last 4 digits", placeholder: "e.g. Auth 8821 · **** 4321" },
+    UPI: { label: "UPI transaction reference", placeholder: "e.g. 4123-4567-8901" },
+    "Bank Transfer": { label: "Bank reference / UTR no.", placeholder: "e.g. UTR 3219872650" },
+    Online: { label: "Gateway transaction ID", placeholder: "e.g. pay_Nv3x82hKd..." },
+  };
+  const needsRef = paymentPct > 0 && !!PAY_REF_FIELD[paymentMode];
   const [channels, setChannels] = React.useState<{ email: boolean; whatsapp: boolean; sms: boolean }>({ email: true, whatsapp: true, sms: false });
   const [submitting, setSubmitting] = React.useState(false);
   const [confirmed, setConfirmed] = React.useState<null | {
@@ -220,6 +230,8 @@ export default function BookingWizardPage() {
 
   const canNext = () => {
     if (step === 1) return guest !== null || newGuest !== null;
+    // Step 5 (Payment): a non-cash advance must capture a reference number.
+    if (step === 5) return !needsRef || paymentRef.trim() !== "";
     return true;
   };
 
@@ -646,7 +658,7 @@ export default function BookingWizardPage() {
                   {["Cash", "Card", "UPI", "Bank Transfer", "Online", "Pay at hotel"].map(m => (
                     <button
                       key={m}
-                      onClick={() => setPaymentMode(m)}
+                      onClick={() => { setPaymentMode(m); setPaymentRef(""); }}
                       className={cn(
                         "h-10 rounded-md border text-sm font-medium transition-colors",
                         paymentMode === m ? "bg-brand-soft border-brand text-brand-soft-foreground" : "border-border hover:bg-surface-sunken"
@@ -656,6 +668,23 @@ export default function BookingWizardPage() {
                     </button>
                   ))}
                 </div>
+
+                {/* Reference number — required for electronic advance payments */}
+                {needsRef && (
+                  <div className="space-y-1.5 pt-2 animate-in">
+                    <Label htmlFor="paymentRef">
+                      {PAY_REF_FIELD[paymentMode].label} <span className="text-danger">*</span>
+                    </Label>
+                    <Input
+                      id="paymentRef"
+                      value={paymentRef}
+                      onChange={e => setPaymentRef(e.target.value)}
+                      placeholder={PAY_REF_FIELD[paymentMode].placeholder}
+                      className="h-10 font-mono tabular"
+                    />
+                    <p className="text-[11px] text-muted-foreground">Recorded on the folio &amp; receipt for {paymentMode} reconciliation.</p>
+                  </div>
+                )}
               </div>
 
               {/* Special instructions / guest requests */}
@@ -715,7 +744,7 @@ export default function BookingWizardPage() {
                   ].filter(Boolean).join(" · ") || "No extras"}
                   onEdit={() => setStep(4)}
                 />
-                <ReviewRow label="Payment" value={paymentPct === 0 ? "Pay at hotel" : paymentPct === 100 ? `Full · ${paymentMode}` : `${paymentPct}% advance · ${paymentMode}`} sub={`${money(advance)} now · ${money(total - advance)} balance`} onEdit={() => setStep(5)} />
+                <ReviewRow label="Payment" value={`${paymentPct === 0 ? "Pay at hotel" : paymentPct === 100 ? `Full · ${paymentMode}` : `${paymentPct}% advance · ${paymentMode}`}${needsRef && paymentRef ? ` · ref ${paymentRef}` : ""}`} sub={`${money(advance)} now · ${money(total - advance)} balance`} onEdit={() => setStep(5)} />
                 {instructions && (
                   <div className="p-3 border-t border-border">
                     <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Special instructions</p>
@@ -831,8 +860,10 @@ export default function BookingWizardPage() {
                   const seed = (selectedGuestDisplay?.name ?? "X").length * 137 + roomType.length * 53 + nights * 7;
                   const bookingNo = `BK${100400 + (seed % 9000)}`;
                   // Persist the booking (and the guest, if a brand-new one was entered).
+                  // NOTE: don't gate on step1Mode here — saving the new-guest form flips
+                  // the mode back to "search", so checking it dropped every new profile.
                   try {
-                    if (newGuest && step1Mode === "create") {
+                    if (newGuest) {
                       await apiPost("/guests", {
                         name: selectedGuestDisplay!.name,
                         phone: selectedGuestDisplay!.phone ?? "",
@@ -875,6 +906,32 @@ export default function BookingWizardPage() {
                     });
                   } catch {
                     /* show the confirmation anyway; the booking just didn't persist */
+                  }
+                  // Send the real booking-confirmation email when the Email channel is on.
+                  // Falls back to a prompt when the guest has no email on file (e.g. walk-ins).
+                  if (channels.email) {
+                    const to = (newGuest?.email || guests.find(x => x.id === guest)?.email || "").trim()
+                      || (typeof window !== "undefined" ? (window.prompt("No email on file for this guest. Send the booking confirmation to:", "") || "").trim() : "");
+                    if (to) {
+                      sendEmail({
+                        to,
+                        subject: `Booking Confirmed · ${bookingNo}`,
+                        heading: "Booking Confirmed",
+                        greeting: selectedGuestDisplay!.name,
+                        intro: "Your booking is confirmed — we look forward to welcoming you. Your details are below.",
+                        rows: [
+                          { label: "Booking No", value: bookingNo },
+                          { label: "Room", value: roomType },
+                          { label: "Check-in", value: String(checkIn) },
+                          { label: "Check-out", value: String(checkOut) },
+                          { label: "Nights", value: String(nights) },
+                          { label: "Total", value: money(total) },
+                          { label: "Advance", value: money(advance) },
+                          { label: "Balance", value: money(total - advance) },
+                        ],
+                        context: "Booking confirmation",
+                      }).catch(() => {});
+                    }
                   }
                   setConfirmed({
                     bookingNo,
@@ -1197,10 +1254,11 @@ function ToggleRow({ label, hint, checked, onChange }: { label: string; hint: st
         <p className="text-xs text-muted-foreground">{hint}</p>
       </div>
       <span className={cn(
-        "relative h-6 w-11 rounded-full transition-colors shrink-0 inline-flex items-center",
+        "relative h-6 w-11 rounded-full transition-colors shrink-0 inline-block align-middle",
         checked ? "bg-brand" : "bg-surface-sunken border border-border"
       )}>
-        <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-transform", checked ? "translate-x-[22px]" : "translate-x-0.5")} />
+        {/* knob anchored with left-0.5 so translate-x-5 keeps it inside the track (2px margins both ends) */}
+        <span className={cn("absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform", checked ? "translate-x-5" : "translate-x-0")} />
       </span>
     </button>
   );

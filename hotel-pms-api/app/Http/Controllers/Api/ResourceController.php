@@ -851,7 +851,20 @@ class ResourceController extends Controller
     public function store(string $resource, Request $request)
     {
         $this->model($resource); // 404 if unknown
-        $row = $this->model($resource)::create($this->validated($resource, $request, true));
+        $data = $this->validated($resource, $request, true);
+        $row = $this->model($resource)::create($data);
+
+        // Every booking must correspond to a searchable guest profile. Bookings
+        // reference a guest only by name (no FK), so a booking made through any
+        // flow that didn't also create a profile would leave the guest invisible
+        // to "Search Existing". Upsert a minimal profile here, keyed on a
+        // case-insensitive name match so we never duplicate an existing guest.
+        if ($resource === 'bookings' && !empty($data['guestName'])) {
+            $name = trim((string) $data['guestName']);
+            if ($name !== '' && ! Guest::whereRaw('LOWER(name) = ?', [mb_strtolower($name)])->exists()) {
+                Guest::create(['name' => $name, 'vip' => $data['vip'] ?? false]);
+            }
+        }
 
         AuditLog::record([
             'module' => $this->moduleLabel($resource), 'action' => 'Created',

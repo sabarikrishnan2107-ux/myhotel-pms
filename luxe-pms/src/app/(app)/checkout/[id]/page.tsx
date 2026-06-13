@@ -775,7 +775,9 @@ function InvoiceModal({
 
   return (
     <ModalShell title="Tax Invoice Preview" onClose={onClose}>
-      <div id="print-area" className="space-y-4">
+      <div id="print-area" className="space-y-4" style={{ fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>
+        {/* Force the invoice (and its print / Save-as-PDF output) to the system font */}
+        <style>{`#print-area, #print-area * { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important; }`}</style>
         <div className="rounded-md border border-border p-5 bg-surface text-sm space-y-3">
           {/* Header */}
           <div className="flex items-start justify-between border-b border-border pb-3">

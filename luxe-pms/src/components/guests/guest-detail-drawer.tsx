@@ -411,11 +411,12 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
               <Section title="Preferences & Flags">
                 <div className="flex flex-wrap gap-2">
                   {guest.vip && <Badge tone="brand"><Crown className="h-3 w-3" />VIP</Badge>}
-                  <Badge tone="success"><CheckCircle2 className="h-3 w-3" />Verified ID</Badge>
-                  <Badge tone="info">Non-smoking floor</Badge>
-                  <Badge tone="info">High floor preferred</Badge>
-                  <Badge tone="accent">Late checkout OK</Badge>
+                  {guest.blacklist && <Badge tone="danger"><Ban className="h-3 w-3" />Blacklisted</Badge>}
+                  {(guest.idNumber || guest.idFront) && <Badge tone="success"><CheckCircle2 className="h-3 w-3" />Verified ID</Badge>}
                   {guest.lifetimeNights > 20 && <Badge tone="brand"><Sparkles className="h-3 w-3" />Loyalty Gold</Badge>}
+                  {!guest.vip && !guest.blacklist && !guest.idNumber && !guest.idFront && guest.lifetimeNights <= 20 && (
+                    <span className="text-xs text-muted-foreground italic">No flags on file</span>
+                  )}
                 </div>
               </Section>
             </div>

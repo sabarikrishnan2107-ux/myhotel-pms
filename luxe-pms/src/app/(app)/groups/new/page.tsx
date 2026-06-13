@@ -26,6 +26,69 @@ const ROOM_TYPES = [
 
 const TYPES = ["Wedding", "Conference", "Tour Group", "Sports Team", "Corporate Retreat", "Other"];
 
+// One imported rooming-list guest (persisted to /group-rooming on create).
+type RoomingGuest = { lead: string; roomType: string; pax: number; phone?: string; remarks?: string };
+
+// Split one delimited line into cells, honoring double-quoted CSV fields.
+function splitLine(line: string, delim: string): string[] {
+  const out: string[] = [];
+  let cur = "", inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === delim) { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out.map(s => s.trim());
+}
+
+// Parse CSV/TSV text (from a file or clipboard) into rooming guests. The first
+// row may be a header — columns are matched by name in any order. Without a
+// recognizable header we assume the order: Name, Room Type, Pax, Phone, Remarks.
+function parseRoomingList(text: string, defaultRoomType: string): RoomingGuest[] {
+  const lines = text.split(/\r\n|\r|\n/).map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return [];
+  const delim = lines[0].includes("\t") ? "\t" : ",";
+  const rows = lines.map(l => splitLine(l, delim));
+
+  const first = rows[0].map(c => c.toLowerCase());
+  const headerKeys = ["name", "guest", "lead", "room", "type", "pax", "occup", "phone", "mobile", "contact", "remark", "note"];
+  const hasHeader = first.some(c => headerKeys.some(k => c.includes(k)));
+  const find = (...keys: string[]) => first.findIndex(c => keys.some(k => c.includes(k)));
+
+  let idx = { name: 0, roomType: 1, pax: 2, phone: 3, remarks: 4 };
+  let dataRows = rows;
+  if (hasHeader) {
+    idx = {
+      name: Math.max(find("name", "guest", "lead"), 0),
+      roomType: find("room", "type"),
+      pax: find("pax", "occup"),
+      phone: find("phone", "mobile", "contact"),
+      remarks: find("remark", "note"),
+    };
+    dataRows = rows.slice(1);
+  }
+
+  const guests: RoomingGuest[] = [];
+  for (const r of dataRows) {
+    const lead = (r[idx.name] ?? "").trim();
+    if (!lead) continue; // name is required
+    const paxRaw = idx.pax >= 0 ? parseInt((r[idx.pax] ?? "").replace(/[^\d]/g, ""), 10) : NaN;
+    guests.push({
+      lead,
+      roomType: (idx.roomType >= 0 ? (r[idx.roomType] ?? "").trim() : "") || defaultRoomType,
+      pax: Number.isFinite(paxRaw) && paxRaw > 0 ? paxRaw : 1,
+      phone: idx.phone >= 0 ? ((r[idx.phone] ?? "").trim() || undefined) : undefined,
+      remarks: idx.remarks >= 0 ? ((r[idx.remarks] ?? "").trim() || undefined) : undefined,
+    });
+  }
+  return guests;
+}
+
 const SERVICE_OPTIONS = [
   { id: "ballroom", label: "Grand Ballroom (banquet)", price: 10000 },
   { id: "pearlHall", label: "Pearl Hall (full day)", price: 6500 },
@@ -38,31 +101,67 @@ const SERVICE_OPTIONS = [
 ];
 
 export default function NewGroupPage() {
-  const [name, setName] = React.useState("Al-Mansoori Wedding");
+  const [name, setName] = React.useState("");
   const [type, setType] = React.useState("Wedding");
-  const [contactName, setContactName] = React.useState("Mr. Hassan Al-Mansoori");
-  const [contactPhone, setContactPhone] = React.useState("+971 50 111 2233");
-  const [contactEmail, setContactEmail] = React.useState("hassan@almansoori.ae");
+  const [contactName, setContactName] = React.useState("");
+  const [contactPhone, setContactPhone] = React.useState("");
+  const [contactEmail, setContactEmail] = React.useState("");
   const [bookedBy, setBookedBy] = React.useState("Direct");
-  const [arrival, setArrival] = React.useState("2026-05-25");
-  const [departure, setDeparture] = React.useState("2026-05-28");
+  const [arrival, setArrival] = React.useState("");
+  const [departure, setDeparture] = React.useState("");
   const [ratePlan, setRatePlan] = React.useState("CP");
   const [paymentTerm, setPaymentTerm] = React.useState<"30" | "50" | "100" | "custom">("30");
   const [billingMode, setBillingMode] = React.useState<"master" | "per-room" | "split">("master");
-  const [notes, setNotes] = React.useState("Bridal suite must be Room 605. Henna evening 25th in Pearl Hall.");
-  const [services, setServices] = React.useState<string[]>(["ballroom", "pickup"]);
-  const [pax, setPax] = React.useState(110);
+  const [notes, setNotes] = React.useState("");
+  const [services, setServices] = React.useState<string[]>([]);
+  const [pax, setPax] = React.useState(0);
 
+  // Start with one empty room-block row so the structure is visible; the user
+  // fills in the quantity. Rate defaults to the type's base tariff (a helper,
+  // not sample data).
   const [block, setBlock] = React.useState<BlockRow[]>([
-    { id: "b1", type: "Deluxe", qty: 30, rate: 580 },
-    { id: "b2", type: "Suite", qty: 6, rate: 1100 },
-    { id: "b3", type: "King", qty: 14, rate: 780 },
+    { id: "b1", type: "Deluxe", qty: 0, rate: 650 },
   ]);
+
+  // Imported rooming list (CSV upload / clipboard paste). Persisted to
+  // /group-rooming after the group is created.
+  const [rooming, setRooming] = React.useState<RoomingGuest[]>([]);
+  const [pasteOpen, setPasteOpen] = React.useState(false);
+  const [importMsg, setImportMsg] = React.useState("");
+  const fileRef = React.useRef<HTMLInputElement>(null);
+
+  const ingestRooming = (text: string) => {
+    const defaultType = block[0]?.type ?? "Deluxe";
+    const parsed = parseRoomingList(text, defaultType);
+    if (!parsed.length) { setImportMsg("Couldn't find any guest rows — check the format."); return; }
+    setRooming(parsed);
+    setPasteOpen(false);
+    setImportMsg(`${parsed.length} guest${parsed.length === 1 ? "" : "s"} imported.`);
+  };
+
+  const onUploadFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    file.text().then(ingestRooming).catch(() => setImportMsg("Couldn't read that file."));
+    e.target.value = ""; // allow re-uploading the same file
+  };
+
+  const onPasteClipboard = async () => {
+    setImportMsg("");
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text.trim()) { ingestRooming(text); return; }
+      setPasteOpen(true); // clipboard empty → offer manual paste
+    } catch {
+      setPasteOpen(true); // permission blocked → fall back to a paste box
+    }
+  };
 
   const totalRooms = block.reduce((s, b) => s + b.qty, 0);
   const todayISO = new Date().toLocaleDateString("en-CA"); // blocks past dates on arrival/departure
   const nights = (() => {
     const a = new Date(arrival); const d = new Date(departure);
+    if (!arrival || !departure || isNaN(+a) || isNaN(+d)) return 0; // no dates yet → blank summary, not NaN
     return Math.max(1, Math.round((+d - +a) / (1000 * 60 * 60 * 24)));
   })();
   const roomSubtotal = block.reduce((s, b) => s + b.qty * b.rate * nights, 0);
@@ -99,6 +198,14 @@ export default function NewGroupPage() {
       total: Math.round(total), advance: Math.round(advance), balance: Math.round(total - advance),
       status, notes, createdAt: new Date().toISOString().slice(0, 10),
     })
+      // Persist the imported rooming list (if any) against the new group code.
+      .then(() => rooming.length
+        ? Promise.all(rooming.map(g => apiPost("/group-rooming", {
+            groupCode: code, roomNo: null,
+            lead: g.lead, roomType: g.roomType, pax: g.pax,
+            phone: g.phone ?? "", remarks: g.remarks ?? "",
+          }).catch(() => null)))
+        : null)
       .then(() => router.push("/groups"))
       .catch(() => setSaving(false));
   };
@@ -338,15 +445,60 @@ export default function NewGroupPage() {
           {/* Rooming list */}
           <Card className="p-6 space-y-3">
             <SectionHead icon={UsersRound} title="Rooming List" hint="Add guest details now or import later" />
-            <div className="rounded-md border border-dashed border-border p-6 text-center">
-              <Upload className="h-6 w-6 mx-auto text-subtle-foreground" />
-              <p className="text-sm mt-2">Import rooming list</p>
-              <p className="text-xs text-muted-foreground mt-1">CSV / Excel · or paste from email · or fill in after creating the group</p>
-              <div className="mt-3 flex gap-2 justify-center">
-                <Button variant="outline" size="sm"><Upload className="h-3.5 w-3.5" />Upload File</Button>
-                <Button variant="ghost" size="sm">Paste from clipboard</Button>
+
+            {rooming.length === 0 ? (
+              <div className="rounded-md border border-dashed border-border p-6 text-center">
+                <Upload className="h-6 w-6 mx-auto text-subtle-foreground" />
+                <p className="text-sm mt-2">Import rooming list</p>
+                <p className="text-xs text-muted-foreground mt-1">CSV · or paste from Excel / email · or fill in after creating the group</p>
+                <p className="text-[11px] text-subtle-foreground mt-1">Columns (any order): Name · Room Type · Pax · Phone · Remarks</p>
+                <div className="mt-3 flex gap-2 justify-center">
+                  <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}><Upload className="h-3.5 w-3.5" />Upload File</Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={onPasteClipboard}>Paste from clipboard</Button>
+                </div>
+                <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,text/csv,text/plain" className="hidden" onChange={onUploadFile} />
               </div>
-            </div>
+            ) : (
+              <div className="rounded-md border border-border overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 bg-surface-sunken/50 border-b border-border">
+                  <p className="text-xs font-semibold inline-flex items-center gap-1.5">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-success" />{rooming.length} guest{rooming.length === 1 ? "" : "s"} imported
+                  </p>
+                  <button type="button" onClick={() => { setRooming([]); setImportMsg(""); }} className="text-[11px] text-muted-foreground hover:text-danger inline-flex items-center gap-1">
+                    <Trash2 className="h-3 w-3" />Clear
+                  </button>
+                </div>
+                <div className="max-h-56 overflow-y-auto divide-y divide-border">
+                  {rooming.map((g, i) => (
+                    <div key={i} className="flex items-center gap-3 px-3 py-2 text-sm">
+                      <span className="text-[10px] tabular text-subtle-foreground w-5 shrink-0">{i + 1}</span>
+                      <span className="font-medium flex-1 min-w-0 truncate">{g.lead}</span>
+                      <Badge tone="neutral">{g.roomType}</Badge>
+                      <span className="text-xs text-muted-foreground tabular w-12 text-right">{g.pax} pax</span>
+                      <span className="text-xs text-muted-foreground tabular w-28 truncate hidden sm:block">{g.phone ?? "—"}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="px-3 py-2 text-[11px] text-muted-foreground border-t border-border">
+                  These guests will be saved to the group&apos;s Rooming List when you create the booking.
+                </div>
+              </div>
+            )}
+
+            {pasteOpen && (
+              <div className="space-y-2">
+                <textarea
+                  autoFocus
+                  rows={4}
+                  placeholder={"Paste rows here (Ctrl/Cmd+V).\nName, Room Type, Pax, Phone, Remarks"}
+                  onChange={e => { if (e.target.value.trim()) ingestRooming(e.target.value); }}
+                  className="w-full px-3 py-2 rounded-md border border-border bg-surface text-sm font-mono placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 outline-hidden resize-none"
+                />
+                <button type="button" onClick={() => setPasteOpen(false)} className="text-[11px] text-muted-foreground hover:text-foreground">Cancel</button>
+              </div>
+            )}
+
+            {importMsg && <p className="text-xs text-muted-foreground">{importMsg}</p>}
           </Card>
 
           {/* Notes */}
