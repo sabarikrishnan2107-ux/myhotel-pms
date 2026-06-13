@@ -16,10 +16,13 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => [
+    'allowed_origins' => array_values(array_filter([
         'http://localhost:3000',
         'http://127.0.0.1:3000',
-    ],
+        // Production frontend domain(s): set FRONTEND_URL in .env, e.g.
+        // FRONTEND_URL=https://app.yourhotel.com  (comma-separate for several).
+        ...array_map('trim', explode(',', (string) env('FRONTEND_URL', ''))),
+    ])),
 
     'allowed_origins_patterns' => [],
 
