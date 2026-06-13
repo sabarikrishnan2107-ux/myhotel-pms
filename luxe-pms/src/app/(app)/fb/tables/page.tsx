@@ -397,10 +397,10 @@ export default function TablesPage() {
 
       {/* KPI STRIP */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Kpi icon={<Users className="h-4 w-4" />} tone="brand" label="Today's covers booked" value={String(todaysCovers)} sub={`${confirmedCount} confirmed · ${seatedCount} seated`} />
-        <Kpi icon={<UserPlus className="h-4 w-4" />} tone="success" label="Walk-ins today" value={String(walkinsCount)} sub="logged today" />
-        <Kpi icon={<Clock className="h-4 w-4" />} tone="warning" label="Waitlist" value={String(waitlistCount)} sub={`${waitlist.reduce((s,w)=>s+w.party,0)} pax · avg ${Math.round(waitlist.reduce((s,w)=>s+w.waitMin,0)/Math.max(1,waitlist.length))} min`} />
-        <Kpi icon={<Timer className="h-4 w-4" />} tone="info" label="Avg dwell" value={avgDwell != null ? `${avgDwell} min` : "—"} sub={avgDwell != null ? `over ${dwells.length} visit${dwells.length === 1 ? "" : "s"}` : "no completed visits yet"} />
+        <Kpi icon={<Users className="h-5 w-5" />} tone="brand" label="Today's covers booked" value={String(todaysCovers)} sub={`${confirmedCount} confirmed · ${seatedCount} seated`} />
+        <Kpi icon={<UserPlus className="h-5 w-5" />} tone="success" label="Walk-ins today" value={String(walkinsCount)} sub="logged today" />
+        <Kpi icon={<Clock className="h-5 w-5" />} tone="warning" label="Waitlist" value={String(waitlistCount)} sub={`${waitlist.reduce((s,w)=>s+w.party,0)} pax · avg ${Math.round(waitlist.reduce((s,w)=>s+w.waitMin,0)/Math.max(1,waitlist.length))} min`} />
+        <Kpi icon={<Timer className="h-5 w-5" />} tone="info" label="Avg dwell" value={avgDwell != null ? `${avgDwell} min` : "—"} sub={avgDwell != null ? `over ${dwells.length} visit${dwells.length === 1 ? "" : "s"}` : "no completed visits yet"} />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-5">
@@ -627,120 +627,6 @@ export default function TablesPage() {
             </table>
           </Card>
 
-          {/* TURN TIMES + RATES */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            <Card className="md:col-span-2 overflow-hidden">
-              <div className="px-5 pt-4 pb-3 border-b border-border flex items-center justify-between">
-                <div>
-                  <CardTitle>Turn times</CardTitle>
-                  <p className="text-xs text-muted-foreground mt-0.5">Avg minutes by party &times; day-part &middot; rolling 30 days</p>
-                </div>
-                <Badge tone="info">Auto-tracked</Badge>
-              </div>
-              <table className="w-full text-sm">
-                <thead className="bg-surface-sunken/40">
-                  <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    <th className="text-left font-semibold px-4 py-2.5">Party</th>
-                    <th className="text-right font-semibold px-3 py-2.5">Lunch</th>
-                    <th className="text-right font-semibold px-3 py-2.5">Early dinner</th>
-                    <th className="text-right font-semibold px-3 py-2.5">Dinner peak</th>
-                    <th className="text-right font-semibold px-4 py-2.5">Late</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {turnTimes.map(t => (
-                    <tr key={t.party} className="border-t border-border">
-                      <td className="px-4 py-2.5 font-medium">{t.party}</td>
-                      <td className="px-3 py-2.5 text-right tabular">{t.lunch != null ? `${t.lunch} min` : "—"}</td>
-                      <td className="px-3 py-2.5 text-right tabular">{t.earlyDinner != null ? `${t.earlyDinner} min` : "—"}</td>
-                      <td className="px-3 py-2.5 text-right tabular font-semibold">{t.dinner != null ? `${t.dinner} min` : "—"}</td>
-                      <td className="px-4 py-2.5 text-right tabular">{t.late != null ? `${t.late} min` : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </Card>
-
-            <Card className="p-5 space-y-4">
-              <CardTitle>Reliability</CardTitle>
-              <div className="space-y-3">
-                <div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground inline-flex items-center gap-1"><TrendingDown className="h-3.5 w-3.5" /> No-show rate</span>
-                    <span className="tabular font-semibold">{noShowRate}%</span>
-                  </div>
-                  <div className="mt-1.5 h-2 rounded-full bg-surface-sunken overflow-hidden">
-                    <div className="h-full bg-danger" style={{ width: `${noShowRate * 6}%` }} />
-                  </div>
-                  <p className="text-[10px] text-muted-foreground mt-1">Target &lt; 5% &middot; trailing 30d</p>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground inline-flex items-center gap-1"><X className="h-3.5 w-3.5" /> Cancellation rate</span>
-                    <span className="tabular font-semibold">{cancelRate}%</span>
-                  </div>
-                  <div className="mt-1.5 h-2 rounded-full bg-surface-sunken overflow-hidden">
-                    <div className="h-full bg-warning" style={{ width: `${cancelRate * 6}%` }} />
-                  </div>
-                  <p className="text-[10px] text-muted-foreground mt-1">Within 4h of slot: 2.1%</p>
-                </div>
-                <div className="pt-3 border-t border-border">
-                  <Button size="sm" variant="outline" className="w-full" onClick={() => showToast("Reminder SMS scheduled · 18:30 IST")}>
-                    <Send className="h-3.5 w-3.5" /> Send reminder SMS batch
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          {/* BLOCKED SLOTS */}
-          <Card className="overflow-hidden">
-            <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-border">
-              <div>
-                <CardTitle className="flex items-center gap-2"><Ban className="h-4 w-4 text-accent" /> Blocked slots</CardTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">Maintenance &amp; private events &middot; tables excluded from public booking</p>
-              </div>
-              <Button size="sm" variant="outline" onClick={() => setShowBlock(true)}><Plus className="h-3.5 w-3.5" /> New block</Button>
-            </div>
-            <table className="w-full text-sm">
-              <thead className="bg-surface-sunken/40">
-                <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  <th className="text-left font-semibold px-4 py-2.5">Table</th>
-                  <th className="text-left font-semibold px-3 py-2.5">Type</th>
-                  <th className="text-left font-semibold px-3 py-2.5">Window</th>
-                  <th className="text-left font-semibold px-3 py-2.5">Reason / Notes</th>
-                  <th className="text-right font-semibold px-4 py-2.5">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {blockedSlots.map(b => (
-                  <tr key={b.id} className="border-t border-border">
-                    <td className="px-4 py-2.5">
-                      <Badge tone="neutral" className="tabular">{b.table}</Badge>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {b.notes?.toLowerCase().includes("upholstery") || b.guest.toLowerCase().includes("maintenance")
-                        ? <Badge tone="warning"><Wrench className="h-3 w-3" /> Maintenance</Badge>
-                        : <Badge tone="accent"><PartyPopper className="h-3 w-3" /> Private event</Badge>}
-                    </td>
-                    <td className="px-3 py-2.5 tabular text-xs">{hrLabel(b.startHr)} – {hrLabel(b.startHr + b.durHr)}</td>
-                    <td className="px-3 py-2.5 text-xs">
-                      <div className="font-medium">{b.guest}</div>
-                      <div className="text-muted-foreground">{b.notes}</div>
-                    </td>
-                    <td className="px-4 py-2.5 text-right">
-                      <Button size="sm" variant="ghost" onClick={() => releaseBlock(b)}>
-                        Release
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-                {blockedSlots.length === 0 && (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">No active blocks.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </Card>
         </div>
 
         {/* RIGHT COLUMN — WAITLIST */}
@@ -823,6 +709,105 @@ export default function TablesPage() {
             <div className="pt-3 border-t border-border flex items-center justify-between text-xs">
               <span className="text-muted-foreground">Occupancy</span>
               <span className="tabular font-semibold">55% &middot; 11/20 tables</span>
+            </div>
+          </Card>
+
+          {/* Reliability — moved to sidebar to use the available vertical space */}
+          <Card className="p-5 space-y-4">
+            <CardTitle>Reliability</CardTitle>
+            <div className="space-y-3">
+              <div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground inline-flex items-center gap-1"><TrendingDown className="h-3.5 w-3.5" /> No-show rate</span>
+                  <span className="tabular font-semibold">{noShowRate}%</span>
+                </div>
+                <div className="mt-1.5 h-2 rounded-full bg-surface-sunken overflow-hidden">
+                  <div className="h-full bg-danger" style={{ width: `${noShowRate * 6}%` }} />
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">Target &lt; 5% &middot; trailing 30d</p>
+              </div>
+              <div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground inline-flex items-center gap-1"><X className="h-3.5 w-3.5" /> Cancellation rate</span>
+                  <span className="tabular font-semibold">{cancelRate}%</span>
+                </div>
+                <div className="mt-1.5 h-2 rounded-full bg-surface-sunken overflow-hidden">
+                  <div className="h-full bg-warning" style={{ width: `${cancelRate * 6}%` }} />
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">Within 4h of slot: 2.1%</p>
+              </div>
+              <div className="pt-3 border-t border-border">
+                <Button size="sm" variant="outline" className="w-full" onClick={() => showToast("Reminder SMS scheduled · 18:30 IST")}>
+                  <Send className="h-3.5 w-3.5" /> Send reminder SMS batch
+                </Button>
+              </div>
+            </div>
+          </Card>
+
+          {/* Turn times — compact for the 360px sidebar */}
+          <Card className="p-5 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <CardTitle className="text-sm">Turn times</CardTitle>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Avg min · party × day-part · 30d</p>
+              </div>
+              <Badge tone="info">Auto</Badge>
+            </div>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-[9px] uppercase tracking-wider text-muted-foreground">
+                  <th className="text-left font-semibold pb-1.5">Party</th>
+                  <th className="text-right font-semibold pb-1.5">Lunch</th>
+                  <th className="text-right font-semibold pb-1.5">Early</th>
+                  <th className="text-right font-semibold pb-1.5">Peak</th>
+                  <th className="text-right font-semibold pb-1.5">Late</th>
+                </tr>
+              </thead>
+              <tbody>
+                {turnTimes.map(t => (
+                  <tr key={t.party} className="border-t border-border">
+                    <td className="py-1.5 font-medium whitespace-nowrap">{t.party}</td>
+                    <td className="py-1.5 text-right tabular">{t.lunch ?? "—"}</td>
+                    <td className="py-1.5 text-right tabular">{t.earlyDinner ?? "—"}</td>
+                    <td className="py-1.5 text-right tabular font-semibold">{t.dinner ?? "—"}</td>
+                    <td className="py-1.5 text-right tabular">{t.late ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+
+          {/* Blocked slots — compact stacked list for the sidebar */}
+          <Card className="overflow-hidden">
+            <div className="px-4 pt-4 pb-3 flex items-center justify-between gap-2 border-b border-border">
+              <div>
+                <CardTitle className="text-sm flex items-center gap-2"><Ban className="h-4 w-4 text-accent" /> Blocked slots</CardTitle>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Excluded from public booking</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => setShowBlock(true)}><Plus className="h-3.5 w-3.5" /> New</Button>
+            </div>
+            <div className="divide-y divide-border">
+              {blockedSlots.map(b => (
+                <div key={b.id} className="p-4 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <Badge tone="neutral" className="tabular">{b.table}</Badge>
+                      {b.notes?.toLowerCase().includes("upholstery") || b.guest.toLowerCase().includes("maintenance")
+                        ? <Badge tone="warning"><Wrench className="h-3 w-3" /> Maintenance</Badge>
+                        : <Badge tone="accent"><PartyPopper className="h-3 w-3" /> Private event</Badge>}
+                    </div>
+                    <Button size="sm" variant="ghost" onClick={() => releaseBlock(b)}>Release</Button>
+                  </div>
+                  <div className="text-[11px] tabular text-muted-foreground">{hrLabel(b.startHr)} – {hrLabel(b.startHr + b.durHr)}</div>
+                  <div className="text-xs">
+                    <div className="font-medium">{b.guest}</div>
+                    <div className="text-muted-foreground">{b.notes}</div>
+                  </div>
+                </div>
+              ))}
+              {blockedSlots.length === 0 && (
+                <div className="p-8 text-center text-xs text-muted-foreground">No active blocks.</div>
+              )}
             </div>
           </Card>
 
@@ -1076,14 +1061,22 @@ function Kpi({
     warning: "bg-warning-soft text-warning",
     info:    "bg-info-soft text-info",
   }[tone];
+  const ringClass = {
+    brand:   "ring-brand/15",
+    success: "ring-success/20",
+    warning: "ring-warning/20",
+    info:    "ring-info/20",
+  }[tone];
   return (
-    <Card className="p-4">
-      <div className="flex items-center gap-2">
-        <div className={cn("h-8 w-8 rounded-md grid place-items-center", toneClass)}>{icon}</div>
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</div>
+    <Card className="p-4 sm:p-5 transition-all hover:shadow-md hover:-translate-y-0.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</p>
+          <p className="mt-2 text-3xl font-bold tabular tracking-tight leading-none">{value}</p>
+          {sub && <p className="mt-2 text-xs text-muted-foreground">{sub}</p>}
+        </div>
+        <div className={cn("h-10 w-10 shrink-0 rounded-lg grid place-items-center ring-1", toneClass, ringClass)}>{icon}</div>
       </div>
-      <div className="mt-2 text-2xl font-bold tabular">{value}</div>
-      {sub && <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>}
     </Card>
   );
 }

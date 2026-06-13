@@ -16,7 +16,7 @@ export type NavItem = {
   label: string;
   icon: LucideIcon;
   badge?: string;
-  group: "operations" | "billing" | "people" | "erp" | "system";
+  group: "operations" | "billing" | "people" | "erp" | "system" | "demo";
 };
 
 export const NAV: NavItem[] = [
@@ -59,9 +59,9 @@ export const NAV: NavItem[] = [
   { href: "/users", label: "User Management", icon: KeySquare, group: "system" },
   { href: "/audit-logs", label: "Audit Logs", icon: ScrollText, group: "system" },
   { href: "/compliance", label: "Compliance (India)", icon: ShieldCheck, group: "system" },
-  { href: "/checkin/kiosk/BK100278", label: "Kiosk Check-in (demo)", icon: QrCode, group: "operations" },
-  { href: "/portal/g123", label: "Guest Portal (demo)", icon: Smartphone, group: "people" },
-  { href: "/menu/412", label: "In-room Menu (demo)", icon: QrCode, group: "people" },
+  { href: "/checkin/kiosk/BK100278", label: "Kiosk Check-in (demo)", icon: QrCode, group: "demo" },
+  { href: "/portal/g123", label: "Guest Portal (demo)", icon: Smartphone, group: "demo" },
+  { href: "/menu/412", label: "In-room Menu (demo)", icon: QrCode, group: "demo" },
   { href: "/checkout/express", label: "Express Checkout", icon: Zap, group: "billing" },
   { href: "/notifications/templates", label: "WhatsApp Templates", icon: MessageSquare, group: "system" },
   { href: "/setup/backup-drill", label: "Backup Drill", icon: DatabaseBackup, group: "system" },
@@ -84,4 +84,5 @@ export const GROUP_LABEL: Record<NavItem["group"], string> = {
   people: "People & CRM",
   erp: "ERP & Channels",
   system: "System",
+  demo: "Demos",
 };

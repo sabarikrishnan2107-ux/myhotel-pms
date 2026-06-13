@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select } from "@/components/ui/input";
+import { Input, Label, Select, NumberInput } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { KPICard } from "@/components/ui/kpi-card";
 import { INVENTORY_ITEMS } from "@/lib/mock-data-ext";
@@ -1546,11 +1546,11 @@ function AddItemModal({ item, vendors, categories, onClose, onSubmit }: { item?:
           </div>
           <div className="space-y-1.5">
             <Label>{isEdit ? "Current stock" : "Opening stock"}</Label>
-            <Input type="number" value={qty} onChange={e => setQty(Number(e.target.value))} />
+            <NumberInput value={qty} onChange={setQty} />
           </div>
           <div className="space-y-1.5">
             <Label>Min stock</Label>
-            <Input type="number" value={min} onChange={e => setMin(Number(e.target.value))} />
+            <NumberInput value={min} onChange={setMin} />
           </div>
           <div className="space-y-1.5">
             <Label>Unit</Label>
@@ -1560,7 +1560,7 @@ function AddItemModal({ item, vendors, categories, onClose, onSubmit }: { item?:
           </div>
           <div className="space-y-1.5">
             <Label>Unit price (₹)</Label>
-            <Input type="number" value={price} onChange={e => setPrice(Number(e.target.value))} step="0.01" />
+            <NumberInput value={price} onChange={setPrice} step="0.01" />
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-2 border-t border-border">

@@ -823,10 +823,10 @@ function TiersTab({ tiers, earningRules, settings, onEditTier, onUpdateRule, onU
 function ToggleSwitch({ on, onChange }: { on: boolean; onChange: () => void }) {
   return (
     <button type="button" onClick={onChange} className={cn(
-      "relative h-5 w-9 rounded-full transition-colors inline-flex items-center",
-      on ? "bg-brand" : "bg-surface-sunken border border-border"
+      "relative h-6 w-11 rounded-full transition-colors inline-flex items-center",
+      on ? "bg-success" : "bg-border-strong"
     )}>
-      <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform", on ? "translate-x-[18px]" : "translate-x-0.5")} />
+      <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform", on ? "translate-x-[22px]" : "translate-x-0.5")} />
     </button>
   );
 }

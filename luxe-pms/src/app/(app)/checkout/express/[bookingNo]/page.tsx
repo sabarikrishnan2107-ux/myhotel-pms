@@ -428,13 +428,13 @@ export default function ExpressCheckoutPage({ params }: { params: Promise<{ book
                   type="button"
                   onClick={() => { setEmailOn(v => !v); showToast(`Email invoice ${!emailOn ? "enabled" : "disabled"}`); }}
                   className={cn(
-                    "mt-0.5 h-5 w-9 rounded-full transition-colors shrink-0 relative",
-                    emailOn ? "bg-brand" : "bg-border"
+                    "mt-0.5 h-6 w-11 rounded-full transition-colors shrink-0 relative",
+                    emailOn ? "bg-success" : "bg-border-strong"
                   )}
                 >
                   <span className={cn(
-                    "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform",
-                    emailOn ? "translate-x-4" : "translate-x-0.5"
+                    "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
+                    emailOn ? "translate-x-[22px]" : "translate-x-0.5"
                   )} />
                 </button>
                 <Mail className="h-4 w-4 text-muted-foreground mt-1 shrink-0" />
@@ -456,13 +456,13 @@ export default function ExpressCheckoutPage({ params }: { params: Promise<{ book
                   type="button"
                   onClick={() => { setWaOn(v => !v); showToast(`WhatsApp invoice ${!waOn ? "enabled" : "disabled"}`); }}
                   className={cn(
-                    "mt-0.5 h-5 w-9 rounded-full transition-colors shrink-0 relative",
-                    waOn ? "bg-brand" : "bg-border"
+                    "mt-0.5 h-6 w-11 rounded-full transition-colors shrink-0 relative",
+                    waOn ? "bg-success" : "bg-border-strong"
                   )}
                 >
                   <span className={cn(
-                    "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform",
-                    waOn ? "translate-x-4" : "translate-x-0.5"
+                    "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
+                    waOn ? "translate-x-[22px]" : "translate-x-0.5"
                   )} />
                 </button>
                 <MessageCircle className="h-4 w-4 text-muted-foreground mt-1 shrink-0" />

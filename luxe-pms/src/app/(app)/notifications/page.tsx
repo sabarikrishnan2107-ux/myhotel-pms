@@ -481,7 +481,7 @@ function Toggle({ on, onChange, icon: Icon }: { on: boolean; onChange: (v: boole
   return (
     <button type="button" onClick={() => onChange(!on)} className={cn(
       "relative h-7 w-12 rounded-full transition-colors inline-flex items-center shrink-0",
-      on ? "bg-brand" : "bg-surface-sunken"
+      on ? "bg-success" : "bg-border-strong"
     )} aria-label="Toggle">
       <span className={cn(
         "absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-md transition-transform inline-flex items-center justify-center text-foreground",

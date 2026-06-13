@@ -2814,12 +2814,12 @@ function IntegrationsManager({ onToast, onMarkComplete }: { onToast: (m: string)
 function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
   return (
     <button type="button" onClick={onChange} className={cn(
-      "relative h-5 w-9 rounded-full transition-colors shrink-0",
-      on ? "bg-brand" : "bg-surface-sunken"
+      "relative h-6 w-11 rounded-full transition-colors shrink-0",
+      on ? "bg-success" : "bg-border-strong"
     )} aria-label="Toggle">
       <span className={cn(
-        "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-md transition-transform",
-        on ? "translate-x-[18px]" : "translate-x-0.5"
+        "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
+        on ? "translate-x-[22px]" : "translate-x-0.5"
       )} />
     </button>
   );

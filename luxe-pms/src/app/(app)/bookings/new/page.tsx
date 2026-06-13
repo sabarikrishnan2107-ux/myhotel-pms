@@ -1261,7 +1261,7 @@ function ToggleRow({ label, hint, checked, onChange }: { label: string; hint: st
       </div>
       <span className={cn(
         "relative h-6 w-11 rounded-full transition-colors shrink-0 inline-block align-middle",
-        checked ? "bg-brand" : "bg-surface-sunken border border-border"
+        checked ? "bg-success" : "bg-border-strong"
       )}>
         {/* knob anchored with left-0.5 so translate-x-5 keeps it inside the track (2px margins both ends) */}
         <span className={cn("absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform", checked ? "translate-x-5" : "translate-x-0")} />

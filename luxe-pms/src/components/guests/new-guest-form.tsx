@@ -256,20 +256,20 @@ export function NewGuestForm({ onCancel, onSave }: Props) {
           <button
             type="button"
             onClick={() => update("vip", !data.vip)}
-            className={cn(
-              "w-full flex items-center justify-between gap-3 p-3 rounded-md border transition-colors",
-              data.vip ? "border-brand bg-brand-soft" : "border-border hover:bg-surface-sunken"
-            )}
+            className="w-full flex items-center justify-between gap-3 p-3 rounded-md border border-border hover:bg-surface-sunken transition-colors"
           >
             <div className="text-left">
               <p className="text-sm font-medium">Mark as VIP</p>
               <p className="text-xs text-muted-foreground">Priority handling, complimentary upgrade if available</p>
             </div>
             <span className={cn(
-              "h-5 w-9 rounded-full relative transition-colors shrink-0",
-              data.vip ? "bg-brand" : "bg-surface-sunken border border-border"
+              "h-6 w-11 rounded-full relative transition-colors shrink-0",
+              data.vip ? "bg-success" : "bg-border-strong"
             )}>
-              <span className={cn("absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-xs transition-transform", data.vip ? "translate-x-4" : "translate-x-0.5")} />
+              <span className={cn(
+                "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-[left] duration-200 ease-out",
+                data.vip ? "left-[calc(100%-1.375rem)]" : "left-0.5"
+              )} />
             </span>
           </button>
           <Field label="Remarks">

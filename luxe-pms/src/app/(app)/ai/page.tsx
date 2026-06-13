@@ -620,7 +620,7 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   return (
     <button type="button" onClick={() => onChange(!on)} className={cn(
       "relative h-6 w-11 rounded-full transition-colors shrink-0",
-      on ? "bg-brand" : "bg-surface-sunken"
+      on ? "bg-success" : "bg-border-strong"
     )}>
       <span className={cn(
         "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-transform",
