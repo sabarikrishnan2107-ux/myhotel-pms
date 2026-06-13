@@ -522,7 +522,7 @@ export default function TablesPage() {
             <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-border">
               <div>
                 <CardTitle>Bookings list</CardTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">{listRows.length} reservations on {new Date(date).toLocaleDateString(undefined, { day: "2-digit", month: "short" })}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{listRows.length} reservations{waitlist.length > 0 ? ` · ${waitlist.length} waiting` : ""} on {new Date(date).toLocaleDateString(undefined, { day: "2-digit", month: "short" })}</p>
               </div>
               <div className="flex items-center gap-2">
                 <div className="relative">
@@ -553,6 +553,34 @@ export default function TablesPage() {
                 </tr>
               </thead>
               <tbody>
+                {/* Queued walk-ins surface here too (they live in the waitlist until seated),
+                    so anything added via "Add walk-in to queue" is visible in this list. */}
+                {waitlist
+                  .filter(() => statusFilter === "all")
+                  .filter(w => !search || w.guest.toLowerCase().includes(search.toLowerCase()) || (w.phone ?? "").includes(search))
+                  .map(w => (
+                    <tr key={`wait-${w.id}`} className="border-t border-border bg-warning-soft/15 hover:bg-surface-sunken/30">
+                      <td className="px-4 py-2.5 tabular text-xs">
+                        <div className="font-semibold">{w.arrivedAt}</div>
+                        <div className="text-[10px] text-muted-foreground">~{w.waitMin}m wait</div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="font-medium">{w.guest}</div>
+                        <div className="text-[10px] text-muted-foreground">Walk-in</div>
+                      </td>
+                      <td className="px-3 py-2.5 tabular">{w.party}</td>
+                      <td className="px-3 py-2.5"><Badge tone="warning">Waitlist</Badge></td>
+                      <td className="px-3 py-2.5 tabular text-xs text-muted-foreground">{w.phone ?? "—"}</td>
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground">In queue</td>
+                      <td className="px-3 py-2.5"><Badge tone="warning">Waiting</Badge></td>
+                      <td className="px-4 py-2.5 text-right">
+                        <div className="inline-flex items-center gap-1">
+                          <Button size="sm" variant="outline" onClick={() => seatNow(w)}><CheckCircle2 className="h-3.5 w-3.5" /> Seat</Button>
+                          <Button size="sm" variant="ghost" onClick={() => removeWait(w)}>Remove</Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 {listRows.map(r => (
                   <tr key={r.id} className="border-t border-border hover:bg-surface-sunken/30">
                     <td className="px-4 py-2.5 tabular text-xs">
@@ -570,7 +598,7 @@ export default function TablesPage() {
                     <td className="px-3 py-2.5 tabular">{r.party}</td>
                     <td className="px-3 py-2.5">
                       <Badge tone="neutral" className="tabular">{r.table}</Badge>
-                      <div className="text-[10px] text-muted-foreground mt-0.5">{TABLE_META[r.table].zone}</div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">{TABLE_META[r.table]?.zone ?? "—"}</div>
                     </td>
                     <td className="px-3 py-2.5 tabular text-xs text-muted-foreground">{r.phone}</td>
                     <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[220px] truncate" title={r.notes || ""}>{r.notes || "—"}</td>
@@ -592,7 +620,7 @@ export default function TablesPage() {
                     </td>
                   </tr>
                 ))}
-                {listRows.length === 0 && (
+                {listRows.length === 0 && (statusFilter !== "all" || waitlist.length === 0) && (
                   <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">No reservations match those filters.</td></tr>
                 )}
               </tbody>
