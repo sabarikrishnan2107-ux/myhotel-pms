@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet, apiPost, apiDelete } from "@/lib/api";
 
 // ----- types -----
 type RoomTypeKey = "standard" | "deluxe" | "suite" | "villa";
@@ -23,7 +24,7 @@ type Restriction = {
 };
 
 type ActiveRow = {
-  id: string;
+  id: string | number;
   fromIso: string;
   toIso: string;
   roomType: RoomTypeKey | "all";
@@ -174,6 +175,12 @@ export default function RestrictionsPage() {
   const [rangeEnd, setRangeEnd] = React.useState<number>(29);
   const [grid, setGrid] = React.useState<Record<RoomTypeKey, Record<string, Restriction>>>(() => buildInitial());
   const [activeRows, setActiveRows] = React.useState<ActiveRow[]>(INITIAL_ACTIVE);
+  // Load applied restrictions from the backend (falls back to INITIAL_ACTIVE offline).
+  React.useEffect(() => {
+    apiGet<ActiveRow[]>("/rate-restrictions")
+      .then(rows => { if (rows.length) setActiveRows(rows); })
+      .catch(() => {});
+  }, []);
   const [editing, setEditing] = React.useState<{ iso: string; rt: RoomTypeKey } | null>(null);
 
   // bulk apply
@@ -299,8 +306,7 @@ export default function RestrictionsPage() {
     if (bulkCta) parts.push("CTA");
     if (bulkCtd) parts.push("CTD");
     const kind: RestrictionKind = bulkCta ? "cta" : bulkCtd ? "ctd" : maxLosNum ? "maxlos" : "minlos";
-    const newRow: ActiveRow = {
-      id: `ar-${Date.now()}`,
+    const newRow: Omit<ActiveRow, "id"> = {
       fromIso: bulkStart,
       toIso: bulkEnd,
       roomType: selectedRooms.length === ROOM_TYPES.length ? "all" : (selectedRooms[0] as RoomTypeKey),
@@ -310,7 +316,11 @@ export default function RestrictionsPage() {
       appliedAt: "2026-06-02 10:14",
       channels: ["Booking.com", "Agoda", "MakeMyTrip", "Direct"],
     };
-    setActiveRows((r) => [newRow, ...r]);
+    // Persist to the backend; use the server row (with real id) on success,
+    // otherwise fall back to an optimistic local row so the UI still updates.
+    apiPost<ActiveRow>("/rate-restrictions", newRow)
+      .then((saved) => setActiveRows((r) => [saved, ...r]))
+      .catch(() => setActiveRows((r) => [{ ...newRow, id: `ar-${Date.now()}` }, ...r]));
     showToast(`Applied to ${bulkPreview.days} days · ${bulkPreview.unitNights} unit-nights`);
   };
 
@@ -789,7 +799,7 @@ export default function RestrictionsPage() {
                           <Button size="sm" variant="ghost" onClick={() => showToast(`Pushed "${r.value}" to ${r.channels.length} channels`)}>
                             <Send className="h-3.5 w-3.5" />
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => { setActiveRows((rows) => rows.filter((x) => x.id !== r.id)); showToast("Restriction removed"); }}>
+                          <Button size="sm" variant="ghost" onClick={() => { setActiveRows((rows) => rows.filter((x) => x.id !== r.id)); if (typeof r.id === "number") apiDelete(`/rate-restrictions/${r.id}`).catch(() => {}); showToast("Restriction removed"); }}>
                             <X className="h-3.5 w-3.5" />
                           </Button>
                         </div>

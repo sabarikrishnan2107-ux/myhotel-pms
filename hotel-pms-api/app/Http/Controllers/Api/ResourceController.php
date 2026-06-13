@@ -75,6 +75,9 @@ use App\Models\TdsEntry;
 use App\Models\AuditRun;
 use App\Models\WhatsappTemplate;
 use App\Models\AgentLedger;
+use App\Models\RateRestriction;
+use App\Models\NotifTemplate;
+use App\Models\NotifLog;
 use Illuminate\Http\Request;
 
 /**
@@ -155,6 +158,9 @@ class ResourceController extends Controller
         'audit-runs'             => AuditRun::class,
         'whatsapp-templates'     => WhatsappTemplate::class,
         'agent-ledger'           => AgentLedger::class,
+        'rate-restrictions'      => RateRestriction::class,
+        'notif-templates'        => NotifTemplate::class,
+        'notif-logs'             => NotifLog::class,
     ];
 
     /** Resources whose index can be scoped by a query param → column. */
@@ -746,6 +752,31 @@ class ResourceController extends Controller
             'credit' => 'integer',
             'balance' => 'integer',
         ],
+        'rate-restrictions' => [
+            'fromIso' => 'string|max:50',
+            'toIso' => 'string|max:50',
+            'roomType' => 'string|max:50',
+            'kind' => 'string|max:50',
+            'value' => 'string|max:255',
+            'appliedBy' => 'string|max:255|nullable',
+            'appliedAt' => 'string|max:50|nullable',
+            'channels' => 'array',
+            'channels.*' => 'string|max:100',
+        ],
+        'notif-templates' => [
+            'name' => 'string|max:255',
+            'trigger' => 'string|max:100',
+            'channels' => 'array',
+            'channels.*' => 'string|max:50',
+            'lastSent' => 'string|max:100|nullable',
+        ],
+        'notif-logs' => [
+            'time' => 'string|max:50',
+            'to' => 'string|max:255',
+            'channel' => 'string|max:50',
+            'template' => 'string|max:255',
+            'status' => 'string|max:50',
+        ],
     ];
 
     /** Fields that must be present (and non-empty) when creating a row. */
@@ -805,6 +836,9 @@ class ResourceController extends Controller
         'audit-runs' => ['date'],
         'whatsapp-templates' => ['name'],
         'agent-ledger' => ['agentName'],
+        'rate-restrictions' => ['kind', 'value'],
+        'notif-templates' => ['name'],
+        'notif-logs' => ['to'],
     ];
 
     private function model(string $resource): string

@@ -70,6 +70,10 @@ class DatabaseSeeder extends Seeder
             AuditRunSeeder::class,
             WhatsappTemplateSeeder::class,
             AgentLedgerSeeder::class,
+            WebhookSeeder::class,
+            EmailScheduleSeeder::class,
+            RateRestrictionSeeder::class,
+            NotificationContentSeeder::class,
         ]);
     }
 }
