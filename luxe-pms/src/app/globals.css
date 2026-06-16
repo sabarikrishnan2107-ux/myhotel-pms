@@ -364,6 +364,38 @@
   }
 }
 
+/* ============ Login page — luxury resort treatment ============ */
+@keyframes login-kenburns {
+  from { transform: scale(1) translate(0, 0); }
+  to   { transform: scale(1.12) translate(-1.5%, -1.5%); }
+}
+.login-kenburns { animation: login-kenburns 26s ease-in-out infinite alternate; }
+
+@keyframes login-rise {
+  from { opacity: 0; transform: translateY(26px); }
+  to   { opacity: 1; transform: none; }
+}
+.login-rise { animation: login-rise 0.75s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+
+@keyframes login-fade { from { opacity: 0; } to { opacity: 1; } }
+.login-fade { animation: login-fade 0.55s ease both; }
+
+@keyframes login-sheen {
+  0%, 18%   { left: -60%; }
+  38%, 100% { left: 160%; }
+}
+.login-sheen::after {
+  content: "";
+  position: absolute; top: 0; left: -60%; width: 45%; height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,0.5), transparent);
+  transform: skewX(-18deg);
+  animation: login-sheen 4.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-kenburns, .login-rise, .login-fade, .login-sheen::after { animation: none; }
+}
+
 /* ============ Premium polish utilities ============ */
 
 /* Gentle hover lift for interactive cards/tiles */
