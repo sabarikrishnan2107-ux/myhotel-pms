@@ -20,10 +20,6 @@ import { GoalProgress } from "@/components/ui/goal-progress";
 import { money, formatTime, cn } from "@/lib/utils";
 import { apiGet } from "@/lib/api";
 import { useProperty, currencySymbol } from "@/lib/use-property";
-import {
-  TODAY_ARRIVALS, TODAY_DEPARTURES, REVENUE_TREND,
-  OCCUPANCY_FORECAST, SOURCE_MIX, ALERTS, ROOMS, GUESTS,
-} from "@/lib/mock-data";
 import type { Reservation, Guest, Room } from "@/lib/types";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
 import { Eye } from "lucide-react";
@@ -181,8 +177,8 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, []);
 
-  const arrivals = stats?.arrivals ?? TODAY_ARRIVALS;
-  const departures = stats?.departures ?? TODAY_DEPARTURES;
+  const arrivals = stats?.arrivals ?? [];
+  const departures = stats?.departures ?? [];
 
   const [nowMs, setNowMs] = React.useState<number>(0);
   const [period, setPeriod] = React.useState<{ label: string; day: number; days: number } | null>(null);
@@ -220,8 +216,8 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // Room-status breakdown derived from the real board (falls back to mock ROOMS).
-  const boardRooms = board ?? ROOMS.map(r => ({ id: r.id, number: r.number, floor: r.floor, type: r.type, status: r.status as RoomBoardRow["status"] }));
+  // Room-status breakdown derived from the real board.
+  const boardRooms = board ?? [];
   const roomCounts = React.useMemo(() => {
     const c = { total: boardRooms.length, occupied: 0, available: 0, dirty: 0, cleaning: 0, maintenance: 0 };
     for (const r of boardRooms) if (r.status in c) (c as Record<string, number>)[r.status]++;
@@ -234,7 +230,7 @@ export default function DashboardPage() {
   const selectedGuest: Guest | null = React.useMemo(() => {
     if (!selectedRes) return null;
     return (
-      GUESTS.find(g => g.name === selectedRes.guestName) ?? {
+      {
         id: `g-${selectedRes.id}`,
         name: selectedRes.guestName,
         phone: "—",
@@ -272,13 +268,13 @@ export default function DashboardPage() {
   // Real analytics with mock fallback (only used while the backend is offline).
   const rev = stats?.revenue;
   const quick = stats?.quickCounts;
-  const trendData: TrendRow[] = trend?.length ? trend : (REVENUE_TREND as unknown as TrendRow[]);
-  const forecastData: ForecastRow[] = forecast?.length ? forecast : (OCCUPANCY_FORECAST as unknown as ForecastRow[]);
-  const alertsData = liveAlerts ?? ALERTS;
+  const trendData: TrendRow[] = trend ?? [];
+  const forecastData: ForecastRow[] = forecast ?? [];
+  const alertsData = liveAlerts ?? [];
   const sourceMixDonut = React.useMemo(() => {
     const sm = stats?.sourceMix ?? [];
     const total = sm.reduce((s, x) => s + x.revenue, 0) || 1;
-    return sm.length ? sm.map(x => ({ name: x.source, value: Math.round((x.revenue / total) * 100) })) : SOURCE_MIX;
+    return sm.map(x => ({ name: x.source, value: Math.round((x.revenue / total) * 100) }));
   }, [stats]);
 
   // AI briefing distilled from the real numbers (no external model — just live facts).
