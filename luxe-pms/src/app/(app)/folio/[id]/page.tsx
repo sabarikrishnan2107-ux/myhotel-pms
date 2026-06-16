@@ -17,7 +17,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Input, Label, Select } from "@/components/ui/input";
 import { RESERVATIONS, GUESTS, SAMPLE_FOLIO_CHARGES, SAMPLE_PAYMENTS } from "@/lib/mock-data";
 import { cn, money, formatDate, formatDateLong, formatTime } from "@/lib/utils";
-import { apiGet, apiPost, apiDelete } from "@/lib/api";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { useProperty, hotelName } from "@/lib/use-property";
 
 const TABS = [
@@ -57,7 +57,11 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
   // Real booking from Postgres (falls back to the seed only while offline / not found).
   const [liveRes, setLiveRes] = React.useState<typeof RESERVATIONS[number] | null>(null);
   const reservation = liveRes ?? RESERVATIONS.find(r => r.bookingNo === id) ?? RESERVATIONS[0];
-  const guest = GUESTS.find(g => g.name === reservation.guestName);
+  const mockGuest = GUESTS.find(g => g.name === reservation.guestName);
+  // Live guest from Postgres (overlays the seed so KYC fields reflect the DB).
+  const [liveGuest, setLiveGuest] = React.useState<{ id: number; name: string; idType?: string; idNumber?: string; nationality?: string; vip?: boolean; kycVerified?: boolean; kycVerifiedAt?: string; kycVerifiedBy?: string } | null>(null);
+  const guest = (liveGuest ? { ...mockGuest, ...liveGuest } : mockGuest) as
+    (Omit<NonNullable<typeof mockGuest>, "id"> & { id?: string | number; kycVerified?: boolean; kycVerifiedAt?: string; kycVerifiedBy?: string }) | undefined;
 
   const [tab, setTab] = React.useState<TabId>("overview");
   const [groupByDay, setGroupByDay] = React.useState(true);
@@ -81,6 +85,7 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
   const [payments, setPayments] = React.useState(SAMPLE_PAYMENTS);
   const [adjustments, setAdjustments] = React.useState<Adjustment[]>([]);
   const [showAddAdjustment, setShowAddAdjustment] = React.useState(false);
+  const [showVerifyKyc, setShowVerifyKyc] = React.useState(false);
   const [internalNotes, setInternalNotes] = React.useState(NOTES.internal);
   const [noteDraft, setNoteDraft] = React.useState("");
 
@@ -96,6 +101,13 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
       .then(rows => { if (!cancelled) setPayments(rows); }).catch(() => {});
     apiGet<Adjustment[]>(`/folio-adjustments${q}`)
       .then(rows => { if (!cancelled) setAdjustments(rows); }).catch(() => {});
+    apiGet<NonNullable<typeof liveGuest>[]>("/guests")
+      .then(rows => {
+        if (cancelled) return;
+        const target = (liveRes?.guestName ?? reservation.guestName);
+        const g = rows.find(x => x.name === target);
+        if (g) setLiveGuest(g);
+      }).catch(() => {});
     return () => { cancelled = true; };
   }, [id]);
 
@@ -179,7 +191,7 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
                     <h1 className="text-lg font-semibold truncate">{reservation.guestName}</h1>
                     {reservation.vip && <Badge tone="brand"><Crown className="h-3 w-3" />VIP</Badge>}
                   </div>
-                  <p className="text-xs text-muted-foreground tabular mt-0.5">Guest #{guest?.id?.toUpperCase() ?? "—"}</p>
+                  <p className="text-xs text-muted-foreground tabular mt-0.5">Guest #{guest?.id != null ? String(guest.id).toUpperCase() : "—"}</p>
                 </div>
               </div>
               <dl className="mt-3 space-y-1 text-xs">
@@ -462,16 +474,25 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-semibold">Guest KYC</p>
-                    <CardTitle>Identification Verified</CardTitle>
+                    <CardTitle>{guest?.kycVerified ? "Identification Verified" : "Identification Pending"}</CardTitle>
                   </div>
-                  <Badge tone="success"><ShieldCheck className="h-3 w-3" />Verified</Badge>
+                  {guest?.kycVerified
+                    ? <Badge tone="success"><ShieldCheck className="h-3 w-3" />Verified</Badge>
+                    : <Badge tone="warning"><AlertCircle className="h-3 w-3" />Pending</Badge>}
                 </div>
                 <dl className="space-y-2 text-sm">
-                  <ComplianceRow k="ID Type" v={guest?.idType ?? "—"} />
-                  <ComplianceRow k="ID Number" v={<span className="font-mono tabular">{guest?.idNumber ?? "—"}</span>} />
-                  <ComplianceRow k="Verified On" v="23 May 2026, 14:08" />
+                  <ComplianceRow k="ID Type" v={guest?.idType || "—"} />
+                  <ComplianceRow k="ID Number" v={<span className="font-mono tabular">{guest?.idNumber || "—"}</span>} />
+                  <ComplianceRow k="Verified On" v={guest?.kycVerifiedAt || "—"} />
                   <ComplianceRow k="Hotel Register" v={<span className="font-mono tabular">HRR-2026-{reservation.bookingNo.slice(-5)}</span>} />
                 </dl>
+                {guest?.id != null && (
+                  <div className="mt-3 pt-3 border-t border-border">
+                    <Button size="sm" variant={guest?.kycVerified ? "outline" : "success"} onClick={() => setShowVerifyKyc(true)}>
+                      <ShieldCheck className="h-3.5 w-3.5" />{guest?.kycVerified ? "Re-verify KYC" : "Verify KYC"}
+                    </Button>
+                  </div>
+                )}
                 <p className="text-[11px] text-muted-foreground mt-3 pt-3 border-t border-border">
                   As required under the Hotel Register Rules. Indian nationals require Aadhaar / PAN / Driving License / Passport / Voter ID.
                 </p>
@@ -774,6 +795,16 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
           paidBy: "Guest",
         }).then(created => setCharges(prev => [...prev, created])).catch(() => showToast("⚠ Save failed — backend offline"));
       }} />}
+      {showVerifyKyc && guest?.id != null && <KycModal
+        initialType={guest?.idType ?? ""} initialNumber={guest?.idNumber ?? ""}
+        onClose={() => setShowVerifyKyc(false)}
+        onSave={(idType, idNumber) => {
+          setShowVerifyKyc(false);
+          const at = new Date().toISOString().slice(0, 16).replace("T", " ");
+          apiPut(`/guests/${guest.id}`, { idType, idNumber, kycVerified: true, kycVerifiedAt: at, kycVerifiedBy: "Front Desk" })
+            .then(() => { setLiveGuest(prev => prev ? { ...prev, idType, idNumber, kycVerified: true, kycVerifiedAt: at, kycVerifiedBy: "Front Desk" } : prev); showToast("KYC verified"); })
+            .catch(() => showToast("⚠ Could not verify — backend offline"));
+        }} />}
       {showAddAdjustment && <AdjustmentModal onClose={() => setShowAddAdjustment(false)} onSave={(type, description, amount, approver) => {
         setShowAddAdjustment(false);
         apiPost<Adjustment>("/folio-adjustments", {
@@ -1252,6 +1283,44 @@ const DISCOUNT_REASONS = [
   "Loyalty member", "Long-stay (≥7N)", "Group discount", "OTA price-match",
   "Goodwill / Compensation", "Manager comp", "VIP courtesy", "Other",
 ];
+function KycModal({ onClose, onSave, initialType, initialNumber }: {
+  onClose: () => void;
+  onSave: (idType: string, idNumber: string) => void;
+  initialType: string;
+  initialNumber: string;
+}) {
+  const [idType, setIdType] = React.useState(initialType || "Aadhaar");
+  const [idNumber, setIdNumber] = React.useState(initialNumber);
+  const canSave = idNumber.trim().length > 0;
+
+  return (
+    <Modal title="Verify Guest KYC" onClose={onClose}>
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <Label>ID Type *</Label>
+          <Select value={idType} onChange={e => setIdType(e.target.value)} className="h-9">
+            <option>Aadhaar</option>
+            <option>PAN</option>
+            <option>Passport</option>
+            <option>Driving License</option>
+            <option>Voter ID</option>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>ID Number *</Label>
+          <Input value={idNumber} onChange={e => setIdNumber(e.target.value)} placeholder="Enter the document number" className="h-9 font-mono" />
+        </div>
+        <div className="flex justify-end gap-2 pt-3 border-t border-border">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="success" disabled={!canSave} onClick={() => onSave(idType, idNumber.trim())}>
+            <ShieldCheck className="h-4 w-4" />Mark Verified
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function AdjustmentModal({ onClose, onSave }: {
   onClose: () => void;
   onSave: (type: "Discount" | "Comp", description: string, amount: number, approver: string) => void;
