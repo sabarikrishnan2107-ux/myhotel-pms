@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { KPICard } from "@/components/ui/kpi-card";
-import { NOTIF_TEMPLATES, NOTIF_LOG as NOTIF_LOG_MOCK } from "@/lib/mock-data-ext";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 
 // A notification template as stored in the backend (notif-templates resource).
@@ -41,10 +40,10 @@ export default function NotificationsPage() {
 
   // Templates live in the backend (notif-templates). Seed from the mock list as
   // an offline fallback, then replace with live Postgres data once it resolves.
-  const [templates, setTemplates] = React.useState<NotifTemplate[]>(NOTIF_TEMPLATES as NotifTemplate[]);
+  const [templates, setTemplates] = React.useState<NotifTemplate[]>([]);
   React.useEffect(() => {
     apiGet<NotifTemplate[]>("/notif-templates")
-      .then(rows => { if (rows.length) setTemplates(rows); })
+      .then(rows => setTemplates(rows))
       .catch(() => {});
   }, []);
 
@@ -706,11 +705,11 @@ function TemplateEditorModal({ template, onClose, onSubmit, onDelete }: {
 // ============================================================
 function LogTab() {
   const [statusFilter, setStatusFilter] = React.useState<"all" | "delivered" | "opened" | "bounced">("all");
-  // Delivery log lives in the backend (notif-logs); fall back to the mock list offline.
-  const [NOTIF_LOG, setLog] = React.useState<NotifLogRow[]>(NOTIF_LOG_MOCK as NotifLogRow[]);
+  // Delivery log lives in the backend (notif-logs) — no hardcoded fallback.
+  const [NOTIF_LOG, setLog] = React.useState<NotifLogRow[]>([]);
   React.useEffect(() => {
     apiGet<NotifLogRow[]>("/notif-logs")
-      .then(rows => { if (rows.length) setLog(rows); })
+      .then(rows => setLog(rows))
       .catch(() => {});
   }, []);
   const filtered = NOTIF_LOG.filter(l => statusFilter === "all" || l.status === statusFilter);

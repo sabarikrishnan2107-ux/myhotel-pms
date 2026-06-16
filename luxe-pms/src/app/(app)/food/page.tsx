@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { MENU_CATEGORIES, MENU_ITEMS, FOOD_ORDERS } from "@/lib/mock-data-ext";
 import { RESERVATIONS } from "@/lib/mock-data";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
 import { money } from "@/lib/utils";
@@ -21,29 +20,29 @@ const IN_HOUSE = RESERVATIONS.slice(0, 8);
 type OrderTarget = "room" | "hall" | "walkin";
 
 export default function FoodPage() {
-  const [cat, setCat] = React.useState<string>(MENU_CATEGORIES[0]);
+  const [cat, setCat] = React.useState<string>("");
   const [cart, setCart] = React.useState<Record<string, number>>({});
   const [room, setRoom] = React.useState("305");
 
   // Menu — loaded from the backend, mock as offline fallback.
-  const [menu, setMenu] = React.useState<MenuItem[]>(() => MENU_ITEMS.map(m => ({ ...m })));
+  const [menu, setMenu] = React.useState<MenuItem[]>([]);
   React.useEffect(() => {
     apiGet<{ id: number | string; cat?: string; name?: string; price?: number; veg?: boolean; spice?: string | null; tag?: string | null }[]>("/menu-items")
-      .then(rows => { if (Array.isArray(rows) && rows.length) setMenu(rows.map(normalizeMenu)); })
+      .then(rows => { if (Array.isArray(rows)) setMenu(rows.map(normalizeMenu)); })
       .catch(() => {});
   }, []);
   const categories = React.useMemo(() => {
     const seen: string[] = [];
     for (const m of menu) if (!seen.includes(m.cat)) seen.push(m.cat);
-    return seen.length ? seen : MENU_CATEGORIES;
+    return seen;
   }, [menu]);
   const activeCat = categories.includes(cat) ? cat : categories[0];
 
   // Live F&B orders.
-  const [orders, setOrders] = React.useState<FoodOrder[]>(() => FOOD_ORDERS.map(o => ({ ...o, guest: o.guest, lineItems: [] })));
+  const [orders, setOrders] = React.useState<FoodOrder[]>([]);
   React.useEffect(() => {
     apiGet<FbOrderRow[]>("/fb-orders")
-      .then(rows => { if (Array.isArray(rows) && rows.length) setOrders(rows.map(normalizeOrder)); })
+      .then(rows => { if (Array.isArray(rows)) setOrders(rows.map(normalizeOrder)); })
       .catch(() => {});
   }, []);
   const [guestName, setGuestName] = React.useState<string | null>(null);
@@ -450,12 +449,12 @@ function NewOrderModal({
   const [walkinName, setWalkinName] = React.useState("");
 
   // Real in-house guests from Postgres for the room-charge picker (mock fallback offline).
-  const [inHouse, setInHouse] = React.useState<typeof IN_HOUSE>(IN_HOUSE);
+  const [inHouse, setInHouse] = React.useState<typeof IN_HOUSE>([]);
   React.useEffect(() => {
     apiGet<typeof IN_HOUSE>("/bookings").then(rows => {
       const today = new Date().toLocaleDateString("en-CA");
       const live = rows.filter(r => (r as { status?: string }).status === "checked-in" || (r.checkIn <= today && r.checkOut > today));
-      if (live.length) setInHouse(live);
+      setInHouse(live);
     }).catch(() => {});
   }, []);
 

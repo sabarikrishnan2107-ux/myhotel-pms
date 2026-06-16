@@ -103,7 +103,7 @@ function enrichAgent(a: AgentBase, i: number): AgentExt {
 export default function AgentsPage() {
   // Seed from the AGENTS mock (offline fallback); replaced by real-derived rows
   // once /agents + /agent-ledger resolve in the effect below.
-  const [agents, setAgents] = React.useState<AgentExt[]>(() => AGENTS.map(enrichAgent));
+  const [agents, setAgents] = React.useState<AgentExt[]>([]);
 
   // Fetch the agent master and the ledger in parallel, then build the list from
   // the real /agents rows: map gstin→gst, creditLimit→credit, commissionPct→

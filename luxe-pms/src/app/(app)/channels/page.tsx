@@ -10,7 +10,6 @@ import { Input, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { KPICard } from "@/components/ui/kpi-card";
 import { Avatar } from "@/components/ui/avatar";
-import { CHANNELS } from "@/lib/mock-data-ext";
 import { money, cn } from "@/lib/utils";
 import { apiGet, apiPut } from "@/lib/api";
 
@@ -70,25 +69,25 @@ const SYNC_LOGS: SyncLog[] = [
 
 export default function ChannelsPage() {
   const [tab, setTab] = React.useState<TabId>("connections");
-  const [channels, setChannels] = React.useState<ChannelRow[]>(() => CHANNELS.map(c => ({ ...c })));
-  const [otaBookings, setOtaBookings] = React.useState<OtaBooking[]>(OTA_BOOKINGS);
-  const [rateMap, setRateMap] = React.useState<RateMapRow[]>(RATE_MAP);
-  const [syncLogs, setSyncLogs] = React.useState<SyncLog[]>(SYNC_LOGS);
+  const [channels, setChannels] = React.useState<ChannelRow[]>([]);
+  const [otaBookings, setOtaBookings] = React.useState<OtaBooking[]>([]);
+  const [rateMap, setRateMap] = React.useState<RateMapRow[]>([]);
+  const [syncLogs, setSyncLogs] = React.useState<SyncLog[]>([]);
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2600); };
 
   React.useEffect(() => {
     apiGet<ChannelRow[]>("/channels")
-      .then(rows => { if (rows.length) setChannels(rows.map(c => ({ ...c, id: String(c.id) }))); })
+      .then(rows => setChannels(rows.map(c => ({ ...c, id: String(c.id) }))))
       .catch(() => {});
     apiGet<OtaBooking[]>("/ota-bookings")
-      .then(rows => { if (rows.length) setOtaBookings(rows.map(r => ({ ...r, id: String(r.id) }))); })
+      .then(rows => setOtaBookings(rows.map(r => ({ ...r, id: String(r.id) }))))
       .catch(() => {});
     apiGet<RateMapRow[]>("/channel-rate-maps")
-      .then(rows => { if (rows.length) setRateMap(rows); })
+      .then(rows => setRateMap(rows))
       .catch(() => {});
     apiGet<SyncLog[]>("/channel-sync-logs")
-      .then(rows => { if (rows.length) setSyncLogs(rows.map(r => ({ ...r, id: String(r.id) }))); })
+      .then(rows => setSyncLogs(rows.map(r => ({ ...r, id: String(r.id) }))))
       .catch(() => {});
   }, []);
 
