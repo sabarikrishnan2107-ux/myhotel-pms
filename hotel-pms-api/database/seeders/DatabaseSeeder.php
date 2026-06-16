@@ -41,6 +41,7 @@ class DatabaseSeeder extends Seeder
             ChannelSeeder::class,
             WebRoomSeeder::class,
             PricingRuleSeeder::class,
+            CompetitorSeeder::class,
             AuditLogSeeder::class,
             OwnerFlashSeeder::class,
             BanquetOrderSeeder::class,
