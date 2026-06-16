@@ -29,11 +29,8 @@ const TABS = [
 ] as const;
 type TabId = typeof TABS[number]["id"];
 
-// Mock-extension data for the richer folio
-const ADJUSTMENTS = [
-  { id: "ad1", date: "2026-05-24", type: "Discount" as const, desc: "Loyalty member 10% on F&B", amount: -85, approver: "Tom W. (Mgr)" },
-  { id: "ad2", date: "2026-05-25", type: "Comp" as const, desc: "Comp — Welcome amenity (VIP)", amount: -120, approver: "Auto · VIP policy" },
-];
+// Folio-level adjustments & comps — loaded live from /folio-adjustments.
+type Adjustment = { id: string | number; date: string; type: "Discount" | "Comp"; description: string; amount: number; approver?: string };
 
 const AUDIT_LOG = [
   { id: "al1", at: "Today 13:42", actor: "Khalid R.", action: "Added charge", detail: "Airport transfer — ₹1,500 → ₹1,770 incl. GST 18%" },
@@ -82,7 +79,8 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
   const [charges, setCharges] = React.useState(SAMPLE_FOLIO_CHARGES);
   const [voidedIds, setVoidedIds] = React.useState<Set<string>>(new Set());
   const [payments, setPayments] = React.useState(SAMPLE_PAYMENTS);
-  const [extraAdjustments, setExtraAdjustments] = React.useState<typeof ADJUSTMENTS>([]);
+  const [adjustments, setAdjustments] = React.useState<Adjustment[]>([]);
+  const [showAddAdjustment, setShowAddAdjustment] = React.useState(false);
   const [internalNotes, setInternalNotes] = React.useState(NOTES.internal);
   const [noteDraft, setNoteDraft] = React.useState("");
 
@@ -96,6 +94,8 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
       .then(rows => { if (!cancelled) setCharges(rows); }).catch(() => {});
     apiGet<typeof SAMPLE_PAYMENTS>(`/folio-payments${q}`)
       .then(rows => { if (!cancelled) setPayments(rows); }).catch(() => {});
+    apiGet<Adjustment[]>(`/folio-adjustments${q}`)
+      .then(rows => { if (!cancelled) setAdjustments(rows); }).catch(() => {});
     return () => { cancelled = true; };
   }, [id]);
 
@@ -103,7 +103,7 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
   const chargesSubtotal = liveCharges.reduce((s, c) => s + (c.amount - c.tax), 0);
   const chargesTax = liveCharges.reduce((s, c) => s + c.tax, 0);
   const chargesTotal = liveCharges.reduce((s, c) => s + c.amount, 0);
-  const mergedAdjustments = [...ADJUSTMENTS, ...extraAdjustments];
+  const mergedAdjustments = adjustments;
 
   // Indian GST split — intra-state (Maharashtra → Maharashtra) uses CGST+SGST,
   // inter-state / foreign uses IGST. Demo logic: foreign nationals trigger IGST.
@@ -343,13 +343,20 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
             </div>
           </Card>
 
-          {/* Adjustments */}
-          {mergedAdjustments.length > 0 && (
-            <Card className="p-0 overflow-hidden">
-              <div className="px-5 py-3 bg-surface-elevated border-b border-border flex items-center justify-between">
-                <CardTitle>Adjustments &amp; Comps</CardTitle>
-                <Badge tone="success">{money(Math.abs(adjustmentsTotal))} off</Badge>
+          {/* Adjustments & Comps — live from /folio-adjustments */}
+          <Card className="p-0 overflow-hidden">
+            <div className="px-5 py-3 bg-surface-elevated border-b border-border flex items-center justify-between">
+              <CardTitle>Adjustments &amp; Comps</CardTitle>
+              <div className="flex items-center gap-2">
+                {adjustmentsTotal !== 0 && <Badge tone="success">{money(Math.abs(adjustmentsTotal))} off</Badge>}
+                <Button size="sm" variant="outline" onClick={() => setShowAddAdjustment(true)}>
+                  <Plus className="h-3.5 w-3.5" />Add
+                </Button>
               </div>
+            </div>
+            {mergedAdjustments.length === 0 ? (
+              <p className="px-5 py-4 text-sm text-muted-foreground">No comps or adjustments on this folio.</p>
+            ) : (
               <ul className="divide-y divide-border">
                 {mergedAdjustments.map(a => (
                   <li key={a.id} className="px-5 py-3 flex items-center gap-3">
@@ -357,15 +364,25 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
                       {a.type === "Discount" ? <Percent className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">{a.desc}</p>
+                      <p className="text-sm font-medium">{a.description}</p>
                       <p className="text-xs text-muted-foreground">{a.approver} · {formatDate(a.date)}</p>
                     </div>
                     <span className="tabular font-semibold text-success">{money(a.amount)}</span>
+                    <button
+                      type="button"
+                      aria-label="Remove adjustment"
+                      className="text-muted-foreground hover:text-danger shrink-0"
+                      onClick={() => {
+                        apiDelete(`/folio-adjustments/${a.id}`)
+                          .then(() => setAdjustments(prev => prev.filter(x => x.id !== a.id)))
+                          .catch(() => showToast("Could not remove"));
+                      }}
+                    ><X className="h-4 w-4" /></button>
                   </li>
                 ))}
               </ul>
-            </Card>
-          )}
+            )}
+          </Card>
 
           {/* India compliance — e-Invoice IRN + Form C for foreign guests */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -756,6 +773,14 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
           amount: -Math.abs(amount),
           paidBy: "Guest",
         }).then(created => setCharges(prev => [...prev, created])).catch(() => showToast("⚠ Save failed — backend offline"));
+      }} />}
+      {showAddAdjustment && <AdjustmentModal onClose={() => setShowAddAdjustment(false)} onSave={(type, description, amount, approver) => {
+        setShowAddAdjustment(false);
+        apiPost<Adjustment>("/folio-adjustments", {
+          bookingNo: id, date: new Date().toISOString().slice(0, 10),
+          type, description, amount: -Math.abs(amount), approver,
+        }).then(row => { setAdjustments(prev => [...prev, row]); showToast(`${type} added`); })
+          .catch(() => showToast("⚠ Save failed — backend offline"));
       }} />}
       {showRefund && <RefundModal onClose={() => setShowRefund(false)} paymentsTotal={paymentsTotal} balance={balance} onSave={(amount, mode, reason, approver) => {
         const payload = { bookingNo: id, date: new Date().toISOString().slice(0, 10), mode: `${mode} (Refund)`, amount: -Math.abs(amount), reference: `Refund · ${reason} · ${approver}` };
@@ -1227,6 +1252,63 @@ const DISCOUNT_REASONS = [
   "Loyalty member", "Long-stay (≥7N)", "Group discount", "OTA price-match",
   "Goodwill / Compensation", "Manager comp", "VIP courtesy", "Other",
 ];
+function AdjustmentModal({ onClose, onSave }: {
+  onClose: () => void;
+  onSave: (type: "Discount" | "Comp", description: string, amount: number, approver: string) => void;
+}) {
+  const [type, setType] = React.useState<"Comp" | "Discount">("Comp");
+  const [description, setDescription] = React.useState("");
+  const [amount, setAmount] = React.useState(0);
+  const [approver, setApprover] = React.useState("Tom W. (Mgr)");
+  const canSave = description.trim().length > 0 && amount > 0;
+
+  return (
+    <Modal title="Add Adjustment / Comp" onClose={onClose}>
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <Label>Type</Label>
+          <div className="grid grid-cols-2 gap-2">
+            {(["Comp", "Discount"] as const).map(t => (
+              <button key={t} type="button" onClick={() => setType(t)} className={cn(
+                "h-10 rounded-md border-2 text-sm font-medium transition-colors",
+                type === t ? "border-brand bg-brand-soft/30" : "border-border hover:bg-surface-sunken"
+              )}>{t}</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Description *</Label>
+          <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="e.g. Welcome amenity (VIP)" className="h-9" />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Amount (₹) *</Label>
+          <Input type="number" value={amount} onChange={e => setAmount(Math.max(0, Number(e.target.value) || 0))} className="h-10 tabular text-base font-semibold" min={0} />
+          <p className="text-xs text-muted-foreground">Recorded as a credit on the folio (reduces the grand total).</p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Approver</Label>
+          <Select value={approver} onChange={e => setApprover(e.target.value)} className="h-9">
+            <option>Tom W. (Mgr)</option>
+            <option>Anjali S. (Mgr)</option>
+            <option>Auto · VIP policy</option>
+            <option>System · Loyalty rule</option>
+          </Select>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-3 border-t border-border">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="success" disabled={!canSave} onClick={() => onSave(type, description.trim(), amount, approver)}>
+            <Sparkles className="h-4 w-4" />Add {type}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function DiscountModal({ onClose, onSave, chargesTotal }: {
   onClose: () => void;
   onSave: (reason: string, amount: number, approver: string) => void;
