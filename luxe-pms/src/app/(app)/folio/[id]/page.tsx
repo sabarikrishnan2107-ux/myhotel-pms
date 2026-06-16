@@ -84,6 +84,7 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
   const [voidedIds, setVoidedIds] = React.useState<Set<string>>(new Set());
   const [payments, setPayments] = React.useState(SAMPLE_PAYMENTS);
   const [adjustments, setAdjustments] = React.useState<Adjustment[]>([]);
+  const [einvoice, setEinvoice] = React.useState<{ irn?: string; ackNo?: string; ackDate?: string; status?: string; placeOfSupply?: string; recipientGstin?: string; reverseCharge?: boolean; signedJson?: unknown } | null>(null);
   const [showAddAdjustment, setShowAddAdjustment] = React.useState(false);
   const [showVerifyKyc, setShowVerifyKyc] = React.useState(false);
   const [internalNotes, setInternalNotes] = React.useState(NOTES.internal);
@@ -101,6 +102,8 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
       .then(rows => { if (!cancelled) setPayments(rows); }).catch(() => {});
     apiGet<Adjustment[]>(`/folio-adjustments${q}`)
       .then(rows => { if (!cancelled) setAdjustments(rows); }).catch(() => {});
+    apiGet<NonNullable<typeof einvoice>[]>(`/einvoices${q}`)
+      .then(rows => { if (!cancelled && rows.length) setEinvoice(rows[0]); }).catch(() => {});
     apiGet<NonNullable<typeof liveGuest>[]>("/guests")
       .then(rows => {
         if (cancelled) return;
@@ -126,9 +129,18 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
   const igst = interState ? chargesTax : 0;
   // Indian e-Invoice IRN (mock — real one is 64-char SHA256 hash)
   // Deterministic so SSR matches client render
-  const irnSeed = (parseInt(reservation.bookingNo.slice(2)) || 1).toString(36).toUpperCase().padEnd(8, "X");
-  const eInvoiceIrn = `2705-${reservation.bookingNo.slice(-6)}-${irnSeed}`.slice(0, 20);
-  const eInvoiceAckNo = `1${String(120000000000 + Math.floor((parseInt(reservation.bookingNo.slice(2)) || 0) * 1379)).slice(0, 14)}`;
+  const eInvoiceGenerated = einvoice?.status === "generated";
+  const eInvoiceIrn = einvoice?.irn ?? "";
+  const eInvoiceAckNo = einvoice?.ackNo ?? "";
+  // Persist a generated e-Invoice (IRN/ACK computed server-side from the real folio totals).
+  const generateEInvoice = () => {
+    apiPost<NonNullable<typeof einvoice>>(`/einvoices/generate/${reservation.bookingNo}`, {
+      taxableValue: chargesSubtotal, cgst, sgst, igst,
+      placeOfSupply: interState ? "Inter-state" : "Maharashtra (27)",
+      recipientGstin: null, reverseCharge: false,
+    }).then(row => { setEinvoice(row); showToast("e-Invoice generated"); })
+      .catch(() => showToast("⚠ Could not generate e-Invoice"));
+  };
   const adjustmentsTotal = mergedAdjustments.reduce((s, a) => s + a.amount, 0);
   const grandTotal = chargesTotal + adjustmentsTotal;
   const paymentsTotal = payments.reduce((s, p) => s + p.amount, 0);
@@ -404,29 +416,27 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
                   <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-semibold">GST · e-Invoice</p>
                   <CardTitle>e-Invoice Compliance</CardTitle>
                 </div>
-                <Badge tone="success"><CheckCircle2 className="h-3 w-3" />Generated</Badge>
+                {eInvoiceGenerated
+                  ? <Badge tone="success"><CheckCircle2 className="h-3 w-3" />Generated</Badge>
+                  : <Badge tone="warning"><AlertCircle className="h-3 w-3" />Not generated</Badge>}
               </div>
               <dl className="space-y-2 text-sm">
-                <ComplianceRow k="IRN" v={<span className="font-mono text-[11px] tabular break-all">{eInvoiceIrn}…</span>} />
-                <ComplianceRow k="ACK No." v={<span className="font-mono tabular">{eInvoiceAckNo}</span>} />
-                <ComplianceRow k="ACK Date" v="25 May 2026, 13:42" />
-                <ComplianceRow k="Place of Supply" v={interState ? "Inter-state · IGST" : "Maharashtra (27) · CGST + SGST"} />
-                <ComplianceRow k="Recipient GSTIN" v={guest?.vip ? <span className="font-mono tabular">27AAAAA1234A1Z5</span> : <span className="text-muted-foreground italic">URP (Unregistered)</span>} />
-                <ComplianceRow k="Reverse Charge" v="No" />
+                <ComplianceRow k="IRN" v={eInvoiceIrn ? <span className="font-mono text-[11px] tabular break-all">{eInvoiceIrn.slice(0, 20)}…</span> : "—"} />
+                <ComplianceRow k="ACK No." v={<span className="font-mono tabular">{eInvoiceAckNo || "—"}</span>} />
+                <ComplianceRow k="ACK Date" v={einvoice?.ackDate || "—"} />
+                <ComplianceRow k="Place of Supply" v={einvoice?.placeOfSupply ?? (interState ? "Inter-state · IGST" : "Maharashtra (27) · CGST + SGST")} />
+                <ComplianceRow k="Recipient GSTIN" v={einvoice?.recipientGstin ? <span className="font-mono tabular">{einvoice.recipientGstin}</span> : <span className="text-muted-foreground italic">URP (Unregistered)</span>} />
+                <ComplianceRow k="Reverse Charge" v={einvoice?.reverseCharge ? "Yes" : "No"} />
               </dl>
               <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={() => {
-                  const payload = {
-                    Version: "1.1",
-                    Irn: eInvoiceIrn,
-                    AckNo: eInvoiceAckNo,
-                    AckDt: "2026-05-25 13:42:00",
-                    SellerGstin: "27AAACR5055K1Z5",
-                    BuyerGstin: guest?.vip ? "27AAAAA1234A1Z5" : "URP",
-                    DocNo: `INV-${reservation.bookingNo}`,
-                    DocTyp: "INV",
-                    TotInvVal: grandTotal,
-                    Items: liveCharges.map(c => ({ Desc: c.description, Qty: c.qty, UnitPrice: c.rate, TotAmt: c.amount, Tax: c.tax })),
+                {!eInvoiceGenerated && (
+                  <Button size="sm" variant="success" onClick={generateEInvoice}>
+                    <Sparkles className="h-3.5 w-3.5" />Generate e-Invoice
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" disabled={!eInvoiceGenerated} onClick={() => {
+                  const payload = einvoice?.signedJson ?? {
+                    Irn: eInvoiceIrn, AckNo: eInvoiceAckNo, DocNo: `INV-${reservation.bookingNo}`, TotInvVal: grandTotal,
                   };
                   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
                   const url = URL.createObjectURL(blob);
@@ -437,10 +447,11 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
                 }}>
                   <Download className="h-3.5 w-3.5" />Download Signed JSON
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setShowQR(true)}>
+                <Button size="sm" variant="ghost" disabled={!eInvoiceGenerated} onClick={() => setShowQR(true)}>
                   View QR Code
                 </Button>
               </div>
+              <p className="text-[11px] text-muted-foreground mt-3">Locally generated — not NIC-issued. Connect a GST Suvidha Provider for live IRNs.</p>
             </Card>
 
             {/* Form C for foreign guests */}
