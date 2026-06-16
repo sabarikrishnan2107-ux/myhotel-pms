@@ -28,6 +28,7 @@ use App\Models\GroupRooming;
 use App\Models\GstSlab;
 use App\Models\HallBooking;
 use App\Models\MaintenanceTicket;
+use App\Models\MealPlan;
 use App\Models\Guest;
 use App\Models\HallPackage;
 use App\Models\Holiday;
@@ -115,6 +116,7 @@ class ResourceController extends Controller
         'einvoices'              => EInvoice::class,
         'competitors'            => Competitor::class,
         'competitor-rates'       => CompetitorRate::class,
+        'meal-plans'             => MealPlan::class,
         'staff'                  => Staff::class,
         'vendors'                => Vendor::class,
         'inventory-items'        => InventoryItem::class,
@@ -310,6 +312,10 @@ class ResourceController extends Controller
         'competitor-rates' => [
             'competitorId' => 'string|max:50', 'date' => 'string|max:50',
             'roomType' => 'string|max:50', 'rate' => 'integer|min:0',
+        ],
+        'meal-plans' => [
+            'code' => 'string|max:20', 'name' => 'string|max:255',
+            'perPaxPerDay' => 'integer|min:0', 'desc' => 'string|max:500', 'active' => 'boolean',
         ],
         'staff' => [
             'name' => 'string|max:255', 'role' => 'string|max:100', 'dept' => 'string|max:100',
@@ -839,6 +845,7 @@ class ResourceController extends Controller
         'einvoices' => ['bookingNo'],
         'competitors' => ['hotel'],
         'competitor-rates' => ['competitorId', 'rate'],
+        'meal-plans' => ['code', 'name'],
         'staff' => ['name'], 'vendors' => ['name'], 'inventory-items' => ['name'],
         'menu-items' => ['name'], 'fb-orders' => ['tableNo'],
         'maintenance-tickets' => ['title'], 'enquiries' => ['name'], 'found-items' => ['name'],

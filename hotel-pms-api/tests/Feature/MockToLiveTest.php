@@ -75,4 +75,23 @@ class MockToLiveTest extends TestCase
         $income = collect($res->json('income'))->firstWhere('category', 'Room');
         $this->assertSame(15000, $income['value']);
     }
+
+    public function test_competitors_and_rates_crud(): void
+    {
+        $this->postJson('/api/competitors', ['hotel' => 'The Westin', 'brand' => 'Marriott', 'km' => 2.1, 'stars' => 5, 'source' => 'Booking.com'])
+            ->assertCreated()->assertJsonFragment(['hotel' => 'The Westin']);
+
+        $this->postJson('/api/competitor-rates', ['competitorId' => 'westin', 'date' => '2026-06-16', 'roomType' => 'STD', 'rate' => 8200])
+            ->assertCreated();
+        $this->postJson('/api/competitor-rates', ['competitorId' => 'trident', 'date' => '2026-06-16', 'roomType' => 'STD', 'rate' => 7600]);
+
+        $this->getJson('/api/competitor-rates?competitorId=westin')->assertOk()->assertJsonCount(1);
+    }
+
+    public function test_meal_plans_crud(): void
+    {
+        $this->postJson('/api/meal-plans', ['code' => 'CP', 'name' => 'Continental (CP)', 'perPaxPerDay' => 950, 'desc' => 'Breakfast only'])
+            ->assertCreated()->assertJsonFragment(['code' => 'CP']);
+        $this->getJson('/api/meal-plans')->assertOk()->assertJsonFragment(['perPaxPerDay' => 950]);
+    }
 }
