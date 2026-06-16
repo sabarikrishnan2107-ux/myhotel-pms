@@ -22,6 +22,7 @@ class DatabaseSeeder extends Seeder
             RoomTypeSeeder::class,
             GuestBookingSeeder::class,
             FolioSeeder::class,
+            FolioAdjustmentSeeder::class,
             ErpSeeder::class,
             FbMenuSeeder::class,
             FbOrderSeeder::class,
