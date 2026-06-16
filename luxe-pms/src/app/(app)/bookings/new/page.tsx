@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { GUESTS, ROOMS } from "@/lib/mock-data";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost, apiPut, sendEmail } from "@/lib/api";
 import { NewGuestForm, type NewGuestData } from "@/components/guests/new-guest-form";
@@ -54,24 +53,28 @@ function nightlyBreakdown(checkInISO: string, nights: number, baseRate: number) 
   return { counts, total, lines, avgRate: nights ? Math.round(total / nights) : 0 };
 }
 
-// Rate plan catalog with meal inclusions visualized
+// Rate plan + F&B catalogs are MASTER DATA — loaded live from Configuration →
+// Rate Plans (/rate-plans) and Food & Hall Packages (/fb-packages). No hardcoded
+// catalog: whatever is configured in Setup is what appears here.
 type Meal = "B" | "L" | "D"; // Breakfast / Lunch / Dinner
-const RATE_PLANS: { v: string; label: string; meals: Meal[]; refundable: boolean; discountPct: number; hint?: string }[] = [
-  { v: "EP",  label: "European",      meals: [],          refundable: true,  discountPct: 0,  hint: "Room only" },
-  { v: "CP",  label: "Continental",   meals: ["B"],       refundable: true,  discountPct: 0,  hint: "Room + Breakfast" },
-  { v: "MAP", label: "Modified Am.",  meals: ["B", "D"],  refundable: true,  discountPct: 0,  hint: "Room + Breakfast + Dinner" },
-  { v: "AP",  label: "American",      meals: ["B", "L", "D"], refundable: true, discountPct: 0, hint: "Room + All meals" },
-  { v: "Corporate", label: "Corporate", meals: ["B"], refundable: true, discountPct: 15, hint: "Corporate rate · 15% off" },
-  { v: "Non-refundable", label: "Non-refundable", meals: ["B"], refundable: false, discountPct: 20, hint: "20% off · cannot cancel" },
-];
+type RatePlanOpt = { v: string; label: string; meals: Meal[]; refundable: boolean; discountPct: number; hint?: string };
+type FbPkgOpt = { id: string; name: string; short: string; icon: string; price: number; type: string };
 
-// F&B add-on packages — mirrors the catalog from Master Setup
-const FB_PACKAGES = [
-  { id: "fb1", name: "Continental Breakfast", short: "Breakfast",  icon: "☕", price: 450,  type: "Breakfast" as const },
-  { id: "fb2", name: "Buffet Lunch — Veg",    short: "Buffet Lunch", icon: "🍽", price: 850,  type: "Lunch" as const },
-  { id: "fb3", name: "Buffet Dinner — Mixed", short: "Buffet Dinner", icon: "🍽", price: 1200, type: "Dinner" as const },
-  { id: "fb4", name: "High Tea Platter",      short: "High Tea",    icon: "🍪", price: 650,  type: "High Tea" as const },
-];
+// API → UI mappers (Configuration is the single source of truth).
+type ApiRatePlan = { code: string; name: string; inclBreakfast?: boolean; inclLunch?: boolean; inclDinner?: boolean; refundable?: boolean; discountPct?: number };
+type ApiFbPackage = { id: number | string; name: string; type?: string; price: number };
+function mapRatePlan(r: ApiRatePlan): RatePlanOpt {
+  const meals: Meal[] = [];
+  if (r.inclBreakfast) meals.push("B");
+  if (r.inclLunch) meals.push("L");
+  if (r.inclDinner) meals.push("D");
+  const mealHint = meals.length ? "Room + " + [meals.includes("B") && "Breakfast", meals.includes("L") && "Lunch", meals.includes("D") && "Dinner"].filter(Boolean).join(" + ") : "Room only";
+  return { v: r.code, label: r.name, meals, refundable: r.refundable ?? true, discountPct: r.discountPct ?? 0, hint: r.discountPct ? `${mealHint} · ${r.discountPct}% off` : mealHint };
+}
+const FB_ICON: Record<string, string> = { Breakfast: "☕", Lunch: "🍽", Dinner: "🍽", "High Tea": "🍪", Snacks: "🍪" };
+function mapFbPackage(p: ApiFbPackage): FbPkgOpt {
+  return { id: String(p.id), name: p.name, short: p.type || p.name, icon: FB_ICON[p.type ?? ""] ?? "🍽", price: p.price, type: p.type ?? "" };
+}
 
 // Room number is NOT chosen at booking — only the room type is reserved. The
 // specific room is assigned at check-in from what's available that day.
@@ -93,18 +96,30 @@ export default function BookingWizardPage() {
   const [search, setSearch] = React.useState("");
   const [adults, setAdults] = React.useState(2);
   const [children, setChildren] = React.useState(0);
-  const [roomType, setRoomType] = React.useState("Deluxe");
+  const [roomType, setRoomType] = React.useState("");
   // Managed room types (name → base rate) from Configuration → Room Types.
   const [roomTypes, setRoomTypes] = React.useState<{ name: string; baseTariff: number }[]>([]);
   // Real guests + rooms from Postgres (seeded with mock as an offline fallback).
-  const [guests, setGuests] = React.useState<Guest[]>(GUESTS);
-  const [rooms, setRooms] = React.useState<Room[]>(ROOMS);
+  const [guests, setGuests] = React.useState<Guest[]>([]);
+  const [rooms, setRooms] = React.useState<Room[]>([]);
+  // Master rate plans + F&B packages from Configuration (single source of truth).
+  const [ratePlans, setRatePlans] = React.useState<RatePlanOpt[]>([]);
+  const [fbPackages, setFbPackages] = React.useState<FbPkgOpt[]>([]);
   React.useEffect(() => {
     apiGet<{ name: string; baseTariff: number }[]>("/room-types").then(setRoomTypes).catch(() => {});
     apiGet<Guest[]>("/guests").then(rows => { if (rows.length) setGuests(rows); }).catch(() => {});
     apiGet<Room[]>("/room-board").then(rows => { if (rows.length) setRooms(rows); }).catch(() => {});
+    apiGet<ApiRatePlan[]>("/rate-plans").then(rows => setRatePlans(rows.map(mapRatePlan))).catch(() => {});
+    apiGet<ApiFbPackage[]>("/fb-packages").then(rows => setFbPackages(rows.map(mapFbPackage))).catch(() => {});
   }, []);
-  const [ratePlan, setRatePlan] = React.useState("CP");
+  const [ratePlan, setRatePlan] = React.useState("");
+  // Default the selected rate plan + room type to the first configured one once loaded.
+  React.useEffect(() => {
+    if (ratePlans.length && !ratePlans.some(p => p.v === ratePlan)) setRatePlan(ratePlans[0].v);
+  }, [ratePlans, ratePlan]);
+  React.useEffect(() => {
+    if (roomTypes.length && !roomTypes.some(t => t.name === roomType)) setRoomType(roomTypes[0].name);
+  }, [roomTypes, roomType]);
   const [breakfast, setBreakfast] = React.useState(true);
   const [extraBed, setExtraBed] = React.useState(false);
   const [airportTransfer, setAirportTransfer] = React.useState(false);
@@ -210,7 +225,7 @@ export default function BookingWizardPage() {
   const subtotal = halfDay ? Math.round(rate * 0.5) : breakdown.total;
 
   // Each F&B add-on package: price × pax-per-day × nights
-  const fbTotal = FB_PACKAGES.reduce((t, p) => t + p.price * (fbAddons[p.id] ?? 0) * nights, 0);
+  const fbTotal = fbPackages.reduce((t, p) => t + p.price * (fbAddons[p.id] ?? 0) * nights, 0);
 
   // Stay options as flat fees
   const earlyFee = earlyCheckIn ? 500 : 0;        // ₹500 flat
@@ -493,7 +508,7 @@ export default function BookingWizardPage() {
               <div className="space-y-1.5">
                 <Label>Room type</Label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {(roomTypes.length ? roomTypes.map(t => t.name) : ["Queen", "Deluxe", "Suite", "King", "Family", "Executive"]).map(t => (
+                  {roomTypes.map(t => t.name).map(t => (
                     <button
                       key={t}
                       onClick={() => setRoomType(t)}
@@ -517,7 +532,7 @@ export default function BookingWizardPage() {
                 <Label>Rate plan</Label>
                 <p className="text-[11px] text-muted-foreground">Choose how meals are bundled with the room.</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
-                  {RATE_PLANS.map(p => {
+                  {ratePlans.map(p => {
                     const isSelected = ratePlan === p.v;
                     return (
                       <button
@@ -557,11 +572,11 @@ export default function BookingWizardPage() {
                   Pre-book additional meals or banquets for the stay. Charged <span className="text-foreground font-medium">per pax × {nights} night{nights === 1 ? "" : "s"}</span>.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-                  {FB_PACKAGES.map(pkg => {
+                  {fbPackages.map(pkg => {
                     const count = fbAddons[pkg.id] ?? 0;
-                    const includedInPlan = (pkg.type === "Breakfast" && RATE_PLANS.find(rp => rp.v === ratePlan)?.meals.includes("B")) ||
-                                           (pkg.type === "Lunch" && RATE_PLANS.find(rp => rp.v === ratePlan)?.meals.includes("L")) ||
-                                           (pkg.type === "Dinner" && RATE_PLANS.find(rp => rp.v === ratePlan)?.meals.includes("D"));
+                    const includedInPlan = (pkg.type === "Breakfast" && ratePlans.find(rp => rp.v === ratePlan)?.meals.includes("B")) ||
+                                           (pkg.type === "Lunch" && ratePlans.find(rp => rp.v === ratePlan)?.meals.includes("L")) ||
+                                           (pkg.type === "Dinner" && ratePlans.find(rp => rp.v === ratePlan)?.meals.includes("D"));
                     return (
                       <div
                         key={pkg.id}
@@ -734,9 +749,9 @@ export default function BookingWizardPage() {
                 <ReviewRow label="Room type" value={roomType} sub={`${adults}A${children ? ` + ${children}C` : ""} · room assigned at check-in`} onEdit={() => setStep(3)} />
                 <ReviewRow
                   label="Rate plan"
-                  value={`${ratePlan} · ${RATE_PLANS.find(p => p.v === ratePlan)?.hint ?? ""}`}
+                  value={`${ratePlan} · ${ratePlans.find(p => p.v === ratePlan)?.hint ?? ""}`}
                   sub={[
-                    Object.values(fbAddons).some(c => c > 0) && `+ ${FB_PACKAGES.filter(p => (fbAddons[p.id] ?? 0) > 0).map(p => `${fbAddons[p.id]}× ${p.short}`).join(" · ")}`,
+                    Object.values(fbAddons).some(c => c > 0) && `+ ${fbPackages.filter(p => (fbAddons[p.id] ?? 0) > 0).map(p => `${fbAddons[p.id]}× ${p.short}`).join(" · ")}`,
                     breakfast && "Breakfast top-up",
                     extraBed && "Extra bed",
                     airportTransfer && "Airport transfer",

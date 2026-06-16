@@ -453,22 +453,22 @@ export function SetupView() {
   );
   const [toast, setToast] = React.useState<string | null>(null);
 
-  // Floors & rooms state (managed independently of the generic field grid)
-  const [floors, setFloors] = React.useState<Floor[]>(FLOORS_SEED);
-  const [rooms, setRooms] = React.useState<Room[]>(ROOMS_SEED);
-  const [roomTypes, setRoomTypes] = React.useState<RoomType[]>(ROOM_TYPES_SEED);
+  // Master inventory/config state — loaded from Postgres on mount (no hardcoded seed data).
+  const [floors, setFloors] = React.useState<Floor[]>([]);
+  const [rooms, setRooms] = React.useState<Room[]>([]);
+  const [roomTypes, setRoomTypes] = React.useState<RoomType[]>([]);
 
   // Additional manager states
-  const [ratePlans, setRatePlans] = React.useState<RatePlan[]>(RATE_PLANS_SEED);
-  const [seasons, setSeasons] = React.useState<Season[]>(SEASONS_SEED);
-  const [holidays, setHolidays] = React.useState<Holiday[]>(HOLIDAYS_SEED);
-  const [fbPkgs, setFbPkgs] = React.useState<FBPackage[]>(FB_PACKAGES_SEED);
-  const [hallPkgs, setHallPkgs] = React.useState<HallPackage[]>(HALL_PACKAGES_SEED);
-  const [agents, setAgents] = React.useState<AgentRec[]>(AGENTS_SEED);
-  const [gstSlabs, setGstSlabs] = React.useState<GSTSlab[]>(GST_SLABS_SEED);
-  const [paymentMethods, setPaymentMethods] = React.useState<PaymentMethod[]>(PAYMENT_METHODS_SEED);
-  const [templates, setTemplates] = React.useState<Template[]>(TEMPLATES_SEED);
-  const [roles, setRoles] = React.useState<Role[]>(ROLES_SEED);
+  const [ratePlans, setRatePlans] = React.useState<RatePlan[]>([]);
+  const [seasons, setSeasons] = React.useState<Season[]>([]);
+  const [holidays, setHolidays] = React.useState<Holiday[]>([]);
+  const [fbPkgs, setFbPkgs] = React.useState<FBPackage[]>([]);
+  const [hallPkgs, setHallPkgs] = React.useState<HallPackage[]>([]);
+  const [agents, setAgents] = React.useState<AgentRec[]>([]);
+  const [gstSlabs, setGstSlabs] = React.useState<GSTSlab[]>([]);
+  const [paymentMethods, setPaymentMethods] = React.useState<PaymentMethod[]>([]);
+  const [templates, setTemplates] = React.useState<Template[]>([]);
+  const [roles, setRoles] = React.useState<Role[]>([]);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
@@ -489,7 +489,7 @@ export function SetupView() {
           }),
         }));
       })
-      .catch(() => { if (!cancelled) showToast("⚠ Backend offline — showing local defaults"); });
+      .catch(() => { if (!cancelled) showToast("⚠ Backend offline"); });
     return () => { cancelled = true; };
   }, []);
 
@@ -500,7 +500,7 @@ export function SetupView() {
     const loads = [
       apiGet<Floor[]>("/floors").then(r => { if (!cancelled) setFloors(r); }),
       apiGet<Room[]>("/rooms").then(r => { if (!cancelled) setRooms(r); }),
-      apiGet<RoomType[]>("/room-types").then(r => { if (!cancelled && r.length) setRoomTypes(r); }),
+      apiGet<RoomType[]>("/room-types").then(r => { if (!cancelled) setRoomTypes(r); }),
       apiGet<RatePlan[]>("/rate-plans").then(r => { if (!cancelled) setRatePlans(r); }),
       apiGet<Season[]>("/seasons").then(r => { if (!cancelled) setSeasons(r); }),
       apiGet<Holiday[]>("/holidays").then(r => { if (!cancelled) setHolidays(r); }),
@@ -516,7 +516,7 @@ export function SetupView() {
     Promise.allSettled(loads).then(results => {
       if (cancelled) return;
       setLoading(false);
-      if (results.some(x => x.status === "rejected")) showToast("⚠ Backend offline — showing local defaults");
+      if (results.some(x => x.status === "rejected")) showToast("⚠ Backend offline");
     });
     return () => { cancelled = true; };
   }, []);
@@ -2711,32 +2711,46 @@ type Integration = {
   description: string; connected: boolean; status: "live" | "test" | "error" | "off"; lastSync?: string;
 };
 
-const SEED_INTEGRATIONS: Integration[] = [
-  { id: "i1", name: "Booking.com",       category: "OTA",             description: "Inventory + rate sync · 2-way booking push", connected: true,  status: "live",  lastSync: "2 min ago" },
-  { id: "i2", name: "Agoda",             category: "OTA",             description: "Inventory + rate sync · auto-confirmation", connected: true,  status: "live",  lastSync: "4 min ago" },
-  { id: "i3", name: "MakeMyTrip",        category: "OTA",             description: "Inventory + rate sync · India market",      connected: true,  status: "live",  lastSync: "6 min ago" },
+// Catalog of integrations the app supports. Connection state (connected/status/
+// lastSync) is NOT hardcoded — every one defaults to disconnected and the real
+// state is loaded from /settings/integrations on mount.
+const INTEGRATION_CATALOG: Integration[] = [
+  { id: "i1", name: "Booking.com",       category: "OTA",             description: "Inventory + rate sync · 2-way booking push", connected: false, status: "off" },
+  { id: "i2", name: "Agoda",             category: "OTA",             description: "Inventory + rate sync · auto-confirmation", connected: false, status: "off" },
+  { id: "i3", name: "MakeMyTrip",        category: "OTA",             description: "Inventory + rate sync · India market",      connected: false, status: "off" },
   { id: "i4", name: "Expedia",           category: "OTA",             description: "Inventory + rate sync · international",     connected: false, status: "off" },
-  { id: "i5", name: "STAAH",             category: "Channel Manager", description: "Multi-channel inventory + rate distribution", connected: true, status: "live",  lastSync: "just now" },
-  { id: "i6", name: "WhatsApp Business", category: "Messaging",       description: "Pre-arrival messages · concierge chat · BSP", connected: true, status: "live",  lastSync: "11 min ago" },
-  { id: "i7", name: "Razorpay",          category: "Payment",         description: "Cards · UPI · Net banking · UPI Autopay",    connected: true, status: "live",  lastSync: "now" },
+  { id: "i5", name: "STAAH",             category: "Channel Manager", description: "Multi-channel inventory + rate distribution", connected: false, status: "off" },
+  { id: "i6", name: "WhatsApp Business", category: "Messaging",       description: "Pre-arrival messages · concierge chat · BSP", connected: false, status: "off" },
+  { id: "i7", name: "Razorpay",          category: "Payment",         description: "Cards · UPI · Net banking · UPI Autopay",    connected: false, status: "off" },
   { id: "i8", name: "Tally Prime",       category: "Accounting",      description: "Daily journal export · GST reconciliation",  connected: false, status: "off" },
-  { id: "i9", name: "Zomato POS",        category: "POS",             description: "F&B order push from in-room dining",         connected: true, status: "test", lastSync: "1h ago" },
-  { id: "i10", name: "SMTP (Amazon SES)",category: "Email",           description: "Transactional email delivery",                connected: true, status: "live",  lastSync: "30s ago" },
+  { id: "i9", name: "Zomato POS",        category: "POS",             description: "F&B order push from in-room dining",         connected: false, status: "off" },
+  { id: "i10", name: "SMTP (Amazon SES)",category: "Email",           description: "Transactional email delivery",                connected: false, status: "off" },
 ];
 
 function IntegrationsManager({ onToast, onMarkComplete }: { onToast: (m: string) => void; onMarkComplete: () => void }) {
-  const [integrations, setIntegrations] = React.useState(SEED_INTEGRATIONS);
+  const [integrations, setIntegrations] = React.useState(INTEGRATION_CATALOG);
   const [configFor, setConfigFor] = React.useState<Integration | null>(null);
 
+  // Load saved connection state from Postgres and merge it onto the catalog
+  // (so newly-added catalog entries still appear, with their real saved state).
   const save = useSettingsPersistence(
     "integrations",
     { integrations },
-    v => { if (v.integrations !== undefined) setIntegrations(v.integrations); },
+    v => {
+      if (!v.integrations) return;
+      const saved = new Map(v.integrations.map(i => [i.id, i]));
+      setIntegrations(prev => prev.map(i => saved.get(i.id) ? { ...i, ...saved.get(i.id)! } : i));
+    },
   );
 
-  const toggle = (id: string) => setIntegrations(prev => prev.map(i => i.id === id
-    ? { ...i, connected: !i.connected, status: !i.connected ? "live" : "off" as Integration["status"] }
-    : i));
+  // Toggling persists immediately so connection state is always real/live.
+  const toggle = (id: string) => setIntegrations(prev => {
+    const next = prev.map(i => i.id === id
+      ? { ...i, connected: !i.connected, status: (!i.connected ? "live" : "off") as Integration["status"] }
+      : i);
+    apiPut("/settings/integrations", { integrations: next }).catch(() => onToast("⚠ Save failed — backend offline"));
+    return next;
+  });
 
   const grouped = integrations.reduce<Record<string, Integration[]>>((acc, i) => {
     (acc[i.category] ??= []).push(i);
