@@ -95,7 +95,23 @@ export default function UsersPage() {
   const [editUser, setEditUser] = React.useState<UserExt | null>(null);
   const [detailUser, setDetailUser] = React.useState<UserExt | null>(null);
   const [resetUser, setResetUser] = React.useState<UserExt | null>(null);
-  const [actionFor, setActionFor] = React.useState<string | null>(null);
+  const [actionFor, setActionFor] = React.useState<{ id: string; top: number; left: number; up: boolean } | null>(null);
+  // Anchor the action menu to the clicked button in fixed coords so it never
+  // gets clipped by the table's overflow and flips up near the viewport bottom.
+  const openActionMenu = (id: string, e: React.MouseEvent<HTMLButtonElement>) => {
+    if (actionFor?.id === id) { setActionFor(null); return; }
+    const r = e.currentTarget.getBoundingClientRect();
+    const MENU_W = 192, MENU_H = 300;
+    const up = r.bottom + MENU_H > window.innerHeight;
+    setActionFor({ id, top: up ? r.top - 4 : r.bottom + 4, left: Math.max(8, r.right - MENU_W), up });
+  };
+  React.useEffect(() => {
+    if (!actionFor) return;
+    const close = () => setActionFor(null);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => { window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
+  }, [actionFor]);
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
@@ -338,13 +354,13 @@ export default function UsersPage() {
                         <button type="button" onClick={() => setDetailUser(u)} className="h-8 w-8 rounded-md border border-border hover:bg-surface-sunken inline-flex items-center justify-center text-muted-foreground" title="View detail">
                           <Eye className="h-3.5 w-3.5" />
                         </button>
-                        <button type="button" onClick={() => setActionFor(actionFor === u.id ? null : u.id)} className="h-8 w-8 rounded-md border border-border hover:bg-surface-sunken inline-flex items-center justify-center text-muted-foreground" title="More">
+                        <button type="button" onClick={(e) => openActionMenu(u.id, e)} className="h-8 w-8 rounded-md border border-border hover:bg-surface-sunken inline-flex items-center justify-center text-muted-foreground" title="More">
                           <MoreVertical className="h-3.5 w-3.5" />
                         </button>
-                        {actionFor === u.id && (
+                        {actionFor?.id === u.id && (
                           <>
-                            <div className="fixed inset-0 z-30" onClick={() => setActionFor(null)} />
-                            <div className="absolute right-0 top-full mt-1 w-48 bg-surface border border-border rounded-md shadow-xl z-40 py-1 text-sm">
+                            <div className="fixed inset-0 z-40" onClick={() => setActionFor(null)} />
+                            <div style={{ top: actionFor.top, left: actionFor.left, transform: actionFor.up ? "translateY(-100%)" : undefined }} className="fixed w-48 bg-surface border border-border rounded-md shadow-xl z-50 py-1 text-sm">
                               <button onClick={() => { setEditUser(u); setActionFor(null); }} className="w-full px-3 py-1.5 hover:bg-surface-sunken text-left inline-flex items-center gap-2"><Edit className="h-3.5 w-3.5" />Edit profile</button>
                               <button onClick={() => { handleReset(u); setActionFor(null); }} className="w-full px-3 py-1.5 hover:bg-surface-sunken text-left inline-flex items-center gap-2"><Lock className="h-3.5 w-3.5" />Reset password</button>
                               {!u.twoFA && (
