@@ -374,11 +374,28 @@ const SEED_ENTRIES: Entry[] = [
 export default function AccountsPage() {
   const [tab, setTab] = React.useState<TabId>("overview");
   const [entries, setEntries] = React.useState<Entry[]>([]);
+  const [summary, setSummary] = React.useState<{ income: { category: string; value: number }[]; expense: { category: string; value: number }[]; recent: { id: number; date: string; desc: string; type: string; amount: number }[] } | null>(null);
   React.useEffect(() => {
     apiGet<Entry[]>("/account-entries")
       .then(rows => setEntries(rows.map(r => ({ ...r, id: String(r.id) })).reverse()))
       .catch(() => {});
+    apiGet<NonNullable<typeof summary>>("/accounts/summary")
+      .then(s => setSummary(s))
+      .catch(() => {});
   }, []);
+
+  // Colour palette reused for the live category breakdowns (charts need a colour
+  // per slice; the API returns only category + value).
+  const PIE_COLORS = ["var(--color-brand)", "var(--color-accent)", "var(--color-info)", "var(--color-warning)", "var(--color-status-checkout-pending)", "var(--color-status-inspected)", "var(--color-status-blocked)"];
+  const incomeBreakdown = summary?.income.length
+    ? summary.income.map((r, i) => ({ label: r.category, value: r.value, color: PIE_COLORS[i % PIE_COLORS.length] }))
+    : INCOME_BREAKDOWN;
+  const expenseBreakdown = summary?.expense.length
+    ? summary.expense.map((r, i) => ({ label: r.category, value: r.value, color: PIE_COLORS[i % PIE_COLORS.length] }))
+    : EXPENSE_BREAKDOWN;
+  const recentTxn = summary?.recent.length
+    ? summary.recent.map(r => ({ id: String(r.id), date: r.date, desc: r.desc, type: r.type as "Income" | "Expense" | "Refund", amount: r.amount }))
+    : RECENT_TXN;
   const [showEntry, setShowEntry] = React.useState<EntryType | null>(null);
   const [showExpenseFull, setShowExpenseFull] = React.useState(false);
   const [voucherEntry, setVoucherEntry] = React.useState<Entry | null>(null);
@@ -528,15 +545,15 @@ export default function AccountsPage() {
                 <div className="h-48">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={INCOME_BREAKDOWN} dataKey="value" nameKey="label" cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={2}>
-                        {INCOME_BREAKDOWN.map((d, i) => <Cell key={i} fill={d.color} stroke="var(--color-surface)" strokeWidth={2} />)}
+                      <Pie data={incomeBreakdown} dataKey="value" nameKey="label" cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={2}>
+                        {incomeBreakdown.map((d, i) => <Cell key={i} fill={d.color} stroke="var(--color-surface)" strokeWidth={2} />)}
                       </Pie>
                       <Tooltip contentStyle={{ background: "var(--color-surface-elevated)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12, color: "var(--color-foreground)" }} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
                 <ul className="mt-2 space-y-1.5">
-                  {INCOME_BREAKDOWN.map(i => (
+                  {incomeBreakdown.map(i => (
                     <li key={i.label} className="flex items-center justify-between text-xs">
                       <span className="flex items-center gap-2">
                         <span className="h-2 w-2 rounded-full" style={{ background: i.color }} />
@@ -555,15 +572,15 @@ export default function AccountsPage() {
                 <div className="h-48">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={EXPENSE_BREAKDOWN} dataKey="value" nameKey="label" cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={2}>
-                        {EXPENSE_BREAKDOWN.map((d, i) => <Cell key={i} fill={d.color} stroke="var(--color-surface)" strokeWidth={2} />)}
+                      <Pie data={expenseBreakdown} dataKey="value" nameKey="label" cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={2}>
+                        {expenseBreakdown.map((d, i) => <Cell key={i} fill={d.color} stroke="var(--color-surface)" strokeWidth={2} />)}
                       </Pie>
                       <Tooltip contentStyle={{ background: "var(--color-surface-elevated)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12, color: "var(--color-foreground)" }} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
                 <ul className="mt-2 space-y-1.5">
-                  {EXPENSE_BREAKDOWN.map(i => (
+                  {expenseBreakdown.map(i => (
                     <li key={i.label} className="flex items-center justify-between text-xs">
                       <span className="flex items-center gap-2">
                         <span className="h-2 w-2 rounded-full" style={{ background: i.color }} />
@@ -592,7 +609,7 @@ export default function AccountsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {RECENT_TXN.map(t => (
+                {recentTxn.map(t => (
                   <tr key={t.id} className="hover:bg-surface-sunken/40">
                     <td className="px-5 py-3 text-muted-foreground tabular">{t.date}</td>
                     <td className="px-5 py-3">{t.desc}</td>
@@ -855,7 +872,7 @@ export default function AccountsPage() {
               <CardTitle>Expense Categories — MTD</CardTitle>
             </CardHeader>
             <ul className="divide-y divide-border">
-              {EXPENSE_BREAKDOWN.map(c => {
+              {expenseBreakdown.map(c => {
                 const pctOfTotal = (c.value / expense) * 100;
                 return (
                   <li key={c.label} className="flex items-center gap-3 px-5 py-3">
@@ -891,7 +908,7 @@ export default function AccountsPage() {
               <CardTitle>Income Sources</CardTitle>
             </CardHeader>
             <ul className="divide-y divide-border">
-              {INCOME_BREAKDOWN.map(c => {
+              {incomeBreakdown.map(c => {
                 const pctOfTotal = (c.value / income) * 100;
                 return (
                   <li key={c.label} className="flex items-center gap-3 px-5 py-3">
@@ -1415,7 +1432,7 @@ export default function AccountsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {INCOME_BREAKDOWN.map(i => (
+                {incomeBreakdown.map(i => (
                   <tr key={i.label}>
                     <td className="px-5 py-3 font-medium">{i.label}</td>
                     <td className="px-5 py-3 text-right tabular">{money(i.value)}</td>
