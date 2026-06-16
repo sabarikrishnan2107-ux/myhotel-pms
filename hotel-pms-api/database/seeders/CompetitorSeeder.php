@@ -30,8 +30,8 @@ class CompetitorSeeder extends Seeder
         $date = '2026-06-16';
 
         foreach ($comps as $c) {
-            Competitor::firstOrCreate(['hotel' => $c['hotel']], [
-                'brand' => $c['brand'], 'km' => $c['km'], 'stars' => $c['stars'],
+            Competitor::firstOrCreate(['slug' => $c['slug']], [
+                'hotel' => $c['hotel'], 'brand' => $c['brand'], 'km' => $c['km'], 'stars' => $c['stars'],
                 'source' => $c['source'], 'active' => true,
             ]);
             foreach ($roomTypes as $rt => $rates) {

@@ -10,6 +10,7 @@ return new class extends Migration
     {
         Schema::create('competitors', function (Blueprint $t) {
             $t->id();
+            $t->string('slug')->nullable()->index();   // stable key linking to competitor_rates
             $t->string('hotel')->default('');
             $t->string('brand')->nullable();
             $t->decimal('km', 6, 2)->default(0);

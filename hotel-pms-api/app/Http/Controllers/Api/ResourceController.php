@@ -304,7 +304,7 @@ class ResourceController extends Controller
             'reverseCharge' => 'boolean',
         ],
         'competitors' => [
-            'hotel' => 'string|max:255', 'brand' => 'string|max:255', 'km' => 'numeric|min:0',
+            'slug' => 'string|max:50', 'hotel' => 'string|max:255', 'brand' => 'string|max:255', 'km' => 'numeric|min:0',
             'stars' => 'integer|min:1|max:5', 'source' => 'string|max:100', 'active' => 'boolean',
         ],
         'competitor-rates' => [
