@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
-import { apiPost } from "@/lib/api";
+import { apiGet, apiPost } from "@/lib/api";
 
 // ============================================================
 // TYPES + SEED DATA
@@ -163,6 +163,34 @@ export default function GroupQuotePage() {
   const [bqPkg, setBqPkg] = React.useState<BanquetPkg>("gold");
   const [bqEvents, setBqEvents] = React.useState(3); // mehndi + sangeet + reception
 
+  // --- LIVE reference data (meal plans, banquet packages, venues) from Postgres ---
+  const [apiMealPlans, setApiMealPlans] = React.useState<{ code: string; name: string; perPaxPerDay: number; desc?: string }[]>([]);
+  const [apiBanquet, setApiBanquet] = React.useState<{ id: number; name: string; price: number }[]>([]);
+  const [apiVenues, setApiVenues] = React.useState<{ id: number; name: string; capacity: number }[]>([]);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<typeof apiMealPlans>("/meal-plans").then(r => { if (!cancelled) setApiMealPlans(r); }).catch(() => {});
+    apiGet<{ id: number; name: string; type: string; price: number }[]>("/fb-packages")
+      .then(r => { if (!cancelled) setApiBanquet(r.filter(p => ["Silver", "Gold", "Platinum"].includes(p.name)).map(p => ({ id: p.id, name: p.name, price: p.price }))); }).catch(() => {});
+    apiGet<typeof apiVenues>("/hall-packages").then(r => { if (!cancelled) setApiVenues(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Reuse the original constants for icons/descriptions (not stored in DB); overlay live values.
+  const fbPlans = apiMealPlans.length
+    ? apiMealPlans.map(m => ({ code: m.code as FBPlan, name: m.name, perPaxPerDay: m.perPaxPerDay, desc: m.desc ?? "" }))
+    : FB_PLANS;
+  const banquetPkgs = apiBanquet.length
+    ? apiBanquet.map(p => {
+        const code = p.name.toLowerCase() as BanquetPkg;
+        const seed = BANQUET_PKGS.find(b => b.code === code);
+        return { code, name: p.name, perPax: p.price, icon: seed?.icon ?? Medal, desc: seed?.desc ?? "" };
+      })
+    : BANQUET_PKGS;
+  const banquetVenues = apiVenues.length
+    ? apiVenues.map(v => ({ code: v.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""), name: v.name, capacity: v.capacity }))
+    : BANQUET_VENUES;
+
   // --- SPECIAL REQUESTS ---
   const [requests, setRequests] = React.useState(
     "Mehndi setup on lawn Day 1, sangeet stage Day 2, reception Day 3. Jain meals for 22 guests. Pundit room near bridal suite. Baraat entry via porte-cochère."
@@ -182,11 +210,11 @@ export default function GroupQuotePage() {
 
   // F&B revenue
   const totalPax = totalRooms * paxPerRoom;
-  const fbMeta = FB_PLANS.find(f => f.code === fbPlan)!;
+  const fbMeta = fbPlans.find(f => f.code === fbPlan) ?? FB_PLANS.find(f => f.code === fbPlan)!;
   const fbRev = fbMeta.perPaxPerDay * totalPax * nights;
 
   // Banquet revenue
-  const bqMeta = BANQUET_PKGS.find(b => b.code === bqPkg)!;
+  const bqMeta = banquetPkgs.find(b => b.code === bqPkg) ?? BANQUET_PKGS.find(b => b.code === bqPkg)!;
   const banquetRev = bqPkg && fbPlan === "BQ" ? bqMeta.perPax * bqPax * bqEvents : bqMeta.perPax * bqPax * bqEvents;
 
   // Concession COSTS (what we give up / spend)
@@ -578,7 +606,7 @@ export default function GroupQuotePage() {
               <Badge tone="info" className="ml-auto">Step 4</Badge>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-              {FB_PLANS.map(p => {
+              {fbPlans.map(p => {
                 const active = p.code === fbPlan;
                 return (
                   <button
@@ -627,7 +655,7 @@ export default function GroupQuotePage() {
               <div className="space-y-1.5">
                 <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Venue</Label>
                 <Select value={bqVenue} onChange={e => setBqVenue(e.target.value)}>
-                  {BANQUET_VENUES.map(v => (
+                  {banquetVenues.map(v => (
                     <option key={v.code} value={v.code}>{v.name} (cap {v.capacity})</option>
                   ))}
                 </Select>
@@ -653,7 +681,7 @@ export default function GroupQuotePage() {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              {BANQUET_PKGS.map(p => {
+              {banquetPkgs.map(p => {
                 const Icon = p.icon;
                 const active = p.code === bqPkg;
                 return (
