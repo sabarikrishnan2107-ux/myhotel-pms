@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BackupController;
+use App\Http\Controllers\Api\EInvoiceController;
 use App\Http\Controllers\Api\EmailController;
 use App\Http\Controllers\Api\HallBookingMailController;
 use App\Http\Controllers\Api\InvoiceMailController;
@@ -60,6 +61,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Night audit — post nightly room charges to in-house folios
     Route::post('/night-audit', [NightAuditController::class, 'run']);
+
+    // e-Invoice — generate a (locally-signed) IRN/ACK from real folio totals.
+    // GET /einvoices?bookingNo=… is served by the generic ResourceController.
+    Route::post('/einvoices/generate/{bookingNo}', [EInvoiceController::class, 'generate']);
 
     // Cashier shift — live mode totals from real payments + close-out
     Route::get('/shift/current', [ShiftController::class, 'current']);

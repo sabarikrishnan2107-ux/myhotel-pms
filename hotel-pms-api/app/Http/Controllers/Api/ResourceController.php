@@ -10,6 +10,7 @@ use App\Models\AppUser;
 use App\Models\Booking;
 use App\Models\Channel;
 use App\Models\ComplianceLicense;
+use App\Models\EInvoice;
 use App\Models\EmailSchedule;
 use App\Models\Enquiry;
 use App\Models\FbPackage;
@@ -109,6 +110,7 @@ class ResourceController extends Controller
         'folio-charges'          => FolioCharge::class,
         'folio-payments'         => FolioPayment::class,
         'folio-adjustments'      => FolioAdjustment::class,
+        'einvoices'              => EInvoice::class,
         'staff'                  => Staff::class,
         'vendors'                => Vendor::class,
         'inventory-items'        => InventoryItem::class,
@@ -174,6 +176,7 @@ class ResourceController extends Controller
         'folio-charges'  => 'bookingNo',
         'folio-payments' => 'bookingNo',
         'folio-adjustments' => 'bookingNo',
+        'einvoices' => 'bookingNo',
         'group-rooming'  => 'groupCode',
     ];
 
@@ -288,6 +291,12 @@ class ResourceController extends Controller
             'bookingNo' => 'string|max:50', 'date' => 'string|max:50',
             'type' => 'string|max:50', 'description' => 'string|max:500',
             'amount' => 'integer', 'approver' => 'string|max:255',
+        ],
+        'einvoices' => [
+            'bookingNo' => 'string|max:50', 'irn' => 'string|max:64', 'ackNo' => 'string|max:50',
+            'ackDate' => 'string|max:50', 'status' => 'string|max:50',
+            'placeOfSupply' => 'string|max:100', 'recipientGstin' => 'string|max:50',
+            'reverseCharge' => 'boolean',
         ],
         'staff' => [
             'name' => 'string|max:255', 'role' => 'string|max:100', 'dept' => 'string|max:100',
@@ -814,6 +823,7 @@ class ResourceController extends Controller
         'guests' => ['name'], 'bookings' => ['guestName'],
         'folio-charges' => ['bookingNo', 'description'], 'folio-payments' => ['bookingNo'],
         'folio-adjustments' => ['bookingNo', 'type', 'amount'],
+        'einvoices' => ['bookingNo'],
         'staff' => ['name'], 'vendors' => ['name'], 'inventory-items' => ['name'],
         'menu-items' => ['name'], 'fb-orders' => ['tableNo'],
         'maintenance-tickets' => ['title'], 'enquiries' => ['name'], 'found-items' => ['name'],

@@ -49,4 +49,17 @@ class MockToLiveTest extends TestCase
 
         $this->assertDatabaseHas('guests', ['id' => $id, 'kycVerified' => true, 'idType' => 'Aadhaar']);
     }
+
+    public function test_einvoice_generate_persists_a_row(): void
+    {
+        $res = $this->postJson('/api/einvoices/generate/BK101083', [
+            'taxableValue' => 10000, 'cgst' => 900, 'sgst' => 900, 'igst' => 0,
+            'placeOfSupply' => 'Maharashtra (27)', 'recipientGstin' => null,
+        ])->assertOk()->assertJsonFragment(['status' => 'generated']);
+
+        $this->assertNotEmpty($res->json('irn'));
+        $this->assertDatabaseHas('einvoices', ['bookingNo' => 'BK101083', 'status' => 'generated']);
+
+        $this->getJson('/api/einvoices?bookingNo=BK101083')->assertOk()->assertJsonCount(1);
+    }
 }
