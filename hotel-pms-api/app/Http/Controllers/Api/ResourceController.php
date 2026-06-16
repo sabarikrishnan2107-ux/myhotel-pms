@@ -9,6 +9,8 @@ use App\Models\AuditLog;
 use App\Models\AppUser;
 use App\Models\Booking;
 use App\Models\Channel;
+use App\Models\Competitor;
+use App\Models\CompetitorRate;
 use App\Models\ComplianceLicense;
 use App\Models\EInvoice;
 use App\Models\EmailSchedule;
@@ -111,6 +113,8 @@ class ResourceController extends Controller
         'folio-payments'         => FolioPayment::class,
         'folio-adjustments'      => FolioAdjustment::class,
         'einvoices'              => EInvoice::class,
+        'competitors'            => Competitor::class,
+        'competitor-rates'       => CompetitorRate::class,
         'staff'                  => Staff::class,
         'vendors'                => Vendor::class,
         'inventory-items'        => InventoryItem::class,
@@ -177,6 +181,7 @@ class ResourceController extends Controller
         'folio-payments' => 'bookingNo',
         'folio-adjustments' => 'bookingNo',
         'einvoices' => 'bookingNo',
+        'competitor-rates' => 'competitorId',
         'group-rooming'  => 'groupCode',
     ];
 
@@ -297,6 +302,14 @@ class ResourceController extends Controller
             'ackDate' => 'string|max:50', 'status' => 'string|max:50',
             'placeOfSupply' => 'string|max:100', 'recipientGstin' => 'string|max:50',
             'reverseCharge' => 'boolean',
+        ],
+        'competitors' => [
+            'hotel' => 'string|max:255', 'brand' => 'string|max:255', 'km' => 'numeric|min:0',
+            'stars' => 'integer|min:1|max:5', 'source' => 'string|max:100', 'active' => 'boolean',
+        ],
+        'competitor-rates' => [
+            'competitorId' => 'string|max:50', 'date' => 'string|max:50',
+            'roomType' => 'string|max:50', 'rate' => 'integer|min:0',
         ],
         'staff' => [
             'name' => 'string|max:255', 'role' => 'string|max:100', 'dept' => 'string|max:100',
@@ -824,6 +837,8 @@ class ResourceController extends Controller
         'folio-charges' => ['bookingNo', 'description'], 'folio-payments' => ['bookingNo'],
         'folio-adjustments' => ['bookingNo', 'type', 'amount'],
         'einvoices' => ['bookingNo'],
+        'competitors' => ['hotel'],
+        'competitor-rates' => ['competitorId', 'rate'],
         'staff' => ['name'], 'vendors' => ['name'], 'inventory-items' => ['name'],
         'menu-items' => ['name'], 'fb-orders' => ['tableNo'],
         'maintenance-tickets' => ['title'], 'enquiries' => ['name'], 'found-items' => ['name'],
