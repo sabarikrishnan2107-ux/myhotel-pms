@@ -37,4 +37,16 @@ class MockToLiveTest extends TestCase
         $this->postJson('/api/folio-adjustments', ['bookingNo' => 'BK1', 'type' => 'Comp'])
             ->assertStatus(422);
     }
+
+    public function test_guest_kyc_can_be_verified(): void
+    {
+        $id = $this->postJson('/api/guests', ['name' => 'Asha'])->json('id');
+
+        $this->putJson("/api/guests/{$id}", [
+            'idType' => 'Aadhaar', 'idNumber' => 'XXXX-1234',
+            'kycVerified' => true, 'kycVerifiedAt' => '2026-06-16 14:08', 'kycVerifiedBy' => 'Front Desk',
+        ])->assertOk()->assertJsonFragment(['kycVerified' => true]);
+
+        $this->assertDatabaseHas('guests', ['id' => $id, 'kycVerified' => true, 'idType' => 'Aadhaar']);
+    }
 }

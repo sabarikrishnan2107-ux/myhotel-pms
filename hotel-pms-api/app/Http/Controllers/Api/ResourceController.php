@@ -266,6 +266,7 @@ class ResourceController extends Controller
             'internalNotes' => 'string|max:2000|nullable', 'blacklistReason' => 'string|max:500|nullable', 'loyaltyPoints' => 'integer|min:0',
             'idFront' => 'string|nullable', 'idBack' => 'string|nullable', 'photo' => 'string|nullable', 'signature' => 'string|nullable',
             'gender' => 'string|max:50|nullable', 'company' => 'string|max:255|nullable', 'gst' => 'string|max:50|nullable',
+            'kycVerified' => 'boolean', 'kycVerifiedAt' => 'string|max:50|nullable', 'kycVerifiedBy' => 'string|max:255|nullable',
         ],
         'bookings' => [
             'bookingNo' => 'string|max:50', 'guestName' => 'string|max:255', 'roomNumber' => 'string|max:50|nullable',
