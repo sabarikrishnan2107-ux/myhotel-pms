@@ -409,10 +409,10 @@ const SEED_PURCHASES: Purchase[] = [
 
 export default function InventoryPage() {
   const [tab, setTab] = React.useState<TabId>("items");
-  const [items, setItems] = React.useState<Item[]>(INVENTORY_ITEMS);
-  const [movements, setMovements] = React.useState<Movement[]>(INITIAL_MOVEMENTS);
-  const [pos, setPos] = React.useState<PO[]>(INITIAL_POS);
-  const [wastage, setWastage] = React.useState(WASTAGE_LOG);
+  const [items, setItems] = React.useState<Item[]>([]);
+  const [movements, setMovements] = React.useState<Movement[]>([]);
+  const [pos, setPos] = React.useState<PO[]>([]);
+  const [wastage, setWastage] = React.useState<typeof WASTAGE_LOG>([]);
 
   // Filters
   const [search, setSearch] = React.useState("");
@@ -457,7 +457,7 @@ export default function InventoryPage() {
   const [amenityView, setAmenityView] = React.useState<"grid" | "list">("grid");
 
   // Purchases
-  const [purchases, setPurchases] = React.useState<Purchase[]>(SEED_PURCHASES);
+  const [purchases, setPurchases] = React.useState<Purchase[]>([]);
   const [pSearch, setPSearch] = React.useState("");
   const [pCat, setPCat] = React.useState<"all" | PurchaseCategory>("all");
   const [pDept, setPDept] = React.useState<"all" | PurchaseDept>("all");
@@ -484,10 +484,10 @@ export default function InventoryPage() {
   React.useEffect(() => {
     let cancelled = false;
     apiGet<Item[]>("/inventory-items").then(r => { if (!cancelled) setItems(r); }).catch(() => {});
-    apiGet<Purchase[]>("/inventory-purchases").then(r => { if (!cancelled && r.length) setPurchases(r); }).catch(() => {});
-    apiGet<Movement[]>("/stock-movements").then(r => { if (!cancelled && r.length) setMovements(r); }).catch(() => {});
-    apiGet<PO[]>("/purchase-orders").then(r => { if (!cancelled && r.length) setPos(r); }).catch(() => {});
-    apiGet<typeof WASTAGE_LOG>("/inventory-wastage").then(r => { if (!cancelled && r.length) setWastage(r); }).catch(() => {});
+    apiGet<Purchase[]>("/inventory-purchases").then(r => { if (!cancelled) setPurchases(r); }).catch(() => {});
+    apiGet<Movement[]>("/stock-movements").then(r => { if (!cancelled) setMovements(r); }).catch(() => {});
+    apiGet<PO[]>("/purchase-orders").then(r => { if (!cancelled) setPos(r); }).catch(() => {});
+    apiGet<typeof WASTAGE_LOG>("/inventory-wastage").then(r => { if (!cancelled) setWastage(r); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
 

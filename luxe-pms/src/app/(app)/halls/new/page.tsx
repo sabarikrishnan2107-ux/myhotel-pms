@@ -11,9 +11,10 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { HALLS } from "@/lib/mock-data-ext";
 import { cn, money } from "@/lib/utils";
-import { apiPost } from "@/lib/api";
+import { apiGet, apiPost } from "@/lib/api";
+
+type Venue = { id: string; name: string; capacity: number; hourly: number; halfDay: number; fullDay: number };
 
 const EVENT_TYPES = ["Wedding", "Engagement", "Conference", "Corporate Meeting", "Birthday", "Anniversary", "Product Launch", "Other"];
 
@@ -40,7 +41,15 @@ export default function NewHallBookingPage() {
   const [phone, setPhone] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [eventType, setEventType] = React.useState("Wedding");
-  const [hallId, setHallId] = React.useState(HALLS[0].id);
+  // Venues (master) loaded from Configuration → Food & Hall Packages (/hall-packages).
+  const [halls, setHalls] = React.useState<Venue[]>([]);
+  const [hallId, setHallId] = React.useState("");
+  React.useEffect(() => {
+    apiGet<Venue[]>("/hall-packages").then(rows => setHalls(rows.map(h => ({ ...h, id: String(h.id) })))).catch(() => {});
+  }, []);
+  React.useEffect(() => {
+    if (halls.length && !halls.some(h => h.id === hallId)) setHallId(halls[0].id);
+  }, [halls, hallId]);
   const todayISO = new Date().toLocaleDateString("en-CA"); // blocks past dates on event date
   const [eventDate, setEventDate] = React.useState(todayISO); // default to today, never the past
   const [startTime, setStartTime] = React.useState("18:00");
@@ -51,7 +60,7 @@ export default function NewHallBookingPage() {
   const [advancePct, setAdvancePct] = React.useState(30);
   const [notes, setNotes] = React.useState("");
 
-  const hall = HALLS.find(h => h.id === hallId)!;
+  const hall = halls.find(h => h.id === hallId);
   const pkg = PACKAGES.find(p => p.id === packageId);
 
   // Pricing math
@@ -59,11 +68,11 @@ export default function NewHallBookingPage() {
   const endH = parseInt(endTime);
   const hours = Math.max(3, endH - startH); // min 3 hours
   const slotType: "hourly" | "halfDay" | "fullDay" = hours >= 9 ? "fullDay" : hours >= 5 ? "halfDay" : "hourly";
-  const hallCost = slotType === "fullDay" ? hall.fullDay : slotType === "halfDay" ? hall.halfDay : hall.hourly * hours;
+  const hallCost = slotType === "fullDay" ? (hall?.fullDay ?? 0) : slotType === "halfDay" ? (hall?.halfDay ?? 0) : (hall?.hourly ?? 0) * hours;
   const foodCost = pkg ? pkg.pricePerPax * pax : 0;
   const extrasCost = extras.reduce((s, id) => s + (EXTRA_SERVICES.find(e => e.id === id)?.price ?? 0), 0);
-  const capacityWarning = pax > hall.capacity;
-  const extraPax = capacityWarning ? pax - hall.capacity : 0;
+  const capacityWarning = !!hall && pax > hall.capacity;
+  const extraPax = capacityWarning && hall ? pax - hall.capacity : 0;
   const extraPaxCost = extraPax * 35; // surcharge per extra guest
 
   const subtotal = hallCost + foodCost + extrasCost + extraPaxCost;
@@ -80,7 +89,7 @@ export default function NewHallBookingPage() {
     if (saving || !requiredOk) return;
     setSaving(true);
     apiPost("/hall-bookings", {
-      customer, phone, email, hall: hall.name, date: eventDate,
+      customer, phone, email, hall: hall?.name ?? "", date: eventDate,
       start: startTime, end: endTime, guests: pax,
       package: pkg?.name ?? eventType,
       advance: Math.round(advance), total: Math.round(total),
@@ -170,7 +179,7 @@ export default function NewHallBookingPage() {
           <Card className="p-6 space-y-4">
             <SectionHead icon={Building2} title="Hall Selection" required />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {HALLS.map(h => {
+              {halls.map(h => {
                 const tooSmall = pax > h.capacity;
                 return (
                   <button
@@ -217,7 +226,7 @@ export default function NewHallBookingPage() {
               {capacityWarning && (
                 <p className="text-xs text-warning inline-flex items-center gap-1 mt-2">
                   <AlertCircle className="h-3 w-3" />
-                  Selected hall capacity is {hall.capacity} · {extraPax} extra guests incur {money(35)}/pax surcharge
+                  Selected hall capacity is {hall?.capacity ?? 0} · {extraPax} extra guests incur {money(35)}/pax surcharge
                 </p>
               )}
             </Field>
@@ -304,8 +313,8 @@ export default function NewHallBookingPage() {
             <Row k="Date" v={eventDate} />
             <Row k="Time" v={`${startTime} → ${endTime}`} />
             <Row k="Duration" v={`${hours} hours`} />
-            <Row k="Hall" v={hall.name} />
-            <Row k="Capacity" v={`${pax} / ${hall.capacity}`} />
+            <Row k="Hall" v={hall?.name ?? "—"} />
+            <Row k="Capacity" v={`${pax} / ${hall?.capacity ?? 0}`} />
             <Row k="Package" v={pkg?.name ?? "—"} />
           </dl>
 

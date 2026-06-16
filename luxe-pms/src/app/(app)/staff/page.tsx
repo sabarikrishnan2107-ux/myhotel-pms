@@ -18,7 +18,7 @@ import { apiGet, apiPost, apiPut } from "@/lib/api";
 type Staff = typeof STAFF[number];
 
 export default function StaffPage() {
-  const [staff, setStaff] = React.useState<Staff[]>(STAFF);
+  const [staff, setStaff] = React.useState<Staff[]>([]);
   const [search, setSearch] = React.useState("");
   const [deptFilter, setDeptFilter] = React.useState<"all" | string>("all");
   const [statusFilter, setStatusFilter] = React.useState<"all" | "active" | "inactive">("all");

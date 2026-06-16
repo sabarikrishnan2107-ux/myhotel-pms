@@ -40,9 +40,13 @@ export default function HallsPage() {
   const [statusFilter, setStatusFilter] = React.useState<"all" | HallBooking["status"] | "cancelled">("all");
   const [actionMenuFor, setActionMenuFor] = React.useState<string | null>(null);
 
-  // Bookings load from the database; cancel/modify layer over them and persist.
+  // Venues (master) + bookings load from the database; cancel/modify layer over them and persist.
+  const [halls, setHalls] = React.useState<Hall[]>([]);
   const [bookings, setBookings] = React.useState<HallBooking[]>([]);
   React.useEffect(() => {
+    apiGet<Hall[]>("/hall-packages")
+      .then(rows => setHalls(rows.map(h => ({ ...h, id: String(h.id) }))))
+      .catch(() => {});
     apiGet<HallBooking[]>("/hall-bookings")
       .then(rows => setBookings(rows.map(b => ({ ...b, id: String(b.id) }))))
       .catch(() => {});
@@ -127,7 +131,7 @@ export default function HallsPage() {
 
       {/* KPI bar */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPICard label="Halls" value={HALLS.length} icon={Building2} accent="brand" />
+        <KPICard label="Halls" value={halls.length} icon={Building2} accent="brand" />
         <KPICard label="Active Bookings" value={effective.filter(b => b.status !== "cancelled").length} icon={Calendar} accent="info" />
         <KPICard label="Hall Revenue" value={money(totalRev)} icon={IndianRupee} accent="success" />
         <KPICard label="Outstanding" value={money(outstanding)} icon={Wallet} accent="warning" hint={`of ${money(totalRev)}`} />
@@ -142,7 +146,7 @@ export default function HallsPage() {
           </div>
         </CardHeader>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {HALLS.map(h => {
+          {halls.map(h => {
             const isActive = hallFilter === h.name;
             const bookCount = effective.filter(b => b.hall === h.name && b.status !== "cancelled").length;
             return (
@@ -216,7 +220,7 @@ export default function HallsPage() {
           </div>
           <Select value={hallFilter} onChange={e => setHallFilter(e.target.value)} className="h-9 w-auto">
             <option value="all">All halls</option>
-            {HALLS.map(h => <option key={h.id} value={h.name}>{h.name}</option>)}
+            {halls.map(h => <option key={h.id} value={h.name}>{h.name}</option>)}
           </Select>
           <Select value={statusFilter} onChange={e => setStatusFilter(e.target.value as typeof statusFilter)} className="h-9 w-auto">
             <option value="all">All statuses</option>
@@ -418,6 +422,8 @@ function Row({ label, value }: { label: string; value: string }) {
 function HallDetailDrawer({ booking, notes, onClose, onModify, onCancel }: {
   booking: HallBooking; notes: string; onClose: () => void; onModify: () => void; onCancel: () => void;
 }) {
+  const [halls, setHalls] = React.useState<Hall[]>([]);
+  React.useEffect(() => { apiGet<Hall[]>("/hall-packages").then(r => setHalls(r.map(h => ({ ...h, id: String(h.id) })))).catch(() => {}); }, []);
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
@@ -426,7 +432,7 @@ function HallDetailDrawer({ booking, notes, onClose, onModify, onCancel }: {
   }, [onClose]);
 
   const balance = booking.total - booking.advance;
-  const hall = HALLS.find(h => h.name === booking.hall);
+  const hall = halls.find(h => h.name === booking.hall);
 
   return (
     <>

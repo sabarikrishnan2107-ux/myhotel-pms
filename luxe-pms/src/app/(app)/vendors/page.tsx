@@ -23,7 +23,7 @@ export default function VendorsPage() {
   const [view, setView] = React.useState<"cards" | "list">("cards");
   const [q, setQ] = React.useState("");
 
-  const [vendors, setVendors] = React.useState(VENDORS);
+  const [vendors, setVendors] = React.useState<typeof VENDORS>([]);
   const [addOpen, setAddOpen] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };

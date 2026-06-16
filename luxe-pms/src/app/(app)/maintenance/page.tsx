@@ -151,12 +151,12 @@ export default function MaintenancePage() {
 
   // Preventive schedules & AMC vendors: seed from the const (offline fallback),
   // replaced by the backend on mount; .catch keeps the seed when offline.
-  const [schedules, setSchedules] = React.useState<ScheduleItem[]>(SCHEDULES);
-  const [amcVendors, setAmcVendors] = React.useState<AMCVendor[]>(AMC_VENDORS);
+  const [schedules, setSchedules] = React.useState<ScheduleItem[]>([]);
+  const [amcVendors, setAmcVendors] = React.useState<AMCVendor[]>([]);
   React.useEffect(() => {
     let cancelled = false;
-    apiGet<ScheduleItem[]>("/maintenance-schedules").then(r => { if (!cancelled && r.length) setSchedules(r); }).catch(() => {});
-    apiGet<AMCVendor[]>("/amc-contracts").then(r => { if (!cancelled && r.length) setAmcVendors(r); }).catch(() => {});
+    apiGet<ScheduleItem[]>("/maintenance-schedules").then(r => { if (!cancelled) setSchedules(r); }).catch(() => {});
+    apiGet<AMCVendor[]>("/amc-contracts").then(r => { if (!cancelled) setAmcVendors(r); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -169,7 +169,7 @@ export default function MaintenancePage() {
     return d >= 0 && d <= 90;
   }).length;
 
-  const [tickets, setTickets] = React.useState<Ticket[]>(MAINTENANCE_TICKETS);
+  const [tickets, setTickets] = React.useState<Ticket[]>([]);
   React.useEffect(() => {
     let cancelled = false;
     apiGet<Ticket[]>("/maintenance-tickets").then(r => { if (!cancelled) setTickets(r); }).catch(() => {});
