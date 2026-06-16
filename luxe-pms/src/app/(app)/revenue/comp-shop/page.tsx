@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet, apiPost, apiDelete } from "@/lib/api";
 
 // ============================================================
 // SEED — deterministic
@@ -18,6 +19,7 @@ import { cn, money } from "@/lib/utils";
 
 type Competitor = {
   id: string;
+  dbId?: number;     // Postgres id (for persistence); `id` stays the slug for rate lookups
   hotel: string;
   brand: string;
   km: number;
@@ -132,6 +134,39 @@ export default function CompShopPage() {
   const [addOpen, setAddOpen] = React.useState(false);
   const [newComp, setNewComp] = React.useState({ hotel: "", brand: "", km: "", stars: "5" });
   const [comps, setComps] = React.useState<Competitor[]>(COMPETITORS);
+  type ApiComp = { id: number; slug?: string; hotel: string; brand?: string; km: number; stars: number; source: string };
+  type ApiRate = { id: number; competitorId: string; date: string; roomType: string; rate: number };
+  const [compRates, setCompRates] = React.useState<ApiRate[]>([]);
+
+  // Load the real competitor set + their published rates from Postgres.
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<ApiComp[]>("/competitors").then(rows => {
+      if (cancelled || !rows.length) return;
+      setComps(rows.map(r => ({
+        id: r.slug || `c${r.id}`, dbId: r.id, hotel: r.hotel, brand: r.brand || "Independent",
+        km: r.km, stars: r.stars, source: r.source || "Booking.com",
+        yourRankBefore: 0, scrapeOk: true, lastScrape: "manual entry", staleHours: 0, failureRate: 0,
+      })));
+    }).catch(() => {});
+    apiGet<ApiRate[]>("/competitor-rates").then(rows => { if (!cancelled) setCompRates(rows); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Live "By Room Type" comparison built from competitor_rates (falls back to
+  // the illustrative ROOM_TYPES only before the API responds). "you" is the
+  // property's own published rate (kept from the seed for now).
+  const liveRoomTypes = React.useMemo(() => {
+    if (!compRates.length) return ROOM_TYPES;
+    return ROOM_TYPES.map(rt => {
+      const row: Record<string, number | string> = { code: rt.code, name: rt.name, you: rt.you };
+      for (const slug of COMP_IDS) {
+        const hit = compRates.find(r => r.competitorId === slug && r.roomType === rt.code);
+        row[slug] = hit ? hit.rate : (rt as unknown as Record<string, number>)[slug];
+      }
+      return row as unknown as typeof ROOM_TYPES[number];
+    });
+  }, [compRates]);
   const [scrapeFreq, setScrapeFreq] = React.useState("15");
   const [alertThresh, setAlertThresh] = React.useState("10");
   const [staleAlert, setStaleAlert] = React.useState("2");
@@ -174,24 +209,28 @@ export default function CompShopPage() {
 
   // ----- handlers -----
   const removeComp = (id: string) => {
+    const target = comps.find((c) => c.id === id);
     setComps((c) => c.filter((x) => x.id !== id));
-    showToast(`Removed ${COMPETITORS.find((c) => c.id === id)?.hotel ?? id} from comp set`);
+    if (target?.dbId != null) apiDelete(`/competitors/${target.dbId}`).catch(() => showToast("⚠ Delete failed — backend offline"));
+    showToast(`Removed ${target?.hotel ?? id} from comp set`);
   };
   const addNew = () => {
     if (!newComp.hotel.trim()) { showToast("Hotel name required"); return; }
-    const id = `c${Date.now()}`;
-    setComps((c) => [
-      ...c,
-      {
-        id, hotel: newComp.hotel, brand: newComp.brand || "Independent",
-        km: Number(newComp.km) || 2.0, stars: Number(newComp.stars) || 5,
-        yourRankBefore: c.length + 2, scrapeOk: true, lastScrape: "queued",
-        staleHours: 0, failureRate: 0, source: "Booking.com",
-      },
-    ]);
+    const slug = newComp.hotel.trim().toLowerCase().split(/\s+/)[0].replace(/[^a-z0-9]/g, "");
+    const payload = {
+      slug, hotel: newComp.hotel.trim(), brand: newComp.brand || "Independent",
+      km: Number(newComp.km) || 2.0, stars: Number(newComp.stars) || 5, source: "Booking.com", active: true,
+    };
+    apiPost<{ id: number }>("/competitors", payload)
+      .then(row => setComps((c) => [...c, {
+        id: slug || `c${row.id}`, dbId: row.id, hotel: payload.hotel, brand: payload.brand,
+        km: payload.km, stars: payload.stars, yourRankBefore: c.length + 2,
+        scrapeOk: true, lastScrape: "manual entry", staleHours: 0, failureRate: 0, source: payload.source,
+      }]))
+      .catch(() => showToast("⚠ Save failed — backend offline"));
     setNewComp({ hotel: "", brand: "", km: "", stars: "5" });
     setAddOpen(false);
-    showToast(`${newComp.hotel} added to comp set · scrape queued`);
+    showToast(`${newComp.hotel} added to comp set`);
   };
 
   return (
@@ -648,9 +687,9 @@ export default function CompShopPage() {
             <h2 className="text-base font-semibold">By Room Type · Today&apos;s BAR Comparison</h2>
             <p className="text-xs text-muted-foreground mt-0.5">Like-for-like comparison across published rates · 2 Jun 2026</p>
           </div>
-          <Select className="w-auto h-8 text-xs" value={roomType} onChange={(e) => { setRoomType(e.target.value); showToast(`Filtered to ${ROOM_TYPES.find((r) => r.code === e.target.value)?.name}`); }}>
+          <Select className="w-auto h-8 text-xs" value={roomType} onChange={(e) => { setRoomType(e.target.value); showToast(`Filtered to ${liveRoomTypes.find((r) => r.code === e.target.value)?.name}`); }}>
             <option value="STD">All room types</option>
-            {ROOM_TYPES.map((r) => <option key={r.code} value={r.code}>{r.name}</option>)}
+            {liveRoomTypes.map((r) => <option key={r.code} value={r.code}>{r.name}</option>)}
           </Select>
         </div>
         <table className="w-full text-sm">
@@ -663,7 +702,7 @@ export default function CompShopPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {ROOM_TYPES.map((rt) => {
+            {liveRoomTypes.map((rt) => {
               const ids = ["you", ...COMP_IDS] as const;
               const vals = ids.map((id) => ({ id, p: (rt as unknown as Record<string, number>)[id] }));
               const min = Math.min(...vals.map((v) => v.p));
@@ -716,11 +755,14 @@ export default function CompShopPage() {
         <Card className="overflow-hidden lg:col-span-2">
           <div className="flex items-center justify-between p-4 pb-3 border-b border-border">
             <div>
-              <h2 className="text-base font-semibold">Scrape Status</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">Per-competitor health · alerting if stale &gt; {staleAlert}h</p>
+              <h2 className="text-base font-semibold">Comp Set Status</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Rates are manually entered / imported — not live-scraped</p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => showToast("Force-rescraping all sources")}>
-              <RefreshCw className="h-3.5 w-3.5" />Re-scrape all
+            <Button variant="outline" size="sm" onClick={() => {
+              apiGet<ApiRate[]>("/competitor-rates").then(setCompRates).catch(() => {});
+              showToast("Refreshed from database");
+            }}>
+              <RefreshCw className="h-3.5 w-3.5" />Refresh
             </Button>
           </div>
           <table className="w-full text-sm">
@@ -775,8 +817,8 @@ export default function CompShopPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Button variant="ghost" size="sm" onClick={() => showToast(`Re-scraping ${c.hotel} from ${c.source}`)}>
-                        Re-scrape
+                      <Button variant="ghost" size="sm" onClick={() => removeComp(c.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />Remove
                       </Button>
                     </td>
                   </tr>
