@@ -45,6 +45,54 @@ export function rolesFor(item: { roles?: Role[] }): Role[] {
   return item.roles ?? ["staff", "manager"];
 }
 
+// ---- Real per-user page access (from the DB role, returned by /login + /me) ----
+// `pms_pages` holds either "*" (all pages — Admin/Owner/Manager) or a JSON array
+// of allowed sidebar hrefs. Absent → treat as all (keeps existing sessions working).
+const PAGES_KEY = "pms_pages";
+const ROLE_NAME_KEY = "pms_role_name";
+
+type SessionUser = { role?: string; pages?: string[] | "*" };
+
+/** Persist the role name + allowed pages from a login / me response. */
+export function setSessionUser(user: SessionUser | undefined) {
+  if (typeof window === "undefined" || !user) return;
+  if (user.role) window.localStorage.setItem(ROLE_NAME_KEY, user.role);
+  const pages = user.pages;
+  if (pages === "*" || (Array.isArray(pages) && pages.includes("*"))) {
+    window.localStorage.setItem(PAGES_KEY, "*");
+  } else if (Array.isArray(pages)) {
+    window.localStorage.setItem(PAGES_KEY, JSON.stringify(pages));
+  }
+}
+export function clearSessionUser() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(PAGES_KEY);
+  window.localStorage.removeItem(ROLE_NAME_KEY);
+}
+export function getRoleName(): string {
+  if (typeof window === "undefined") return "Admin";
+  return window.localStorage.getItem(ROLE_NAME_KEY) || "Admin";
+}
+/** Allowed page hrefs, or "*" for all-access, or null when unset (→ all). */
+export function getAllowedPages(): string[] | "*" | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(PAGES_KEY);
+  if (!raw) return null;
+  if (raw === "*") return "*";
+  try { const a = JSON.parse(raw); return Array.isArray(a) ? a : null; } catch { return null; }
+}
+/** Can the current user see/visit this page? Restricted only when the DB role
+ *  defines a finite page list; Admin/Owner/Manager ("*") and unset → all. */
+export function canAccessPage(pathname: string): boolean {
+  const pages = getAllowedPages();
+  if (pages === null || pages === "*") return true;
+  const item = matchNavItem(pathname);
+  // Pages with no nav entry (sub-routes/detail pages) inherit their parent's
+  // access; if there's no governing item, allow (operational deep links).
+  if (!item) return true;
+  return pages.includes(item.href);
+}
+
 /** Longest-matching nav item for a pathname (so sub-pages inherit access). */
 function matchNavItem(pathname: string) {
   return NAV

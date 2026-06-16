@@ -74,7 +74,7 @@ export default function UsersPage() {
   const [roles, setRoles] = React.useState<{ id: string; name: string }[]>([]);
   const roleNames = roles.map(r => r.name);
   React.useEffect(() => {
-    apiGet<(SeededUser & { phone?: string; joinedAt?: string })[]>("/app-users")
+    apiGet<(SeededUser & { phone?: string; joinedAt?: string })[]>("/staff-accounts")
       .then(rows => setUsers(rows.map((r, i) => enrich({ ...r, id: String(r.id) }, i))))
       .catch(() => {});
     apiGet<{ id: number | string; name: string }[]>("/roles")
@@ -113,11 +113,11 @@ export default function UsersPage() {
   const sessionsNow = users.reduce((t, u) => t + (u.sessions?.filter(s => s.active).length || 0), 0);
   const noMfa = users.filter(u => u.status === "active" && !u.twoFA).length;
 
-  const DB_FIELDS = ["name", "email", "role", "status", "last", "twoFA", "phone", "joinedAt"];
+  const DB_FIELDS = ["name", "email", "role", "department", "status", "last", "twoFA", "phone", "joinedAt"];
   const update = (id: string, patch: Partial<UserExt>) => {
     setUsers(prev => prev.map(u => u.id === id ? { ...u, ...patch } : u));
     const dbPatch = Object.fromEntries(Object.entries(patch).filter(([k]) => DB_FIELDS.includes(k)));
-    if (Object.keys(dbPatch).length) apiPut(`/app-users/${id}`, dbPatch).catch(() => {});
+    if (Object.keys(dbPatch).length) apiPut(`/staff-accounts/${id}`, dbPatch).catch(() => {});
   };
 
   const handleSuspend = (u: UserExt) => {
@@ -134,15 +134,14 @@ export default function UsersPage() {
   };
   const handleReset = (u: UserExt) => setResetUser(u);
 
-  const handleInvite = (data: { name: string; email: string; role: Role; phone: string; sendEmail: boolean; sendWhatsApp: boolean }) => {
+  const handleInvite = (data: { name: string; email: string; password: string; role: Role; department: string; phone: string; sendEmail: boolean; sendWhatsApp: boolean }) => {
     const draft = {
-      name: data.name, email: data.email, role: data.role,
-      status: "active", last: "Pending first login", twoFA: false,
-      phone: data.phone, joinedAt: new Date().toISOString().slice(0, 10),
+      name: data.name, email: data.email, password: data.password, role: data.role,
+      department: data.department || null, status: "active", phone: data.phone,
     };
-    apiPost<SeededUser>("/app-users", draft)
+    apiPost<SeededUser>("/staff-accounts", draft)
       .then(row => setUsers(prev => [enrich({ ...row, id: String(row.id) }, prev.length), ...prev]))
-      .catch(() => showToast("Could not save user"));
+      .catch(() => showToast("Could not create account — email may already exist"));
     setInviteOpen(false);
     if (data.sendEmail && data.email) {
       sendEmail({
@@ -161,7 +160,7 @@ export default function UsersPage() {
   const handleEditSave = (u: UserExt) => {
     setUsers(prev => prev.map(x => x.id === u.id ? u : x));
     const dbPatch = Object.fromEntries(Object.entries(u).filter(([k]) => DB_FIELDS.includes(k)));
-    apiPut(`/app-users/${u.id}`, dbPatch).catch(() => showToast("Could not save changes"));
+    apiPut(`/staff-accounts/${u.id}`, dbPatch).catch(() => showToast("Could not save changes"));
     setEditUser(null);
     showToast(`${u.name} updated`);
   };
@@ -184,7 +183,7 @@ export default function UsersPage() {
     for (const r of rows) {
       const draft = { name: r[iName], email: r[iEmail], role: (iRole >= 0 && r[iRole]) || roleNames[0] || "Reception", phone: iPhone >= 0 ? r[iPhone] : "", status: "active" as const, twoFA: false, last: "Never" };
       if (!draft.name || !draft.email) continue;
-      try { const created = await apiPost<SeededUser>("/app-users", draft); setUsers(prev => [...prev, enrich({ ...created, id: String(created.id) }, prev.length)]); ok++; }
+      try { const created = await apiPost<SeededUser>("/staff-accounts", draft); setUsers(prev => [...prev, enrich({ ...created, id: String(created.id) }, prev.length)]); ok++; }
       catch { /* skip failed row */ }
     }
     showToast(ok ? `Imported ${ok} user${ok === 1 ? "" : "s"} from CSV` : "No users imported");
@@ -222,7 +221,7 @@ export default function UsersPage() {
           <Button size="sm" variant="outline" onClick={() => {
             const toEnforce = users.filter(u => u.status === "active" && !u.twoFA);
             setUsers(prev => prev.map(u => u.status === "active" ? { ...u, twoFA: true } : u));
-            toEnforce.forEach(u => apiPut(`/app-users/${u.id}`, { twoFA: true }).catch(() => {}));
+            toEnforce.forEach(u => apiPut(`/staff-accounts/${u.id}`, { twoFA: true }).catch(() => {}));
             showToast(`MFA enforced on ${toEnforce.length} users · they'll set up on next login`);
           }}>
             <ShieldCheck className="h-3.5 w-3.5" />Enforce MFA on all
@@ -404,11 +403,13 @@ export default function UsersPage() {
 // ============== INVITE MODAL ==============
 function InviteModal({ onClose, onSave, roles }: {
   onClose: () => void;
-  onSave: (data: { name: string; email: string; role: Role; phone: string; sendEmail: boolean; sendWhatsApp: boolean }) => void;
+  onSave: (data: { name: string; email: string; password: string; role: Role; department: string; phone: string; sendEmail: boolean; sendWhatsApp: boolean }) => void;
   roles: string[];
 }) {
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [department, setDepartment] = React.useState("");
   const [phone, setPhone] = React.useState("+91 ");
   const [role, setRole] = React.useState<Role>(roles[0] ?? "");
   const [sendEmail, setSendEmail] = React.useState(true);
@@ -421,8 +422,7 @@ function InviteModal({ onClose, onSave, roles }: {
     return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
-  const valid = name.trim().length > 1 && /\S+@\S+\.\S+/.test(email);
-  const link = `https://app.myhotel.in/invite/${Date.now().toString(36)}`;
+  const valid = name.trim().length > 1 && /\S+@\S+\.\S+/.test(email) && password.length >= 8 && !!role;
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -431,8 +431,8 @@ function InviteModal({ onClose, onSave, roles }: {
           <div className="flex items-center gap-2">
             <span className="h-9 w-9 rounded-md bg-brand-soft text-brand-soft-foreground inline-flex items-center justify-center"><UserPlus className="h-4 w-4" /></span>
             <div>
-              <h3 className="font-semibold">Invite a new user</h3>
-              <p className="text-xs text-muted-foreground">They&apos;ll receive a setup link to create their password</p>
+              <h3 className="font-semibold">Create staff account</h3>
+              <p className="text-xs text-muted-foreground">Sets email + password + role so they can log in</p>
             </div>
           </div>
           <button type="button" onClick={onClose} className="h-7 w-7 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
@@ -446,6 +446,16 @@ function InviteModal({ onClose, onSave, roles }: {
           <div className="space-y-1.5">
             <Label className="text-xs">Email *</Label>
             <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@pearlmarina.com" className="h-9" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Password * (min 8)</Label>
+              <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Set a login password" className="h-9" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Department</Label>
+              <Input value={department} onChange={e => setDepartment(e.target.value)} placeholder="e.g. Housekeeping" className="h-9" />
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Phone (for WhatsApp invite)</Label>
@@ -476,18 +486,14 @@ function InviteModal({ onClose, onSave, roles }: {
             </div>
           </div>
           <Card className="p-2.5 bg-info-soft/15 border-info/20 text-[11px]">
-            <p className="font-semibold uppercase tracking-wider text-info mb-1">Invite link (expires in 48h)</p>
-            <div className="flex items-center gap-1.5">
-              <code className="font-mono tabular text-xs flex-1 truncate">{link}</code>
-              <button type="button" onClick={() => navigator.clipboard?.writeText(link)} className="h-6 w-6 rounded-md border border-border hover:bg-surface-sunken inline-flex items-center justify-center"><Copy className="h-3 w-3" /></button>
-            </div>
+            <p className="text-muted-foreground">A real login account is created immediately with this email + password and the selected role. The role decides which pages they can access (configure in Setup → Roles &amp; Permissions).</p>
           </Card>
         </div>
 
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-border bg-surface-sunken/30">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onSave({ name, email, role, phone, sendEmail, sendWhatsApp })} disabled={!valid || (!sendEmail && !sendWhatsApp)}>
-            <Send className="h-3.5 w-3.5" />Send invite
+          <Button onClick={() => onSave({ name, email, password, role, department, phone, sendEmail, sendWhatsApp })} disabled={!valid}>
+            <UserPlus className="h-3.5 w-3.5" />Create account
           </Button>
         </div>
       </div>

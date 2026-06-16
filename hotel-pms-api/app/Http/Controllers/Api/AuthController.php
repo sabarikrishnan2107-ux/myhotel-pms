@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AppSetting;
 use App\Models\AuditLog;
+use App\Models\Role;
 use App\Models\User;
 use App\Support\Totp;
 use Illuminate\Http\Request;
@@ -86,8 +87,29 @@ class AuthController extends Controller
 
         return response()->json([
             'token' => $token,
-            'user'  => ['id' => $user->id, 'name' => $user->name, 'email' => $user->email],
+            'user'  => $this->userPayload($user),
         ]);
+    }
+
+    /**
+     * Shape the authenticated user for the client, including their role and the
+     * set of page keys that role may access (Admin / '*' = all pages).
+     */
+    private function userPayload(User $user): array
+    {
+        $role = $user->role ?: 'Admin';
+        $allowed = ['*'];
+        if (strcasecmp($role, 'Admin') !== 0 && strcasecmp($role, 'Owner') !== 0) {
+            $r = Role::whereRaw('LOWER(name) = ?', [mb_strtolower($role)])->first();
+            $allowed = is_array($r?->permissions) ? array_values($r->permissions) : [];
+        }
+
+        return [
+            'id' => $user->id, 'name' => $user->name, 'email' => $user->email,
+            'role' => $role, 'department' => $user->department,
+            'pages' => $allowed,
+            'two_factor_enabled' => (bool) $user->two_factor_enabled,
+        ];
     }
 
     /**
@@ -95,12 +117,7 @@ class AuthController extends Controller
      */
     public function me(Request $request)
     {
-        $user = $request->user();
-
-        return response()->json([
-            'id' => $user->id, 'name' => $user->name, 'email' => $user->email,
-            'two_factor_enabled' => (bool) $user->two_factor_enabled,
-        ]);
+        return response()->json($this->userPayload($request->user()));
     }
 
     /**

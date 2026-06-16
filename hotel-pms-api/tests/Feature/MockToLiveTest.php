@@ -95,6 +95,25 @@ class MockToLiveTest extends TestCase
         $this->getJson('/api/meal-plans')->assertOk()->assertJsonFragment(['perPaxPerDay' => 950]);
     }
 
+    public function test_staff_account_creates_real_login_with_role_and_pages(): void
+    {
+        // Define a role with a page set.
+        $this->postJson('/api/roles', ['name' => 'Reception', 'permissions' => ['/dashboard', '/bookings', '/folio']])->assertCreated();
+
+        // Create a staff account (real login user) with a password.
+        $res = $this->postJson('/api/staff-accounts', [
+            'name' => 'Riya Desk', 'email' => 'riya@hotel.com', 'password' => 'secret123',
+            'role' => 'Reception', 'department' => 'Front Office',
+        ])->assertCreated()->assertJsonFragment(['email' => 'riya@hotel.com', 'role' => 'Reception']);
+        $this->assertArrayNotHasKey('password', $res->json());
+
+        // That account can log in, and login returns its role + allowed pages.
+        $login = $this->postJson('/api/login', ['email' => 'riya@hotel.com', 'password' => 'secret123'])
+            ->assertOk()->json();
+        $this->assertSame('Reception', $login['user']['role']);
+        $this->assertEqualsCanonicalizing(['/dashboard', '/bookings', '/folio'], $login['user']['pages']);
+    }
+
     public function test_banquet_packages_and_extra_services_crud(): void
     {
         $this->postJson('/api/banquet-packages', ['name' => 'Veg Royal', 'pricePerPax' => 285, 'veg' => true])

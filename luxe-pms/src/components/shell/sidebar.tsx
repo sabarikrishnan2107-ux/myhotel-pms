@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV, GROUP_LABEL, type NavItem } from "@/lib/nav";
-import { getRole, rolesFor, type Role } from "@/lib/auth";
+import { getRole, rolesFor, canAccessPage, type Role } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { Sparkles, X } from "lucide-react";
 
@@ -94,7 +94,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
 
           <nav className="flex-1 overflow-y-auto py-4">
             {(["operations", "billing", "people", "erp", "system", "demo"] as const).map((group) => {
-              const items = (grouped[group] ?? []).filter(item => rolesFor(item).includes(role));
+              const items = (grouped[group] ?? []).filter(item => rolesFor(item).includes(role) && canAccessPage(item.href));
               if (items.length === 0) return null;
               return (
               <div key={group} className="px-2 mb-4">

@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\ResourceController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\ShiftController;
+use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\StatsController;
 use App\Http\Controllers\Api\UploadController;
 use Illuminate\Support\Facades\Route;
@@ -68,6 +69,12 @@ Route::middleware('auth:sanctum')->group(function () {
     // e-Invoice — generate a (locally-signed) IRN/ACK from real folio totals.
     // GET /einvoices?bookingNo=… is served by the generic ResourceController.
     Route::post('/einvoices/generate/{bookingNo}', [EInvoiceController::class, 'generate']);
+
+    // Staff accounts — real login users with role + department (password hashed)
+    Route::get('/staff-accounts', [StaffController::class, 'index']);
+    Route::post('/staff-accounts', [StaffController::class, 'store']);
+    Route::put('/staff-accounts/{id}', [StaffController::class, 'update']);
+    Route::delete('/staff-accounts/{id}', [StaffController::class, 'destroy']);
 
     // Cashier shift — live mode totals from real payments + close-out
     Route::get('/shift/current', [ShiftController::class, 'current']);

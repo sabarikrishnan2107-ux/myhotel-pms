@@ -1,5 +1,7 @@
 // Thin client for the Laravel backend (hotel-pms-api).
 // Base URL is configurable via NEXT_PUBLIC_API_URL; defaults to local dev.
+import { setSessionUser, clearSessionUser } from "./auth";
+
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
 const TOKEN_KEY = "pms_token";
@@ -48,6 +50,7 @@ export async function login(
   const data = await res.json();
   if (data.two_factor_required) return { twoFactorRequired: true };
   setToken(data.token);
+  setSessionUser(data.user);  // store role + allowed pages for RBAC
   return { user: data.user };
 }
 
@@ -58,6 +61,7 @@ export async function logout(): Promise<void> {
     /* ignore network errors on logout */
   }
   clearToken();
+  clearSessionUser();
 }
 
 // ---- CRUD ----

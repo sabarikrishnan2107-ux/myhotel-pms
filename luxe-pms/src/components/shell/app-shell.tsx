@@ -5,8 +5,8 @@ import { Sidebar } from "./sidebar";
 import { TopBar } from "./top-bar";
 import { RouteProgress } from "./route-progress";
 import { NotificationsProvider } from "@/components/notifications/store";
-import { getToken } from "@/lib/api";
-import { getRole, canAccess, ROLE_HOME } from "@/lib/auth";
+import { getToken, apiGet } from "@/lib/api";
+import { getRole, canAccess, canAccessPage, setSessionUser, ROLE_HOME } from "@/lib/auth";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
@@ -25,13 +25,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return;
     }
     const role = getRole();
-    if (!canAccess(pathname, role)) {
-      router.replace(ROLE_HOME[role]);
+    if (!canAccess(pathname, role) || !canAccessPage(pathname)) {
+      router.replace(canAccessPage("/dashboard") ? ROLE_HOME[role] : "/login");
       setAuthed(false);
       return;
     }
     setAuthed(true);
   }, [router, pathname]);
+
+  // Refresh the role + allowed pages from the server on load (role may have
+  // changed since last login); re-check access once it resolves.
+  React.useEffect(() => {
+    if (!getToken()) return;
+    apiGet<{ role?: string; pages?: string[] | "*" }>("/me")
+      .then(u => {
+        setSessionUser(u);
+        if (!canAccessPage(window.location.pathname)) router.replace("/dashboard");
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
+  }, []);
 
   if (authed !== true) {
     // Avoid flashing the app before the auth check resolves.

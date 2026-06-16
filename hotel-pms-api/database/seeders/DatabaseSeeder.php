@@ -42,6 +42,7 @@ class DatabaseSeeder extends Seeder
             WebRoomSeeder::class,
             PricingRuleSeeder::class,
             RatePlanSeeder::class,
+            RolePagesSeeder::class,
             CompetitorSeeder::class,
             MealPlanSeeder::class,
             BanquetCateringSeeder::class,

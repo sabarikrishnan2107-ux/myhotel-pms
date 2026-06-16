@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPut, apiPost, apiUpload, apiDownload, syncList } from "@/lib/api";
 import { PreferencesPanel, SecurityPanel, NotificationChannelsPanel, WebhooksPanel, useSettingsPersistence } from "./personal-panels";
+import { NAV, GROUP_LABEL } from "@/lib/nav";
 
 // Monotonic counter for client-side temp ids on newly-added rows (replaced by
 // the real DB id once the create round-trips). Pure & collision-free.
@@ -2443,6 +2444,14 @@ function TemplatePreviewModal({ template, body, onClose, onToast }: {
 }
 
 // ===================== ROLES & PERMISSIONS =====================
+// Page access catalog for the Roles editor — the real sidebar pages, grouped.
+// A role's `permissions` set holds the hrefs it may open (drives the sidebar +
+// route guard via /login pages). Admin/Owner always get everything.
+const PAGE_GROUPS = (["operations", "billing", "people", "erp", "system"] as const)
+  .map(group => ({ group, label: GROUP_LABEL[group], items: NAV.filter(n => n.group === group) }))
+  .filter(g => g.items.length > 0);
+const ADMIN_ROLES = ["owner", "admin"];
+
 function RolesManager({ roles, onChange, onToast, onMarkComplete }: {
   roles: Role[]; onChange: (r: Role[]) => void; onToast: (m: string) => void; onMarkComplete: () => void;
 }) {
@@ -2454,14 +2463,14 @@ function RolesManager({ roles, onChange, onToast, onMarkComplete }: {
     if (next.has(perm)) next.delete(perm); else next.add(perm);
     onChange(roles.map(r => r.id === activeRole.id ? { ...r, permissions: next } : r));
   };
-  const totalPerms = PERMISSION_GROUPS.reduce((t, g) => t + g.perms.length, 0);
+  const totalPages = PAGE_GROUPS.reduce((t, g) => t + g.items.length, 0);
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <SummaryStat icon={KeySquare} label="Roles" value={roles.length} />
         <SummaryStat icon={Users} label="Total users" value={roles.reduce((t, r) => t + r.users, 0)} />
-        <SummaryStat icon={CheckCircle2} label="Permissions" value={totalPerms} />
+        <SummaryStat icon={CheckCircle2} label="Pages" value={totalPages} />
         <SummaryStat icon={CheckCircle2} label="Active roles" value={roles.filter(r => r.active).length} accent="success" />
       </div>
 
@@ -2486,7 +2495,7 @@ function RolesManager({ roles, onChange, onToast, onMarkComplete }: {
                 )}>
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{r.name}</p>
-                  <p className="text-[10px] text-muted-foreground">{r.users} user{r.users === 1 ? "" : "s"} · {r.permissions.size}/{totalPerms} perms</p>
+                  <p className="text-[10px] text-muted-foreground">{ADMIN_ROLES.includes(r.name.toLowerCase()) ? "All pages" : `${r.permissions.size} page${r.permissions.size === 1 ? "" : "s"}`}</p>
                 </div>
                 {!r.active && <Badge tone="neutral">off</Badge>}
               </button>
@@ -2516,31 +2525,44 @@ function RolesManager({ roles, onChange, onToast, onMarkComplete }: {
                 </div>
               </div>
 
-              <div className="rounded-md border border-border divide-y divide-border">
-                {PERMISSION_GROUPS.map(g => (
-                  <div key={g.group} className="p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">{g.group}</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {g.perms.map(p => {
-                        const key = `${g.group}:${p}`;
-                        const on = activeRole.permissions.has(key);
-                        return (
-                          <button key={key} type="button" onClick={() => togglePerm(key)}
-                            className={cn(
-                              "h-7 px-3 rounded-full text-[11px] font-medium border transition-colors",
-                              on ? "bg-brand-soft border-brand text-brand-soft-foreground" : "border-border hover:bg-surface-sunken text-muted-foreground"
-                            )}>
-                            {on && <CheckCircle2 className="h-3 w-3 inline mr-1" />}{p}
-                          </button>
-                        );
-                      })}
+              {ADMIN_ROLES.includes(activeRole.name.toLowerCase()) ? (
+                <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                  <KeySquare className="h-5 w-5 mx-auto mb-2 text-muted-foreground" />
+                  <span className="font-medium text-foreground">{activeRole.name}</span> has full access to every page.
+                </div>
+              ) : (
+                <div className="rounded-md border border-border divide-y divide-border max-h-[420px] overflow-y-auto">
+                  <div className="px-3 py-2 flex items-center justify-between bg-surface-sunken/30">
+                    <p className="text-[11px] text-muted-foreground">Tick the pages this role can open. Unticked pages are hidden from their sidebar and blocked.</p>
+                    <div className="flex gap-1.5">
+                      <button type="button" onClick={() => onChange(roles.map(r => r.id === activeRole.id ? { ...r, permissions: new Set(PAGE_GROUPS.flatMap(g => g.items.map(i => i.href))) } : r))} className="text-[11px] text-brand hover:underline">All</button>
+                      <button type="button" onClick={() => onChange(roles.map(r => r.id === activeRole.id ? { ...r, permissions: new Set<string>() } : r))} className="text-[11px] text-muted-foreground hover:underline">None</button>
                     </div>
                   </div>
-                ))}
-              </div>
+                  {PAGE_GROUPS.map(g => (
+                    <div key={g.group} className="p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">{g.label}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {g.items.map(item => {
+                          const on = activeRole.permissions.has(item.href);
+                          return (
+                            <button key={item.href} type="button" onClick={() => togglePerm(item.href)}
+                              className={cn(
+                                "h-7 px-3 rounded-full text-[11px] font-medium border transition-colors",
+                                on ? "bg-brand-soft border-brand text-brand-soft-foreground" : "border-border hover:bg-surface-sunken text-muted-foreground"
+                              )}>
+                              {on && <CheckCircle2 className="h-3 w-3 inline mr-1" />}{item.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="flex items-center justify-between pt-2">
-                <p className="text-xs text-muted-foreground">{activeRole.permissions.size}/{totalPerms} permissions granted to <span className="font-medium text-foreground">{activeRole.name}</span></p>
+                <p className="text-xs text-muted-foreground">{activeRole.permissions.size} page{activeRole.permissions.size === 1 ? "" : "s"} allowed for <span className="font-medium text-foreground">{activeRole.name}</span></p>
                 <button type="button" onClick={() => { onChange(roles.filter(r => r.id !== activeRole.id)); setActiveRoleId(roles.find(r => r.id !== activeRole.id)?.id ?? ""); onToast("Role removed"); }} className="text-xs text-danger hover:underline inline-flex items-center gap-1">
                   <Trash2 className="h-3 w-3" />Delete role
                 </button>
