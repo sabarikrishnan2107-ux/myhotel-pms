@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
 
 type ReportStatus =
   | "Reported"
@@ -495,6 +496,16 @@ const EXISTING_GUESTS = [
 
 export default function LostReportsTab({ onToast }: { onToast: (m: string) => void }) {
   const [reports, setReports] = React.useState<Report[]>(SEED);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Report[]>("/lost-reports")
+      .then((r) => {
+        if (!cancelled && r.length)
+          setReports(r.map((x) => ({ ...x, timeline: x.timeline ?? [], matches: x.matches ?? [] })));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [query, setQuery] = React.useState("");
   const [status, setStatus] = React.useState<ReportStatus | "All">("All");
   const [urgency, setUrgency] = React.useState<Urgency | "All">("All");
@@ -608,15 +619,25 @@ export default function LostReportsTab({ onToast }: { onToast: (m: string) => vo
       ],
       matches: [],
     };
-    setReports([rec, ...reports]);
+    const { id: _drop, ...payload } = rec;
+    void _drop;
+    apiPost<Report>("/lost-reports", payload)
+      .then((created) => {
+        setReports([{ ...created, timeline: created.timeline ?? [], matches: created.matches ?? [] }, ...reports]);
+        onToast(`Report received - ${created.reportNo || nextNo} - Housekeeping notified`);
+      })
+      .catch(() => {
+        setReports([rec, ...reports]);
+        onToast("⚠ Saved locally — backend offline");
+      });
     setShowNewModal(false);
     resetForm();
-    onToast(`Report received - ${nextNo} - Housekeeping notified`);
   };
 
   const updateStatus = (id: string, next: ReportStatus) => {
     setReports((prev) => prev.map((r) => (r.id === id ? { ...r, status: next } : r)));
     if (openReport?.id === id) setOpenReport({ ...openReport, status: next });
+    apiPut(`/lost-reports/${id}`, { status: next }).catch(() => onToast("⚠ Save failed — backend offline"));
   };
 
   return (

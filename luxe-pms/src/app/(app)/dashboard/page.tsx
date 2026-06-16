@@ -646,7 +646,7 @@ export default function DashboardPage() {
       {/* ============ MONTHLY GOALS + TOP SOURCES ============ */}
       <section className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-stretch">
         {/* Goals — 3 cols */}
-        <Card className="lg:col-span-3 p-4 flex flex-col">
+        <Card className="lg:col-span-3 p-5 flex flex-col">
           <div className="flex items-center justify-between mb-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.14em] text-subtle-foreground font-semibold inline-flex items-center gap-1">
@@ -660,7 +660,7 @@ export default function DashboardPage() {
               Forecast<ChevronRight className="h-3 w-3" />
             </Link>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-5 gap-y-3.5 flex-1 auto-rows-fr items-center">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1 auto-rows-fr">
             {(goals ?? GOALS_FALLBACK).map(g => (
               <GoalProgress
                 key={g.label}
@@ -684,7 +684,7 @@ export default function DashboardPage() {
               </h2>
             </div>
           </div>
-          <ol className="space-y-0.5">
+          <ol className="space-y-0.5 max-h-[300px] overflow-y-auto pr-1 -mr-1">
             {topSources.map((s, i) => {
               const maxRev = topSources[0].revenue;
               return (
@@ -744,7 +744,7 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="pl-0 flex-1 flex flex-col">
-            <div className="flex-1 min-h-[260px]">
+            <div className="flex-1 min-h-[200px]">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={forecastData} margin={{ top: 14, right: 16, bottom: 0, left: 8 }}>
                   <defs>
@@ -775,10 +775,10 @@ export default function DashboardPage() {
             <p className="text-xs text-muted-foreground mt-1">Where bookings originate</p>
           </CardHeader>
           <CardContent>
-            <div className="relative h-44">
+            <div className="relative h-36">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={sourceMixDonut} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={72} paddingAngle={2}>
+                  <Pie data={sourceMixDonut} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={62} paddingAngle={2}>
                     {sourceMixDonut.map((_, i) => (
                       <Cell key={i} fill={SOURCE_COLORS[i % SOURCE_COLORS.length]} stroke="var(--color-surface)" strokeWidth={2} />
                     ))}
@@ -791,7 +791,7 @@ export default function DashboardPage() {
                 <span className="text-[10px] text-muted-foreground mt-1 max-w-[88px] truncate text-center">{sourceMixDonut[0]?.name}</span>
               </div>
             </div>
-            <ul className="mt-3 space-y-2">
+            <ul className="mt-3 space-y-1.5 max-h-[150px] overflow-y-auto pr-1 -mr-1">
               {sourceMixDonut.map((s, i) => {
                 const color = SOURCE_COLORS[i % SOURCE_COLORS.length];
                 const maxVal = sourceMixDonut[0]?.value || 1;
@@ -854,7 +854,7 @@ export default function DashboardPage() {
                 <p className="text-sm text-muted-foreground">No open alerts — all systems nominal.</p>
               </div>
             ) : (
-            <ul className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+            <ul className="space-y-2 max-h-[244px] overflow-y-auto pr-1">
               {alertsData.map(a => {
                 const AlertIcon = a.level === "info" ? Bell : AlertTriangle;
                 return (

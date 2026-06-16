@@ -20,6 +20,7 @@ import type { Reservation } from "@/lib/types";
 
 export default function CheckoutPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const propName = hotelName(useProperty());
 
   // Load the real booking + its folio (charges & payments) for this bookingNo.
   const [reservation, setReservation] = React.useState<Reservation>(
@@ -153,10 +154,33 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
             <Button variant="outline" onClick={() => setShowReceipt(true)}>
               <Receipt className="h-4 w-4" />Print Payment Receipt
             </Button>
-            <Button variant="outline" onClick={() => showToast(`Opening GST invoice PDF for ${reservation.bookingNo}`)}>
+            <Button variant="outline" onClick={() => { setShowInvoice(true); showToast("Opening invoice — choose \"Save as PDF\" in the print dialog"); setTimeout(() => window.print(), 450); }}>
               <FileText className="h-4 w-4" />View PDF
             </Button>
-            <Button variant="outline" onClick={() => showToast(`Invoice emailed to ${guest?.email ?? "guest"}`)}>
+            <Button variant="outline" onClick={async () => {
+              const onFile = guest?.email && guest.email !== "—" ? guest.email : "";
+              const to = onFile || (typeof window !== "undefined" ? (window.prompt("No email on file for this guest. Send the invoice to:", "") || "").trim() : "");
+              if (!to) { showToast("Invoice email cancelled — no recipient"); return; }
+              showToast(`Emailing invoice to ${to}…`);
+              try {
+                await apiPost("/email/invoice", {
+                  to,
+                  invoiceNo: `INV-2026-${reservation.bookingNo.slice(2)}`,
+                  hotel: propName,
+                  guestName: reservation.guestName,
+                  date: new Date().toLocaleDateString("en-CA"),
+                  paymentMode,
+                  items: (billCharges ?? []).map(c => ({ label: c.description ?? "Charge", amount: c.amount ?? 0 })),
+                  subtotal: charges - tax,
+                  tax,
+                  discount: discountAmt,
+                  grandTotal,
+                  paid: paid + Math.max(0, balance),
+                  balance: Math.max(0, balance),
+                });
+                showToast(`Invoice PDF emailed to ${to}`);
+              } catch { showToast("Couldn't email invoice"); }
+            }}>
               <Mail className="h-4 w-4" />Email Invoice
             </Button>
             <Button variant="outline" onClick={() => showToast(`Sent to WhatsApp ${guest?.phone ?? ""}`)}>
@@ -445,7 +469,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
               apiGet<Reservation[]>("/bookings")
                 .then(list => {
                   const bk = list.find(b => b.bookingNo === reservation.bookingNo);
-                  if (bk) apiPut(`/bookings/${(bk as { id: number | string }).id}`, { paymentStatus: "paid", advance: reservation.total, balance: 0, status: "checked-out" });
+                  if (bk) return apiPut(`/bookings/${(bk as { id: number | string }).id}`, { paymentStatus: "paid", advance: reservation.total, balance: 0, status: "checked-out" });
+                })
+                // Vacated room goes dirty so it surfaces on the Housekeeping board.
+                .then(() => apiGet<{ id: number; number: string }[]>("/rooms"))
+                .then(rooms => {
+                  const room = rooms?.find(r => r.number === reservation.roomNumber);
+                  if (room) return apiPut(`/rooms/${room.id}`, { hkStatus: "dirty" });
                 })
                 .catch(() => {});
             }}
@@ -745,7 +775,9 @@ function InvoiceModal({
 
   return (
     <ModalShell title="Tax Invoice Preview" onClose={onClose}>
-      <div id="print-area" className="space-y-4">
+      <div id="print-area" className="space-y-4" style={{ fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>
+        {/* Force the invoice (and its print / Save-as-PDF output) to the system font */}
+        <style>{`#print-area, #print-area * { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important; }`}</style>
         <div className="rounded-md border border-border p-5 bg-surface text-sm space-y-3">
           {/* Header */}
           <div className="flex items-start justify-between border-b border-border pb-3">

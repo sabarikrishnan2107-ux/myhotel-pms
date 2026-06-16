@@ -13,6 +13,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { useProperty, hotelName } from "@/lib/use-property";
+import { apiGet, apiPut } from "@/lib/api";
 
 type Category = "Whisky" | "Vodka" | "Gin" | "Rum" | "Wine" | "Beer" | "Liqueur" | "Soft";
 type TabKey = "inventory" | "pourcost" | "variance" | "po" | "menu";
@@ -52,7 +53,7 @@ const CATEGORY_ICON: Record<Category, React.ComponentType<{ className?: string }
 };
 
 // 32 realistic premium SKUs — Indian FL3 bar context
-const INVENTORY: StockItem[] = [
+const INVENTORY_SEED: StockItem[] = [
   // Whisky
   { id: "s1",  brand: "Glenfiddich 12 YO",            category: "Whisky", size: "750ml", opened: 1, sealed: 4,  par: 6,  reorderQty: 6,  unitCost: 6800 },
   { id: "s2",  brand: "Johnnie Walker Black Label",   category: "Whisky", size: "750ml", opened: 1, sealed: 8,  par: 8,  reorderQty: 12, unitCost: 4200 },
@@ -103,7 +104,7 @@ type PourRow = {
   actualCost: number;
 };
 
-const POUR_BY_CATEGORY: PourRow[] = [
+const POUR_BY_CATEGORY_SEED: PourRow[] = [
   { category: "Whisky",  soldValue: 485000, theoreticalCost: 92000, actualCost: 108500 }, // variance flag
   { category: "Vodka",   soldValue: 268000, theoreticalCost: 51000, actualCost: 53800 },
   { category: "Gin",     soldValue: 312000, theoreticalCost: 58000, actualCost: 60200 },
@@ -125,7 +126,7 @@ type VarRow = {
   note?: string;
 };
 
-const VARIANCE_ROWS: VarRow[] = [
+const VARIANCE_ROWS_SEED: VarRow[] = [
   { sku: "Glenfiddich 12 YO",         category: "Whisky", theoreticalMl: 2250, actualMl: 3120, unitCost: 6800, flag: "over",  note: "Over-pour suspected — possible theft / 60ml pours instead of 30ml" },
   { sku: "Macallan 12 Double Cask",   category: "Whisky", theoreticalMl: 900,  actualMl: 1180, unitCost: 12500, flag: "watch", note: "Bottle weight short by 280ml — investigate" },
   { sku: "Grey Goose Original",       category: "Vodka",  theoreticalMl: 1800, actualMl: 1950, unitCost: 5600,  flag: "watch", note: "Slight over-pour on Cosmopolitans" },
@@ -150,7 +151,7 @@ type PORow = {
   status: POStatus;
 };
 
-const PURCHASE_ORDERS: PORow[] = [
+const PURCHASE_ORDERS_SEED: PORow[] = [
   { id: "PO-BAR-2031", vendor: "United Spirits Distribution",  items: "Whisky · Vodka · Gin assortment",  itemCount: 14, value: 184500, raised: "28 May", eta: "04 Jun",  status: "In Transit" },
   { id: "PO-BAR-2032", vendor: "Pernod Ricard India",          items: "Chivas 18 · Absolut · Jameson",     itemCount: 8,  value: 96200,  raised: "30 May", eta: "06 Jun",  status: "Confirmed" },
   { id: "PO-BAR-2033", vendor: "Sula Vineyards (Direct)",      items: "Rasa Shiraz · La Reserve x12",      itemCount: 24, value: 43500,  raised: "01 Jun", eta: "07 Jun",  status: "Pending" },
@@ -178,7 +179,7 @@ type Cocktail = {
   recipe: Ingredient[];
 };
 
-const COCKTAILS: Cocktail[] = [
+const COCKTAILS_SEED: Cocktail[] = [
   {
     id: "c1", name: "Old Fashioned",       category: "Classic",   menuPrice: 750, glassCost: 25,
     recipe: [
@@ -256,17 +257,17 @@ const COCKTAILS: Cocktail[] = [
 
 // ----- helpers -----
 function bottleEquivalent(it: StockItem) {
-  return it.opened + it.sealed;
+  return Number(it.opened) + Number(it.sealed);
 }
 function itemValue(it: StockItem) {
-  return bottleEquivalent(it) * it.unitCost;
+  return bottleEquivalent(it) * Number(it.unitCost);
 }
 function isLowStock(it: StockItem) {
-  return bottleEquivalent(it) < it.par;
+  return bottleEquivalent(it) < Number(it.par);
 }
 function cocktailCost(c: Cocktail) {
-  const liquid = c.recipe.reduce((s, r) => s + r.qtyMl * r.costPerMl, 0);
-  return liquid + c.glassCost;
+  const liquid = (c.recipe ?? []).reduce((s, r) => s + Number(r.qtyMl) * Number(r.costPerMl), 0);
+  return liquid + Number(c.glassCost);
 }
 
 // ----- main page -----
@@ -281,10 +282,38 @@ export default function BarInventoryPage() {
   const [activePO, setActivePO] = React.useState<PORow | null>(null);
   const [cocktailDrawer, setCocktailDrawer] = React.useState<Cocktail | null>(null);
 
+  // Live backend data, seeded with the mock so the page is byte-for-byte
+  // identical offline; each useEffect replaces state only on a non-empty array.
+  const [inventory, setInventory] = React.useState<StockItem[]>(INVENTORY_SEED);
+  const [pourRows, setPourRows] = React.useState<PourRow[]>(POUR_BY_CATEGORY_SEED);
+  const [varianceRows, setVarianceRows] = React.useState<VarRow[]>(VARIANCE_ROWS_SEED);
+  const [purchaseOrders, setPurchaseOrders] = React.useState<PORow[]>(PURCHASE_ORDERS_SEED);
+  const [cocktails, setCocktails] = React.useState<Cocktail[]>(COCKTAILS_SEED);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<StockItem[]>("/bar-items")
+      .then(rows => { if (!cancelled && rows.length) setInventory(rows.map(r => ({ ...r, id: String(r.id) }))); })
+      .catch(() => {});
+    apiGet<PourRow[]>("/bar-pour-costs")
+      .then(rows => { if (!cancelled && rows.length) setPourRows(rows); })
+      .catch(() => {});
+    apiGet<VarRow[]>("/bar-variances")
+      .then(rows => { if (!cancelled && rows.length) setVarianceRows(rows); })
+      .catch(() => {});
+    apiGet<PORow[]>("/bar-purchase-orders")
+      .then(rows => { if (!cancelled && rows.length) setPurchaseOrders(rows.map(r => ({ ...r, id: String(r.id) }))); })
+      .catch(() => {});
+    apiGet<Cocktail[]>("/bar-cocktails")
+      .then(rows => { if (!cancelled && rows.length) setCocktails(rows.map(r => ({ ...r, id: String(r.id) }))); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // KPI calcs
-  const stockValue = INVENTORY.reduce((s, it) => s + itemValue(it), 0);
-  const totalSold  = POUR_BY_CATEGORY.reduce((s, r) => s + r.soldValue, 0);
-  const totalCost  = POUR_BY_CATEGORY.reduce((s, r) => s + r.actualCost, 0);
+  const stockValue = inventory.reduce((s, it) => s + itemValue(it), 0);
+  const totalSold  = pourRows.reduce((s, r) => s + r.soldValue, 0);
+  const totalCost  = pourRows.reduce((s, r) => s + r.actualCost, 0);
   const pourCostPct = (totalCost / totalSold) * 100;
 
   const topMover  = "Johnnie Walker Black";
@@ -293,12 +322,12 @@ export default function BarInventoryPage() {
   // inventory filters
   const [catFilter, setCatFilter] = React.useState<Category | "all">("all");
   const [search, setSearch] = React.useState("");
-  const filteredInventory = INVENTORY.filter((it) => {
+  const filteredInventory = inventory.filter((it) => {
     const catOk = catFilter === "all" || it.category === catFilter;
     const sOk = !search || it.brand.toLowerCase().includes(search.toLowerCase());
     return catOk && sOk;
   });
-  const lowStockCount = INVENTORY.filter(isLowStock).length;
+  const lowStockCount = inventory.filter(isLowStock).length;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
@@ -335,7 +364,7 @@ export default function BarInventoryPage() {
           tint="from-amber-500/15 to-amber-500/5"
           label="Stock value"
           value={money(stockValue)}
-          sub={`${INVENTORY.length} SKUs · ${lowStockCount} below par`}
+          sub={`${inventory.length} SKUs · ${lowStockCount} below par`}
           subTone={lowStockCount > 0 ? "warning" : "success"}
         />
         <KPI
@@ -403,8 +432,8 @@ export default function BarInventoryPage() {
             { k: "inventory", label: "Inventory", icon: Package, badge: lowStockCount > 0 ? String(lowStockCount) : null, badgeTone: "warning" as const },
             { k: "pourcost",  label: "Pour cost", icon: Percent, badge: null, badgeTone: "neutral" as const },
             { k: "variance",  label: "Variance",  icon: AlertTriangle, badge: "3", badgeTone: "danger" as const },
-            { k: "po",        label: "Purchase orders", icon: Truck, badge: String(PURCHASE_ORDERS.filter(p => p.status !== "Delivered").length), badgeTone: "info" as const },
-            { k: "menu",      label: "Bar menu",  icon: Martini, badge: String(COCKTAILS.length), badgeTone: "accent" as const },
+            { k: "po",        label: "Purchase orders", icon: Truck, badge: String(purchaseOrders.filter(p => p.status !== "Delivered").length), badgeTone: "info" as const },
+            { k: "menu",      label: "Bar menu",  icon: Martini, badge: String(cocktails.length), badgeTone: "accent" as const },
           ].map((t) => {
             const Ico = t.icon;
             const active = tab === t.k;
@@ -440,12 +469,13 @@ export default function BarInventoryPage() {
         />
       )}
 
-      {tab === "pourcost" && <PourCostTab showToast={showToast} />}
+      {tab === "pourcost" && <PourCostTab rows={pourRows} showToast={showToast} />}
 
-      {tab === "variance" && <VarianceTab showToast={showToast} />}
+      {tab === "variance" && <VarianceTab rows={varianceRows} showToast={showToast} />}
 
       {tab === "po" && (
         <POTab
+          rows={purchaseOrders}
           showToast={showToast}
           openPO={(po) => { setActivePO(po); setPoDrawerOpen(true); }}
         />
@@ -453,6 +483,7 @@ export default function BarInventoryPage() {
 
       {tab === "menu" && (
         <BarMenuTab
+          rows={cocktails}
           showToast={showToast}
           openRecipe={(c) => setCocktailDrawer(c)}
         />
@@ -461,8 +492,21 @@ export default function BarInventoryPage() {
       {/* Stock take MODAL */}
       {stockTakeOpen && (
         <StockTakeModal
+          inventory={inventory}
           onClose={() => setStockTakeOpen(false)}
-          onSubmit={() => { setStockTakeOpen(false); showToast("Stock take recorded · variance report queued."); }}
+          onSubmit={(counts) => {
+            setStockTakeOpen(false);
+            // Persist the physical counts back to each bar item (numeric id = backend-backed).
+            setInventory(prev => prev.map(it => {
+              const c = counts[String(it.id)];
+              if (!c) return it;
+              const opened = parseFloat(c.opened) || 0;
+              const sealed = parseFloat(c.sealed) || 0;
+              if (/^\d+$/.test(String(it.id))) apiPut(`/bar-items/${it.id}`, { opened, sealed }).catch(() => {});
+              return { ...it, opened, sealed };
+            }));
+            showToast("Stock take saved · counts updated");
+          }}
         />
       )}
 
@@ -594,7 +638,7 @@ function InventoryTab({
                 const low = isLowStock(it);
                 const Ico = CATEGORY_ICON[it.category];
                 return (
-                  <tr key={it.id} className="border-t border-border hover:bg-surface-sunken/30 transition-colors">
+                  <tr key={String(it.id)} className="border-t border-border hover:bg-surface-sunken/30 transition-colors">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
                         <div className="h-7 w-7 rounded-md bg-surface-sunken grid place-items-center text-muted-foreground">
@@ -607,7 +651,7 @@ function InventoryTab({
                       <Badge tone={CATEGORY_TONE[it.category]}>{it.category}</Badge>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground tabular">{it.size}</td>
-                    <td className="px-4 py-3 text-right tabular">{it.opened.toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right tabular">{Number(it.opened).toFixed(1)}</td>
                     <td className="px-4 py-3 text-right tabular">{it.sealed}</td>
                     <td className="px-4 py-3 text-right tabular text-muted-foreground">{it.par}</td>
                     <td className="px-4 py-3 text-right tabular text-muted-foreground">{it.reorderQty}</td>
@@ -660,14 +704,14 @@ function InventoryTab({
 }
 
 // ===================== POUR COST TAB =====================
-function PourCostTab({ showToast }: { showToast: (m: string) => void }) {
+function PourCostTab({ rows, showToast }: { rows: PourRow[]; showToast: (m: string) => void }) {
   const target = { low: 18, high: 22 };
 
-  const totals = POUR_BY_CATEGORY.reduce(
+  const totals = rows.reduce(
     (acc, r) => ({
-      sold: acc.sold + r.soldValue,
-      theo: acc.theo + r.theoreticalCost,
-      actual: acc.actual + r.actualCost,
+      sold: acc.sold + Number(r.soldValue),
+      theo: acc.theo + Number(r.theoreticalCost),
+      actual: acc.actual + Number(r.actualCost),
     }),
     { sold: 0, theo: 0, actual: 0 }
   );
@@ -722,9 +766,9 @@ function PourCostTab({ showToast }: { showToast: (m: string) => void }) {
             </tr>
           </thead>
           <tbody>
-            {POUR_BY_CATEGORY.map((r) => {
-              const theoPct = (r.theoreticalCost / r.soldValue) * 100;
-              const actPct = (r.actualCost / r.soldValue) * 100;
+            {rows.map((r) => {
+              const theoPct = (Number(r.theoreticalCost) / Number(r.soldValue)) * 100;
+              const actPct = (Number(r.actualCost) / Number(r.soldValue)) * 100;
               const variancePct = actPct - theoPct;
               const overTarget = actPct > target.high;
               const Ico = CATEGORY_ICON[r.category];
@@ -787,7 +831,7 @@ function PourCostTab({ showToast }: { showToast: (m: string) => void }) {
 }
 
 // ===================== VARIANCE TAB =====================
-function VarianceTab({ showToast }: { showToast: (m: string) => void }) {
+function VarianceTab({ rows, showToast }: { rows: VarRow[]; showToast: (m: string) => void }) {
   const flagTone = (f?: VarRow["flag"]) =>
     f === "over" ? "danger" : f === "watch" ? "warning" : "success";
   const flagLabel = (f?: VarRow["flag"]) =>
@@ -832,10 +876,12 @@ function VarianceTab({ showToast }: { showToast: (m: string) => void }) {
             </tr>
           </thead>
           <tbody>
-            {VARIANCE_ROWS.map((v, i) => {
-              const diff = v.actualMl - v.theoreticalMl;
-              const pct = (diff / v.theoreticalMl) * 100;
-              const lossPerMl = v.unitCost / 750;
+            {rows.map((v, i) => {
+              const theoreticalMl = Number(v.theoreticalMl);
+              const actualMl = Number(v.actualMl);
+              const diff = actualMl - theoreticalMl;
+              const pct = (diff / theoreticalMl) * 100;
+              const lossPerMl = Number(v.unitCost) / 750;
               const estLoss = Math.max(0, diff) * lossPerMl;
               return (
                 <tr key={i} className="border-t border-border hover:bg-surface-sunken/30 transition-colors">
@@ -843,8 +889,8 @@ function VarianceTab({ showToast }: { showToast: (m: string) => void }) {
                   <td className="px-4 py-3">
                     <Badge tone={CATEGORY_TONE[v.category]}>{v.category}</Badge>
                   </td>
-                  <td className="px-4 py-3 text-right tabular text-muted-foreground">{v.theoreticalMl.toLocaleString("en-IN")}</td>
-                  <td className="px-4 py-3 text-right tabular">{v.actualMl.toLocaleString("en-IN")}</td>
+                  <td className="px-4 py-3 text-right tabular text-muted-foreground">{theoreticalMl.toLocaleString("en-IN")}</td>
+                  <td className="px-4 py-3 text-right tabular">{actualMl.toLocaleString("en-IN")}</td>
                   <td className={cn(
                     "px-4 py-3 text-right tabular font-semibold",
                     diff > 100 ? "text-danger" : diff > 0 ? "text-warning" : "text-success"
@@ -878,8 +924,8 @@ function VarianceTab({ showToast }: { showToast: (m: string) => void }) {
 }
 
 // ===================== PO TAB =====================
-function POTab({ showToast, openPO }: { showToast: (m: string) => void; openPO: (po: PORow) => void }) {
-  const openTotal = PURCHASE_ORDERS.filter(p => p.status !== "Delivered").reduce((s, p) => s + p.value, 0);
+function POTab({ rows, showToast, openPO }: { rows: PORow[]; showToast: (m: string) => void; openPO: (po: PORow) => void }) {
+  const openTotal = rows.filter(p => p.status !== "Delivered").reduce((s, p) => s + Number(p.value), 0);
 
   return (
     <div className="space-y-4">
@@ -889,7 +935,7 @@ function POTab({ showToast, openPO }: { showToast: (m: string) => void; openPO: 
             <Truck className="h-4 w-4" />
           </div>
           <div>
-            <div className="text-sm font-semibold">Open POs · {PURCHASE_ORDERS.filter(p => p.status !== "Delivered").length} pending delivery</div>
+            <div className="text-sm font-semibold">Open POs · {rows.filter(p => p.status !== "Delivered").length} pending delivery</div>
             <div className="text-xs text-muted-foreground">Total open commitment <span className="tabular font-semibold">{money(openTotal)}</span></div>
           </div>
         </div>
@@ -914,8 +960,8 @@ function POTab({ showToast, openPO }: { showToast: (m: string) => void; openPO: 
             </tr>
           </thead>
           <tbody>
-            {PURCHASE_ORDERS.map((p) => (
-              <tr key={p.id} className="border-t border-border hover:bg-surface-sunken/30 transition-colors">
+            {rows.map((p) => (
+              <tr key={String(p.id)} className="border-t border-border hover:bg-surface-sunken/30 transition-colors">
                 <td className="px-4 py-3 font-medium tabular">{p.id}</td>
                 <td className="px-4 py-3">{p.vendor}</td>
                 <td className="px-4 py-3 text-xs text-muted-foreground max-w-[240px]">{p.items}</td>
@@ -1040,7 +1086,7 @@ function PODrawer({ po, onClose, showToast }: { po: PORow; onClose: () => void; 
 }
 
 // ===================== BAR MENU TAB =====================
-function BarMenuTab({ showToast, openRecipe }: { showToast: (m: string) => void; openRecipe: (c: Cocktail) => void }) {
+function BarMenuTab({ rows, showToast, openRecipe }: { rows: Cocktail[]; showToast: (m: string) => void; openRecipe: (c: Cocktail) => void }) {
   const catTone: Record<Cocktail["category"], "brand" | "accent" | "info" | "warning"> = {
     Classic: "brand",
     Signature: "accent",
@@ -1066,13 +1112,14 @@ function BarMenuTab({ showToast, openRecipe }: { showToast: (m: string) => void;
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {COCKTAILS.map((c) => {
+        {rows.map((c) => {
           const cost = cocktailCost(c);
-          const margin = c.menuPrice - cost;
-          const marginPct = (margin / c.menuPrice) * 100;
-          const pourPct = (cost / c.menuPrice) * 100;
+          const menuPrice = Number(c.menuPrice);
+          const margin = menuPrice - cost;
+          const marginPct = (margin / menuPrice) * 100;
+          const pourPct = (cost / menuPrice) * 100;
           return (
-            <Card key={c.id} className="p-4 hover:shadow-md transition-shadow flex flex-col">
+            <Card key={String(c.id)} className="p-4 hover:shadow-md transition-shadow flex flex-col">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold truncate">{c.name}</div>
@@ -1085,14 +1132,14 @@ function BarMenuTab({ showToast, openRecipe }: { showToast: (m: string) => void;
               </div>
 
               <div className="mt-3 space-y-1.5 text-xs">
-                {c.recipe.slice(0, 3).map((r, i) => (
+                {(c.recipe ?? []).slice(0, 3).map((r, i) => (
                   <div key={i} className="flex items-center justify-between">
                     <span className="text-muted-foreground truncate pr-2">{r.item}</span>
                     <span className="tabular shrink-0">{r.qtyMl}ml</span>
                   </div>
                 ))}
-                {c.recipe.length > 3 && (
-                  <div className="text-muted-foreground italic">+{c.recipe.length - 3} more</div>
+                {(c.recipe ?? []).length > 3 && (
+                  <div className="text-muted-foreground italic">+{(c.recipe ?? []).length - 3} more</div>
                 )}
               </div>
 
@@ -1132,9 +1179,10 @@ function BarMenuTab({ showToast, openRecipe }: { showToast: (m: string) => void;
 
 function CocktailDrawer({ cocktail, onClose, showToast }: { cocktail: Cocktail; onClose: () => void; showToast: (m: string) => void }) {
   const cost = cocktailCost(cocktail);
-  const margin = cocktail.menuPrice - cost;
-  const marginPct = (margin / cocktail.menuPrice) * 100;
-  const pourPct = (cost / cocktail.menuPrice) * 100;
+  const menuPrice = Number(cocktail.menuPrice);
+  const margin = menuPrice - cost;
+  const marginPct = (margin / menuPrice) * 100;
+  const pourPct = (cost / menuPrice) * 100;
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-stretch justify-end" onClick={onClose}>
       <Card
@@ -1168,11 +1216,11 @@ function CocktailDrawer({ cocktail, onClose, showToast }: { cocktail: Cocktail; 
                   </tr>
                 </thead>
                 <tbody>
-                  {cocktail.recipe.map((r, i) => (
+                  {(cocktail.recipe ?? []).map((r, i) => (
                     <tr key={i} className="border-t border-border">
                       <td className="px-3 py-2">{r.item}</td>
                       <td className="px-3 py-2 text-right tabular">{r.qtyMl}ml</td>
-                      <td className="px-3 py-2 text-right tabular">{money(Math.round(r.qtyMl * r.costPerMl))}</td>
+                      <td className="px-3 py-2 text-right tabular">{money(Math.round(Number(r.qtyMl) * Number(r.costPerMl)))}</td>
                     </tr>
                   ))}
                   <tr className="border-t border-border">
@@ -1220,10 +1268,10 @@ function KPIInline({ label, value, tone }: { label: string; value: string; tone?
 }
 
 // ===================== STOCK TAKE MODAL =====================
-function StockTakeModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: () => void }) {
-  const sample = INVENTORY.slice(0, 12);
+function StockTakeModal({ inventory, onClose, onSubmit }: { inventory: StockItem[]; onClose: () => void; onSubmit: (counts: Record<string, { opened: string; sealed: string }>) => void }) {
+  const sample = inventory.slice(0, 12);
   const [counts, setCounts] = React.useState<Record<string, { opened: string; sealed: string }>>(
-    Object.fromEntries(sample.map((s) => [s.id, { opened: String(s.opened), sealed: String(s.sealed) }]))
+    Object.fromEntries(sample.map((s) => [String(s.id), { opened: String(s.opened), sealed: String(s.sealed) }]))
   );
 
   return (
@@ -1248,12 +1296,13 @@ function StockTakeModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
           </div>
           <div className="space-y-2">
             {sample.map((s) => {
-              const c = counts[s.id];
+              const sid = String(s.id);
+              const c = counts[sid];
               const counted = (parseFloat(c.opened) || 0) + (parseFloat(c.sealed) || 0);
               const sys = bottleEquivalent(s);
               const variance = counted - sys;
               return (
-                <div key={s.id} className="grid grid-cols-12 gap-2 items-center text-sm">
+                <div key={sid} className="grid grid-cols-12 gap-2 items-center text-sm">
                   <div className="col-span-5">
                     <div className="font-medium truncate">{s.brand}</div>
                     <div className="text-xs text-muted-foreground">{s.category} · {s.size}</div>
@@ -1263,14 +1312,14 @@ function StockTakeModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
                     <Input
                       className="h-8 text-sm"
                       value={c.opened}
-                      onChange={(e) => setCounts({ ...counts, [s.id]: { ...c, opened: e.target.value } })}
+                      onChange={(e) => setCounts({ ...counts, [sid]: { ...c, opened: e.target.value } })}
                     />
                   </div>
                   <div className="col-span-2">
                     <Input
                       className="h-8 text-sm"
                       value={c.sealed}
-                      onChange={(e) => setCounts({ ...counts, [s.id]: { ...c, sealed: e.target.value } })}
+                      onChange={(e) => setCounts({ ...counts, [sid]: { ...c, sealed: e.target.value } })}
                     />
                   </div>
                   <div className={cn(
@@ -1284,12 +1333,12 @@ function StockTakeModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
             })}
           </div>
           <div className="text-xs text-muted-foreground mt-4 bg-surface-sunken/40 rounded-md p-3">
-            Showing first 12 SKUs in demo. Full stock take covers all {INVENTORY.length} SKUs and saves a snapshot to audit log.
+            Showing first 12 SKUs in demo. Full stock take covers all {inventory.length} SKUs and saves a snapshot to audit log.
           </div>
         </div>
         <div className="p-5 border-t border-border flex items-center justify-end gap-2">
           <Button size="sm" variant="outline" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={onSubmit}>
+          <Button size="sm" onClick={() => onSubmit(counts)}>
             <Save className="h-4 w-4 mr-1.5" />Submit stock take
           </Button>
         </div>

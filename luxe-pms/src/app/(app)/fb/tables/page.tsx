@@ -11,6 +11,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { useProperty, hotelName } from "@/lib/use-property";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 
 // ---------- Types ----------
 type ResStatus = "confirmed" | "seated" | "completed" | "no-show" | "cancelled" | "blocked";
@@ -28,6 +29,8 @@ type Reservation = {
   occasion: Occasion;
   status: ResStatus;
   source?: "Walk-in" | "Phone" | "Zomato" | "Dineout" | "Direct";
+  seatedAt?: string | null;     // ISO datetime stamped when the party is seated
+  completedAt?: string | null;  // ISO datetime stamped when the table is closed
 };
 
 type Walkin = {
@@ -86,13 +89,6 @@ const INITIAL_WAITLIST: Walkin[] = [
   { id: "W4", guest: "Diya Patel",     party: 2, phone: "+91 90043 88220", waitMin: 12, arrivedAt: "20:28" },
 ];
 
-const TURN_TIMES = [
-  { party: "1–2 pax", lunch: 62,  earlyDinner: 78,  dinner: 95,  late: 70 },
-  { party: "3–4 pax", lunch: 78,  earlyDinner: 95,  dinner: 118, late: 88 },
-  { party: "5–6 pax", lunch: 95,  earlyDinner: 112, dinner: 135, late: 102 },
-  { party: "7–8 pax", lunch: 115, earlyDinner: 135, dinner: 162, late: 120 },
-];
-
 // ---------- Helpers ----------
 const STATUS_TONE: Record<ResStatus, "success" | "info" | "neutral" | "danger" | "warning" | "accent"> = {
   confirmed: "info",
@@ -137,6 +133,38 @@ function hrLabel(h: number) {
   return `${String(hh).padStart(2, "0")}:${mm}`;
 }
 
+// "HH:MM" → decimal hours (20:30 → 20.5)
+function parseHr(t: string) {
+  const [h, m] = t.split(":").map(Number);
+  return (h || 0) + ((m || 0) >= 30 ? 0.5 : 0);
+}
+
+// ---------- Backend row normalisers ----------
+// The /table-reservations & /table-waitlist endpoints store ids as numeric and
+// startHr/durHr/waitMin in string columns; normalise back to the UI shapes so
+// the Gantt math (numeric +/-) and string ids keep working unchanged.
+type ReservationRow = Omit<Reservation, "id" | "startHr" | "durHr"> & {
+  id: string | number;
+  startHr: number | string;
+  durHr: number | string;
+};
+type WalkinRow = Omit<Walkin, "id" | "waitMin"> & {
+  id: string | number;
+  waitMin: number | string;
+};
+
+const toReservation = (r: ReservationRow): Reservation => ({
+  ...r,
+  id: String(r.id),
+  startHr: Number(r.startHr),
+  durHr: Number(r.durHr),
+});
+const toWalkin = (w: WalkinRow): Walkin => ({
+  ...w,
+  id: String(w.id),
+  waitMin: Number(w.waitMin),
+});
+
 // ---------- Page ----------
 export default function TablesPage() {
   const name = hotelName(useProperty());
@@ -150,20 +178,82 @@ export default function TablesPage() {
   const [reservations, setReservations] = React.useState<Reservation[]>(INITIAL_RESERVATIONS);
   const [waitlist, setWaitlist] = React.useState<Walkin[]>(INITIAL_WAITLIST);
 
+  // Replace the seeded mock with real backend data; .catch keeps the mock so the
+  // page is byte-for-byte identical offline.
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<ReservationRow[]>("/table-reservations")
+      .then(d => { if (!cancelled && d.length) setReservations(d.map(toReservation)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<WalkinRow[]>("/table-waitlist")
+      .then(d => { if (!cancelled && d.length) setWaitlist(d.map(toWalkin)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   const [showNew, setShowNew] = React.useState(false);
   const [showBlock, setShowBlock] = React.useState(false);
   const [showWalkin, setShowWalkin] = React.useState(false);
   const [detail, setDetail] = React.useState<Reservation | null>(null);
 
-  // KPIs
-  const todaysCovers = reservations
-    .filter(r => r.status !== "cancelled" && r.status !== "blocked" && r.status !== "no-show")
+  // Controlled form state for the create modals (so they POST real rows).
+  const NEW_RES_BLANK = { time: "20:00", party: 4, table: "T10", guest: "", phone: "", occasion: "none" as Occasion, source: "Phone" as NonNullable<Reservation["source"]>, notes: "" };
+  const [newRes, setNewRes] = React.useState(NEW_RES_BLANK);
+  const BLOCK_BLANK = { table: "T18", start: "14:00", end: "18:00", type: "maintenance", reason: "" };
+  const [blockForm, setBlockForm] = React.useState(BLOCK_BLANK);
+  const WALK_BLANK = { guest: "", party: 2, waitMin: 15, phone: "" };
+  const [walkForm, setWalkForm] = React.useState(WALK_BLANK);
+
+  // KPIs — all derived from the live reservations now (no hardcoded numbers).
+  const activeRes = reservations.filter(r => r.status !== "blocked");
+  const decided = activeRes.length; // denominator for reliability rates
+  const todaysCovers = activeRes
+    .filter(r => r.status !== "cancelled" && r.status !== "no-show")
     .reduce((s, r) => s + r.party, 0);
-  const walkinsCount = reservations.filter(r => r.source === "Walk-in").length + 14; // demo total seated walk-ins
+  const confirmedCount = reservations.filter(r => r.status === "confirmed").length;
+  const seatedCount = reservations.filter(r => r.status === "seated").length;
+  const walkinsCount = reservations.filter(r => r.source === "Walk-in" && r.status !== "cancelled" && r.status !== "blocked").length;
   const waitlistCount = waitlist.length;
-  const avgDwell = 102; // minutes
-  const noShowRate = 4.2;
-  const cancelRate = 6.8;
+
+  // Real dwell analytics from seated→completed timestamps (rolling 30 days).
+  const THIRTY_D = 30 * 24 * 60 * 60 * 1000;
+  const [nowMs] = React.useState(() => Date.now()); // stable "now" for the 30-day window
+  const dwellOf = (r: Reservation): number | null => {
+    if (!r.seatedAt || !r.completedAt) return null;
+    const s = +new Date(r.seatedAt), e = +new Date(r.completedAt);
+    if (isNaN(s) || isNaN(e) || e < s || nowMs - e > THIRTY_D) return null;
+    return (e - s) / 60000; // minutes
+  };
+  const dwells = reservations.map(dwellOf).filter((x): x is number => x !== null);
+  const avgDwell = dwells.length ? Math.round(dwells.reduce((a, b) => a + b, 0) / dwells.length) : null;
+  const rate = (n: number) => decided ? Math.round((n / decided) * 1000) / 10 : 0;
+  const noShowRate = rate(reservations.filter(r => r.status === "no-show").length);
+  const cancelRate = rate(reservations.filter(r => r.status === "cancelled").length);
+
+  // Turn times: avg dwell by party-size × day-part (only cells with real data).
+  const partyBucket = (p: number) => p <= 2 ? "1–2 pax" : p <= 4 ? "3–4 pax" : p <= 6 ? "5–6 pax" : "7–8 pax";
+  const dayPart = (h: number): "lunch" | "earlyDinner" | "dinner" | "late" =>
+    h < 16 ? "lunch" : h < 19 ? "earlyDinner" : h < 21 ? "dinner" : "late";
+  const turnBuckets = ["1–2 pax", "3–4 pax", "5–6 pax", "7–8 pax"];
+  const turnAgg: Record<string, Record<string, number[]>> = {};
+  turnBuckets.forEach(b => { turnAgg[b] = { lunch: [], earlyDinner: [], dinner: [], late: [] }; });
+  reservations.forEach(r => {
+    const d = dwellOf(r);
+    if (d === null) return;
+    turnAgg[partyBucket(r.party)][dayPart(r.startHr)].push(d);
+  });
+  const avgCell = (arr: number[]) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+  const turnTimes = turnBuckets.map(party => ({
+    party,
+    lunch: avgCell(turnAgg[party].lunch),
+    earlyDinner: avgCell(turnAgg[party].earlyDinner),
+    dinner: avgCell(turnAgg[party].dinner),
+    late: avgCell(turnAgg[party].late),
+  }));
 
   const filteredTables = TABLES.filter(t => zone === "All" || TABLE_META[t].zone === zone);
 
@@ -178,21 +268,105 @@ export default function TablesPage() {
   // Actions
   const seatNow = (w: Walkin) => {
     setWaitlist(prev => prev.filter(x => x.id !== w.id));
+    apiDelete(`/table-waitlist/${w.id}`).catch(() => {});
+    // Log the seated walk-in as a real reservation so covers & turn-times count it.
+    const now = new Date();
+    const startHr = now.getHours() + (now.getMinutes() >= 30 ? 0.5 : 0);
+    addReservation({
+      table: "—",
+      startHr,
+      durHr: 2,
+      guest: w.guest,
+      party: w.party,
+      phone: w.phone ?? "—",
+      notes: "Walk-in (seated from waitlist)",
+      occasion: "none",
+      status: "seated",
+      source: "Walk-in",
+      seatedAt: now.toISOString(),
+    });
     showToast(`${w.guest} (${w.party}) seated · Walk-in logged`);
   };
   const sendSms = (w: Walkin) => {
     setWaitlist(prev => prev.map(x => x.id === w.id ? { ...x, notified: true } : x));
+    apiPut(`/table-waitlist/${w.id}`, { notified: true }).catch(() => {});
     showToast(`SMS sent to ${w.guest} · "Your table is ready"`);
   };
   const removeWait = (w: Walkin) => {
     setWaitlist(prev => prev.filter(x => x.id !== w.id));
+    apiDelete(`/table-waitlist/${w.id}`).catch(() => {});
     showToast(`${w.guest} removed from waitlist`);
   };
 
+  const addWalkin = (w: Omit<Walkin, "id">) => {
+    apiPost<WalkinRow>("/table-waitlist", w)
+      .then(row => setWaitlist(prev => [...prev, toWalkin(row)]))
+      .catch(() => setWaitlist(prev => [...prev, { id: `W${Date.now()}`, ...w }]));
+  };
+
+  const addReservation = (r: Omit<Reservation, "id">) => {
+    apiPost<ReservationRow>("/table-reservations", r)
+      .then(row => setReservations(prev => [...prev, toReservation(row)]))
+      .catch(() => setReservations(prev => [...prev, { id: `R${Date.now()}`, ...r }]));
+  };
+
+  // Build + persist a reservation from the New-reservation modal.
+  const submitNewReservation = (withSms: boolean) => {
+    addReservation({
+      table: newRes.table,
+      startHr: parseHr(newRes.time),
+      durHr: 2,
+      guest: newRes.guest.trim() || "Guest",
+      party: Number(newRes.party),
+      phone: newRes.phone.trim() || "—",
+      notes: newRes.notes.trim() || undefined,
+      occasion: newRes.occasion,
+      status: "confirmed",
+      source: newRes.source,
+    });
+    setShowNew(false);
+    setNewRes(NEW_RES_BLANK);
+    showToast(withSms ? `Reservation saved · SMS sent · ${newRes.table} · ${newRes.time}` : `Reservation created · ${newRes.table} · ${newRes.time}`);
+  };
+
+  // Build + persist a blocked slot from the Block-slot modal.
+  const submitBlock = () => {
+    const startHr = parseHr(blockForm.start);
+    const endHr = parseHr(blockForm.end);
+    const label = blockForm.type === "private" ? "Private event" : blockForm.type === "staff-meal" ? "Staff meal" : "Maintenance";
+    addReservation({
+      table: blockForm.table,
+      startHr,
+      durHr: Math.max(0.5, endHr - startHr),
+      guest: blockForm.reason.trim() ? `${label} — ${blockForm.reason.trim()}` : label,
+      party: 0,
+      phone: "—",
+      notes: blockForm.type,
+      occasion: "none",
+      status: "blocked",
+      source: "Direct",
+    });
+    setShowBlock(false);
+    setBlockForm(BLOCK_BLANK);
+    showToast(`Slot blocked · ${blockForm.table} · removed from public booking`);
+  };
+
   const updateStatus = (id: string, status: ResStatus) => {
-    setReservations(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+    // Stamp the dwell timestamps so turn-time analytics are real.
+    const nowISO = new Date().toISOString();
+    const stamp: Partial<Reservation> =
+      status === "seated" ? { seatedAt: nowISO } :
+      status === "completed" ? { completedAt: nowISO } : {};
+    setReservations(prev => prev.map(r => r.id === id ? { ...r, status, ...stamp } : r));
+    apiPut(`/table-reservations/${id}`, { status, ...stamp }).catch(() => {});
     const r = reservations.find(x => x.id === id);
     showToast(`${r?.guest ?? "Reservation"} → ${STATUS_LABEL[status]}`);
+  };
+
+  const releaseBlock = (b: Reservation) => {
+    setReservations(prev => prev.filter(x => x.id !== b.id));
+    apiDelete(`/table-reservations/${b.id}`).catch(() => {});
+    showToast(`Block on ${b.table} released`);
   };
 
   return (
@@ -223,10 +397,10 @@ export default function TablesPage() {
 
       {/* KPI STRIP */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Kpi icon={<Users className="h-4 w-4" />} tone="brand" label="Today's covers booked" value={String(todaysCovers)} sub="22 confirmed · 7 seated" />
-        <Kpi icon={<UserPlus className="h-4 w-4" />} tone="success" label="Walk-ins today" value={String(walkinsCount)} sub="vs 11 yesterday" />
-        <Kpi icon={<Clock className="h-4 w-4" />} tone="warning" label="Waitlist" value={String(waitlistCount)} sub={`${waitlist.reduce((s,w)=>s+w.party,0)} pax · avg ${Math.round(waitlist.reduce((s,w)=>s+w.waitMin,0)/Math.max(1,waitlist.length))} min`} />
-        <Kpi icon={<Timer className="h-4 w-4" />} tone="info" label="Avg dwell" value={`${avgDwell} min`} sub="↑ 6 min vs last Tue" />
+        <Kpi icon={<Users className="h-5 w-5" />} tone="brand" label="Today's covers booked" value={String(todaysCovers)} sub={`${confirmedCount} confirmed · ${seatedCount} seated`} />
+        <Kpi icon={<UserPlus className="h-5 w-5" />} tone="success" label="Walk-ins today" value={String(walkinsCount)} sub="logged today" />
+        <Kpi icon={<Clock className="h-5 w-5" />} tone="warning" label="Waitlist" value={String(waitlistCount)} sub={`${waitlist.reduce((s,w)=>s+w.party,0)} pax · avg ${Math.round(waitlist.reduce((s,w)=>s+w.waitMin,0)/Math.max(1,waitlist.length))} min`} />
+        <Kpi icon={<Timer className="h-5 w-5" />} tone="info" label="Avg dwell" value={avgDwell != null ? `${avgDwell} min` : "—"} sub={avgDwell != null ? `over ${dwells.length} visit${dwells.length === 1 ? "" : "s"}` : "no completed visits yet"} />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-5">
@@ -348,7 +522,7 @@ export default function TablesPage() {
             <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-border">
               <div>
                 <CardTitle>Bookings list</CardTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">{listRows.length} reservations on {new Date(date).toLocaleDateString(undefined, { day: "2-digit", month: "short" })}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{listRows.length} reservations{waitlist.length > 0 ? ` · ${waitlist.length} waiting` : ""} on {new Date(date).toLocaleDateString(undefined, { day: "2-digit", month: "short" })}</p>
               </div>
               <div className="flex items-center gap-2">
                 <div className="relative">
@@ -379,6 +553,34 @@ export default function TablesPage() {
                 </tr>
               </thead>
               <tbody>
+                {/* Queued walk-ins surface here too (they live in the waitlist until seated),
+                    so anything added via "Add walk-in to queue" is visible in this list. */}
+                {waitlist
+                  .filter(() => statusFilter === "all")
+                  .filter(w => !search || w.guest.toLowerCase().includes(search.toLowerCase()) || (w.phone ?? "").includes(search))
+                  .map(w => (
+                    <tr key={`wait-${w.id}`} className="border-t border-border bg-warning-soft/15 hover:bg-surface-sunken/30">
+                      <td className="px-4 py-2.5 tabular text-xs">
+                        <div className="font-semibold">{w.arrivedAt}</div>
+                        <div className="text-[10px] text-muted-foreground">~{w.waitMin}m wait</div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="font-medium">{w.guest}</div>
+                        <div className="text-[10px] text-muted-foreground">Walk-in</div>
+                      </td>
+                      <td className="px-3 py-2.5 tabular">{w.party}</td>
+                      <td className="px-3 py-2.5"><Badge tone="warning">Waitlist</Badge></td>
+                      <td className="px-3 py-2.5 tabular text-xs text-muted-foreground">{w.phone ?? "—"}</td>
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground">In queue</td>
+                      <td className="px-3 py-2.5"><Badge tone="warning">Waiting</Badge></td>
+                      <td className="px-4 py-2.5 text-right">
+                        <div className="inline-flex items-center gap-1">
+                          <Button size="sm" variant="outline" onClick={() => seatNow(w)}><CheckCircle2 className="h-3.5 w-3.5" /> Seat</Button>
+                          <Button size="sm" variant="ghost" onClick={() => removeWait(w)}>Remove</Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 {listRows.map(r => (
                   <tr key={r.id} className="border-t border-border hover:bg-surface-sunken/30">
                     <td className="px-4 py-2.5 tabular text-xs">
@@ -396,7 +598,7 @@ export default function TablesPage() {
                     <td className="px-3 py-2.5 tabular">{r.party}</td>
                     <td className="px-3 py-2.5">
                       <Badge tone="neutral" className="tabular">{r.table}</Badge>
-                      <div className="text-[10px] text-muted-foreground mt-0.5">{TABLE_META[r.table].zone}</div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">{TABLE_META[r.table]?.zone ?? "—"}</div>
                     </td>
                     <td className="px-3 py-2.5 tabular text-xs text-muted-foreground">{r.phone}</td>
                     <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[220px] truncate" title={r.notes || ""}>{r.notes || "—"}</td>
@@ -418,127 +620,13 @@ export default function TablesPage() {
                     </td>
                   </tr>
                 ))}
-                {listRows.length === 0 && (
+                {listRows.length === 0 && (statusFilter !== "all" || waitlist.length === 0) && (
                   <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">No reservations match those filters.</td></tr>
                 )}
               </tbody>
             </table>
           </Card>
 
-          {/* TURN TIMES + RATES */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            <Card className="md:col-span-2 overflow-hidden">
-              <div className="px-5 pt-4 pb-3 border-b border-border flex items-center justify-between">
-                <div>
-                  <CardTitle>Turn times</CardTitle>
-                  <p className="text-xs text-muted-foreground mt-0.5">Avg minutes by party &times; day-part &middot; rolling 30 days</p>
-                </div>
-                <Badge tone="info">Auto-tracked</Badge>
-              </div>
-              <table className="w-full text-sm">
-                <thead className="bg-surface-sunken/40">
-                  <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    <th className="text-left font-semibold px-4 py-2.5">Party</th>
-                    <th className="text-right font-semibold px-3 py-2.5">Lunch</th>
-                    <th className="text-right font-semibold px-3 py-2.5">Early dinner</th>
-                    <th className="text-right font-semibold px-3 py-2.5">Dinner peak</th>
-                    <th className="text-right font-semibold px-4 py-2.5">Late</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {TURN_TIMES.map(t => (
-                    <tr key={t.party} className="border-t border-border">
-                      <td className="px-4 py-2.5 font-medium">{t.party}</td>
-                      <td className="px-3 py-2.5 text-right tabular">{t.lunch} min</td>
-                      <td className="px-3 py-2.5 text-right tabular">{t.earlyDinner} min</td>
-                      <td className="px-3 py-2.5 text-right tabular font-semibold">{t.dinner} min</td>
-                      <td className="px-4 py-2.5 text-right tabular">{t.late} min</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </Card>
-
-            <Card className="p-5 space-y-4">
-              <CardTitle>Reliability</CardTitle>
-              <div className="space-y-3">
-                <div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground inline-flex items-center gap-1"><TrendingDown className="h-3.5 w-3.5" /> No-show rate</span>
-                    <span className="tabular font-semibold">{noShowRate}%</span>
-                  </div>
-                  <div className="mt-1.5 h-2 rounded-full bg-surface-sunken overflow-hidden">
-                    <div className="h-full bg-danger" style={{ width: `${noShowRate * 6}%` }} />
-                  </div>
-                  <p className="text-[10px] text-muted-foreground mt-1">Target &lt; 5% &middot; trailing 30d</p>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground inline-flex items-center gap-1"><X className="h-3.5 w-3.5" /> Cancellation rate</span>
-                    <span className="tabular font-semibold">{cancelRate}%</span>
-                  </div>
-                  <div className="mt-1.5 h-2 rounded-full bg-surface-sunken overflow-hidden">
-                    <div className="h-full bg-warning" style={{ width: `${cancelRate * 6}%` }} />
-                  </div>
-                  <p className="text-[10px] text-muted-foreground mt-1">Within 4h of slot: 2.1%</p>
-                </div>
-                <div className="pt-3 border-t border-border">
-                  <Button size="sm" variant="outline" className="w-full" onClick={() => showToast("Reminder SMS scheduled · 18:30 IST")}>
-                    <Send className="h-3.5 w-3.5" /> Send reminder SMS batch
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          {/* BLOCKED SLOTS */}
-          <Card className="overflow-hidden">
-            <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-border">
-              <div>
-                <CardTitle className="flex items-center gap-2"><Ban className="h-4 w-4 text-accent" /> Blocked slots</CardTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">Maintenance &amp; private events &middot; tables excluded from public booking</p>
-              </div>
-              <Button size="sm" variant="outline" onClick={() => setShowBlock(true)}><Plus className="h-3.5 w-3.5" /> New block</Button>
-            </div>
-            <table className="w-full text-sm">
-              <thead className="bg-surface-sunken/40">
-                <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  <th className="text-left font-semibold px-4 py-2.5">Table</th>
-                  <th className="text-left font-semibold px-3 py-2.5">Type</th>
-                  <th className="text-left font-semibold px-3 py-2.5">Window</th>
-                  <th className="text-left font-semibold px-3 py-2.5">Reason / Notes</th>
-                  <th className="text-right font-semibold px-4 py-2.5">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {blockedSlots.map(b => (
-                  <tr key={b.id} className="border-t border-border">
-                    <td className="px-4 py-2.5">
-                      <Badge tone="neutral" className="tabular">{b.table}</Badge>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {b.notes?.toLowerCase().includes("upholstery") || b.guest.toLowerCase().includes("maintenance")
-                        ? <Badge tone="warning"><Wrench className="h-3 w-3" /> Maintenance</Badge>
-                        : <Badge tone="accent"><PartyPopper className="h-3 w-3" /> Private event</Badge>}
-                    </td>
-                    <td className="px-3 py-2.5 tabular text-xs">{hrLabel(b.startHr)} – {hrLabel(b.startHr + b.durHr)}</td>
-                    <td className="px-3 py-2.5 text-xs">
-                      <div className="font-medium">{b.guest}</div>
-                      <div className="text-muted-foreground">{b.notes}</div>
-                    </td>
-                    <td className="px-4 py-2.5 text-right">
-                      <Button size="sm" variant="ghost" onClick={() => { setReservations(prev => prev.filter(x => x.id !== b.id)); showToast(`Block on ${b.table} released`); }}>
-                        Release
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-                {blockedSlots.length === 0 && (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">No active blocks.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </Card>
         </div>
 
         {/* RIGHT COLUMN — WAITLIST */}
@@ -624,6 +712,105 @@ export default function TablesPage() {
             </div>
           </Card>
 
+          {/* Reliability — moved to sidebar to use the available vertical space */}
+          <Card className="p-5 space-y-4">
+            <CardTitle>Reliability</CardTitle>
+            <div className="space-y-3">
+              <div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground inline-flex items-center gap-1"><TrendingDown className="h-3.5 w-3.5" /> No-show rate</span>
+                  <span className="tabular font-semibold">{noShowRate}%</span>
+                </div>
+                <div className="mt-1.5 h-2 rounded-full bg-surface-sunken overflow-hidden">
+                  <div className="h-full bg-danger" style={{ width: `${noShowRate * 6}%` }} />
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">Target &lt; 5% &middot; trailing 30d</p>
+              </div>
+              <div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground inline-flex items-center gap-1"><X className="h-3.5 w-3.5" /> Cancellation rate</span>
+                  <span className="tabular font-semibold">{cancelRate}%</span>
+                </div>
+                <div className="mt-1.5 h-2 rounded-full bg-surface-sunken overflow-hidden">
+                  <div className="h-full bg-warning" style={{ width: `${cancelRate * 6}%` }} />
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">Within 4h of slot: 2.1%</p>
+              </div>
+              <div className="pt-3 border-t border-border">
+                <Button size="sm" variant="outline" className="w-full" onClick={() => showToast("Reminder SMS scheduled · 18:30 IST")}>
+                  <Send className="h-3.5 w-3.5" /> Send reminder SMS batch
+                </Button>
+              </div>
+            </div>
+          </Card>
+
+          {/* Turn times — compact for the 360px sidebar */}
+          <Card className="p-5 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <CardTitle className="text-sm">Turn times</CardTitle>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Avg min · party × day-part · 30d</p>
+              </div>
+              <Badge tone="info">Auto</Badge>
+            </div>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-[9px] uppercase tracking-wider text-muted-foreground">
+                  <th className="text-left font-semibold pb-1.5">Party</th>
+                  <th className="text-right font-semibold pb-1.5">Lunch</th>
+                  <th className="text-right font-semibold pb-1.5">Early</th>
+                  <th className="text-right font-semibold pb-1.5">Peak</th>
+                  <th className="text-right font-semibold pb-1.5">Late</th>
+                </tr>
+              </thead>
+              <tbody>
+                {turnTimes.map(t => (
+                  <tr key={t.party} className="border-t border-border">
+                    <td className="py-1.5 font-medium whitespace-nowrap">{t.party}</td>
+                    <td className="py-1.5 text-right tabular">{t.lunch ?? "—"}</td>
+                    <td className="py-1.5 text-right tabular">{t.earlyDinner ?? "—"}</td>
+                    <td className="py-1.5 text-right tabular font-semibold">{t.dinner ?? "—"}</td>
+                    <td className="py-1.5 text-right tabular">{t.late ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+
+          {/* Blocked slots — compact stacked list for the sidebar */}
+          <Card className="overflow-hidden">
+            <div className="px-4 pt-4 pb-3 flex items-center justify-between gap-2 border-b border-border">
+              <div>
+                <CardTitle className="text-sm flex items-center gap-2"><Ban className="h-4 w-4 text-accent" /> Blocked slots</CardTitle>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Excluded from public booking</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => setShowBlock(true)}><Plus className="h-3.5 w-3.5" /> New</Button>
+            </div>
+            <div className="divide-y divide-border">
+              {blockedSlots.map(b => (
+                <div key={b.id} className="p-4 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <Badge tone="neutral" className="tabular">{b.table}</Badge>
+                      {b.notes?.toLowerCase().includes("upholstery") || b.guest.toLowerCase().includes("maintenance")
+                        ? <Badge tone="warning"><Wrench className="h-3 w-3" /> Maintenance</Badge>
+                        : <Badge tone="accent"><PartyPopper className="h-3 w-3" /> Private event</Badge>}
+                    </div>
+                    <Button size="sm" variant="ghost" onClick={() => releaseBlock(b)}>Release</Button>
+                  </div>
+                  <div className="text-[11px] tabular text-muted-foreground">{hrLabel(b.startHr)} – {hrLabel(b.startHr + b.durHr)}</div>
+                  <div className="text-xs">
+                    <div className="font-medium">{b.guest}</div>
+                    <div className="text-muted-foreground">{b.notes}</div>
+                  </div>
+                </div>
+              ))}
+              {blockedSlots.length === 0 && (
+                <div className="p-8 text-center text-xs text-muted-foreground">No active blocks.</div>
+              )}
+            </div>
+          </Card>
+
           <Card className="p-4 space-y-2.5 border-warning/40 bg-warning-soft/20">
             <div className="flex items-start gap-2">
               <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
@@ -650,41 +837,38 @@ export default function TablesPage() {
             <div className="p-5 grid grid-cols-2 gap-4">
               <div>
                 <Label>Date</Label>
-                <Input type="date" defaultValue={date} className="mt-1.5" />
+                <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="mt-1.5" />
               </div>
               <div>
                 <Label>Time</Label>
-                <Select defaultValue="20:00" className="mt-1.5">
+                <Select value={newRes.time} onChange={e => setNewRes(s => ({ ...s, time: e.target.value }))} className="mt-1.5">
                   {HOURS.flatMap(h => [`${String(h).padStart(2,"0")}:00`, `${String(h).padStart(2,"0")}:30`]).map(t => <option key={t}>{t}</option>)}
                 </Select>
               </div>
               <div>
                 <Label>Party size</Label>
-                <Select defaultValue="4" className="mt-1.5">
+                <Select value={newRes.party} onChange={e => setNewRes(s => ({ ...s, party: Number(e.target.value) }))} className="mt-1.5">
                   {Array.from({ length: 12 }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n} guest{n>1?"s":""}</option>)}
                 </Select>
               </div>
               <div>
                 <Label>Table <span className="text-muted-foreground text-xs font-normal">(auto-suggested)</span></Label>
-                <Select defaultValue="T10" className="mt-1.5">
-                  <option value="T10">T10 &middot; Garden &middot; 4-seat (suggested)</option>
-                  <option value="T9">T9 &middot; Main Hall &middot; 4-seat</option>
-                  <option value="T13">T13 &middot; Garden &middot; 4-seat</option>
-                  <option value="T7">T7 &middot; Main Hall &middot; 4-seat</option>
+                <Select value={newRes.table} onChange={e => setNewRes(s => ({ ...s, table: e.target.value }))} className="mt-1.5">
+                  {TABLES.map(t => <option key={t} value={t}>{t} &middot; {TABLE_META[t].zone} &middot; {TABLE_META[t].seats}-seat</option>)}
                 </Select>
-                <p className="text-[10px] text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> 4 tables free at this slot</p>
+                <p className="text-[10px] text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> {TABLE_META[newRes.table].seats}-seat · {TABLE_META[newRes.table].zone}</p>
               </div>
               <div>
                 <Label>Guest name</Label>
-                <Input placeholder="e.g. Aarav Sharma" className="mt-1.5" />
+                <Input placeholder="e.g. Aarav Sharma" value={newRes.guest} onChange={e => setNewRes(s => ({ ...s, guest: e.target.value }))} className="mt-1.5" />
               </div>
               <div>
                 <Label>Phone</Label>
-                <Input placeholder="+91 98XXX XXXXX" className="mt-1.5" />
+                <Input placeholder="+91 98XXX XXXXX" value={newRes.phone} onChange={e => setNewRes(s => ({ ...s, phone: e.target.value }))} className="mt-1.5" />
               </div>
               <div>
                 <Label>Occasion</Label>
-                <Select defaultValue="none" className="mt-1.5">
+                <Select value={newRes.occasion} onChange={e => setNewRes(s => ({ ...s, occasion: e.target.value as Occasion }))} className="mt-1.5">
                   <option value="none">None</option>
                   <option value="birthday">Birthday</option>
                   <option value="anniversary">Anniversary</option>
@@ -695,7 +879,7 @@ export default function TablesPage() {
               </div>
               <div>
                 <Label>Source</Label>
-                <Select defaultValue="Phone" className="mt-1.5">
+                <Select value={newRes.source} onChange={e => setNewRes(s => ({ ...s, source: e.target.value as NonNullable<Reservation["source"]> }))} className="mt-1.5">
                   <option>Phone</option>
                   <option>Direct</option>
                   <option>Zomato</option>
@@ -705,15 +889,15 @@ export default function TablesPage() {
               </div>
               <div className="col-span-2">
                 <Label>Special notes</Label>
-                <Input placeholder="Allergies, high-chair, window seat, cake at 21:00…" className="mt-1.5" />
+                <Input placeholder="Allergies, high-chair, window seat, cake at 21:00…" value={newRes.notes} onChange={e => setNewRes(s => ({ ...s, notes: e.target.value }))} className="mt-1.5" />
               </div>
             </div>
             <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2 bg-surface-sunken/30">
               <Button size="sm" variant="ghost" onClick={() => setShowNew(false)}>Cancel</Button>
-              <Button size="sm" variant="outline" onClick={() => { setShowNew(false); showToast("Reservation saved · SMS confirmation sent"); }}>
+              <Button size="sm" variant="outline" onClick={() => submitNewReservation(true)}>
                 Save &amp; send SMS
               </Button>
-              <Button size="sm" onClick={() => { setShowNew(false); showToast("Reservation created · T10 · 20:00"); }}>
+              <Button size="sm" onClick={() => submitNewReservation(false)}>
                 <CheckCircle2 className="h-3.5 w-3.5" /> Create reservation
               </Button>
             </div>
@@ -730,19 +914,19 @@ export default function TablesPage() {
               <Button size="icon" variant="ghost" onClick={() => setShowWalkin(false)}><X className="h-4 w-4" /></Button>
             </div>
             <div className="p-5 space-y-3">
-              <div><Label>Guest name</Label><Input placeholder="e.g. Walk-in: Mehta" className="mt-1.5" /></div>
+              <div><Label>Guest name</Label><Input placeholder="e.g. Walk-in: Mehta" value={walkForm.guest} onChange={e => setWalkForm(s => ({ ...s, guest: e.target.value }))} className="mt-1.5" /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><Label>Party</Label><Select defaultValue="2" className="mt-1.5">{[1,2,3,4,5,6,7,8].map(n => <option key={n}>{n}</option>)}</Select></div>
-                <div><Label>Est wait (min)</Label><Input defaultValue="15" type="number" className="mt-1.5" /></div>
+                <div><Label>Party</Label><Select value={walkForm.party} onChange={e => setWalkForm(s => ({ ...s, party: Number(e.target.value) }))} className="mt-1.5">{[1,2,3,4,5,6,7,8].map(n => <option key={n}>{n}</option>)}</Select></div>
+                <div><Label>Est wait (min)</Label><Input value={walkForm.waitMin} onChange={e => setWalkForm(s => ({ ...s, waitMin: Number(e.target.value) }))} type="number" className="mt-1.5" /></div>
               </div>
-              <div><Label>Phone (for SMS)</Label><Input placeholder="+91 …" className="mt-1.5" /></div>
+              <div><Label>Phone (for SMS)</Label><Input placeholder="+91 …" value={walkForm.phone} onChange={e => setWalkForm(s => ({ ...s, phone: e.target.value }))} className="mt-1.5" /></div>
             </div>
             <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2 bg-surface-sunken/30">
               <Button size="sm" variant="ghost" onClick={() => setShowWalkin(false)}>Cancel</Button>
               <Button size="sm" onClick={() => {
-                const id = `W${Date.now()}`;
-                setWaitlist(prev => [...prev, { id, guest: "Walk-in guest", party: 2, phone: "+91 98XXX XXXXX", waitMin: 15, arrivedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
+                addWalkin({ guest: walkForm.guest.trim() || "Walk-in guest", party: Number(walkForm.party), phone: walkForm.phone.trim() || "—", waitMin: Number(walkForm.waitMin), arrivedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) });
                 setShowWalkin(false);
+                setWalkForm(WALK_BLANK);
                 showToast("Added to waitlist · #" + (waitlist.length + 1));
               }}>
                 <UserPlus className="h-3.5 w-3.5" /> Add to queue
@@ -761,17 +945,17 @@ export default function TablesPage() {
               <Button size="icon" variant="ghost" onClick={() => setShowBlock(false)}><X className="h-4 w-4" /></Button>
             </div>
             <div className="p-5 space-y-3">
-              <div><Label>Table(s)</Label><Select defaultValue="T18" className="mt-1.5">{TABLES.map(t => <option key={t}>{t}</option>)}</Select></div>
+              <div><Label>Table(s)</Label><Select value={blockForm.table} onChange={e => setBlockForm(s => ({ ...s, table: e.target.value }))} className="mt-1.5">{TABLES.map(t => <option key={t}>{t}</option>)}</Select></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><Label>Start</Label><Select defaultValue="14:00" className="mt-1.5">{HOURS.flatMap(h => [`${String(h).padStart(2,"0")}:00`,`${String(h).padStart(2,"0")}:30`]).map(t => <option key={t}>{t}</option>)}</Select></div>
-                <div><Label>End</Label><Select defaultValue="18:00" className="mt-1.5">{HOURS.flatMap(h => [`${String(h).padStart(2,"0")}:00`,`${String(h).padStart(2,"0")}:30`]).map(t => <option key={t}>{t}</option>)}</Select></div>
+                <div><Label>Start</Label><Select value={blockForm.start} onChange={e => setBlockForm(s => ({ ...s, start: e.target.value }))} className="mt-1.5">{HOURS.flatMap(h => [`${String(h).padStart(2,"0")}:00`,`${String(h).padStart(2,"0")}:30`]).map(t => <option key={t}>{t}</option>)}</Select></div>
+                <div><Label>End</Label><Select value={blockForm.end} onChange={e => setBlockForm(s => ({ ...s, end: e.target.value }))} className="mt-1.5">{HOURS.flatMap(h => [`${String(h).padStart(2,"0")}:00`,`${String(h).padStart(2,"0")}:30`]).map(t => <option key={t}>{t}</option>)}</Select></div>
               </div>
-              <div><Label>Type</Label><Select defaultValue="maintenance" className="mt-1.5"><option value="maintenance">Maintenance</option><option value="private">Private event</option><option value="staff-meal">Staff meal</option></Select></div>
-              <div><Label>Reason</Label><Input placeholder="e.g. Booth re-upholstery" className="mt-1.5" /></div>
+              <div><Label>Type</Label><Select value={blockForm.type} onChange={e => setBlockForm(s => ({ ...s, type: e.target.value }))} className="mt-1.5"><option value="maintenance">Maintenance</option><option value="private">Private event</option><option value="staff-meal">Staff meal</option></Select></div>
+              <div><Label>Reason</Label><Input placeholder="e.g. Booth re-upholstery" value={blockForm.reason} onChange={e => setBlockForm(s => ({ ...s, reason: e.target.value }))} className="mt-1.5" /></div>
             </div>
             <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2 bg-surface-sunken/30">
               <Button size="sm" variant="ghost" onClick={() => setShowBlock(false)}>Cancel</Button>
-              <Button size="sm" onClick={() => { setShowBlock(false); showToast("Slot blocked · removed from public booking"); }}>
+              <Button size="sm" onClick={submitBlock}>
                 <Ban className="h-3.5 w-3.5" /> Block slot
               </Button>
             </div>
@@ -877,14 +1061,22 @@ function Kpi({
     warning: "bg-warning-soft text-warning",
     info:    "bg-info-soft text-info",
   }[tone];
+  const ringClass = {
+    brand:   "ring-brand/15",
+    success: "ring-success/20",
+    warning: "ring-warning/20",
+    info:    "ring-info/20",
+  }[tone];
   return (
-    <Card className="p-4">
-      <div className="flex items-center gap-2">
-        <div className={cn("h-8 w-8 rounded-md grid place-items-center", toneClass)}>{icon}</div>
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</div>
+    <Card className="p-4 sm:p-5 transition-all hover:shadow-md hover:-translate-y-0.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</p>
+          <p className="mt-2 text-3xl font-bold tabular tracking-tight leading-none">{value}</p>
+          {sub && <p className="mt-2 text-xs text-muted-foreground">{sub}</p>}
+        </div>
+        <div className={cn("h-10 w-10 shrink-0 rounded-lg grid place-items-center ring-1", toneClass, ringClass)}>{icon}</div>
       </div>
-      <div className="mt-2 text-2xl font-bold tabular">{value}</div>
-      {sub && <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>}
     </Card>
   );
 }

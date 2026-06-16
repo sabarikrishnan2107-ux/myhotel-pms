@@ -379,10 +379,10 @@ function Toggle({ on, onChange, label, hint }: { on: boolean; onChange: (v: bool
         <p className="text-xs text-muted-foreground">{hint}</p>
       </div>
       <span className={cn(
-        "h-5 w-9 rounded-full relative transition-colors shrink-0",
-        on ? "bg-brand" : "bg-surface-sunken border border-border"
+        "h-6 w-11 rounded-full relative transition-colors shrink-0",
+        on ? "bg-success" : "bg-border-strong"
       )}>
-        <span className={cn("absolute top-0.5 h-3.5 w-3.5 rounded-full bg-surface shadow-xs transition-transform", on ? "translate-x-4" : "translate-x-0.5")} />
+        <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform", on ? "translate-x-[22px]" : "translate-x-0.5")} />
       </span>
     </button>
   );

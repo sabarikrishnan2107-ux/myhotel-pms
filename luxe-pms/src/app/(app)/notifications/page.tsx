@@ -11,7 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { KPICard } from "@/components/ui/kpi-card";
-import { NOTIF_TEMPLATES, NOTIF_LOG } from "@/lib/mock-data-ext";
+import { NOTIF_TEMPLATES, NOTIF_LOG as NOTIF_LOG_MOCK } from "@/lib/mock-data-ext";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
+
+// A notification template as stored in the backend (notif-templates resource).
+type NotifTemplate = { id: string | number; name: string; trigger: string; channels: string[]; lastSent?: string };
+// A delivery-log row (notif-logs resource).
+type NotifLogRow = { id: string | number; time: string; to: string; channel: string; template: string; status: "delivered" | "opened" | "bounced" };
 import { cn } from "@/lib/utils";
 import {
   useNotifications, relativeTime, timeBucket, CATEGORY_META, PRIORITY_TONE,
@@ -33,6 +39,32 @@ export default function NotificationsPage() {
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
+  // Templates live in the backend (notif-templates). Seed from the mock list as
+  // an offline fallback, then replace with live Postgres data once it resolves.
+  const [templates, setTemplates] = React.useState<NotifTemplate[]>(NOTIF_TEMPLATES as NotifTemplate[]);
+  React.useEffect(() => {
+    apiGet<NotifTemplate[]>("/notif-templates")
+      .then(rows => { if (rows.length) setTemplates(rows); })
+      .catch(() => {});
+  }, []);
+
+  const createTemplate = (data: Omit<NotifTemplate, "id">) => {
+    apiPost<NotifTemplate>("/notif-templates", data)
+      .then(saved => setTemplates(t => [...t, saved]))
+      .catch(() => setTemplates(t => [...t, { ...data, id: `nt-${Date.now()}` }]));
+    showToast("New template saved");
+  };
+  const updateTemplate = (id: string | number, data: Omit<NotifTemplate, "id">) => {
+    setTemplates(t => t.map(x => (x.id === id ? { ...x, ...data } : x)));
+    if (typeof id === "number") apiPut(`/notif-templates/${id}`, data).catch(() => {});
+    showToast("Template updated");
+  };
+  const deleteTemplate = (id: string | number) => {
+    setTemplates(t => t.filter(x => x.id !== id));
+    if (typeof id === "number") apiDelete(`/notif-templates/${id}`).catch(() => {});
+    showToast("Template deleted");
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
       {/* Header */}
@@ -43,7 +75,7 @@ export default function NotificationsPage() {
             Inbox · channel preferences · templates · delivery log
           </p>
         </div>
-        {tab === "templates" && <NewTemplateButton onToast={showToast} />}
+        {tab === "templates" && <NewTemplateButton onCreate={createTemplate} />}
       </div>
 
       {/* Tabs */}
@@ -68,7 +100,7 @@ export default function NotificationsPage() {
 
       {tab === "inbox" && <InboxTab onToast={showToast} />}
       {tab === "preferences" && <PreferencesTab onToast={showToast} />}
-      {tab === "templates" && <TemplatesTab onToast={showToast} />}
+      {tab === "templates" && <TemplatesTab templates={templates} onUpdate={updateTemplate} onDelete={deleteTemplate} />}
       {tab === "log" && <LogTab />}
 
       {/* Toast */}
@@ -449,7 +481,7 @@ function Toggle({ on, onChange, icon: Icon }: { on: boolean; onChange: (v: boole
   return (
     <button type="button" onClick={() => onChange(!on)} className={cn(
       "relative h-7 w-12 rounded-full transition-colors inline-flex items-center shrink-0",
-      on ? "bg-brand" : "bg-surface-sunken"
+      on ? "bg-success" : "bg-border-strong"
     )} aria-label="Toggle">
       <span className={cn(
         "absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-md transition-transform inline-flex items-center justify-center text-foreground",
@@ -476,18 +508,23 @@ function ChannelTick({ on, disabled, onChange }: { on: boolean; disabled: boolea
 // ============================================================
 // TEMPLATES TAB — admin
 // ============================================================
-function NewTemplateButton({ onToast }: { onToast: (m: string) => void }) {
+function NewTemplateButton({ onCreate }: { onCreate: (data: Omit<NotifTemplate, "id">) => void }) {
   const [open, setOpen] = React.useState(false);
   return (
     <>
       <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" />New template</Button>
-      {open && <TemplateEditorModal onClose={() => setOpen(false)} onSave={() => { setOpen(false); onToast("New template saved"); }} />}
+      {open && <TemplateEditorModal onClose={() => setOpen(false)} onSubmit={(data) => { onCreate(data); setOpen(false); }} />}
     </>
   );
 }
 
-function TemplatesTab({ onToast }: { onToast: (m: string) => void }) {
-  const [editingId, setEditingId] = React.useState<string | null>(null);
+function TemplatesTab({ templates, onUpdate, onDelete }: {
+  templates: NotifTemplate[];
+  onUpdate: (id: string | number, data: Omit<NotifTemplate, "id">) => void;
+  onDelete: (id: string | number) => void;
+}) {
+  const [editingId, setEditingId] = React.useState<string | number | null>(null);
+  const NOTIF_TEMPLATES = templates; // render from live backend data
 
   return (
     <div className="space-y-4">
@@ -537,21 +574,23 @@ function TemplatesTab({ onToast }: { onToast: (m: string) => void }) {
         </table>
       </Card>
 
-      {editingId && (
+      {editingId !== null && (
         <TemplateEditorModal
           template={NOTIF_TEMPLATES.find(t => t.id === editingId)}
           onClose={() => setEditingId(null)}
-          onSave={() => { setEditingId(null); onToast("Template updated"); }}
+          onSubmit={(data) => { onUpdate(editingId, data); setEditingId(null); }}
+          onDelete={() => { onDelete(editingId); setEditingId(null); }}
         />
       )}
     </div>
   );
 }
 
-function TemplateEditorModal({ template, onClose, onSave }: {
-  template?: typeof NOTIF_TEMPLATES[number];
+function TemplateEditorModal({ template, onClose, onSubmit, onDelete }: {
+  template?: NotifTemplate;
   onClose: () => void;
-  onSave: () => void;
+  onSubmit: (data: Omit<NotifTemplate, "id">) => void;
+  onDelete?: () => void;
 }) {
   const [name, setName] = React.useState(template?.name || "");
   const [trigger, setTrigger] = React.useState(template?.trigger || "On booking");
@@ -642,14 +681,17 @@ function TemplateEditorModal({ template, onClose, onSave }: {
         </div>
 
         <div className="flex justify-between gap-2 px-5 py-3 border-t border-border bg-surface-sunken/30">
-          {template && (
-            <Button variant="danger" size="sm" onClick={onSave}>
+          {template && onDelete && (
+            <Button variant="danger" size="sm" onClick={onDelete}>
               <Trash2 className="h-3.5 w-3.5" />Delete
             </Button>
           )}
           <div className="flex gap-2 ml-auto">
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button onClick={onSave} disabled={!name.trim() || channels.length === 0}>
+            <Button
+              onClick={() => onSubmit({ name: name.trim(), trigger, channels, lastSent: template?.lastSent ?? "Just now" })}
+              disabled={!name.trim() || channels.length === 0}
+            >
               <CheckCircle2 className="h-3.5 w-3.5" />{template ? "Save changes" : "Create template"}
             </Button>
           </div>
@@ -664,6 +706,13 @@ function TemplateEditorModal({ template, onClose, onSave }: {
 // ============================================================
 function LogTab() {
   const [statusFilter, setStatusFilter] = React.useState<"all" | "delivered" | "opened" | "bounced">("all");
+  // Delivery log lives in the backend (notif-logs); fall back to the mock list offline.
+  const [NOTIF_LOG, setLog] = React.useState<NotifLogRow[]>(NOTIF_LOG_MOCK as NotifLogRow[]);
+  React.useEffect(() => {
+    apiGet<NotifLogRow[]>("/notif-logs")
+      .then(rows => { if (rows.length) setLog(rows); })
+      .catch(() => {});
+  }, []);
   const filtered = NOTIF_LOG.filter(l => statusFilter === "all" || l.status === statusFilter);
 
   return (

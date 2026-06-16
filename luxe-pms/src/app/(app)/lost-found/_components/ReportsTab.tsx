@@ -39,6 +39,20 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
+
+type FoundRow = {
+  id: number | string;
+  name: string;
+  category?: string;
+  status?: string;
+  value?: number;
+  hvi?: boolean;
+  foundLocation?: string;
+  foundDate?: string;
+  foundBy?: string;
+  guestName?: string;
+};
 
 type ReportTile = {
   id: string;
@@ -134,6 +148,44 @@ function getSample(reportId: string): Row[] {
   return SAMPLE_BY_REPORT[reportId] ?? SAMPLE_BY_REPORT["daily-found"];
 }
 
+// Real found-items become report rows; status maps to the report vocabulary.
+const ROW_STATUS: Record<string, Row["status"]> = {
+  Returned: "returned",
+  Claimed: "claimed",
+  Disposed: "disposed",
+  Donated: "disposed",
+  Storage: "found",
+  Notified: "pending",
+  Waiting: "pending",
+};
+function foundToRow(i: FoundRow): Row {
+  return {
+    ref: `LF-${i.id}`,
+    date: i.foundDate || "—",
+    item: i.name,
+    category: i.category || "—",
+    location: i.foundLocation || "—",
+    finder: i.foundBy || "—",
+    guest: i.guestName || undefined,
+    status: ROW_STATUS[i.status ?? ""] ?? "found",
+    value: i.value ?? 0,
+    hvi: i.hvi,
+  };
+}
+// Narrows the full row set to the rows a given report card is about.
+function rowsForReport(id: string, rows: Row[]): Row[] {
+  switch (id) {
+    case "pending-claim": return rows.filter((r) => r.status === "pending");
+    case "returned": return rows.filter((r) => r.status === "returned" || r.status === "claimed");
+    case "disposed": return rows.filter((r) => r.status === "disposed");
+    case "high-value": return rows.filter((r) => r.hvi || r.value >= 5000);
+    case "storage-expiry": return rows.filter((r) => r.status === "found" || r.status === "pending");
+    default: return rows;
+  }
+}
+// Reports backed by other tables (lost reports, audit, police) keep illustrative samples.
+const SAMPLE_ONLY = new Set(["guest-lost", "audit-log", "police-handover"]);
+
 const TINT_STYLES: Record<ReportTile["tint"], string> = {
   brand: "bg-brand-soft text-brand-soft-foreground",
   info: "bg-info-soft text-info",
@@ -181,10 +233,23 @@ export default function ReportsTab({ onToast }: { onToast: (m: string) => void }
   const [hviOnly, setHviOnly] = React.useState(false);
   const [bucket, setBucket] = React.useState<"all" | "returned" | "pending" | "disposed">("all");
 
+  // -------------------- real data (offline → samples)
+  const [found, setFound] = React.useState<FoundRow[] | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<FoundRow[]>("/found-items")
+      .then((r) => { if (!cancelled && r.length) setFound(r); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  const live = !!(found && found.length);
+
   // -------------------- selected report
   const [selectedId, setSelectedId] = React.useState<string>("daily-found");
   const selected = REPORT_TILES.find(t => t.id === selectedId)!;
-  const rows = getSample(selectedId);
+  const rows = live && !SAMPLE_ONLY.has(selectedId)
+    ? rowsForReport(selectedId, found!.map(foundToRow)).filter((r) => !hviOnly || r.hvi)
+    : getSample(selectedId);
 
   // -------------------- scheduled
   const [schedules, setSchedules] = React.useState<ScheduledReport[]>([

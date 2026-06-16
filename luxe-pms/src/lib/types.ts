@@ -35,6 +35,9 @@ export interface Room {
   type: RoomType;
   status: RoomStatus;
   hkStatus: HKStatus;
+  // Housekeeping assignment (present on the live /room-board).
+  hkAssignee?: string | null;
+  hkStartedAt?: string | null;
   guestName?: string;
   source?: BookingSource;
   checkIn?: string;
@@ -42,6 +45,13 @@ export interface Room {
   paymentStatus?: PaymentStatus;
   vip?: boolean;
   rate: number;
+  // Live booking link (present on occupied rooms from /room-board) so the rack
+  // can act on the real folio/booking instead of mock lookups.
+  bookingNo?: string;
+  bookingId?: number;
+  nights?: number;
+  total?: number;
+  balance?: number;
 }
 
 export interface Guest {
@@ -57,6 +67,15 @@ export interface Guest {
   lifetimeNights: number;
   lifetimeSpend: number;
   lastStay?: string;
+  // KYC captures + extra profile fields (persisted from the intake form).
+  address?: string;
+  gender?: string;
+  company?: string;
+  gst?: string;
+  idFront?: string | null;
+  idBack?: string | null;
+  photo?: string | null;
+  signature?: string | null;
 }
 
 export interface Reservation {

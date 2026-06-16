@@ -3,8 +3,6 @@ import * as React from "react";
 import {
   Hand,
   ShieldCheck,
-  Camera,
-  PenLine,
   KeyRound,
   Receipt,
   CheckCircle2,
@@ -19,7 +17,6 @@ import {
   Printer,
   IdCard,
   ArrowLeft,
-  Eraser,
   MapPin,
   Lock,
 } from "lucide-react";
@@ -28,6 +25,44 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { useProperty, hotelName } from "@/lib/use-property";
+import { apiGet, apiPut, sendEmail } from "@/lib/api";
+import { PhotoCapture } from "@/components/guests/photo-capture";
+import { SignaturePad } from "@/components/guests/signature-pad";
+
+// Booking row shape we read from the API for this kiosk session.
+type ApiBooking = {
+  id: number; bookingNo: string; guestName: string; roomNumber?: string;
+  roomType?: string; nights?: number; checkIn?: string; checkOut?: string;
+  adults?: number; children?: number; total?: number; status?: string;
+};
+
+// KYC captured at the kiosk (base64 data URLs) — saved onto the guest profile.
+type KioskKyc = {
+  idType: string;
+  idFront: string | null;
+  idBack: string | null;
+  signature: string | null;
+};
+
+// Mark the kiosk's booking checked-in in Postgres (looked up by bookingNo) and
+// attach the captured ID scans + signature to the guest profile.
+async function persistKioskCheckIn(bookingNo: string, guestName: string, kyc: KioskKyc) {
+  try {
+    const list = await apiGet<ApiBooking[]>("/bookings");
+    const bk = list.find(b => b.bookingNo === bookingNo);
+    if (bk) await apiPut(`/bookings/${bk.id}`, { status: "checked-in" });
+  } catch { /* offline — the kiosk still shows the confirmation */ }
+  try {
+    const guests = await apiGet<{ id: number; name: string }[]>("/guests");
+    const g = guests.find(x => x.name === guestName);
+    if (g) await apiPut(`/guests/${g.id}`, {
+      idType: kyc.idType,
+      idFront: kyc.idFront ?? "",
+      idBack: kyc.idBack ?? "",
+      signature: kyc.signature ?? "",
+    });
+  } catch { /* offline — captures stay on screen for this session */ }
+}
 
 type StepKey = "welcome" | "verify" | "id" | "signature" | "room" | "folio" | "complete";
 
@@ -75,9 +110,34 @@ export default function CheckinKioskPage({
   const [stepIdx, setStepIdx] = React.useState(0);
   const [toast, setToast] = React.useState<string | null>(null);
   const [idType, setIdType] = React.useState<IdType>("Aadhaar");
-  const [frontCaptured, setFrontCaptured] = React.useState(false);
-  const [backCaptured, setBackCaptured] = React.useState(false);
-  const [signed, setSigned] = React.useState(false);
+  const [idFront, setIdFront] = React.useState<string | null>(null);
+  const [idBack, setIdBack] = React.useState<string | null>(null);
+  const [signature, setSignature] = React.useState<string | null>(null);
+
+  // Load the real booking for this kiosk session; fall back to mock if offline/not found.
+  const [booking, setBooking] = React.useState(BOOKING);
+  React.useEffect(() => {
+    apiGet<ApiBooking[]>("/bookings").then(list => {
+      const b = list.find(x => x.bookingNo === bookingNo);
+      if (!b) return;
+      const total = b.total ?? BOOKING.total;
+      const roomCharge = Math.round(total / 1.18);
+      setBooking({
+        ...BOOKING,                                  // keep kiosk-only fields (locker, paymentCard…)
+        bookingNo: b.bookingNo,
+        guest: b.guestName,
+        roomType: b.roomType ?? BOOKING.roomType,
+        nights: b.nights ?? BOOKING.nights,
+        checkIn: b.checkIn ?? BOOKING.checkIn,
+        checkOut: b.checkOut ?? BOOKING.checkOut,
+        pax: { adults: b.adults ?? BOOKING.pax.adults, children: b.children ?? BOOKING.pax.children },
+        total,
+        roomCharge,
+        taxes: total - roomCharge,
+        assignedRoom: b.roomNumber && b.roomNumber !== "Unassigned" ? b.roomNumber : BOOKING.assignedRoom,
+      });
+    }).catch(() => {});
+  }, [bookingNo]);
 
   const showToast = (m: string) => {
     setToast(m);
@@ -94,9 +154,9 @@ export default function CheckinKioskPage({
   const back = () => setStepIdx((i) => Math.max(0, i - 1));
   const restart = () => {
     setStepIdx(0);
-    setFrontCaptured(false);
-    setBackCaptured(false);
-    setSigned(false);
+    setIdFront(null);
+    setIdBack(null);
+    setSignature(null);
     showToast("Kiosk reset");
   };
 
@@ -165,10 +225,10 @@ export default function CheckinKioskPage({
 
         {/* Step content */}
         {step.key === "welcome" && (
-          <WelcomeStep onStart={() => next("Let's get you checked in")} />
+          <WelcomeStep booking={booking} onStart={() => next("Let's get you checked in")} />
         )}
         {step.key === "verify" && (
-          <VerifyStep onConfirm={() => next("Details confirmed")} />
+          <VerifyStep booking={booking} onConfirm={() => next("Details confirmed")} />
         )}
         {step.key === "id" && (
           <IdStep
@@ -177,44 +237,45 @@ export default function CheckinKioskPage({
               setIdType(t);
               showToast(`${t} selected`);
             }}
-            frontCaptured={frontCaptured}
-            backCaptured={backCaptured}
-            onCaptureFront={() => {
-              setFrontCaptured(true);
-              showToast("Front captured");
-            }}
-            onCaptureBack={() => {
-              setBackCaptured(true);
-              showToast("Back captured");
-            }}
+            idFront={idFront}
+            idBack={idBack}
+            onCaptureFront={setIdFront}
+            onCaptureBack={setIdBack}
             onContinue={() => next("ID submitted for verification")}
           />
         )}
         {step.key === "signature" && (
           <SignatureStep
-            signed={signed}
-            onSign={() => {
-              setSigned(true);
-              showToast("Signature drawn");
-            }}
-            onClear={() => {
-              setSigned(false);
-              showToast("Signature cleared");
-            }}
+            signature={signature}
+            onSign={setSignature}
             onDone={() => next("Signature saved")}
           />
         )}
         {step.key === "room" && (
-          <RoomStep onContinue={() => next("Room allocated")} />
+          <RoomStep booking={booking} onContinue={() => next("Room allocated")} />
         )}
         {step.key === "folio" && (
           <FolioStep
-            onAuthorize={() => next("Folio authorized")}
+            booking={booking}
+            onAuthorize={() => {
+              persistKioskCheckIn(booking.bookingNo, booking.guest, { idType, idFront, idBack, signature });
+              next("Folio authorized · checked in");
+            }}
           />
         )}
         {step.key === "complete" && (
           <CompleteStep
-            onEmail={() => showToast("Receipt sent to akash.bhatt@example.in")}
+            booking={booking}
+            onEmail={async () => {
+              showToast("Emailing receipt…");
+              try {
+                const guests = await apiGet<{ name: string; email?: string }[]>("/guests");
+                const to = guests.find(g => g.name === booking.guest)?.email;
+                if (!to) { showToast("No email on file for this guest"); return; }
+                await sendEmail({ to, subject: `Check-in Receipt · ${booking.bookingNo}`, heading: "Check-in Receipt", greeting: booking.guest, intro: "You're checked in. Here is your receipt.", rows: [{ label: "Booking No", value: booking.bookingNo }], context: "Kiosk receipt" });
+                showToast(`Receipt sent to ${to}`);
+              } catch { showToast("Couldn't email receipt"); }
+            }}
             onPrint={() => showToast("Sending to lobby printer")}
             onRestart={restart}
           />
@@ -231,7 +292,7 @@ export default function CheckinKioskPage({
 }
 
 /* ───────────── Step 1: Welcome ───────────── */
-function WelcomeStep({ onStart }: { onStart: () => void }) {
+function WelcomeStep({ booking, onStart }: { booking: typeof BOOKING; onStart: () => void }) {
   return (
     <Card className="p-12 lg:p-16 text-center space-y-8">
       <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-surface-sunken text-sm text-muted-foreground">
@@ -241,10 +302,10 @@ function WelcomeStep({ onStart }: { onStart: () => void }) {
       <div className="space-y-4">
         <div className="text-3xl lg:text-4xl text-muted-foreground">Welcome,</div>
         <h1 className="text-5xl lg:text-7xl font-bold tracking-tight">
-          {BOOKING.guest}
+          {booking.guest}
         </h1>
         <div className="text-2xl text-muted-foreground pt-2">
-          Booking {BOOKING.bookingNo} · {BOOKING.roomType} · {BOOKING.nights} nights
+          Booking {booking.bookingNo} · {booking.roomType} · {booking.nights} nights
         </div>
       </div>
       <div className="pt-6">
@@ -265,7 +326,7 @@ function WelcomeStep({ onStart }: { onStart: () => void }) {
 }
 
 /* ───────────── Step 2: Verify ───────────── */
-function VerifyStep({ onConfirm }: { onConfirm: () => void }) {
+function VerifyStep({ booking, onConfirm }: { booking: typeof BOOKING; onConfirm: () => void }) {
   return (
     <Card className="p-8 lg:p-12 space-y-8">
       <div className="space-y-2">
@@ -282,25 +343,25 @@ function VerifyStep({ onConfirm }: { onConfirm: () => void }) {
         <VerifyRow
           icon={<ShieldCheck className="w-6 h-6" />}
           label="Booking Number"
-          value={BOOKING.bookingNo}
+          value={booking.bookingNo}
         />
         <VerifyRow
           icon={<Users className="w-6 h-6" />}
           label="Primary Guest"
-          value={BOOKING.guest}
-          sub={BOOKING.phone}
+          value={booking.guest}
+          sub={booking.phone}
         />
         <VerifyRow
           icon={<CalendarDays className="w-6 h-6" />}
           label="Stay Dates"
-          value={`${BOOKING.checkIn} → ${BOOKING.checkOut}`}
-          sub={`${BOOKING.nights} nights`}
+          value={`${booking.checkIn} → ${booking.checkOut}`}
+          sub={`${booking.nights} nights`}
         />
         <VerifyRow
           icon={<BedDouble className="w-6 h-6" />}
           label="Room Type"
-          value={BOOKING.roomType}
-          sub={`${BOOKING.pax.adults} adults · ${BOOKING.pax.children} children`}
+          value={booking.roomType}
+          sub={`${booking.pax.adults} adults · ${booking.pax.children} children`}
         />
       </div>
 
@@ -309,7 +370,7 @@ function VerifyStep({ onConfirm }: { onConfirm: () => void }) {
           <div className="text-sm uppercase tracking-wider text-muted-foreground">
             Total
           </div>
-          <div className="text-3xl font-bold tabular">{money(BOOKING.total)}</div>
+          <div className="text-3xl font-bold tabular">{money(booking.total)}</div>
         </div>
         <Button
           size="lg"
@@ -357,21 +418,21 @@ function VerifyRow({
 function IdStep({
   idType,
   onTypeChange,
-  frontCaptured,
-  backCaptured,
+  idFront,
+  idBack,
   onCaptureFront,
   onCaptureBack,
   onContinue,
 }: {
   idType: IdType;
   onTypeChange: (t: IdType) => void;
-  frontCaptured: boolean;
-  backCaptured: boolean;
-  onCaptureFront: () => void;
-  onCaptureBack: () => void;
+  idFront: string | null;
+  idBack: string | null;
+  onCaptureFront: (dataUrl: string | null) => void;
+  onCaptureBack: (dataUrl: string | null) => void;
   onContinue: () => void;
 }) {
-  const ready = frontCaptured && backCaptured;
+  const ready = idFront !== null && idBack !== null;
   return (
     <Card className="p-8 lg:p-12 space-y-8">
       <div className="space-y-2">
@@ -406,18 +467,16 @@ function IdStep({
         </div>
       </div>
 
-      {/* Camera tiles */}
+      {/* Camera tiles — live webcam capture (or upload) of each side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <CameraTile
-          label="Front of document"
-          captured={frontCaptured}
-          onCapture={onCaptureFront}
-        />
-        <CameraTile
-          label="Back of document"
-          captured={backCaptured}
-          onCapture={onCaptureBack}
-        />
+        <div className="space-y-2">
+          <div className="text-base font-medium">Front of document</div>
+          <PhotoCapture label="Front of document" aspect="landscape" focus="none" onChange={onCaptureFront} />
+        </div>
+        <div className="space-y-2">
+          <div className="text-base font-medium">Back of document</div>
+          <PhotoCapture label="Back of document" aspect="landscape" focus="none" onChange={onCaptureBack} />
+        </div>
       </div>
 
       <div className="flex items-center justify-between pt-4 border-t border-border">
@@ -440,57 +499,14 @@ function IdStep({
   );
 }
 
-function CameraTile({
-  label,
-  captured,
-  onCapture,
-}: {
-  label: string;
-  captured: boolean;
-  onCapture: () => void;
-}) {
-  return (
-    <button
-      onClick={onCapture}
-      className={cn(
-        "relative w-full aspect-[4/3] rounded-2xl border-2 border-dashed transition-all flex flex-col items-center justify-center gap-3 group",
-        captured
-          ? "border-success bg-success/5"
-          : "border-border bg-surface-sunken/40 hover:border-brand hover:bg-surface-sunken",
-      )}
-    >
-      {captured ? (
-        <>
-          <div className="w-20 h-20 rounded-full bg-success/15 flex items-center justify-center">
-            <CheckCircle2 className="w-12 h-12 text-success" />
-          </div>
-          <div className="text-2xl font-semibold">Captured</div>
-          <div className="text-base text-muted-foreground">{label}</div>
-          <Badge tone="success">Verified</Badge>
-        </>
-      ) : (
-        <>
-          <div className="w-20 h-20 rounded-full bg-background flex items-center justify-center group-hover:scale-110 transition-transform">
-            <Camera className="w-10 h-10 text-muted-foreground" />
-          </div>
-          <div className="text-2xl font-semibold">Tap to capture</div>
-          <div className="text-base text-muted-foreground">{label}</div>
-        </>
-      )}
-    </button>
-  );
-}
-
 /* ───────────── Step 4: Signature ───────────── */
 function SignatureStep({
-  signed,
+  signature,
   onSign,
-  onClear,
   onDone,
 }: {
-  signed: boolean;
-  onSign: () => void;
-  onClear: () => void;
+  signature: string | null;
+  onSign: (dataUrl: string | null) => void;
   onDone: () => void;
 }) {
   return (
@@ -503,58 +519,14 @@ function SignatureStep({
         </p>
       </div>
 
-      {/* Drawing area placeholder */}
-      <button
-        onClick={onSign}
-        className={cn(
-          "w-full h-72 lg:h-80 rounded-2xl border-2 border-dashed flex items-center justify-center transition-all relative overflow-hidden",
-          signed
-            ? "border-success bg-success/5"
-            : "border-border bg-surface-sunken/40 hover:border-brand",
-        )}
-      >
-        {signed ? (
-          <div className="flex flex-col items-center gap-3">
-            <svg
-              viewBox="0 0 360 100"
-              className="w-72 h-24 text-foreground"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M10 70 Q 40 10, 70 60 T 140 50 Q 180 20, 220 70 T 350 40" />
-            </svg>
-            <div className="text-lg text-muted-foreground">
-              Akash Bhatt · Signed
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-3">
-            <PenLine className="w-12 h-12 text-muted-foreground" />
-            <div className="text-2xl font-semibold">Tap and draw here</div>
-            <div className="text-base text-muted-foreground">
-              x ___________________________
-            </div>
-          </div>
-        )}
-      </button>
+      {/* Live signature pad — strokes are saved as a PNG */}
+      <SignaturePad height={300} onChange={onSign} />
 
-      <div className="flex items-center justify-between pt-4 border-t border-border">
-        <Button
-          variant="outline"
-          size="lg"
-          onClick={onClear}
-          className="text-lg px-8 py-6 h-auto rounded-xl"
-        >
-          <Eraser className="w-5 h-5 mr-2" />
-          Clear
-        </Button>
+      <div className="flex items-center justify-end pt-4 border-t border-border">
         <Button
           size="lg"
           onClick={onDone}
-          disabled={!signed}
+          disabled={signature === null}
           className="text-xl px-10 py-7 h-auto rounded-2xl"
         >
           Done
@@ -566,7 +538,7 @@ function SignatureStep({
 }
 
 /* ───────────── Step 5: Room Allocation ───────────── */
-function RoomStep({ onContinue }: { onContinue: () => void }) {
+function RoomStep({ booking, onContinue }: { booking: typeof BOOKING; onContinue: () => void }) {
   return (
     <Card className="p-8 lg:p-12 space-y-8">
       <div className="space-y-2">
@@ -585,11 +557,11 @@ function RoomStep({ onContinue }: { onContinue: () => void }) {
             Assigned room
           </div>
           <div className="text-7xl lg:text-8xl font-bold tabular text-brand">
-            {BOOKING.assignedRoom}
+            {booking.assignedRoom}
           </div>
           <div className="flex items-center justify-center gap-2 text-2xl text-foreground">
             <MapPin className="w-6 h-6" />
-            Floor {BOOKING.floor}
+            Floor {booking.floor}
           </div>
           <div className="text-base text-muted-foreground">
             Take the lobby lift, turn left
@@ -603,7 +575,7 @@ function RoomStep({ onContinue }: { onContinue: () => void }) {
             Key Locker
           </div>
           <div className="space-y-1">
-            <div className="text-3xl font-semibold">{BOOKING.locker}</div>
+            <div className="text-3xl font-semibold">{booking.locker}</div>
             <div className="text-base text-muted-foreground">
               Located in the lobby alcove, left of reception
             </div>
@@ -613,7 +585,7 @@ function RoomStep({ onContinue }: { onContinue: () => void }) {
               Access code
             </div>
             <div className="text-5xl font-bold tabular tracking-[0.3em] text-foreground">
-              {BOOKING.lockerCode}
+              {booking.lockerCode}
             </div>
           </div>
           <Badge tone="warning">Code expires in 24 hours</Badge>
@@ -622,7 +594,7 @@ function RoomStep({ onContinue }: { onContinue: () => void }) {
 
       <div className="flex items-center justify-between pt-4 border-t border-border">
         <div className="text-base text-muted-foreground">
-          A copy has also been sent to {BOOKING.phone}
+          A copy has also been sent to {booking.phone}
         </div>
         <Button
           size="lg"
@@ -638,9 +610,9 @@ function RoomStep({ onContinue }: { onContinue: () => void }) {
 }
 
 /* ───────────── Step 6: Folio Preview ───────────── */
-function FolioStep({ onAuthorize }: { onAuthorize: () => void }) {
-  const cgst = Math.round(BOOKING.taxes / 2);
-  const sgst = BOOKING.taxes - cgst;
+function FolioStep({ booking, onAuthorize }: { booking: typeof BOOKING; onAuthorize: () => void }) {
+  const cgst = Math.round(booking.taxes / 2);
+  const sgst = booking.taxes - cgst;
   return (
     <Card className="p-8 lg:p-12 space-y-8">
       <div className="space-y-2">
@@ -655,17 +627,17 @@ function FolioStep({ onAuthorize }: { onAuthorize: () => void }) {
         <div className="px-6 py-4 bg-surface-sunken/40 flex items-center justify-between">
           <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
             <Receipt className="w-4 h-4" />
-            Folio · {BOOKING.bookingNo}
+            Folio · {booking.bookingNo}
           </div>
           <Badge tone="neutral">Estimate</Badge>
         </div>
         <div className="divide-y divide-border">
           <FolioRow
-            label={`Room nights (${BOOKING.nights} × ${money(
-              BOOKING.roomCharge / BOOKING.nights,
+            label={`Room nights (${booking.nights} × ${money(
+              booking.roomCharge / booking.nights,
             )})`}
-            sub={`${BOOKING.roomType} · ${BOOKING.checkIn} → ${BOOKING.checkOut}`}
-            value={money(BOOKING.roomCharge)}
+            sub={`${booking.roomType} · ${booking.checkIn} → ${booking.checkOut}`}
+            value={money(booking.roomCharge)}
           />
           <FolioRow label="CGST 6%" value={money(cgst)} muted />
           <FolioRow label="SGST 6%" value={money(sgst)} muted />
@@ -679,7 +651,7 @@ function FolioStep({ onAuthorize }: { onAuthorize: () => void }) {
               Inclusive of all taxes
             </div>
           </div>
-          <div className="text-4xl font-bold tabular">{money(BOOKING.total)}</div>
+          <div className="text-4xl font-bold tabular">{money(booking.total)}</div>
         </div>
       </div>
 
@@ -692,7 +664,7 @@ function FolioStep({ onAuthorize }: { onAuthorize: () => void }) {
           <div className="text-xs uppercase tracking-wider text-muted-foreground">
             Auto-charge on file
           </div>
-          <div className="text-2xl font-semibold tabular">{BOOKING.paymentCard}</div>
+          <div className="text-2xl font-semibold tabular">{booking.paymentCard}</div>
           <div className="text-base text-muted-foreground">
             Card will be charged at check-out
           </div>
@@ -752,10 +724,12 @@ function FolioRow({
 
 /* ───────────── Step 7: Complete ───────────── */
 function CompleteStep({
+  booking,
   onEmail,
   onPrint,
   onRestart,
 }: {
+  booking: typeof BOOKING;
   onEmail: () => void;
   onPrint: () => void;
   onRestart: () => void;
@@ -777,11 +751,11 @@ function CompleteStep({
           You are checked in
         </h2>
         <div className="text-2xl lg:text-3xl text-muted-foreground">
-          Welcome to {name}, {BOOKING.guest}
+          Welcome to {name}, {booking.guest}
         </div>
         <div className="text-xl text-muted-foreground">
-          Room {BOOKING.assignedRoom} · {BOOKING.locker} · Code{" "}
-          <span className="tabular font-semibold">{BOOKING.lockerCode}</span>
+          Room {booking.assignedRoom} · {booking.locker} · Code{" "}
+          <span className="tabular font-semibold">{booking.lockerCode}</span>
         </div>
       </div>
 

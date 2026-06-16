@@ -5,7 +5,7 @@ import {
   Filter, Search, BedDouble, Crown, MoreHorizontal, KeyRound, LogIn, LogOut,
   CalendarPlus, CalendarMinus, ArrowLeftRight, CreditCard, UtensilsCrossed,
   Sparkles, Wrench, Receipt, LayoutGrid, List, MousePointerClick,
-  CheckCircle2, X, Lock, AlertTriangle, Building2, Users, Eye,
+  CheckCircle2, X, Lock, LockOpen, AlertTriangle, Building2, Users, Eye,
   Wine, Shirt, BellRing,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -15,7 +15,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { ROOMS, RESERVATIONS, GUESTS } from "@/lib/mock-data";
 import type { Room, RoomStatus, Reservation, Guest } from "@/lib/types";
 import { cn, formatTime, money } from "@/lib/utils";
-import { apiGet } from "@/lib/api";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
 
 // Status filter metadata — semantic color for each chip
@@ -68,7 +68,7 @@ function lookupGuest(room: Room): { guest: Guest; reservation: Reservation } | n
   return { guest, reservation };
 }
 
-type ActionKind = "extend" | "reduce" | "change" | "payment" | "block" | "order";
+type ActionKind = "extend" | "reduce" | "change" | "payment" | "block" | "unblock" | "order";
 
 export default function RackPage() {
   const [filter, setFilter] = React.useState<RoomStatus | "all">("all");
@@ -86,11 +86,11 @@ export default function RackPage() {
 
   // Live room board from Postgres: real occupancy (from bookings) + housekeeping status.
   const [rooms, setRooms] = React.useState<Room[]>(ROOMS);
-  React.useEffect(() => {
-    let cancelled = false;
-    apiGet<Room[]>("/room-board").then(r => { if (!cancelled) setRooms(r); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
+  const refreshBoard = React.useCallback(
+    () => apiGet<Room[]>("/room-board").then(setRooms).catch(() => {}),
+    [],
+  );
+  React.useEffect(() => { refreshBoard(); }, [refreshBoard]);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2600); };
 
@@ -111,11 +111,6 @@ export default function RackPage() {
     if (advRateMin && r.rate < advRateMin) return false;
     return true;
   });
-
-  const byFloor = filtered.reduce<Record<number, Room[]>>((acc, r) => {
-    (acc[r.floor] ??= []).push(r);
-    return acc;
-  }, {});
 
   const counts = STATUS_FILTERS.reduce<Record<string, number>>((acc, f) => {
     acc[f.value] = f.value === "all" ? rooms.length : rooms.filter(r => r.status === f.value).length;
@@ -272,27 +267,16 @@ export default function RackPage() {
           <p className="text-xs text-muted-foreground mt-1">Try clearing filters above or searching for a specific room.</p>
         </Card>
       ) : view === "cards" ? (
-        <div className="space-y-8">
-          {Object.entries(byFloor)
-            .sort(([a], [b]) => Number(b) - Number(a))
-            .map(([f, rooms]) => (
-              <section key={f}>
-                <div className="flex items-center gap-3 mb-3">
-                  <h2 className="text-sm font-semibold tracking-tight">Floor {f}</h2>
-                  <span className="text-xs text-muted-foreground">{rooms.length} rooms</span>
-                  <div className="flex-1 h-px bg-border ml-2" />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
-                  {rooms.map(room => (
-                    <RoomCard
-                      key={room.id}
-                      room={room}
-                      onOpenGuest={openGuestFor}
-                      onAction={openAction}
-                    />
-                  ))}
-                </div>
-              </section>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6 gap-3 items-start">
+          {[...filtered]
+            .sort((a, b) => b.floor - a.floor || Number(a.number) - Number(b.number))
+            .map(room => (
+              <RoomCard
+                key={room.id}
+                room={room}
+                onOpenGuest={openGuestFor}
+                onAction={openAction}
+              />
             ))}
         </div>
       ) : (
@@ -312,8 +296,10 @@ export default function RackPage() {
         <ActionDialog
           kind={actionDialog.kind}
           room={actionDialog.room}
+          allRooms={rooms}
           onClose={() => setActionDialog(null)}
-          onConfirm={(msg) => { setActionDialog(null); showToast(msg); }}
+          onDone={(msg) => { setActionDialog(null); showToast(msg); refreshBoard(); }}
+          onError={(msg) => { setActionDialog(null); showToast(msg); }}
         />
       )}
 
@@ -376,7 +362,7 @@ function RoomListView({ rooms, onOpenGuest, onAction }: { rooms: Room[]; onOpenG
               const isReserved = room.status === "reserved";
               const hasGuest = !!room.guestName;
               const lookup = lookupGuest(room);
-              const bookingNo = lookup?.reservation.bookingNo;
+              const bookingNo = room.bookingNo ?? lookup?.reservation.bookingNo;
               return (
                 <tr
                   key={room.id}
@@ -470,7 +456,7 @@ function RoomCard({ room, onOpenGuest, onAction }: { room: Room; onOpenGuest: (r
   const isReserved = room.status === "reserved";
   const hasGuest = !!room.guestName;
   const lookup = lookupGuest(room);
-  const bookingNo = lookup?.reservation.bookingNo;
+  const bookingNo = room.bookingNo ?? lookup?.reservation.bookingNo;
 
   return (
     <Card
@@ -564,7 +550,9 @@ function RoomCard({ room, onOpenGuest, onAction }: { room: Room; onOpenGuest: (r
                 <ActionGroup label="Operations">
                   <ActionBtn icon={Sparkles} label="Clean" href="/housekeeping" emphasized={room.status === "dirty"} />
                   <ActionBtn icon={Wrench} label="Maint." href="/maintenance" emphasized={room.status === "maintenance"} />
-                  <ActionBtn icon={Lock} label="Block" onClick={() => onAction("block", room)} />
+                  {room.status === "blocked"
+                    ? <ActionBtn icon={LockOpen} label="Unblock" onClick={() => onAction("unblock", room)} emphasized />
+                    : <ActionBtn icon={Lock} label="Block" onClick={() => onAction("block", room)} />}
                 </ActionGroup>
               </div>
             )}
@@ -608,9 +596,16 @@ function ActionBtn({ icon: Icon, label, href, onClick, emphasized, disabled }: {
 }
 
 // ===================== ACTION DIALOG =====================
-function ActionDialog({ kind, room, onClose, onConfirm }: {
-  kind: ActionKind; room: Room;
-  onClose: () => void; onConfirm: (msg: string) => void;
+/** Shift an ISO date string by N days, returning a YYYY-MM-DD string. */
+function shiftDate(iso: string | undefined, days: number): string {
+  const base = iso ? new Date(iso) : new Date();
+  base.setDate(base.getDate() + days);
+  return base.toISOString().slice(0, 10);
+}
+
+function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
+  kind: ActionKind; room: Room; allRooms: Room[];
+  onClose: () => void; onDone: (msg: string) => void; onError: (msg: string) => void;
 }) {
   // Lock body scroll + ESC handling
   React.useEffect(() => {
@@ -626,11 +621,12 @@ function ActionDialog({ kind, room, onClose, onConfirm }: {
     change: `Change room · from ${room.number}`,
     payment: `Collect payment · Room ${room.number}`,
     block: `Block room ${room.number}`,
+    unblock: `Release room ${room.number}`,
     order: `Order for Room ${room.number}`,
   };
   const icons: Record<ActionKind, typeof BedDouble> = {
     extend: CalendarPlus, reduce: CalendarMinus, change: ArrowLeftRight,
-    payment: CreditCard, block: Lock,
+    payment: CreditCard, block: Lock, unblock: LockOpen,
     order: UtensilsCrossed,
   };
   const Icon = icons[kind];
@@ -638,7 +634,8 @@ function ActionDialog({ kind, room, onClose, onConfirm }: {
   // Local state for each action's inputs
   const [extraNights, setExtraNights] = React.useState(1);
   const [reduceNights, setReduceNights] = React.useState(1);
-  const [newRoom, setNewRoom] = React.useState(ROOMS.find(r => r.status === "available")?.number ?? "");
+  const [newRoom, setNewRoom] = React.useState(allRooms.find(r => r.status === "available" && r.number !== room.number)?.number ?? "");
+  const [submitting, setSubmitting] = React.useState(false);
   const [payAmount, setPayAmount] = React.useState(0);
   const [payMode, setPayMode] = React.useState("UPI");
   const [blockReason, setBlockReason] = React.useState("Maintenance scheduled");
@@ -717,18 +714,76 @@ function ActionDialog({ kind, room, onClose, onConfirm }: {
   const orderTotal = orderSubtotal + orderTax;
   const orderItemCount = Object.values(orderCart).reduce((t, n) => t + n, 0);
 
-  const handle = () => {
-    if (kind === "extend") onConfirm(`Room ${room.number} extended by ${extraNights} night${extraNights === 1 ? "" : "s"}`);
-    else if (kind === "reduce") onConfirm(`Room ${room.number} stay reduced by ${reduceNights} night${reduceNights === 1 ? "" : "s"}`);
-    else if (kind === "change") {
-      const issues = roomIssues.size > 0 ? ` (${[...roomIssues].slice(0, 2).join(", ")}${roomIssues.size > 2 ? `, +${roomIssues.size - 2}` : ""})` : "";
-      onConfirm(`Moved Room ${room.number} → ${newRoom} · ${changeReason}${issues}${notifyHK || notifyMaint ? " · HK/Maint notified" : ""}`);
-    }
-    else if (kind === "payment") onConfirm(`${money(payAmount)} collected via ${payMode} · Room ${room.number}`);
-    else if (kind === "block") onConfirm(`Room ${room.number} blocked · ${blockReason}`);
-    else if (kind === "order") {
-      const dept = orderTab === "laundry" ? "laundry" : orderTab === "other" ? "concierge" : "kitchen";
-      onConfirm(`Order sent to ${dept} · Room ${room.number} · ${orderItemCount} item${orderItemCount === 1 ? "" : "s"} · ${money(orderTotal)} added to folio`);
+  // Persist each action to the backend, then let the caller refresh the live board.
+  // Stay/money actions need the room's real booking link (present on occupied rooms).
+  const handle = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      if (kind === "extend") {
+        const extra = room.rate * extraNights;
+        if (room.bookingId) {
+          await apiPut(`/bookings/${room.bookingId}`, {
+            checkOut: shiftDate(room.checkOut, extraNights),
+            nights: (room.nights ?? 0) + extraNights,
+            total: (room.total ?? 0) + extra,
+            balance: (room.balance ?? 0) + extra,
+          });
+          await apiPost("/folio-charges", {
+            bookingNo: room.bookingNo, date: today,
+            description: `Room charge · extension ${extraNights} night${extraNights === 1 ? "" : "s"}`,
+            type: "Room", qty: extraNights, rate: room.rate, tax: 0, amount: extra, paidBy: "Guest",
+          });
+        }
+        onDone(`Room ${room.number} extended by ${extraNights} night${extraNights === 1 ? "" : "s"}`);
+      } else if (kind === "reduce") {
+        const less = room.rate * reduceNights;
+        if (room.bookingId) {
+          await apiPut(`/bookings/${room.bookingId}`, {
+            checkOut: shiftDate(room.checkOut, -reduceNights),
+            nights: Math.max(1, (room.nights ?? 1) - reduceNights),
+            total: Math.max(0, (room.total ?? 0) - less),
+            balance: Math.max(0, (room.balance ?? 0) - less),
+          });
+        }
+        onDone(`Room ${room.number} stay reduced by ${reduceNights} night${reduceNights === 1 ? "" : "s"}`);
+      } else if (kind === "change") {
+        const issues = roomIssues.size > 0 ? ` (${[...roomIssues].slice(0, 2).join(", ")}${roomIssues.size > 2 ? `, +${roomIssues.size - 2}` : ""})` : "";
+        if (room.bookingId) {
+          await apiPut(`/bookings/${room.bookingId}`, { roomNumber: newRoom });
+          await apiPut(`/rooms/${room.id}`, { hkStatus: "dirty" });
+        }
+        onDone(`Moved Room ${room.number} → ${newRoom} · ${changeReason}${issues}${notifyHK || notifyMaint ? " · HK/Maint notified" : ""}`);
+      } else if (kind === "payment") {
+        if (room.bookingNo) {
+          await apiPost("/folio-payments", {
+            bookingNo: room.bookingNo, date: today, mode: payMode, amount: payAmount, reference: "Front desk · Room Rack",
+          });
+        }
+        onDone(`${money(payAmount)} collected via ${payMode} · Room ${room.number}`);
+      } else if (kind === "block") {
+        await apiPut(`/rooms/${room.id}`, { status: "blocked" });
+        onDone(`Room ${room.number} blocked · ${blockReason}`);
+      } else if (kind === "unblock") {
+        await apiPut(`/rooms/${room.id}`, { status: "available", hkStatus: "clean" });
+        onDone(`Room ${room.number} released back to sale`);
+      } else if (kind === "order") {
+        const dept = orderTab === "laundry" ? "laundry" : orderTab === "other" ? "concierge" : "kitchen";
+        const chargeType = orderTab === "laundry" ? "Laundry" : orderTab === "other" ? "Service" : "F&B";
+        if (room.bookingNo) {
+          await apiPost("/folio-charges", {
+            bookingNo: room.bookingNo, date: today,
+            description: `${dept.charAt(0).toUpperCase() + dept.slice(1)} order · ${orderItemCount} item${orderItemCount === 1 ? "" : "s"}`,
+            type: chargeType, qty: orderItemCount, rate: orderSubtotal, tax: orderTax, amount: orderTotal, paidBy: "Room",
+          });
+        }
+        onDone(`Order sent to ${dept} · Room ${room.number} · ${orderItemCount} item${orderItemCount === 1 ? "" : "s"} · ${money(orderTotal)} added to folio`);
+      }
+    } catch {
+      onError("⚠ Save failed — backend offline");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -781,12 +836,12 @@ function ActionDialog({ kind, room, onClose, onConfirm }: {
                 <div className="space-y-1.5">
                   <Label className="text-xs">Move guest to room</Label>
                   <Select value={newRoom} onChange={e => setNewRoom(e.target.value)} className="h-10">
-                    {ROOMS.filter(r => r.status === "available" && r.number !== room.number).map(r => (
+                    {allRooms.filter(r => r.status === "available" && r.number !== room.number).map(r => (
                       <option key={r.id} value={r.number}>Room {r.number} · {r.type} · Floor {r.floor} · {money(r.rate)}/n</option>
                     ))}
                   </Select>
                   {(() => {
-                    const target = ROOMS.find(r => r.number === newRoom);
+                    const target = allRooms.find(r => r.number === newRoom);
                     if (!target) return null;
                     const diff = target.rate - room.rate;
                     if (Math.abs(diff) < 1) return null;
@@ -1015,6 +1070,12 @@ function ActionDialog({ kind, room, onClose, onConfirm }: {
                 <p className="text-[11px] text-muted-foreground">Blocked rooms are removed from sale until released.</p>
               </>
             )}
+            {kind === "unblock" && (
+              <div className="space-y-2">
+                <p className="text-sm">Release <span className="font-semibold">Room {room.number}</span> back to available inventory?</p>
+                <p className="text-[11px] text-muted-foreground">It becomes sellable again immediately and is marked clean.</p>
+              </div>
+            )}
           </div>
 
           <div className="px-5 py-3 border-t border-border bg-surface-elevated flex items-center justify-between gap-2">
@@ -1023,10 +1084,10 @@ function ActionDialog({ kind, room, onClose, onConfirm }: {
               {kind === "change" && changeReason === "Room issue" && roomIssues.size > 0 && `${roomIssues.size} issue${roomIssues.size === 1 ? "" : "s"} logged`}
             </p>
             <div className="flex gap-2">
-              <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-              <Button onClick={handle} variant={kind === "block" ? "danger" : "success"} disabled={kind === "order" && orderItemCount === 0}>
+              <Button variant="ghost" size="sm" onClick={onClose} disabled={submitting}>Cancel</Button>
+              <Button onClick={handle} variant={kind === "block" ? "danger" : "success"} disabled={submitting || (kind === "order" && orderItemCount === 0)}>
                 <CheckCircle2 className="h-4 w-4" />
-                {kind === "order" ? (orderTab === "laundry" ? "Send to laundry" : orderTab === "other" ? "Send to concierge" : "Send to kitchen") : "Confirm"}
+                {submitting ? "Saving…" : kind === "order" ? (orderTab === "laundry" ? "Send to laundry" : orderTab === "other" ? "Send to concierge" : "Send to kitchen") : kind === "unblock" ? "Release room" : "Confirm"}
               </Button>
             </div>
           </div>

@@ -6,6 +6,7 @@ import { TopBar } from "./top-bar";
 import { RouteProgress } from "./route-progress";
 import { NotificationsProvider } from "@/components/notifications/store";
 import { getToken } from "@/lib/api";
+import { getRole, canAccess, ROLE_HOME } from "@/lib/auth";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
@@ -13,13 +14,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   // Auth gate: bounce to /login when there's no token (client-only check).
+  // Role gate: bounce to the role's home when the route isn't permitted.
   const [authed, setAuthed] = React.useState<boolean | null>(null);
   React.useEffect(() => {
     const ok = !!getToken();
-    if (!ok) router.replace("/login");
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- token only exists client-side
-    setAuthed(ok);
-  }, [router]);
+    if (!ok) {
+      router.replace("/login");
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- token only exists client-side
+      setAuthed(false);
+      return;
+    }
+    const role = getRole();
+    if (!canAccess(pathname, role)) {
+      router.replace(ROLE_HOME[role]);
+      setAuthed(false);
+      return;
+    }
+    setAuthed(true);
+  }, [router, pathname]);
 
   if (authed !== true) {
     // Avoid flashing the app before the auth check resolves.

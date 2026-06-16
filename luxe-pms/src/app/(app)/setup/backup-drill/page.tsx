@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
 
 // ===================== TYPES =====================
 type BackupType = "Full" | "Incremental";
@@ -71,6 +72,35 @@ const BACKUPS_SEED: BackupRow[] = [
   { id: "bk-290", date: "2026-05-22", time: "02:00", size: "12.1 GB", sizeBytes: 12100_000_000, type: "Incremental", target: "S3 (Mumbai)",     verified: true,  checksum: "df89…6c01" },
 ];
 
+// Shape returned by GET /api/backups (Laravel BackupController::meta):
+// real pg_dump .sql files in storage/app/backups, newest first.
+type ApiBackup = { name: string; size: number; created_at: string };
+
+// Map a real backup file → the row the table/select render. The backend only
+// knows file/size/created_at, so type ("Full" — pg_dump full dumps), target
+// ("Local NAS" — local storage), verified (file present) and checksum ("—",
+// not exposed) are derived. date/time come from created_at.
+function mapApiBackup(b: ApiBackup): BackupRow {
+  const sizeBytes = Number(b.size) || 0;
+  const d = new Date(b.created_at);
+  const valid = !Number.isNaN(d.getTime());
+  const date = valid ? d.toISOString().slice(0, 10) : b.created_at.slice(0, 10);
+  const time = valid
+    ? d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })
+    : "—";
+  return {
+    id: b.name,                                   // .sql filename = stable id / select value
+    date,
+    time,
+    size: `${(sizeBytes / 1e9).toFixed(1)} GB`,    // bytes → display GB
+    sizeBytes,
+    type: "Full",                                  // pg_dump produces full dumps
+    target: "Local NAS",                           // stored on local disk
+    verified: true,                                // file exists on disk
+    checksum: "—",                                 // not exposed by the API
+  };
+}
+
 const DRILLS_SEED: DrillRow[] = [
   { id: "dr-12", date: "2026-05-15", restoredTo: "sandbox-mum-03",   recordsCompared: 2_184_502, mismatches: 0,  rtoMin: 18, rpoMin: 60,  status: "PASS",    runBy: "Anjali Iyer"   },
   { id: "dr-11", date: "2026-04-18", restoredTo: "sandbox-mum-02",   recordsCompared: 2_091_338, mismatches: 0,  rtoMin: 21, rpoMin: 60,  status: "PASS",    runBy: "Karan Mehta"   },
@@ -125,13 +155,29 @@ export default function BackupDrillPage() {
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
-  const [backups] = React.useState<BackupRow[]>(BACKUPS_SEED);
+  const [backups, setBackups] = React.useState<BackupRow[]>(BACKUPS_SEED);
   const [drills, setDrills] = React.useState<DrillRow[]>(DRILLS_SEED);
 
   // Drill setup state
   const [selectedBackup, setSelectedBackup] = React.useState<string>(BACKUPS_SEED[0].id);
   const [sandboxTarget, setSandboxTarget] = React.useState<string>("sandbox-mum-04");
   const [checks, setChecks] = React.useState<ValidationCheck[]>(VALIDATION_DEFAULTS);
+
+  // Replace the seeded (offline fallback) backup list with the real backup
+  // files from GET /api/backups when the request returns rows. Keeps the seed
+  // on empty/failed responses so the UI never goes blank.
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<ApiBackup[]>("/backups")
+      .then(rows => {
+        if (cancelled || !Array.isArray(rows) || rows.length === 0) return;
+        const mapped = rows.map(mapApiBackup);
+        setBackups(mapped);
+        setSelectedBackup(mapped[0].id);
+      })
+      .catch(() => { /* offline / unauthorized → keep seed */ });
+    return () => { cancelled = true; };
+  }, []);
 
   // Drill progress modal
   const [drillRunning, setDrillRunning] = React.useState(false);

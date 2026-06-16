@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Room Rack — Front Desk Board (concept)</title>
+<style>
+  :root{
+    --bg:#0a0f1e; --surface:#101a2e; --surface-2:#0c1322; --sunken:#0c1322; --elev:#16223a;
+    --border:#1e2a44; --text:#e7eef8; --muted:#8ea4c2; --subtle:#5d7290;
+    --brand:#e6a92b; --brand-soft:#3a2e12;
+    --green:#34d399; --green-soft:#0f2a20;
+    --amber:#f0a93b; --amber-soft:#2c2210;
+    --blue:#5b9bff; --blue-soft:#11213f;
+    --red:#f56b6b; --red-soft:#2a1518;
+    --slate:#7286a6; --slate-soft:#1a2336;
+    --violet:#a78bfa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+      radial-gradient(1200px 500px at 80% -10%, #14223f55, transparent),
+      var(--bg);color:var(--text);
+    font-family:"Segoe UI",system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.45}
+  .wrap{max-width:1340px;margin:0 auto;padding:26px}
+
+  /* ---------- Summary strip ---------- */
+  .top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;
+    background:linear-gradient(135deg,#13203a,#0e1830);border:1px solid var(--border);
+    border-radius:16px;padding:16px 20px}
+  .top h1{font-size:20px;font-weight:600;letter-spacing:-.02em;margin:0}
+  .top .sub{color:var(--muted);font-size:12px;margin-top:2px}
+  .occ{display:flex;align-items:center;gap:12px;margin-left:auto}
+  .occ .num{font-size:26px;font-weight:700;line-height:1}
+  .occ .bar{width:160px;height:8px;border-radius:6px;background:var(--sunken);overflow:hidden}
+  .occ .bar>span{display:block;height:100%;width:17%;
+    background:linear-gradient(90deg,var(--brand),var(--amber));border-radius:6px}
+  .occ small{color:var(--muted);font-size:11px}
+
+  /* ---------- Filter chips ---------- */
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 18px}
+  .chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);
+    background:var(--surface);border-radius:10px;padding:7px 12px;font-size:12px;cursor:pointer;color:var(--muted);transition:.15s}
+  .chip:hover{border-color:var(--brand)}
+  .chip.active{background:var(--elev);color:var(--text);border-color:#2c3c5e}
+  .chip b{color:var(--text);font-size:13px}
+  .chip .d{width:8px;height:8px;border-radius:3px}
+
+  /* ---------- Board grid ---------- */
+  .board{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  @media(min-width:560px){.board{grid-template-columns:repeat(3,1fr)}}
+  @media(min-width:820px){.board{grid-template-columns:repeat(4,1fr)}}
+  @media(min-width:1100px){.board{grid-template-columns:repeat(5,1fr)}}
+  @media(min-width:1340px){.board{grid-template-columns:repeat(6,1fr)}}
+
+  .tile{position:relative;background:var(--surface);border:1px solid var(--border);
+    border-radius:14px;padding:13px 14px 12px;overflow:hidden;transition:.16s;cursor:pointer}
+  .tile::before{content:"";position:absolute;inset:0 0 auto 0;height:3px}
+  .tile:hover{transform:translateY(-3px);border-color:#2c3c5e;box-shadow:0 12px 30px rgba(0,0,0,.4)}
+  .tile.available::before{background:var(--green)}
+  .tile.occupied::before{background:var(--amber)}
+  .tile.dirty::before{background:var(--red)}
+  .tile.blocked::before{background:var(--slate)}
+  .tile.reserved::before{background:var(--blue)}
+
+  .th{display:flex;align-items:flex-start;justify-content:space-between;gap:6px}
+  .rno{font-size:19px;font-weight:700;line-height:1;letter-spacing:-.01em}
+  .vip{color:var(--brand);font-size:13px;margin-left:4px}
+  .floor{font-size:10px;color:var(--subtle);border:1px solid var(--border);border-radius:6px;padding:1px 6px}
+  .rtype{font-size:11px;color:var(--muted);margin-top:5px}
+
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;border-radius:999px;padding:3px 9px;margin-top:11px}
+  .badge .d{width:7px;height:7px;border-radius:50%}
+  .badge.available{background:var(--green-soft);color:var(--green)}
+  .badge.occupied{background:var(--amber-soft);color:var(--amber)}
+  .badge.dirty{background:var(--red-soft);color:var(--red)}
+  .badge.blocked{background:var(--slate-soft);color:#a9b8d2}
+  .badge.reserved{background:var(--blue-soft);color:var(--blue)}
+
+  .ctx{margin-top:11px;border-top:1px solid var(--border);padding-top:9px;min-height:38px}
+  .ctx .g{font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px}
+  .ctx .av{width:22px;height:22px;border-radius:50%;background:var(--elev);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--brand);flex:0 0 auto}
+  .ctx .meta{font-size:11px;color:var(--muted);margin-top:3px}
+  .ctx .rate{font-size:15px;font-weight:700}
+  .ctx .rate small{font-size:11px;color:var(--muted);font-weight:500}
+
+  /* hover action bar */
+  .acts{display:flex;gap:6px;margin-top:10px;max-height:0;opacity:0;overflow:hidden;
+    transition:max-height .18s ease,opacity .18s ease}
+  .tile:hover .acts{max-height:48px;opacity:1}
+  .a{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;height:32px;
+    border:1px solid var(--border);background:var(--surface-2);color:var(--text);border-radius:9px;font-size:12px;cursor:pointer}
+  .a:hover{border-color:var(--brand);background:var(--elev)}
+  .a.primary{background:var(--brand);color:#1a1206;border-color:var(--brand);font-weight:600}
+  .a.go{background:var(--green-soft);color:var(--green);border-color:transparent}
+  .a.icon{flex:0 0 32px}
+
+  .hint{color:var(--subtle);font-size:11px;text-align:center;margin-top:22px}
+  .tag{display:inline-block;font-size:10px;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:1px 7px;margin-left:8px;vertical-align:middle}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- summary -->
+  <div class="top">
+    <div>
+      <h1>Room Rack <span class="tag">concept · Front Desk Board</span></h1>
+      <div class="sub">HYDER SPARK · 12 rooms · live status</div>
+    </div>
+    <div class="occ">
+      <div>
+        <div class="num">17%</div>
+        <small>occupancy</small>
+      </div>
+      <div>
+        <div class="bar"><span></span></div>
+        <small>2 of 12 sold · ₹5.09L revenue</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- filter chips with live counts -->
+  <div class="chips">
+    <span class="chip active"><b>12</b> All rooms</span>
+    <span class="chip"><span class="d" style="background:var(--green)"></span><b>7</b> Available</span>
+    <span class="chip"><span class="d" style="background:var(--amber)"></span><b>2</b> Occupied</span>
+    <span class="chip"><span class="d" style="background:var(--blue)"></span><b>1</b> Reserved</span>
+    <span class="chip"><span class="d" style="background:var(--red)"></span><b>1</b> Dirty</span>
+    <span class="chip"><span class="d" style="background:var(--slate)"></span><b>1</b> Blocked</span>
+  </div>
+
+  <!-- board -->
+  <div class="board">
+
+    <!-- Available (Presidential, VIP) -->
+    <div class="tile available">
+      <div class="th"><div><span class="rno">PH1</span><span class="vip">♛</span></div><span class="floor">F6</span></div>
+      <div class="rtype">Presidential</div>
+      <span class="badge available"><span class="d" style="background:var(--green)"></span>Available</span>
+      <div class="ctx"><div class="rate">₹65,000<small> /night</small></div><div class="meta">Ready to sell</div></div>
+      <div class="acts"><span class="a primary">🔑 Book</span><span class="a icon">→</span><span class="a icon">⋯</span></div>
+    </div>
+
+    <!-- Occupied with guest + checkout -->
+    <div class="tile occupied">
+      <div class="th"><div><span class="rno">401</span><span class="vip">♛</span></div><span class="floor">F4</span></div>
+      <div class="rtype">Suite</div>
+      <span class="badge occupied"><span class="d" style="background:var(--amber)"></span>In-house</span>
+      <div class="ctx"><div class="g"><span class="av">RK</span>Rajesh Kumar</div><div class="meta">Out tomorrow 11:00 · bal ₹0</div></div>
+      <div class="acts"><span class="a go">⇲ Check-out</span><span class="a icon">⋯</span></div>
+    </div>
+
+    <!-- Reserved -->
+    <div class="tile reserved">
+      <div class="th"><span class="rno">301</span><span class="floor">F3</span></div>
+      <div class="rtype">King</div>
+      <span class="badge reserved"><span class="d" style="background:var(--blue)"></span>Reserved</span>
+      <div class="ctx"><div class="g"><span class="av">AK</span>Aisha Khan</div><div class="meta">Arrives today · OTA: Booking.com</div></div>
+      <div class="acts"><span class="a primary">→ Check-in</span><span class="a icon">⋯</span></div>
+    </div>
+
+    <!-- Available -->
+    <div class="tile available">
+      <div class="th"><span class="rno">501</span><span class="floor">F5</span></div>
+      <div class="rtype">Executive</div>
+      <span class="badge available"><span class="d" style="background:var(--green)"></span>Available</span>
+      <div class="ctx"><div class="rate">₹22,000<small> /night</small></div><div class="meta">Ready to sell</div></div>
+      <div class="acts"><span class="a primary">🔑 Book</span><span class="a icon">→</span><span class="a icon">⋯</span></div>
+    </div>
+
+    <!-- Dirty -->
+    <div class="tile dirty">
+      <div class="th"><span class="rno">202</span><span class="floor">F2</span></div>
+      <div class="rtype">Deluxe</div>
+      <span class="badge dirty"><span class="d" style="background:var(--red)"></span>Dirty</span>
+      <div class="ctx"><div class="g">Departed</div><div class="meta">Awaiting housekeeping</div></div>
+      <div class="acts"><span class="a go">✦ Mark clean</span><span class="a icon">⋯</span></div>
+    </div>
+
+    <!-- Blocked + unblock -->
+    <div class="tile blocked">
+      <div class="th"><span class="rno">305</span><span class="floor">F3</span></div>
+      <div class="rtype">Deluxe</div>
+      <span class="badge blocked"><span class="d" style="background:var(--slate)"></span>Blocked</span>
+      <div class="ctx"><div class="g">Out of sale</div><div class="meta">Reason · Maintenance</div></div>
+      <div class="acts"><span class="a go">🔓 Unblock</span><span class="a icon">🔧</span></div>
+    </div>
+
+    <!-- Available -->
+    <div class="tile available">
+      <div class="th"><span class="rno">402</span><span class="floor">F4</span></div>
+      <div class="rtype">Suite</div>
+      <span class="badge available"><span class="d" style="background:var(--green)"></span>Available</span>
+      <div class="ctx"><div class="rate">₹18,000<small> /night</small></div><div class="meta">Ready to sell</div></div>
+      <div class="acts"><span class="a primary">🔑 Book</span><span class="a icon">→</span><span class="a icon">⋯</span></div>
+    </div>
+
+    <!-- Occupied -->
+    <div class="tile occupied">
+      <div class="th"><span class="rno">102</span><span class="floor">F1</span></div>
+      <div class="rtype">Queen</div>
+      <span class="badge occupied"><span class="d" style="background:var(--amber)"></span>In-house</span>
+      <div class="ctx"><div class="g"><span class="av">PS</span>Priya Sharma</div><div class="meta">Out today · bal ₹9,100</div></div>
+      <div class="acts"><span class="a go">⇲ Check-out</span><span class="a icon">⋯</span></div>
+    </div>
+
+    <!-- Available rooms to fill the grid -->
+    <div class="tile available">
+      <div class="th"><span class="rno">201</span><span class="floor">F2</span></div>
+      <div class="rtype">Deluxe</div>
+      <span class="badge available"><span class="d" style="background:var(--green)"></span>Available</span>
+      <div class="ctx"><div class="rate">₹18,000<small> /night</small></div><div class="meta">Ready to sell</div></div>
+      <div class="acts"><span class="a primary">🔑 Book</span><span class="a icon">→</span><span class="a icon">⋯</span></div>
+    </div>
+    <div class="tile available">
+      <div class="th"><span class="rno">103</span><span class="floor">F1</span></div>
+      <div class="rtype">Queen</div>
+      <span class="badge available"><span class="d" style="background:var(--green)"></span>Available</span>
+      <div class="ctx"><div class="rate">₹13,000<small> /night</small></div><div class="meta">Ready to sell</div></div>
+      <div class="acts"><span class="a primary">🔑 Book</span><span class="a icon">→</span><span class="a icon">⋯</span></div>
+    </div>
+    <div class="tile available">
+      <div class="th"><span class="rno">101</span><span class="floor">F1</span></div>
+      <div class="rtype">Queen</div>
+      <span class="badge available"><span class="d" style="background:var(--green)"></span>Available</span>
+      <div class="ctx"><div class="rate">₹13,000<small> /night</small></div><div class="meta">Ready to sell</div></div>
+      <div class="acts"><span class="a primary">🔑 Book</span><span class="a icon">→</span><span class="a icon">⋯</span></div>
+    </div>
+    <div class="tile available">
+      <div class="th"><span class="rno">203</span><span class="floor">F2</span></div>
+      <div class="rtype">Deluxe</div>
+      <span class="badge available"><span class="d" style="background:var(--green)"></span>Available</span>
+      <div class="ctx"><div class="rate">₹18,000<small> /night</small></div><div class="meta">Ready to sell</div></div>
+      <div class="acts"><span class="a primary">🔑 Book</span><span class="a icon">→</span><span class="a icon">⋯</span></div>
+    </div>
+
+  </div>
+
+  <p class="hint">Hover a tile to reveal its quick actions · status accent on top · live counts above filter the board</p>
+</div>
+</body>
+</html>

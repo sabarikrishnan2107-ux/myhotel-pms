@@ -6,7 +6,7 @@ import {
   LogIn, Search, LayoutGrid, List, Filter, Calendar, Users, BedDouble,
   CreditCard, IdCard, Sparkles, ChevronRight, Crown, Camera, Send, Zap,
   Phone, Mail, Hash, User, X, Eye, CheckCircle2, KeyRound, MessageCircle,
-  ChevronLeft, Printer, AlertCircle, Upload, FileCheck2, ScanLine, Pen, RotateCw,
+  ChevronLeft, Printer, AlertCircle, Upload, FileCheck2, ScanLine, Pen,
   Plus, BedDouble as BedIcon, Globe, ChevronsRight, Minus,
   Banknote, Smartphone, Building2, Wallet, UtensilsCrossed,
   CalendarPlus, CalendarMinus, Bed, Download, FileText,
@@ -19,10 +19,12 @@ import { Badge, PaymentBadge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
-import { GUESTS, ROOMS } from "@/lib/mock-data";
+import { PhotoCapture } from "@/components/guests/photo-capture";
+import { SignaturePad } from "@/components/guests/signature-pad";
+import { useGuests, useRooms } from "@/lib/use-directory";
 import type { Reservation, PaymentStatus, BookingSource, Guest } from "@/lib/types";
 import { cn, money, formatTime } from "@/lib/utils";
-import { apiGet, apiPut } from "@/lib/api";
+import { apiGet, apiPut, sendEmail } from "@/lib/api";
 import { useProperty, hotelName } from "@/lib/use-property";
 
 // Mark a booking checked-in in Postgres (looked up by its bookingNo).
@@ -38,9 +40,32 @@ async function persistCheckIn(bookingNo: string, roomNumber?: string) {
   } catch { /* offline — UI still reflects the check-in locally */ }
 }
 
+// KYC captured at check-in (base64 data URLs + ID details) — persist it onto the
+// guest record so it shows on the profile and the next stay starts with ID on file.
+type KycCapture = {
+  idType: string; idNumber: string;
+  idFront: string | null; idBack: string | null;
+  photo: string | null; signature: string | null;
+};
+async function persistKyc(guestName: string, kyc: KycCapture) {
+  try {
+    const list = await apiGet<{ id: number; name: string }[]>("/guests");
+    const g = list.find(x => x.name === guestName);
+    if (!g) return;   // no matching profile — booking-only guest, nothing to attach to
+    await apiPut(`/guests/${g.id}`, {
+      idType: kyc.idType,
+      idNumber: kyc.idNumber,
+      idFront: kyc.idFront ?? "",
+      idBack: kyc.idBack ?? "",
+      photo: kyc.photo ?? "",
+      signature: kyc.signature ?? "",
+    });
+  } catch { /* offline — captures stay in the UI for this session */ }
+}
+
 /** Join a reservation with its guest profile to enable phone/email/ID search */
-function enrich(r: Reservation) {
-  const guest = GUESTS.find(g => g.name === r.guestName);
+function enrich(r: Reservation, guests: Guest[]) {
+  const guest = guests.find(g => g.name === r.guestName);
   const [firstName, ...rest] = r.guestName.split(" ");
   const lastName = rest.join(" ");
   return {
@@ -141,7 +166,8 @@ export default function CheckinPage() {
       ))
       .catch(() => {});
   }, []);
-  const enriched = React.useMemo(() => arrivals.map(enrich), [arrivals]);
+  const guests = useGuests();
+  const enriched = React.useMemo(() => arrivals.map(r => enrich(r, guests)), [arrivals, guests]);
 
   // Auto-open check-in modal when navigated with ?book=BK100245 (e.g. from dashboard)
   React.useEffect(() => {
@@ -158,7 +184,7 @@ export default function CheckinPage() {
   const selectedGuest: Guest | null = React.useMemo(() => {
     if (!selected) return null;
     return (
-      GUESTS.find(g => g.name === selected.guestName) ?? {
+      guests.find(g => g.name === selected.guestName) ?? {
         id: `g-${selected.id}`,
         name: selected.guestName,
         phone: "—",
@@ -173,7 +199,7 @@ export default function CheckinPage() {
         lastStay: selected.checkIn,
       }
     );
-  }, [selected]);
+  }, [selected, guests]);
   const [source, setSource] = React.useState<"all" | BookingSource>("all");
   const [payment, setPayment] = React.useState<"all" | PaymentStatus>("all");
   const [slot, setSlot] = React.useState<Slot>("all");
@@ -705,7 +731,9 @@ function CheckinProcessModal({
     { id: 4, label: "Complete", icon: CheckCircle2, hint: "Finalize" },
   ] as const;
 
-  const guest = GUESTS.find(g => g.name === reservation.guestName);
+  const guests = useGuests();
+  const rooms = useRooms();
+  const guest = guests.find(g => g.name === reservation.guestName);
   // ID on file? Walk-ins from /bookings/new have KYC captured. Express walk-ins from /checkin do NOT — they capture here.
   // OTA/Website/Phone/Agent/Corporate pre-bookings typically don't capture KYC at booking.
   const idOnFile = forceKycCapture ? false : reservation.source === "Walk-in";
@@ -738,17 +766,29 @@ function CheckinProcessModal({
   // Step 2 — Room assignment. Booking reserves a room TYPE; here we pick a
   // currently-available room of that type (plus the pre-assigned one if any).
   const isUnassigned = !reservation.roomNumber || reservation.roomNumber === "Unassigned";
+  // Assignable at check-in = ready rooms plus housekeeping-pending ones
+  // (dirty / cleaning). Occupied / blocked / out-of-order rooms are excluded.
   const availableForType = React.useMemo(
-    () => ROOMS.filter(r => r.type === reservation.roomType && (r.status === "available" || r.number === reservation.roomNumber)),
-    [reservation.roomType, reservation.roomNumber],
+    () => rooms.filter(r => r.type === reservation.roomType
+      && (r.status === "available" || r.status === "dirty" || r.status === "cleaning" || r.number === reservation.roomNumber)),
+    [rooms, reservation.roomType, reservation.roomNumber],
   );
   const [assignedRoom, setAssignedRoom] = React.useState(isUnassigned ? "" : reservation.roomNumber);
   const selectedRoomObj = availableForType.find(r => r.number === assignedRoom);
+  const selectedHkPending = !!selectedRoomObj && (selectedRoomObj.status === "dirty" || selectedRoomObj.status === "cleaning");
   const [keyCardEncoded, setKeyCardEncoded] = React.useState(false);
 
   // Step 3 — Payment
   const [collectAmount, setCollectAmount] = React.useState(reservation.balance);
   const [paymentMode, setPaymentMode] = React.useState("UPI");
+  const [paymentRef, setPaymentRef] = React.useState("");
+  // Cash needs no reference; every other mode must record a transaction ref.
+  const PAY_REF_FIELD: Record<string, { label: string; placeholder: string }> = {
+    UPI: { label: "UPI transaction reference", placeholder: "e.g. 4123-4567-8901" },
+    Card: { label: "Card auth code / last 4 digits", placeholder: "e.g. Auth 8821 · **** 4321" },
+    "Net Banking": { label: "Bank reference / UTR no.", placeholder: "e.g. UTR 3219872650" },
+  };
+  const needsRef = collectAmount > 0 && paymentMode !== "Cash";
 
   // Step 4 — Welcome
   const [channels, setChannels] = React.useState<string[]>(["whatsapp", "email"]);
@@ -767,13 +807,59 @@ function CheckinProcessModal({
     if (step === 1) return assignedRoom && keyCardEncoded;
     // Step 2: allow partial advance — collectAmount can be anything from 0 to balance (or more).
     // Front-desk staff can defer remaining balance to checkout.
-    if (step === 2) return reservation.balance === 0 || collectAmount >= 0;
+    if (step === 2) {
+      if (reservation.balance === 0 || collectAmount === 0) return true;
+      // Non-cash collections must capture a reference number.
+      if (needsRef && !paymentRef.trim()) return false;
+      return collectAmount >= 0;
+    }
     return true;
   };
 
   const handleComplete = () => {
     setDone(true);
-    setTimeout(() => onComplete(reservation, `${reservation.guestName} checked in · Room ${assignedRoom}`, assignedRoom), 1600);
+    // Save the KYC we just collected (ID details + scans + live face + signature)
+    // onto the guest profile. Only when KYC was captured here (pre-booked guest).
+    if (!idOnFile) {
+      persistKyc(reservation.guestName, {
+        idType: collectedIdType,
+        idNumber: collectedIdNumber,
+        idFront: idFrontFile,
+        idBack: idBackFile,
+        photo: facePhoto,
+        signature,
+      });
+    }
+
+    // Send the welcome email if the guest chose the Email channel. Until now the
+    // channel toggles were cosmetic — nothing was actually dispatched.
+    let emailNote = "";
+    const guestEmail = guest?.email && guest.email !== "—" ? guest.email.trim() : "";
+    if (channels.includes("email")) {
+      if (guestEmail) {
+        emailNote = ` · welcome email sent to ${guestEmail}`;
+        sendEmail({
+          to: guestEmail,
+          subject: `Welcome to ${name} · Room ${assignedRoom}`,
+          heading: `Welcome to ${name}`,
+          greeting: reservation.guestName.split(" ")[0],
+          intro: `You're checked into Room ${assignedRoom} until ${formatTime(reservation.checkOut)}. We hope you enjoy your stay!`,
+          rows: [
+            { label: "Booking", value: reservation.bookingNo },
+            { label: "Room", value: `${assignedRoom} · ${reservation.roomType}` },
+            { label: "Check-out", value: formatTime(reservation.checkOut) },
+            { label: "Wi-Fi", value: "PearlGuest · OTP via SMS" },
+            { label: "Concierge", value: "Dial 0 from your room" },
+          ],
+          note: "Need anything during your stay? Our front desk is available 24/7.",
+          context: "Check-in welcome",
+        }).catch(() => {});
+      } else {
+        emailNote = " · no email on file — welcome email skipped";
+      }
+    }
+
+    setTimeout(() => onComplete(reservation, `${reservation.guestName} checked in · Room ${assignedRoom}${emailNote}`, assignedRoom), 1600);
   };
 
   if (done) {
@@ -999,22 +1085,20 @@ function CheckinProcessModal({
 
                 {/* Live face capture + signature */}
                 <div className="grid grid-cols-2 gap-3">
-                  <KYCCaptureSlot
-                    label="Live face photo"
-                    icon={Camera}
-                    captured={facePhoto}
-                    onCapture={() => setFacePhoto("data:face")}
-                    onRetake={() => setFacePhoto(null)}
-                    required
-                  />
-                  <KYCCaptureSlot
-                    label="Digital signature"
-                    icon={Pen}
-                    captured={signature}
-                    onCapture={() => setSignature("data:signature")}
-                    onRetake={() => setSignature(null)}
-                    required
-                  />
+                  <div className="space-y-1.5">
+                    <Label className="text-xs inline-flex items-center gap-1.5">
+                      <Camera className="h-3.5 w-3.5 text-muted-foreground" />
+                      Live face photo <span className="text-danger">*</span>
+                    </Label>
+                    <PhotoCapture label="Live face photo" aspect="square" onChange={setFacePhoto} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs inline-flex items-center gap-1.5">
+                      <Pen className="h-3.5 w-3.5 text-muted-foreground" />
+                      Digital signature <span className="text-danger">*</span>
+                    </Label>
+                    <SignaturePad height={150} onChange={setSignature} />
+                  </div>
                 </div>
 
                 {/* Consent */}
@@ -1065,9 +1149,11 @@ function CheckinProcessModal({
                       <p className="text-2xl font-semibold tabular">{assignedRoom || "—"}</p>
                       <p className="text-xs text-muted-foreground">{reservation.roomType}{selectedRoomObj ? ` · Floor ${selectedRoomObj.floor}` : ""} · {reservation.nights} nights</p>
                     </div>
-                    {assignedRoom
-                      ? <Badge tone="success"><CheckCircle2 className="h-3 w-3" />Inspected · Ready</Badge>
-                      : <Badge tone="warning">Pick a room</Badge>}
+                    {!assignedRoom
+                      ? <Badge tone="warning">Pick a room</Badge>
+                      : selectedHkPending
+                        ? <Badge tone="warning"><AlertCircle className="h-3 w-3" />Housekeeping pending</Badge>
+                        : <Badge tone="success"><CheckCircle2 className="h-3 w-3" />Inspected · Ready</Badge>}
                   </div>
                   <div className="mt-3 pt-3 border-t border-border">
                     <Label className="text-xs">{isUnassigned ? `Available ${reservation.roomType} rooms` : "Reassign to another room (optional)"}</Label>
@@ -1075,12 +1161,23 @@ function CheckinProcessModal({
                       <option value="">Select an available {reservation.roomType} room…</option>
                       {availableForType.map(r => (
                         <option key={r.id} value={r.number}>
-                          Room {r.number} · {r.type} · Floor {r.floor}{r.number === reservation.roomNumber ? " (pre-assigned)" : ""}
+                          Room {r.number} · {r.type} · Floor {r.floor}{
+                            r.number === reservation.roomNumber ? " (pre-assigned)"
+                            : r.status === "dirty" ? " · needs cleaning"
+                            : r.status === "cleaning" ? " · being cleaned"
+                            : ""
+                          }
                         </option>
                       ))}
                     </Select>
+                    {selectedHkPending && (
+                      <p className="text-xs text-warning mt-1.5 inline-flex items-start gap-1">
+                        <AlertCircle className="h-3 w-3 mt-0.5 shrink-0" />
+                        Room {assignedRoom} is {selectedRoomObj?.status === "dirty" ? "not yet cleaned" : "being cleaned"} — housekeeping is still pending. You can assign it now; HK will be notified to prioritise before the guest arrives.
+                      </p>
+                    )}
                     {availableForType.length === 0 && (
-                      <p className="text-xs text-warning mt-1.5">No {reservation.roomType} rooms are currently available — free one up or change the room type.</p>
+                      <p className="text-xs text-warning mt-1.5">No {reservation.roomType} rooms are assignable right now (all occupied or out of order) — free one up or change the room type.</p>
                     )}
                   </div>
                 </div>
@@ -1222,7 +1319,7 @@ function CheckinProcessModal({
                             <button
                               key={m}
                               type="button"
-                              onClick={() => setPaymentMode(m)}
+                              onClick={() => { setPaymentMode(m); setPaymentRef(""); }}
                               className={cn(
                                 "h-10 rounded-md border text-xs font-medium transition-colors",
                                 paymentMode === m ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
@@ -1232,6 +1329,25 @@ function CheckinProcessModal({
                             </button>
                           ))}
                         </div>
+
+                        {/* Cash needs no reference; UPI / Card / Net Banking must record one. */}
+                        {needsRef && (
+                          <div className="space-y-1.5 pt-1.5 animate-in">
+                            <Label>
+                              {PAY_REF_FIELD[paymentMode]?.label ?? "Transaction reference"} <span className="text-danger">*</span>
+                            </Label>
+                            <Input
+                              value={paymentRef}
+                              onChange={e => setPaymentRef(e.target.value)}
+                              placeholder={PAY_REF_FIELD[paymentMode]?.placeholder ?? "Reference no."}
+                              className="h-10 font-mono tabular"
+                              autoFocus
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              Recorded on the folio &amp; receipt for {paymentMode} reconciliation.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
                   </>
@@ -1311,8 +1427,8 @@ function CheckinProcessModal({
                       : collectAmount === 0
                         ? `Skipped advance · ${money(reservation.balance)} outstanding`
                         : collectAmount < reservation.balance
-                          ? `Partial ${money(collectAmount)} via ${paymentMode} · ${money(reservation.balance - collectAmount)} due at checkout`
-                          : `Collecting ${money(collectAmount)} via ${paymentMode}`}
+                          ? `Partial ${money(collectAmount)} via ${paymentMode}${paymentMode !== "Cash" && paymentRef ? ` · ref ${paymentRef}` : ""} · ${money(reservation.balance - collectAmount)} due at checkout`
+                          : `Collecting ${money(collectAmount)} via ${paymentMode}${paymentMode !== "Cash" && paymentRef ? ` · ref ${paymentRef}` : ""}`}
                   />
                   <SummaryRow icon={Send} label="Welcome via" value={channels.length === 0 ? "Skipped" : channels.map(c => c[0].toUpperCase() + c.slice(1)).join(" + ")} />
                 </div>
@@ -1426,52 +1542,6 @@ function KYCUploadSlot({
   );
 }
 
-// Live capture slot — webcam / signature pad (mocked: click to "capture")
-function KYCCaptureSlot({
-  label, icon: Icon, captured, onCapture, onRetake, required,
-}: {
-  label: string;
-  icon: typeof Camera;
-  captured: string | null;
-  onCapture: () => void;
-  onRetake: () => void;
-  required?: boolean;
-}) {
-  if (captured) {
-    return (
-      <div className="rounded-md border-2 border-success bg-success-soft/40 p-2">
-        <div className="h-24 rounded-md bg-linear-to-br from-success/20 to-success/5 border border-success/30 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-1">
-            <CheckCircle2 className="h-7 w-7 text-success" />
-            <p className="text-[10px] text-success font-semibold uppercase tracking-wider">Captured</p>
-          </div>
-        </div>
-        <div className="mt-2 flex items-center justify-between">
-          <p className="text-[11px] text-success font-medium inline-flex items-center gap-1">
-            <CheckCircle2 className="h-3 w-3" />{label}
-          </p>
-          <button type="button" onClick={onRetake} className="text-[10px] text-muted-foreground hover:text-foreground underline inline-flex items-center gap-1">
-            <RotateCw className="h-2.5 w-2.5" />Retake
-          </button>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <button
-      type="button"
-      onClick={onCapture}
-      className="rounded-md border-2 border-dashed border-border hover:border-brand hover:bg-brand-soft/20 p-3 text-center flex flex-col items-center justify-center gap-1.5 transition-colors min-h-[124px] group"
-    >
-      <Icon className="h-6 w-6 text-muted-foreground group-hover:text-brand transition-colors" />
-      <p className="text-[11px] font-medium leading-tight">
-        {label} {required && <span className="text-danger">*</span>}
-      </p>
-      <p className="text-[10px] text-muted-foreground">Tap to capture</p>
-    </button>
-  );
-}
-
 // ===================== EXPRESS WALK-IN MODAL =====================
 // F&B add-on packages — mirrors the F&B catalog from Master Setup
 const WALKIN_FB = [
@@ -1533,7 +1603,8 @@ function WalkInModal({
   const [children, setChildren] = React.useState(0);
 
   // ----- room -----
-  const availableRooms = React.useMemo(() => ROOMS.filter(r => r.status === "available"), []);
+  const rooms = useRooms();
+  const availableRooms = React.useMemo(() => rooms.filter(r => r.status === "available"), [rooms]);
   const [roomNumber, setRoomNumber] = React.useState(availableRooms[0]?.number ?? "");
   const room = availableRooms.find(r => r.number === roomNumber);
 

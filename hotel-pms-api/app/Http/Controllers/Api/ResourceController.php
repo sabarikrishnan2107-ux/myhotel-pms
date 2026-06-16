@@ -9,10 +9,15 @@ use App\Models\AuditLog;
 use App\Models\AppUser;
 use App\Models\Booking;
 use App\Models\Channel;
+use App\Models\Competitor;
+use App\Models\CompetitorRate;
 use App\Models\ComplianceLicense;
+use App\Models\EInvoice;
+use App\Models\EmailSchedule;
 use App\Models\Enquiry;
 use App\Models\FbPackage;
 use App\Models\Floor;
+use App\Models\FolioAdjustment;
 use App\Models\FolioCharge;
 use App\Models\FolioPayment;
 use App\Models\FbOrder;
@@ -23,10 +28,13 @@ use App\Models\GroupRooming;
 use App\Models\GstSlab;
 use App\Models\HallBooking;
 use App\Models\MaintenanceTicket;
+use App\Models\MealPlan;
 use App\Models\Guest;
 use App\Models\HallPackage;
 use App\Models\Holiday;
 use App\Models\InventoryItem;
+use App\Models\LinenItem;
+use App\Models\LostReport;
 use App\Models\LoyaltyCampaign;
 use App\Models\LoyaltyMember;
 use App\Models\LoyaltyReward;
@@ -44,6 +52,39 @@ use App\Models\Staff;
 use App\Models\Vendor;
 use App\Models\Webhook;
 use App\Models\WebRoom;
+use App\Models\BanquetOrder;
+use App\Models\TableReservation;
+use App\Models\TableWaitlistEntry;
+use App\Models\MaintenanceSchedule;
+use App\Models\AmcContract;
+use App\Models\PosTable;
+use App\Models\Recipe;
+use App\Models\BarItem;
+use App\Models\BarPourCost;
+use App\Models\BarVariance;
+use App\Models\BarPurchaseOrder;
+use App\Models\BarCocktail;
+use App\Models\LoyaltyRedemption;
+use App\Models\LoyaltyTransaction;
+use App\Models\LoyaltyEarningRule;
+use App\Models\LoyaltySetting;
+use App\Models\InventoryPurchase;
+use App\Models\StockMovement;
+use App\Models\PurchaseOrder;
+use App\Models\InventoryWastage;
+use App\Models\OtaBooking;
+use App\Models\ChannelRateMap;
+use App\Models\ChannelSyncLog;
+use App\Models\GstReturn;
+use App\Models\TdsEntry;
+use App\Models\AuditRun;
+use App\Models\WhatsappTemplate;
+use App\Models\AgentLedger;
+use App\Models\RateRestriction;
+use App\Models\NotifTemplate;
+use App\Models\NotifLog;
+use App\Models\KitchenAmenity;
+use App\Models\RoomAmenity;
 use Illuminate\Http\Request;
 
 /**
@@ -71,6 +112,11 @@ class ResourceController extends Controller
         'bookings'               => Booking::class,
         'folio-charges'          => FolioCharge::class,
         'folio-payments'         => FolioPayment::class,
+        'folio-adjustments'      => FolioAdjustment::class,
+        'einvoices'              => EInvoice::class,
+        'competitors'            => Competitor::class,
+        'competitor-rates'       => CompetitorRate::class,
+        'meal-plans'             => MealPlan::class,
         'staff'                  => Staff::class,
         'vendors'                => Vendor::class,
         'inventory-items'        => InventoryItem::class,
@@ -93,12 +139,51 @@ class ResourceController extends Controller
         'channels'               => Channel::class,
         'web-rooms'              => WebRoom::class,
         'pricing-rules'          => PricingRule::class,
+        'email-schedules'        => EmailSchedule::class,
+        'linen-items'            => LinenItem::class,
+        'lost-reports'           => LostReport::class,
+        'banquet-orders'         => BanquetOrder::class,
+        'table-reservations'     => TableReservation::class,
+        'table-waitlist'         => TableWaitlistEntry::class,
+        'maintenance-schedules'  => MaintenanceSchedule::class,
+        'amc-contracts'          => AmcContract::class,
+        'pos-tables'             => PosTable::class,
+        'recipes'                => Recipe::class,
+        'bar-items'              => BarItem::class,
+        'bar-pour-costs'         => BarPourCost::class,
+        'bar-variances'          => BarVariance::class,
+        'bar-purchase-orders'    => BarPurchaseOrder::class,
+        'bar-cocktails'          => BarCocktail::class,
+        'loyalty-redemptions'    => LoyaltyRedemption::class,
+        'loyalty-transactions'   => LoyaltyTransaction::class,
+        'loyalty-earning-rules'  => LoyaltyEarningRule::class,
+        'loyalty-settings'       => LoyaltySetting::class,
+        'inventory-purchases'    => InventoryPurchase::class,
+        'stock-movements'        => StockMovement::class,
+        'purchase-orders'        => PurchaseOrder::class,
+        'inventory-wastage'      => InventoryWastage::class,
+        'ota-bookings'           => OtaBooking::class,
+        'channel-rate-maps'      => ChannelRateMap::class,
+        'channel-sync-logs'      => ChannelSyncLog::class,
+        'gst-returns'            => GstReturn::class,
+        'tds-entries'            => TdsEntry::class,
+        'audit-runs'             => AuditRun::class,
+        'whatsapp-templates'     => WhatsappTemplate::class,
+        'agent-ledger'           => AgentLedger::class,
+        'rate-restrictions'      => RateRestriction::class,
+        'notif-templates'        => NotifTemplate::class,
+        'notif-logs'             => NotifLog::class,
+        'kitchen-amenities'      => KitchenAmenity::class,
+        'room-amenities'         => RoomAmenity::class,
     ];
 
     /** Resources whose index can be scoped by a query param → column. */
     private const FILTER_BY = [
         'folio-charges'  => 'bookingNo',
         'folio-payments' => 'bookingNo',
+        'folio-adjustments' => 'bookingNo',
+        'einvoices' => 'bookingNo',
+        'competitor-rates' => 'competitorId',
         'group-rooming'  => 'groupCode',
     ];
 
@@ -130,6 +215,11 @@ class ResourceController extends Controller
             'extraBedAllowed' => 'boolean', 'extraBedRate' => 'integer|min:0', 'connectingRoom' => 'string|max:50',
             'extension' => 'string|max:50', 'wifiSsid' => 'string|max:100', 'smoking' => 'boolean',
             'accessible' => 'boolean', 'amenities' => 'array', 'status' => 'string|max:50', 'hkStatus' => 'string|max:50',
+            'hkAssignee' => 'string|max:100|nullable', 'hkStartedAt' => 'string|max:50|nullable',
+        ],
+        'linen-items' => [
+            'name' => 'string|max:255', 'issued' => 'integer|min:0', 'returned' => 'integer|min:0',
+            'wastage' => 'integer|min:0', 'inUse' => 'integer|min:0',
         ],
         'rate-plans' => [
             'code' => 'string|max:50', 'name' => 'string|max:255', 'inclBreakfast' => 'boolean',
@@ -184,6 +274,9 @@ class ResourceController extends Controller
             'lastStay' => 'string|max:50|nullable', 'address' => 'string|max:500|nullable', 'birthday' => 'string|max:50|nullable',
             'anniversary' => 'string|max:50|nullable', 'preferences' => 'array', 'allergies' => 'string|max:500|nullable',
             'internalNotes' => 'string|max:2000|nullable', 'blacklistReason' => 'string|max:500|nullable', 'loyaltyPoints' => 'integer|min:0',
+            'idFront' => 'string|nullable', 'idBack' => 'string|nullable', 'photo' => 'string|nullable', 'signature' => 'string|nullable',
+            'gender' => 'string|max:50|nullable', 'company' => 'string|max:255|nullable', 'gst' => 'string|max:50|nullable',
+            'kycVerified' => 'boolean', 'kycVerifiedAt' => 'string|max:50|nullable', 'kycVerifiedBy' => 'string|max:255|nullable',
         ],
         'bookings' => [
             'bookingNo' => 'string|max:50', 'guestName' => 'string|max:255', 'roomNumber' => 'string|max:50|nullable',
@@ -200,6 +293,29 @@ class ResourceController extends Controller
         'folio-payments' => [
             'bookingNo' => 'string|max:50', 'date' => 'string|max:50', 'mode' => 'string|max:100',
             'reference' => 'string|max:255|nullable', 'amount' => 'integer',
+        ],
+        'folio-adjustments' => [
+            'bookingNo' => 'string|max:50', 'date' => 'string|max:50',
+            'type' => 'string|max:50', 'description' => 'string|max:500',
+            'amount' => 'integer', 'approver' => 'string|max:255',
+        ],
+        'einvoices' => [
+            'bookingNo' => 'string|max:50', 'irn' => 'string|max:64', 'ackNo' => 'string|max:50',
+            'ackDate' => 'string|max:50', 'status' => 'string|max:50',
+            'placeOfSupply' => 'string|max:100', 'recipientGstin' => 'string|max:50',
+            'reverseCharge' => 'boolean',
+        ],
+        'competitors' => [
+            'slug' => 'string|max:50', 'hotel' => 'string|max:255', 'brand' => 'string|max:255', 'km' => 'numeric|min:0',
+            'stars' => 'integer|min:1|max:5', 'source' => 'string|max:100', 'active' => 'boolean',
+        ],
+        'competitor-rates' => [
+            'competitorId' => 'string|max:50', 'date' => 'string|max:50',
+            'roomType' => 'string|max:50', 'rate' => 'integer|min:0',
+        ],
+        'meal-plans' => [
+            'code' => 'string|max:20', 'name' => 'string|max:255',
+            'perPaxPerDay' => 'integer|min:0', 'desc' => 'string|max:500', 'active' => 'boolean',
         ],
         'staff' => [
             'name' => 'string|max:255', 'role' => 'string|max:100', 'dept' => 'string|max:100',
@@ -285,7 +401,7 @@ class ResourceController extends Controller
             'notes' => 'string|max:2000|nullable', 'createdAt' => 'string|max:50|nullable',
         ],
         'hall-bookings' => [
-            'customer' => 'string|max:255', 'phone' => 'string|max:50|nullable', 'hall' => 'string|max:255',
+            'customer' => 'string|max:255', 'phone' => 'string|max:50|nullable', 'email' => 'email|max:255|nullable', 'hall' => 'string|max:255',
             'date' => 'string|max:50', 'start' => 'string|max:50', 'end' => 'string|max:50',
             'guests' => 'integer|min:0', 'package' => 'string|max:255|nullable', 'advance' => 'integer|min:0',
             'total' => 'integer|min:0', 'status' => 'string|max:50', 'notes' => 'string|max:2000|nullable',
@@ -331,6 +447,389 @@ class ResourceController extends Controller
             'upcomingBooking' => 'array|nullable', 'preferences' => 'array', 'staffNotes' => 'string|max:2000|nullable',
             'consentMarketing' => 'boolean', 'blocked' => 'boolean',
         ],
+        'email-schedules' => [
+            'label' => 'string|max:255', 'frequency' => 'string|max:20', 'time' => 'string|max:20',
+            'recipients' => 'array', 'recipients.*' => 'string|max:255',
+            'format' => 'string|max:20', 'sections' => 'array', 'sections.*' => 'string|max:100',
+            'enabled' => 'boolean', 'lastSentAt' => 'string|max:100|nullable',
+        ],
+        'lost-reports' => [
+            'reportNo' => 'string|max:50', 'guest' => 'string|max:255', 'phone' => 'string|max:50|nullable',
+            'email' => 'email|max:255|nullable', 'isWalkIn' => 'boolean', 'room' => 'string|max:50|nullable',
+            'stayFrom' => 'string|max:50|nullable', 'stayTo' => 'string|max:50|nullable',
+            'itemCategory' => 'string|max:100', 'itemName' => 'string|max:255', 'brand' => 'string|max:255|nullable',
+            'color' => 'string|max:100|nullable', 'description' => 'string|max:2000|nullable',
+            'identification' => 'string|max:500|nullable', 'hasPhoto' => 'boolean',
+            'lostDate' => 'string|max:50|nullable', 'lostTime' => 'string|max:50|nullable',
+            'lastSeen' => 'string|max:255|nullable', 'reportedOn' => 'string|max:50|nullable',
+            'urgency' => 'string|max:50', 'status' => 'string|max:50', 'contactMode' => 'string|max:50',
+            'remarks' => 'string|max:2000|nullable', 'estValue' => 'integer|nullable', 'hvi' => 'boolean',
+            'timeline' => 'array', 'matches' => 'array',
+        ],
+        'banquet-orders' => [
+            'beoNo' => 'string|max:50',
+            'eventName' => 'string|max:255',
+            'type' => 'string|max:50',
+            'date' => 'string|max:50',
+            'venue' => 'string|max:255',
+            'host' => 'string|max:255',
+            'pax' => 'integer|min:0',
+            'pkg' => 'string|max:50',
+            'revenue' => 'integer|min:0',
+            'margin' => 'numeric|min:0|max:1',
+            'advance' => 'integer|min:0',
+            'status' => 'string|max:50',
+            'startTime' => 'string|max:20|nullable',
+            'endTime' => 'string|max:20|nullable',
+            'vegPax' => 'integer|min:0',
+            'nonVegPax' => 'integer|min:0',
+            'dietary' => 'string|max:2000|nullable',
+            'barPackage' => 'string|max:100|nullable',
+            'cocktails' => 'string|max:2000|nullable',
+            'avNotes' => 'string|max:2000|nullable',
+            'decorTheme' => 'string|max:255|nullable',
+            'decorColor' => 'string|max:255|nullable',
+            'staffService' => 'integer|min:0',
+            'staffKitchen' => 'integer|min:0',
+            'staffCaptains' => 'integer|min:0',
+            'parking' => 'integer|min:0',
+            'security' => 'integer|min:0',
+            'florist' => 'string|max:255|nullable',
+            'photographer' => 'string|max:255|nullable',
+            'ancillary' => 'integer|min:0',
+            'timeline' => 'array',
+            'courses' => 'array',
+            'bars' => 'array',
+            'avEquipment' => 'array',
+            'decorVendors' => 'array',
+            'staffing' => 'array',
+            'vendors' => 'array',
+        ],
+        'table-reservations' => [
+            'table' => 'string|max:50',
+            'startHr' => 'numeric|min:0',
+            'durHr' => 'numeric|min:0',
+            'guest' => 'string|max:255',
+            'party' => 'integer|min:0',
+            'phone' => 'string|max:50',
+            'notes' => 'string|max:2000|nullable',
+            'occasion' => 'string|max:50',
+            'status' => 'string|max:50',
+            'source' => 'string|max:50|nullable',
+            'seatedAt' => 'string|max:50|nullable',
+            'completedAt' => 'string|max:50|nullable',
+        ],
+        'table-waitlist' => [
+            'guest' => 'string|max:255',
+            'party' => 'integer|min:0',
+            'phone' => 'string|max:50',
+            'waitMin' => 'integer|min:0',
+            'arrivedAt' => 'string|max:50',
+            'notified' => 'boolean',
+        ],
+        'maintenance-schedules' => [
+            'equipment' => 'string|max:255',
+            'area' => 'string|max:255|nullable',
+            'category' => 'string|max:100|nullable',
+            'frequency' => 'string|max:50',
+            'lastDone' => 'string|max:50|nullable',
+            'nextDue' => 'string|max:50|nullable',
+            'assignee' => 'string|max:100|nullable',
+            'durationMin' => 'integer|min:0',
+        ],
+        'amc-contracts' => [
+            'name' => 'string|max:255',
+            'category' => 'string|max:100|nullable',
+            'contactPerson' => 'string|max:255|nullable',
+            'phone' => 'string|max:50|nullable',
+            'email' => 'email|max:255|nullable',
+            'address' => 'string|max:500|nullable',
+            'contractStart' => 'string|max:50|nullable',
+            'contractEnd' => 'string|max:50|nullable',
+            'annualFee' => 'integer|min:0',
+            'visitFrequency' => 'string|max:50',
+            'lastVisit' => 'string|max:50|nullable',
+            'nextVisit' => 'string|max:50|nullable',
+            'slaResponseHours' => 'integer|min:0',
+            'status' => 'string|max:50',
+            'notes' => 'string|max:2000|nullable',
+        ],
+        'pos-tables' => [
+            'code' => 'string|max:20',
+            'seats' => 'integer|min:1',
+            'status' => 'string|max:50',
+            'server' => 'string|max:100|nullable',
+            'covers' => 'integer|min:0|nullable',
+            'seatedAt' => 'string|max:20|nullable',
+            'zone' => 'string|max:100|nullable',
+        ],
+        'recipes' => [
+            'name' => 'string|max:255',
+            'category' => 'string|max:100',
+            'menuPrice' => 'integer|min:0',
+            'portions' => 'integer|min:1',
+            'prepMin' => 'integer|min:0',
+            'cookMin' => 'integer|min:0',
+            'labour' => 'integer|min:0',
+            'overhead' => 'integer|min:0',
+            'description' => 'string|max:2000|nullable',
+            'ingredients' => 'array',
+            'allergens' => 'array',
+            'nutrition' => 'array',
+        ],
+        'bar-items' => [
+            'brand' => 'string|max:255',
+            'category' => 'string|max:50',
+            'size' => 'string|max:50',
+            'opened' => 'numeric|min:0',
+            'sealed' => 'integer|min:0',
+            'par' => 'integer|min:0',
+            'reorderQty' => 'integer|min:0',
+            'unitCost' => 'integer|min:0',
+        ],
+        'bar-pour-costs' => [
+            'category' => 'string|max:50',
+            'soldValue' => 'integer|min:0',
+            'theoreticalCost' => 'integer|min:0',
+            'actualCost' => 'integer|min:0',
+        ],
+        'bar-variances' => [
+            'sku' => 'string|max:255',
+            'category' => 'string|max:50',
+            'theoreticalMl' => 'integer|min:0',
+            'actualMl' => 'integer|min:0',
+            'unitCost' => 'integer|min:0',
+            'flag' => 'string|max:20|nullable',
+            'note' => 'string|max:2000|nullable',
+        ],
+        'bar-purchase-orders' => [
+            'poNo' => 'string|max:50',
+            'vendor' => 'string|max:255',
+            'items' => 'string|max:500',
+            'itemCount' => 'integer|min:0',
+            'value' => 'integer|min:0',
+            'raised' => 'string|max:50|nullable',
+            'eta' => 'string|max:50|nullable',
+            'status' => 'string|max:50',
+        ],
+        'bar-cocktails' => [
+            'name' => 'string|max:255',
+            'category' => 'string|max:50',
+            'menuPrice' => 'integer|min:0',
+            'glassCost' => 'integer|min:0',
+            'recipe' => 'array',
+        ],
+        'loyalty-redemptions' => [
+            'date' => 'string|max:50',
+            'memberId' => 'string|max:50',
+            'memberName' => 'string|max:255',
+            'rewardId' => 'string|max:50|nullable',
+            'rewardName' => 'string|max:255',
+            'pointsUsed' => 'integer|min:0',
+            'bookingNo' => 'string|max:50|nullable',
+            'status' => 'string|max:50',
+            'staff' => 'string|max:100',
+            'approver' => 'string|max:100|nullable',
+            'notes' => 'string|max:2000|nullable',
+        ],
+        'loyalty-transactions' => [
+            'memberId' => 'string|max:50',
+            'date' => 'string|max:50',
+            'kind' => 'string|max:50',
+            'source' => 'string|max:255',
+            'bookingNo' => 'string|max:50|nullable',
+            'amount' => 'integer',
+            'balance' => 'integer',
+            'staff' => 'string|max:100|nullable',
+            'notes' => 'string|max:2000|nullable',
+            'expiresOn' => 'string|max:50|nullable',
+        ],
+        'loyalty-earning-rules' => [
+            'source' => 'string|max:255',
+            'multiplier' => 'numeric|min:0',
+            'enabled' => 'boolean',
+            'notes' => 'string|max:2000|nullable',
+        ],
+        'loyalty-settings' => [
+            'name' => 'string|max:255',
+            'pointsValueRupees' => 'numeric|min:0',
+            'pointsExpiryMonths' => 'integer|min:1',
+            'taxBeforeDiscount' => 'boolean',
+            'approvalRequiredAbove' => 'integer|min:0',
+            'manualAdjustNeedsApproval' => 'boolean',
+            'redemptionOtp' => 'boolean',
+        ],
+        'inventory-purchases' => [
+            'date' => 'string|max:50',
+            'billNo' => 'string|max:100',
+            'billDate' => 'string|max:50',
+            'vendor' => 'string|max:255',
+            'vendorGstin' => 'string|max:50|nullable',
+            'vendorPan' => 'string|max:50|nullable',
+            'vendorPhone' => 'string|max:50|nullable',
+            'category' => 'string|max:100',
+            'department' => 'string|max:100',
+            'lines' => 'array',
+            'discount' => 'integer',
+            'freight' => 'integer',
+            'roundOff' => 'integer',
+            'interState' => 'boolean',
+            'paymentStatus' => 'string|max:50',
+            'paymentMode' => 'string|max:100|nullable',
+            'paymentDate' => 'string|max:50|nullable',
+            'paymentRef' => 'string|max:100|nullable',
+            'paidAmount' => 'integer|min:0',
+            'receivedBy' => 'string|max:255',
+            'qcStatus' => 'string|max:50',
+            'storage' => 'string|max:100',
+            'billPhoto' => 'string|nullable',
+            'goodsPhotos' => 'array|nullable',
+            'notes' => 'string|max:2000|nullable',
+        ],
+        'stock-movements' => [
+            'time' => 'string|max:50',
+            'itemName' => 'string|max:255',
+            'type' => 'string|max:50',
+            'qty' => 'integer',
+            'reason' => 'string|max:500|nullable',
+            'by' => 'string|max:100|nullable',
+        ],
+        'purchase-orders' => [
+            'po' => 'string|max:50',
+            'vendor' => 'string|max:255',
+            'items' => 'integer|min:0',
+            'amount' => 'integer|min:0',
+            'date' => 'string|max:50',
+            'status' => 'string|max:50',
+        ],
+        'inventory-wastage' => [
+            'date' => 'string|max:50',
+            'item' => 'string|max:255',
+            'qty' => 'integer|min:0',
+            'cost' => 'integer|min:0',
+            'reason' => 'string|max:500|nullable',
+        ],
+        'ota-bookings' => [
+            'channel' => 'string|max:255',
+            'booking' => 'string|max:50',
+            'guest' => 'string|max:255',
+            'room' => 'string|max:50|nullable',
+            'checkIn' => 'string|max:50|nullable',
+            'nights' => 'integer|min:0',
+            'status' => 'string|max:50',
+            'total' => 'integer|min:0',
+        ],
+        'channel-rate-maps' => [
+            'type' => 'string|max:100',
+            'pms' => 'integer|min:0',
+            'bdc' => 'integer|min:0',
+            'agoda' => 'integer|min:0',
+            'expedia' => 'integer|min:0',
+        ],
+        'channel-sync-logs' => [
+            'time' => 'string|max:50',
+            'channel' => 'string|max:255',
+            'action' => 'string|max:255',
+            'detail' => 'string|max:500|nullable',
+            'status' => 'string|max:50',
+        ],
+        'gst-returns' => [
+            'label' => 'string|max:255',
+            'taxable' => 'integer',
+            'igst' => 'integer',
+            'cgst' => 'integer',
+            'sgst' => 'integer',
+        ],
+        'tds-entries' => [
+            'section' => 'string|max:50',
+            'description' => 'string|max:500',
+            'partyType' => 'string|max:100|nullable',
+            'amount' => 'integer|min:0',
+            'rate' => 'numeric|min:0',
+            'tds' => 'integer|min:0',
+        ],
+        'audit-runs' => [
+            'date' => 'string|max:50',
+            'runAt' => 'string|max:50',
+            'duration' => 'string|max:50',
+            'status' => 'string|max:50',
+            'occupancy' => 'integer|min:0|max:100',
+            'revenue' => 'integer|min:0',
+            'noShows' => 'integer|min:0',
+            'cashVariance' => 'integer',
+            'anomalies' => 'array',
+            'anomalies.*' => 'string|max:500',
+            'irn' => 'boolean',
+            'backup' => 'boolean',
+            'steps' => 'array',
+            'steps.*.name' => 'string|max:255',
+            'steps.*.duration' => 'string|max:50',
+            'steps.*.status' => 'string|max:20',
+        ],
+        'whatsapp-templates' => [
+            'name' => 'string|max:255',
+            'status' => 'string|max:50',
+            'category' => 'string|max:100',
+            'language' => 'string|max:50',
+            'body' => 'string|max:2000',
+            'header' => 'string|max:500|nullable',
+            'footer' => 'string|max:500|nullable',
+            'rejectionReason' => 'string|max:500|nullable',
+            'submittedOn' => 'string|max:50|nullable',
+            'buttons' => 'array',
+            'usage30d' => 'integer|min:0',
+            'lastEdited' => 'string|max:50',
+            'editedBy' => 'string|max:100',
+        ],
+        'agent-ledger' => [
+            'agentName' => 'string|max:255',
+            'date' => 'string|max:50',
+            'type' => 'string|max:50',
+            'description' => 'string|max:500',
+            'bookingNo' => 'string|max:50|nullable',
+            'mode' => 'string|max:100|nullable',
+            'reference' => 'string|max:255|nullable',
+            'debit' => 'integer',
+            'credit' => 'integer',
+            'balance' => 'integer',
+        ],
+        'rate-restrictions' => [
+            'fromIso' => 'string|max:50',
+            'toIso' => 'string|max:50',
+            'roomType' => 'string|max:50',
+            'kind' => 'string|max:50',
+            'value' => 'string|max:255',
+            'appliedBy' => 'string|max:255|nullable',
+            'appliedAt' => 'string|max:50|nullable',
+            'channels' => 'array',
+            'channels.*' => 'string|max:100',
+        ],
+        'notif-templates' => [
+            'name' => 'string|max:255',
+            'trigger' => 'string|max:100',
+            'channels' => 'array',
+            'channels.*' => 'string|max:50',
+            'lastSent' => 'string|max:100|nullable',
+        ],
+        'notif-logs' => [
+            'time' => 'string|max:50',
+            'to' => 'string|max:255',
+            'channel' => 'string|max:50',
+            'template' => 'string|max:255',
+            'status' => 'string|max:50',
+        ],
+        'kitchen-amenities' => [
+            'name' => 'string|max:255', 'category' => 'string|max:50', 'qty' => 'integer|min:0',
+            'unit' => 'string|max:50', 'purchaseDate' => 'string|max:50|nullable', 'purchasePrice' => 'integer|min:0',
+            'vendor' => 'string|max:255|nullable', 'condition' => 'string|max:50', 'location' => 'string|max:100',
+            'photo' => 'string|nullable', 'remark' => 'string|max:2000|nullable',
+        ],
+        'room-amenities' => [
+            'name' => 'string|max:255', 'category' => 'string|max:50', 'qty' => 'integer|min:0',
+            'unit' => 'string|max:50', 'purchaseDate' => 'string|max:50|nullable', 'purchasePrice' => 'integer|min:0',
+            'vendor' => 'string|max:255|nullable', 'condition' => 'string|max:50', 'location' => 'string|max:100',
+            'photo' => 'string|nullable', 'remark' => 'string|max:2000|nullable', 'perRoom' => 'integer|min:0|nullable',
+        ],
     ];
 
     /** Fields that must be present (and non-empty) when creating a row. */
@@ -342,6 +841,11 @@ class ResourceController extends Controller
         'roles' => ['name'], 'webhooks' => ['url'],
         'guests' => ['name'], 'bookings' => ['guestName'],
         'folio-charges' => ['bookingNo', 'description'], 'folio-payments' => ['bookingNo'],
+        'folio-adjustments' => ['bookingNo', 'type', 'amount'],
+        'einvoices' => ['bookingNo'],
+        'competitors' => ['hotel'],
+        'competitor-rates' => ['competitorId', 'rate'],
+        'meal-plans' => ['code', 'name'],
         'staff' => ['name'], 'vendors' => ['name'], 'inventory-items' => ['name'],
         'menu-items' => ['name'], 'fb-orders' => ['tableNo'],
         'maintenance-tickets' => ['title'], 'enquiries' => ['name'], 'found-items' => ['name'],
@@ -359,6 +863,42 @@ class ResourceController extends Controller
         'channels' => ['name'],
         'web-rooms' => ['name'],
         'pricing-rules' => ['name'],
+        'email-schedules' => ['label'],
+        'linen-items' => ['name'],
+        'lost-reports' => ['guest', 'itemName'],
+        'banquet-orders' => ['eventName'],
+        'table-reservations' => ['guest', 'table'],
+        'table-waitlist' => ['guest'],
+        'maintenance-schedules' => ['equipment'],
+        'amc-contracts' => ['name'],
+        'pos-tables' => ['code'],
+        'recipes' => ['name'],
+        'bar-items' => ['brand', 'category'],
+        'bar-pour-costs' => ['category'],
+        'bar-variances' => ['sku', 'category'],
+        'bar-purchase-orders' => ['poNo', 'vendor'],
+        'bar-cocktails' => ['name'],
+        'loyalty-redemptions' => ['memberName', 'rewardName'],
+        'loyalty-transactions' => ['memberId', 'source'],
+        'loyalty-earning-rules' => ['source'],
+        'loyalty-settings' => ['name'],
+        'inventory-purchases' => ['billNo', 'vendor'],
+        'stock-movements' => ['itemName'],
+        'purchase-orders' => ['po', 'vendor'],
+        'inventory-wastage' => ['item'],
+        'ota-bookings' => ['channel', 'guest'],
+        'channel-rate-maps' => ['type'],
+        'channel-sync-logs' => ['action'],
+        'gst-returns' => ['label'],
+        'tds-entries' => ['section', 'description'],
+        'audit-runs' => ['date'],
+        'whatsapp-templates' => ['name'],
+        'agent-ledger' => ['agentName'],
+        'rate-restrictions' => ['kind', 'value'],
+        'notif-templates' => ['name'],
+        'notif-logs' => ['to'],
+        'kitchen-amenities' => ['name'],
+        'room-amenities' => ['name'],
     ];
 
     private function model(string $resource): string
@@ -373,11 +913,22 @@ class ResourceController extends Controller
         $rules = [];
         foreach (self::RULES[$resource] ?? [] as $field => $rule) {
             $required = $creating && in_array($field, self::REQUIRED_ON_CREATE[$resource] ?? [], true);
-            $rules[$field] = ($required ? 'required|' : 'sometimes|') . $rule;
+            // Optional fields are `nullable` so a blank input (e.g. an empty ID number that
+            // ConvertEmptyStringsToNull turns into null) passes a non-nullable string rule
+            // instead of 422-ing. On create, nulls are dropped below so DB defaults apply.
+            $rules[$field] = ($required ? 'required|' : 'sometimes|nullable|') . $rule;
         }
 
         $data = $request->validate($rules);
         unset($data['id'], $data['created_at'], $data['updated_at']);
+
+        // On create, drop nulls so columns fall back to their schema default
+        // (Laravel's ConvertEmptyStringsToNull turns "" into null, which would
+        // otherwise violate NOT NULL columns like guests.email). On update we
+        // keep nulls so a field can be explicitly cleared.
+        if ($creating) {
+            $data = array_filter($data, static fn ($v) => $v !== null);
+        }
 
         return $data;
     }
@@ -399,7 +950,20 @@ class ResourceController extends Controller
     public function store(string $resource, Request $request)
     {
         $this->model($resource); // 404 if unknown
-        $row = $this->model($resource)::create($this->validated($resource, $request, true));
+        $data = $this->validated($resource, $request, true);
+        $row = $this->model($resource)::create($data);
+
+        // Every booking must correspond to a searchable guest profile. Bookings
+        // reference a guest only by name (no FK), so a booking made through any
+        // flow that didn't also create a profile would leave the guest invisible
+        // to "Search Existing". Upsert a minimal profile here, keyed on a
+        // case-insensitive name match so we never duplicate an existing guest.
+        if ($resource === 'bookings' && !empty($data['guestName'])) {
+            $name = trim((string) $data['guestName']);
+            if ($name !== '' && ! Guest::whereRaw('LOWER(name) = ?', [mb_strtolower($name)])->exists()) {
+                Guest::create(['name' => $name, 'vip' => $data['vip'] ?? false]);
+            }
+        }
 
         AuditLog::record([
             'module' => $this->moduleLabel($resource), 'action' => 'Created',
@@ -443,7 +1007,7 @@ class ResourceController extends Controller
     private const MODULE_LABELS = [
         'folio-charges' => 'Folio', 'folio-payments' => 'Payment', 'fb-orders' => 'F&B',
         'menu-items' => 'F&B', 'inventory-items' => 'Inventory', 'maintenance-tickets' => 'Maintenance',
-        'found-items' => 'Lost & Found', 'loyalty-members' => 'Loyalty', 'account-entries' => 'Accounts',
+        'found-items' => 'Lost & Found', 'lost-reports' => 'Lost & Found', 'loyalty-members' => 'Loyalty', 'account-entries' => 'Accounts',
         'app-users' => 'Users', 'hall-bookings' => 'Halls', 'group-bookings' => 'Groups',
         'rate-plans' => 'Rate Plans', 'gst-slabs' => 'GST', 'payment-methods' => 'Payment Methods',
         'notification-templates' => 'Notifications',

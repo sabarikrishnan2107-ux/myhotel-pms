@@ -1,26 +1,33 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   ChevronLeft, ChevronRight, Plus, Filter, Calendar as CalendarIcon, MousePointerClick,
-  Crown, X, CheckCircle2, Building2, IndianRupee, Moon,
+  Crown, X, Building2, IndianRupee, Moon,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ROOMS, RESERVATIONS, GUESTS } from "@/lib/mock-data";
 import type { PaymentStatus, Reservation, Guest } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { apiGet, apiPut } from "@/lib/api";
+import { apiGet } from "@/lib/api";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
 
 const CELL_W = 80;
 const ROW_H = 56;
+const LANE_H = 27;   // height of one stacked booking lane within a room row
 const LABEL_W = 200;
 const VIEW_SPANS = { Day: 1, Week: 7, "2 Weeks": 14, Month: 30 } as const;
 type ViewSpan = keyof typeof VIEW_SPANS;
+
+// Shape returned by GET /room-board (one row per configured room).
+interface RoomRow {
+  id: number | string;
+  number: string;
+  type: string;
+  floor: number;
+}
 
 interface CalBlock {
   id: string;
@@ -33,33 +40,35 @@ interface CalBlock {
   vip: boolean;
 }
 
-type DragMode = "move" | "resize-left" | "resize-right";
-interface DragState {
-  id: string;
-  mode: DragMode;
-  startX: number;
-  startY: number;
-  initial: Pick<CalBlock, "startCol" | "nights" | "roomNumber">;
-  preview: Pick<CalBlock, "startCol" | "nights" | "roomNumber">;
-  gridTop: number;
-  moved: boolean;
-}
-
-function rangesOverlap(a1: number, a2: number, b1: number, b2: number) {
-  return a1 < b2 && b1 < a2;
-}
-
 // Hotel timing: 12:00 PM check-in → next-day 11:00 AM checkout = 23h per night.
 // Position blocks visually across the day boundary they actually span.
 const HOUR_W = CELL_W / 24;
 const NOON_OFFSET = 12 * HOUR_W;            // start of every booking (12:00 PM)
-const CHECKOUT_OFFSET = 11 * HOUR_W;        // end-of-stay offset from start of checkout day (11:00 AM)
 function blockLeft(startCol: number) {
   return startCol * CELL_W + NOON_OFFSET;
 }
 function blockWidth(nights: number) {
   // From 12:00 day N to 11:00 day (N+nights) → nights * 24 - 1 hours = (nights * 24 - 1) * HOUR_W
   return nights * CELL_W - HOUR_W;
+}
+
+// Greedy interval partitioning: stack a room's overlapping bookings into
+// separate horizontal lanes so none render on top of each other. A booking
+// ending at 11:00 AM and the next starting at 12:00 PM the same day do NOT
+// overlap, so back-to-back stays share a lane (b.startCol >= a checkout col).
+function assignLanes(blocks: CalBlock[]) {
+  const sorted = [...blocks].sort(
+    (a, b) => a.startCol - b.startCol || (a.startCol + a.nights) - (b.startCol + b.nights),
+  );
+  const laneEnds: number[] = [];   // checkout col of the last block placed in each lane
+  const laneOf = new Map<string, number>();
+  for (const b of sorted) {
+    let lane = laneEnds.findIndex(end => b.startCol >= end);
+    if (lane === -1) { lane = laneEnds.length; laneEnds.push(0); }
+    laneOf.set(b.id, lane);
+    laneEnds[lane] = b.startCol + b.nights;
+  }
+  return { laneOf, laneCount: Math.max(1, laneEnds.length) };
 }
 
 const PAYMENT_BG: Record<PaymentStatus, string> = {
@@ -76,24 +85,37 @@ const PAYMENT_BAR: Record<PaymentStatus, string> = {
 };
 
 export default function CalendarPage() {
-  const router = useRouter();
   const [startDate, setStartDate] = React.useState(() => {
     const d = new Date("2026-06-02");
     return d;
   });
   const [selected, setSelected] = React.useState<{ guest: Guest; reservation: Reservation } | null>(null);
 
-  // Live reservations + rooms from Postgres (fall back to seeds if offline).
-  const [bookings, setBookings] = React.useState<Reservation[]>(RESERVATIONS);
-  const [rooms, setRooms] = React.useState(ROOMS);
+  // Live reservations, rooms and guests — sourced entirely from Postgres.
+  const [bookings, setBookings] = React.useState<Reservation[]>([]);
+  const [rooms, setRooms] = React.useState<RoomRow[]>([]);
+  const [guests, setGuests] = React.useState<Guest[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
   React.useEffect(() => {
     let cancelled = false;
-    apiGet<Reservation[]>("/bookings").then(r => { if (!cancelled) setBookings(r); }).catch(() => {});
-    apiGet<typeof ROOMS>("/room-board").then(r => { if (!cancelled) setRooms(r); }).catch(() => {});
+    Promise.all([
+      apiGet<Reservation[]>("/bookings"),
+      apiGet<RoomRow[]>("/room-board"),
+      apiGet<Guest[]>("/guests"),
+    ])
+      .then(([bk, rm, gs]) => {
+        if (cancelled) return;
+        setBookings(bk);
+        setRooms(rm);
+        setGuests(gs);
+      })
+      .catch(() => { if (!cancelled) setError("Couldn't reach the backend. Check that the API is running."); })
+      .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
 
-  // Toolbar state — was previously hard-coded
+  // Toolbar state
   const [roomTypeFilter, setRoomTypeFilter] = React.useState<string>("all");
   const [viewSpan, setViewSpan] = React.useState<ViewSpan>("2 Weeks");
   const DAYS = VIEW_SPANS[viewSpan];
@@ -110,9 +132,27 @@ export default function CalendarPage() {
     const reservation =
       bookings.find(r => String((r as { id: unknown }).id) === realId) ??
       bookings.find(r => r.guestName === b.guestName) ??
-      RESERVATIONS[0];
+      ({
+        id: realId ?? b.id,
+        bookingNo: b.id,
+        guestName: b.guestName,
+        roomNumber: b.roomNumber,
+        roomType: "—",
+        source: b.source,
+        checkIn: "",
+        checkOut: "",
+        nights: b.nights,
+        adults: 1,
+        children: 0,
+        paymentStatus: b.paymentStatus,
+        ratePlan: "—",
+        total: 0,
+        advance: 0,
+        balance: 0,
+        vip: b.vip,
+      } as unknown as Reservation);
     const guest =
-      GUESTS.find(g => g.name === b.guestName) ?? {
+      guests.find(g => g.name === b.guestName) ?? {
         id: `g-${b.guestName.replace(/\s+/g, "-").toLowerCase()}`,
         name: b.guestName,
         phone: "—",
@@ -129,42 +169,18 @@ export default function CalendarPage() {
     setSelected({ guest, reservation });
   };
 
-  const openNewBookingFor = (roomNumber: string, startDay: number, nights: number) => {
-    const ci = new Date(startDate);
-    ci.setDate(ci.getDate() + startDay);
-    const co = new Date(startDate);
-    co.setDate(co.getDate() + startDay + nights);
-    const ciISO = ci.toISOString().slice(0, 10);
-    const coISO = co.toISOString().slice(0, 10);
-    router.push(`/bookings/new?room=${encodeURIComponent(roomNumber)}&checkin=${ciISO}&checkout=${coISO}&nights=${nights}`);
-  };
-
-  // Range-select state for "drag to book"
-  const [select, setSelect] = React.useState<{ roomNumber: string; startDay: number; endDay: number } | null>(null);
-
-  // Track movement so single-click vs drag is distinguishable
-  const selectMovedRef = React.useRef(false);
-
-  const startSelect = (roomNumber: string, dayIndex: number, e: React.MouseEvent) => {
-    e.preventDefault();
-    selectMovedRef.current = false;
-    setSelect({ roomNumber, startDay: dayIndex, endDay: dayIndex });
-  };
-
-  // Range-select effect is registered below after `blocks` is declared (TDZ).
-
   const days = React.useMemo(() => {
     return Array.from({ length: DAYS }, (_, i) => {
       const d = new Date(startDate);
       d.setDate(d.getDate() + i);
       return d;
     });
-  }, [startDate]);
+  }, [startDate, DAYS]);
 
   // Build calendar blocks from real reservations, positioned by their actual
   // check-in date relative to the visible window.
   const DAY_MS = 86400000;
-  const realBlocks: CalBlock[] = React.useMemo(() => {
+  const blocks: CalBlock[] = React.useMemo(() => {
     const base = new Date(startDate); base.setHours(0, 0, 0, 0);
     return bookings.flatMap(b => {
       if ((b as { status?: string }).status === "cancelled") return [];
@@ -187,12 +203,6 @@ export default function CalendarPage() {
     });
   }, [bookings, startDate, DAY_MS]);
 
-  const [blocks, setBlocks] = React.useState<CalBlock[]>(realBlocks);
-  // Reseed the board whenever the reservations or the visible window change.
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing derived state from the API
-  React.useEffect(() => { setBlocks(realBlocks); }, [realBlocks]);
-  const [drag, setDrag] = React.useState<DragState | null>(null);
-  const [toast, setToast] = React.useState<string | null>(null);
   const sortedRooms = React.useMemo(() => {
     let list = [...rooms].sort((a, b) => (Number(b.number) || 0) - (Number(a.number) || 0));
     if (roomTypeFilter !== "all") list = list.filter(r => r.type === roomTypeFilter);
@@ -216,153 +226,16 @@ export default function CalendarPage() {
   const totalNightsInView = inViewBlocks.reduce((t, b) => t + Math.min(b.startCol + b.nights, DAYS) - Math.max(b.startCol, 0), 0);
   const capacity = sortedRooms.length * DAYS;
   const occupancyPct = capacity > 0 ? Math.round((totalNightsInView / capacity) * 100) : 0;
-  const avgRate = 8500; // mock fixed avg rate
+  // ADR derived from real bookings: total room revenue ÷ total room-nights.
+  const avgRate = React.useMemo(() => {
+    const totalRev = bookings.reduce((t, b) => t + (Number((b as { total?: number }).total) || 0), 0);
+    const totalNights = bookings.reduce((t, b) => t + (Number(b.nights) || 0), 0);
+    return totalNights > 0 ? Math.round(totalRev / totalNights) : 0;
+  }, [bookings]);
   const projectedRevenue = totalNightsInView * avgRate;
 
   const activeFilters = (vipOnly ? 1 : 0) + (paymentFilter !== "all" ? 1 : 0) + (sourceFilter !== "all" ? 1 : 0) + (roomTypeFilter !== "all" ? 1 : 0);
   const clearAll = () => { setVipOnly(false); setPaymentFilter("all"); setSourceFilter("all"); setRoomTypeFilter("all"); };
-
-  // Drag-to-book selection — registered here so `blocks` is initialized first
-  React.useEffect(() => {
-    if (!select) return;
-    const onMove = (e: MouseEvent) => {
-      const rect = gridRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      // gridRef wraps rows that include the LABEL_W label column on the left, then DAYS cells.
-      // Subtract LABEL_W to align with the day-cells coordinate system.
-      const relX = e.clientX - rect.left - LABEL_W;
-      const dayUnder = Math.max(0, Math.min(DAYS - 1, Math.floor(relX / CELL_W)));
-      if (dayUnder !== select.endDay) {
-        selectMovedRef.current = true;
-        setSelect(s => s ? { ...s, endDay: dayUnder } : null);
-      }
-    };
-    const onUp = () => {
-      if (!select) return;
-      const lo = Math.min(select.startDay, select.endDay);
-      const hi = Math.max(select.startDay, select.endDay);
-      const nights = hi - lo + 1;
-      const colliding = blocks.some(b =>
-        b.roomNumber === select.roomNumber &&
-        rangesOverlap(b.startCol, b.startCol + b.nights, lo, lo + nights)
-      );
-      if (colliding) {
-        setToast("Selection conflicts with an existing booking");
-        setTimeout(() => setToast(null), 2500);
-        setSelect(null);
-        return;
-      }
-      openNewBookingFor(select.roomNumber, lo, nights);
-      setSelect(null);
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-    return () => {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [select, blocks]);
-  const gridRef = React.useRef<HTMLDivElement>(null);
-
-  // Drag handlers
-  const startDrag = (e: React.MouseEvent, block: CalBlock, mode: DragMode) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const rect = gridRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setDrag({
-      id: block.id,
-      mode,
-      startX: e.clientX,
-      startY: e.clientY,
-      initial: { startCol: block.startCol, nights: block.nights, roomNumber: block.roomNumber },
-      preview: { startCol: block.startCol, nights: block.nights, roomNumber: block.roomNumber },
-      gridTop: rect.top,
-      moved: false,
-    });
-  };
-
-  React.useEffect(() => {
-    if (!drag) return;
-    const onMove = (e: MouseEvent) => {
-      const deltaX = e.clientX - drag.startX;
-      const deltaY = e.clientY - drag.startY;
-      const moved = Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3;
-      const deltaDays = Math.round(deltaX / CELL_W);
-      let { startCol, nights, roomNumber } = drag.initial;
-
-      if (drag.mode === "move") {
-        startCol = Math.max(0, Math.min(DAYS - nights, drag.initial.startCol + deltaDays));
-        const relY = e.clientY - drag.gridTop;
-        const rowIdx = Math.max(0, Math.min(sortedRooms.length - 1, Math.floor(relY / ROW_H)));
-        roomNumber = sortedRooms[rowIdx].number;
-      } else if (drag.mode === "resize-left") {
-        const endCol = drag.initial.startCol + drag.initial.nights;
-        const newStartCol = Math.max(0, Math.min(endCol - 1, drag.initial.startCol + deltaDays));
-        startCol = newStartCol;
-        nights = endCol - newStartCol;
-      } else {
-        // resize-right
-        nights = Math.max(1, Math.min(DAYS - drag.initial.startCol, drag.initial.nights + deltaDays));
-      }
-      setDrag(d => d ? { ...d, preview: { startCol, nights, roomNumber }, moved: d.moved || moved } : null);
-    };
-    const onUp = () => {
-      if (!drag) return;
-      // No movement → just clear drag (single click is a no-op; double-click opens details)
-      if (!drag.moved) {
-        setDrag(null);
-        return;
-      }
-      // Commit if no collision
-      const { preview, id } = drag;
-      const otherBlocks = blocks.filter(b => b.id !== id);
-      const colliding = otherBlocks.some(b =>
-        b.roomNumber === preview.roomNumber &&
-        rangesOverlap(b.startCol, b.startCol + b.nights, preview.startCol, preview.startCol + preview.nights)
-      );
-      if (colliding) {
-        setToast("Can't drop here — conflicts with another booking");
-        setTimeout(() => setToast(null), 2500);
-      } else {
-        setBlocks(bs => bs.map(b => b.id === id ? { ...b, ...preview } : b));
-
-        // Persist the reschedule onto the underlying booking.
-        const toISO = (offsetDays: number) => {
-          const d = new Date(startDate); d.setHours(0, 0, 0, 0);
-          d.setDate(d.getDate() + offsetDays);
-          return d.toISOString().slice(0, 10);
-        };
-        const checkIn = toISO(preview.startCol);
-        const checkOut = toISO(preview.startCol + preview.nights);
-        const bookingId = id.replace(/^bk-/, "");
-        const patch = { checkIn, checkOut, roomNumber: preview.roomNumber, nights: preview.nights };
-        setBookings(bs => bs.map(b => String(b.id) === bookingId ? { ...b, ...patch } : b));
-        apiPut(`/bookings/${bookingId}`, patch).catch(() => {
-          setToast("⚠ Save failed — backend offline");
-          setTimeout(() => setToast(null), 2500);
-        });
-
-        const action = drag.mode === "move"
-          ? (preview.roomNumber !== drag.initial.roomNumber ? `Moved to Room ${preview.roomNumber}` : `Rescheduled · ${preview.nights}N`)
-          : drag.mode === "resize-left" ? `Extended check-in earlier · ${preview.nights}N` : `Stay updated to ${preview.nights} night${preview.nights === 1 ? "" : "s"}`;
-        setToast(action);
-        setTimeout(() => setToast(null), 2500);
-      }
-      setDrag(null);
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-    return () => {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drag, blocks]);
-
-  // Target row index for visual highlight during move
-  const dragTargetRoomNumber = drag?.mode === "move" ? drag.preview.roomNumber : null;
 
   const moveDays = (delta: number) => {
     const d = new Date(startDate);
@@ -376,7 +249,7 @@ export default function CalendarPage() {
         <div>
           <h1 className="text-2xl font-display font-medium tracking-tight">Reservation Calendar</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            <span className="font-medium text-foreground">Drag a booking</span> to change room or dates · <span className="font-medium text-foreground">drag its edges</span> to extend / reduce stay · double-booking prevented
+            At-a-glance view of every stay across the window · <span className="font-medium text-foreground">double-click a booking</span> for the guest profile
           </p>
         </div>
         <div className="flex gap-2">
@@ -488,13 +361,31 @@ export default function CalendarPage() {
           <Badge tone="brand">VIP</Badge>
           <span className="text-subtle-foreground ml-auto inline-flex items-center gap-1.5">
             <MousePointerClick className="h-3.5 w-3.5" />
-            <span><span className="text-foreground font-medium">Double-click a booking</span> for guest profile · <span className="text-foreground font-medium">drag across empty cells</span> to pick check-in → check-out · drag a booking to move or resize</span>
+            <span><span className="text-foreground font-medium">Double-click a booking</span> for the full guest profile</span>
           </span>
         </div>
         <div className="text-xs text-subtle-foreground mt-1.5 pt-1.5 border-t border-border/50">
           Hotel night = <span className="text-foreground font-medium">12:00 PM</span> check-in → next-day <span className="text-foreground font-medium">11:00 AM</span> checkout
         </div>
       </Card>
+
+      {/* Backend status banners — the board is sourced live from Postgres */}
+      {error && (
+        <Card className="p-3 border-danger/40 bg-danger/10 text-sm text-danger">
+          {error}
+        </Card>
+      )}
+      {loading && !error && (
+        <Card className="p-3 text-sm text-muted-foreground inline-flex items-center gap-2">
+          <span className="h-3.5 w-3.5 rounded-full border-2 border-brand border-t-transparent animate-spin" />
+          Loading reservations from the backend…
+        </Card>
+      )}
+      {!loading && !error && sortedRooms.length === 0 && (
+        <Card className="p-6 text-sm text-muted-foreground text-center">
+          No rooms found in the database. Add rooms in Setup to populate the calendar.
+        </Card>
+      )}
 
       {/* Timeline */}
       <Card className="overflow-hidden p-0">
@@ -530,25 +421,25 @@ export default function CalendarPage() {
             </div>
 
             {/* Rows */}
-            <div ref={gridRef}>
+            <div>
               {sortedRooms.map(room => {
-                const roomBlocks = visibleBlocks.filter(b => b.roomNumber === room.number);
-                const isDragTarget = dragTargetRoomNumber === room.number;
+                // Only blocks that actually intersect the visible window, so
+                // off-window stays don't add phantom lanes or row height.
+                const roomBlocks = visibleBlocks.filter(
+                  b => b.roomNumber === room.number && b.startCol < DAYS && b.startCol + b.nights > 0,
+                );
+                const { laneOf, laneCount } = assignLanes(roomBlocks);
+                const rowHeight = Math.max(ROW_H, laneCount * LANE_H + 8);
+                const stackTop = (rowHeight - laneCount * LANE_H) / 2;
                 return (
                   <div
                     key={room.id}
-                    className={cn(
-                      "flex border-b border-border transition-colors",
-                      isDragTarget ? "bg-brand-soft/40" : "hover:bg-surface-sunken/30"
-                    )}
-                    style={{ height: ROW_H }}
+                    className="flex border-b border-border transition-colors hover:bg-surface-sunken/30"
+                    style={{ height: rowHeight }}
                   >
                     <div
                       style={{ width: LABEL_W }}
-                      className={cn(
-                        "px-4 flex items-center gap-2 border-r border-border",
-                        isDragTarget ? "bg-brand-soft" : "bg-surface-elevated/50"
-                      )}
+                      className="px-4 flex items-center gap-2 border-r border-border bg-surface-elevated/50"
                     >
                       <span className="text-sm font-semibold tabular w-10">{room.number}</span>
                       <div className="min-w-0">
@@ -556,35 +447,20 @@ export default function CalendarPage() {
                         <p className="text-[10px] text-muted-foreground">Floor {room.floor}</p>
                       </div>
                     </div>
-                    <div className="relative flex-1" style={{ height: ROW_H }}>
-                      {/* Day grid with noon tick — empty cells are clickable to start a new booking */}
+                    <div className="relative flex-1 overflow-hidden" style={{ height: rowHeight }}>
+                      {/* Day grid with noon tick — display only */}
                       <div className="absolute inset-0 flex">
                         {days.map((d, i) => {
                           const isWeekend = d.getDay() === 0 || d.getDay() === 6;
                           const isToday = d.toDateString() === new Date("2026-05-24").toDateString();
-                          // Is this cell occupied by any block?
-                          const isOccupied = roomBlocks.some(b => i >= b.startCol && i < b.startCol + b.nights);
-                          // Is this cell inside the active drag-select range for this room?
-                          const inSelect = !!(
-                            select &&
-                            select.roomNumber === room.number &&
-                            i >= Math.min(select.startDay, select.endDay) &&
-                            i <= Math.max(select.startDay, select.endDay)
-                          );
                           return (
-                            <button
-                              type="button"
+                            <div
                               key={i}
-                              disabled={isOccupied}
-                              onMouseDown={e => !isOccupied && startSelect(room.number, i, e)}
                               style={{ width: CELL_W }}
-                              title={isOccupied ? "" : `Click or drag to book Room ${room.number} starting ${d.toLocaleDateString()}`}
                               className={cn(
-                                "relative border-r border-border group/cell",
+                                "relative border-r border-border",
                                 isWeekend && "bg-surface-sunken/30",
-                                isToday && "bg-brand-soft/30",
-                                !isOccupied && !inSelect && "hover:bg-brand/10 transition-colors cursor-pointer",
-                                inSelect && "bg-brand/25 ring-1 ring-inset ring-brand"
+                                isToday && "bg-brand-soft/30"
                               )}
                             >
                               {/* Noon tick */}
@@ -593,107 +469,44 @@ export default function CalendarPage() {
                                 style={{ left: NOON_OFFSET }}
                                 aria-hidden="true"
                               />
-                              {/* Hover affordance — small + icon */}
-                              {!isOccupied && !inSelect && (
-                                <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/cell:opacity-100 transition-opacity">
-                                  <span className="h-5 w-5 rounded-full bg-brand text-brand-foreground flex items-center justify-center shadow-md">
-                                    <Plus className="h-3 w-3" />
-                                  </span>
-                                </span>
-                              )}
-                            </button>
+                            </div>
                           );
                         })}
                       </div>
 
-                      {/* Selection callout — floating tag above the active drag-select range for this room */}
-                      {select && room.number === select.roomNumber && (() => {
-                        const lo = Math.min(select.startDay, select.endDay);
-                        const hi = Math.max(select.startDay, select.endDay);
-                        const nights = hi - lo + 1;
-                        const ci = new Date(startDate); ci.setDate(ci.getDate() + lo);
-                        const co = new Date(startDate); co.setDate(co.getDate() + lo + nights);
-                        return (
-                          <div
-                            className="absolute z-20 -top-1 px-2 py-0.5 rounded-md bg-brand text-brand-foreground text-[10px] font-semibold shadow-md tabular pointer-events-none animate-in flex items-center gap-1"
-                            style={{ left: lo * CELL_W + 4, transform: "translateY(-100%)" }}
-                          >
-                            {nights}N · {ci.toLocaleDateString(undefined, { day: "2-digit", month: "short" })} → {co.toLocaleDateString(undefined, { day: "2-digit", month: "short" })}
-                            <span className="text-brand-foreground/80">· release to book</span>
-                          </div>
-                        );
-                      })()}
-
                       {/* Blocks — positioned to span 12:00 PM → next-day 11:00 AM.
-                          Click to open guest details · Drag body to move (rooms + dates) · Drag edge handles to resize */}
+                          Double-click to open guest details. Display only — no drag. */}
                       {roomBlocks.map((b) => {
-                        const isDragging = drag?.id === b.id;
-                        // While dragging this block, hide the original (preview ghost is rendered below)
-                        const left = isDragging ? -9999 : blockLeft(b.startCol);
+                        const left = blockLeft(b.startCol);
                         const w = blockWidth(b.nights);
+                        const top = stackTop + (laneOf.get(b.id) ?? 0) * LANE_H;
                         return (
                           <div
                             key={b.id}
-                            onMouseDown={(e) => startDrag(e, b, "move")}
                             onDoubleClick={(e) => { e.stopPropagation(); openGuestForBlock(b); }}
                             className={cn(
-                              "absolute top-1.5 bottom-1.5 rounded-md border text-left overflow-hidden hover:shadow-md hover:z-10 transition-shadow cursor-grab active:cursor-grabbing group/block select-none",
+                              "absolute rounded-md border text-left overflow-hidden hover:shadow-md hover:z-10 transition-shadow cursor-pointer group/block select-none",
                               PAYMENT_BG[b.paymentStatus]
                             )}
-                            style={{ left, width: w }}
-                            title={`${b.guestName} · ${b.nights}N · ${b.source}\nDouble-click to view full profile · drag to move · drag edges to resize`}
+                            style={{ left, width: w, top, height: LANE_H - 4 }}
+                            title={`${b.guestName} · ${b.nights}N · ${b.source} · 12 PM → 11 AM\nDouble-click to view full profile`}
                           >
                             {/* Left status bar */}
                             <div className={cn("absolute left-0 top-0 bottom-0 w-0.5", PAYMENT_BAR[b.paymentStatus])} />
 
-                            {/* Resize handles (left + right) — wider invisible hit area, narrow visible indicator on hover */}
-                            <div
-                              onMouseDown={(e) => startDrag(e, b, "resize-left")}
-                              className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize z-10 hover:bg-brand/30"
-                              title="Drag to extend / reduce check-in"
-                            />
-                            <div
-                              onMouseDown={(e) => startDrag(e, b, "resize-right")}
-                              className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize z-10 hover:bg-brand/30"
-                              title="Drag to extend / reduce checkout"
-                            />
-
-                            {/* Check-in / out markers */}
-                            <span className="absolute left-2.5 top-0.5 text-[8px] font-mono text-muted-foreground/80 tabular leading-none pointer-events-none">12P</span>
-                            <span className="absolute right-2.5 top-0.5 text-[8px] font-mono text-muted-foreground/80 tabular leading-none pointer-events-none">11A</span>
-
-                            {/* Guest name + source */}
-                            <div className="pl-2.5 pr-2.5 pt-2.5 pointer-events-none">
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="text-xs font-medium truncate">{b.guestName}</p>
-                                {b.vip && <span className="text-[10px] text-brand shrink-0">★</span>}
-                              </div>
-                              <p className="text-[10px] text-muted-foreground truncate">
-                                {w >= 70 ? `${b.nights}N · ${b.source}` : `${b.nights}N`}
-                              </p>
+                            {/* Single-line label — name, VIP, and nights/source when wide enough */}
+                            <div className="h-full flex items-center gap-1 pl-2.5 pr-1.5 pointer-events-none">
+                              <p className="text-[11px] font-medium leading-none truncate">{b.guestName}</p>
+                              {b.vip && <span className="text-[10px] text-brand shrink-0 leading-none">★</span>}
+                              {w >= 96 && (
+                                <span className="ml-auto text-[9px] text-muted-foreground tabular shrink-0 leading-none">
+                                  {w >= 150 ? `${b.nights}N · ${b.source}` : `${b.nights}N`}
+                                </span>
+                              )}
                             </div>
                           </div>
                         );
                       })}
-
-                      {/* Drag preview ghost for blocks belonging to this room while dragging */}
-                      {drag && room.number === drag.preview.roomNumber && (() => {
-                        const draggedBlock = blocks.find(x => x.id === drag.id);
-                        if (!draggedBlock) return null;
-                        const { startCol, nights } = drag.preview;
-                        return (
-                          <div
-                            className={cn(
-                              "absolute top-1.5 bottom-1.5 rounded-md border-2 border-dashed border-brand bg-brand/20 pointer-events-none z-20 overflow-hidden"
-                            )}
-                            style={{ left: blockLeft(startCol), width: blockWidth(nights) }}
-                          >
-                            <div className="pl-2.5 pr-2.5 pt-1.5 text-xs font-medium text-brand-soft-foreground tabular">
-                              {nights}N · {new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + startCol).toLocaleDateString(undefined, { day: "2-digit", month: "short" })} → +{nights}N
-                            </div>
-                          </div>
-                        );
-                      })()}
                     </div>
                   </div>
                 );
@@ -703,15 +516,7 @@ export default function CalendarPage() {
         </div>
       </Card>
 
-      {/* Toast — drag commit feedback */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-foreground text-background rounded-lg px-4 py-3 text-sm shadow-2xl animate-in slide-in-from-bottom-2 inline-flex items-center gap-2.5 ring-1 ring-foreground/20">
-          <span className="h-6 w-6 rounded-full bg-success text-white inline-flex items-center justify-center"><CheckCircle2 className="h-3.5 w-3.5" /></span>
-          <span className="font-medium">{toast}</span>
-        </div>
-      )}
-
-      {/* Guest detail drawer (opens on block click) */}
+      {/* Guest detail drawer (opens on block double-click) */}
       <GuestDetailDrawer
         open={selected !== null}
         onClose={() => setSelected(null)}

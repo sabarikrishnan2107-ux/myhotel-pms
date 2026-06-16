@@ -78,7 +78,7 @@ export default function LostFoundPage() {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => showToast("Lost report form opened")}
+            onClick={() => setTab("lost")}
             className="h-9 px-3 rounded-md border border-border bg-surface hover:bg-surface-sunken text-sm font-medium inline-flex items-center gap-1.5 transition-colors"
           >
             <FileText className="h-4 w-4" />
@@ -86,7 +86,7 @@ export default function LostFoundPage() {
           </button>
           <button
             type="button"
-            onClick={() => showToast("Registration form opened")}
+            onClick={() => setTab("found")}
             className="h-9 px-3 rounded-md bg-brand text-brand-foreground hover:bg-brand/90 text-sm font-medium inline-flex items-center gap-1.5 transition-colors shadow-sm"
           >
             <Plus className="h-4 w-4" />

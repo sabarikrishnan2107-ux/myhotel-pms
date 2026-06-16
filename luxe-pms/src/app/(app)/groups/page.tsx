@@ -14,7 +14,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { GROUP_BOOKINGS, type GroupStatus, type GroupType, type GroupBooking } from "@/lib/mock-data-ext";
 import { money, cn, formatDate } from "@/lib/utils";
-import { apiGet, apiPut } from "@/lib/api";
+import { apiGet, apiPut, sendEmail } from "@/lib/api";
 
 const STATUS_TONE: Record<GroupStatus, "neutral" | "info" | "success" | "brand" | "warning" | "danger"> = {
   draft: "neutral",
@@ -338,7 +338,15 @@ export default function GroupsPage() {
                               <button type="button" onClick={() => { showToast(`Itinerary printed for ${g.code}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
                                 <Printer className="h-3.5 w-3.5 text-muted-foreground" />Print rooming list
                               </button>
-                              <button type="button" onClick={() => { showToast(`Email sent to ${g.contactName}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                              <button type="button" onClick={() => {
+                                setActionMenuFor(null);
+                                const to = g.contactEmail;
+                                if (!to) { showToast(`No email on file for ${g.contactName}`); return; }
+                                showToast(`Emailing ${g.contactName}…`);
+                                sendEmail({ to, subject: `Group Booking · ${g.code}`, heading: "Group Booking Update", greeting: g.contactName, intro: "Here is an update regarding your group booking. Please contact us with any questions.", rows: [{ label: "Group", value: g.name }, { label: "Code", value: g.code }], context: "Group email" })
+                                  .then(() => showToast(`Email sent to ${g.contactName}`))
+                                  .catch(() => showToast(`Couldn't email ${g.contactName}`));
+                              }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
                                 <Mail className="h-3.5 w-3.5 text-brand" />Email contact
                               </button>
                               <button type="button" onClick={() => { showToast(`WhatsApp sent to ${g.contactName}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">

@@ -328,9 +328,16 @@ export default function LoyaltyPage() {
     apiGet<Campaign[]>("/loyalty-campaigns").then(r => { if (r.length) setCampaigns(r.map(c => ({ ...c, id: String(c.id), applicableTiers: c.applicableTiers ?? [], applicableRoomTypes: c.applicableRoomTypes ?? [] }))); }).catch(() => {});
   }, []);
   const [redemptions, setRedemptions] = React.useState<Redemption[]>(SEED_REDEMPTIONS);
+  const [txns, setTxns] = React.useState<PointTxn[]>(SEED_TXNS);
   const [audit] = React.useState<AuditEntry[]>(SEED_AUDIT);
   const [earningRules, setEarningRules] = React.useState<EarningRule[]>(SEED_EARNING_RULES);
   const [settings, setSettings] = React.useState<ProgramSettings>(SEED_SETTINGS);
+  React.useEffect(() => {
+    apiGet<Redemption[]>("/loyalty-redemptions").then(r => { if (r.length) setRedemptions(r.map(x => ({ ...x, id: String(x.id) }))); }).catch(() => {});
+    apiGet<PointTxn[]>("/loyalty-transactions").then(r => { if (r.length) setTxns(r.map(x => ({ ...x, id: String(x.id), memberId: String(x.memberId) }))); }).catch(() => {});
+    apiGet<EarningRule[]>("/loyalty-earning-rules").then(r => { if (r.length) setEarningRules(r.map(x => ({ ...x, id: String(x.id) }))); }).catch(() => {});
+    apiGet<ProgramSettings[]>("/loyalty-settings").then(r => { if (r.length) setSettings(r[0]); }).catch(() => {});
+  }, []);
 
   // Modals
   const [addMember, setAddMember] = React.useState(false);
@@ -380,15 +387,15 @@ export default function LoyaltyPage() {
         })}
       </div>
 
-      {tab === "dashboard"   && <DashboardTab members={members} redemptions={redemptions} txns={SEED_TXNS} onOpenMember={setMemberDetail} />}
+      {tab === "dashboard"   && <DashboardTab members={members} redemptions={redemptions} txns={txns} onOpenMember={setMemberDetail} />}
       {tab === "members"     && <MembersTab members={members} onOpenMember={setMemberDetail} onAdjustPoints={setAdjustPoints} />}
-      {tab === "tiers"       && <TiersTab tiers={tiers} earningRules={earningRules} settings={settings} onEditTier={setEditTier} onUpdateRule={(id, patch) => setEarningRules(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))} onUpdateSettings={setSettings} onToast={showToast} />}
+      {tab === "tiers"       && <TiersTab tiers={tiers} earningRules={earningRules} settings={settings} onEditTier={setEditTier} onUpdateRule={(id, patch) => { setEarningRules(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r)); apiPut(`/loyalty-earning-rules/${id}`, patch).catch(() => {}); }} onUpdateSettings={setSettings} onToast={showToast} />}
       {tab === "rewards"     && <RewardsTab rewards={rewards} settings={settings} onEdit={setEditReward} onToggle={(id) => { const cur = rewards.find(r => r.id === id); const active = !cur?.active; setRewards(prev => prev.map(r => r.id === id ? { ...r, active } : r)); apiPut(`/loyalty-rewards/${id}`, { active }).catch(() => showToast("Could not save")); }} onDelete={(id) => { setRewards(prev => prev.filter(r => r.id !== id)); apiDelete(`/loyalty-rewards/${id}`).catch(() => showToast("Could not delete")); showToast("Reward removed"); }} />}
       {tab === "campaigns"   && <CampaignsTab campaigns={campaigns} onEdit={setEditCampaign} onToggle={(id) => { const cur = campaigns.find(c => c.id === id); const active = !cur?.active; setCampaigns(prev => prev.map(c => c.id === id ? { ...c, active } : c)); apiPut(`/loyalty-campaigns/${id}`, { active }).catch(() => showToast("Could not save")); }} onDelete={(id) => { setCampaigns(prev => prev.filter(c => c.id !== id)); apiDelete(`/loyalty-campaigns/${id}`).catch(() => showToast("Could not delete")); showToast("Campaign removed"); }} />}
-      {tab === "redemptions" && <RedemptionsTab redemptions={redemptions} onApprove={(id) => { setRedemptions(prev => prev.map(r => r.id === id ? { ...r, status: "Approved" as const, approver: "Tom W." } : r)); showToast("Redemption approved"); }} onReject={(id) => { setRedemptions(prev => prev.map(r => r.id === id ? { ...r, status: "Rejected" as const } : r)); showToast("Redemption rejected"); }} />}
+      {tab === "redemptions" && <RedemptionsTab redemptions={redemptions} onApprove={(id) => { setRedemptions(prev => prev.map(r => r.id === id ? { ...r, status: "Approved" as const, approver: "Tom W." } : r)); apiPut(`/loyalty-redemptions/${id}`, { status: "Approved", approver: "Tom W." }).catch(() => showToast("Could not save")); showToast("Redemption approved"); }} onReject={(id) => { setRedemptions(prev => prev.map(r => r.id === id ? { ...r, status: "Rejected" as const } : r)); apiPut(`/loyalty-redemptions/${id}`, { status: "Rejected" }).catch(() => showToast("Could not save")); showToast("Redemption rejected"); }} />}
       {tab === "reports"     && <ReportsTab members={members} redemptions={redemptions} campaigns={campaigns} onToast={showToast} />}
       {tab === "audit"       && <AuditTab entries={audit} />}
-      {tab === "settings"    && <SettingsTab settings={settings} onChange={setSettings} onToast={showToast} />}
+      {tab === "settings"    && <SettingsTab settings={settings} onChange={setSettings} onSave={(s) => apiPut("/loyalty-settings/1", s).catch(() => {})} onToast={showToast} />}
 
       {/* Modals */}
       {addMember && <AddMemberModal onClose={() => setAddMember(false)} onSave={(m) => {
@@ -400,7 +407,7 @@ export default function LoyaltyPage() {
         setAddMember(false);
         showToast(`Welcome ${m.name} · ${membershipId} · +500 joining bonus`);
       }} />}
-      {memberDetail && <MemberDetailDrawer member={memberDetail} txns={SEED_TXNS.filter(t => t.memberId === memberDetail.id)} tier={tiers.find(t => t.level === memberDetail.tier)!} onClose={() => setMemberDetail(null)} onAdjust={() => { setAdjustPoints(memberDetail); setMemberDetail(null); }} onToast={showToast} />}
+      {memberDetail && <MemberDetailDrawer member={memberDetail} txns={txns.filter(t => t.memberId === memberDetail.id)} tier={tiers.find(t => t.level === memberDetail.tier)!} onClose={() => setMemberDetail(null)} onAdjust={() => { setAdjustPoints(memberDetail); setMemberDetail(null); }} onToast={showToast} />}
       {adjustPoints && <AdjustPointsModal member={adjustPoints} settings={settings} onClose={() => setAdjustPoints(null)} onSave={(delta, reason) => {
         const next = { pointsBalance: Math.max(0, adjustPoints.pointsBalance + delta), lifetimePoints: delta > 0 ? adjustPoints.lifetimePoints + delta : adjustPoints.lifetimePoints };
         setMembers(prev => prev.map(m => m.id === adjustPoints.id ? { ...m, ...next } : m));
@@ -816,10 +823,10 @@ function TiersTab({ tiers, earningRules, settings, onEditTier, onUpdateRule, onU
 function ToggleSwitch({ on, onChange }: { on: boolean; onChange: () => void }) {
   return (
     <button type="button" onClick={onChange} className={cn(
-      "relative h-5 w-9 rounded-full transition-colors inline-flex items-center",
-      on ? "bg-brand" : "bg-surface-sunken border border-border"
+      "relative h-6 w-11 rounded-full transition-colors inline-flex items-center",
+      on ? "bg-success" : "bg-border-strong"
     )}>
-      <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform", on ? "translate-x-[18px]" : "translate-x-0.5")} />
+      <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform", on ? "translate-x-[22px]" : "translate-x-0.5")} />
     </button>
   );
 }
@@ -1102,9 +1109,10 @@ function AuditTab({ entries }: { entries: AuditEntry[] }) {
 // ============================================================
 // SETTINGS TAB
 // ============================================================
-function SettingsTab({ settings, onChange, onToast }: {
+function SettingsTab({ settings, onChange, onSave, onToast }: {
   settings: ProgramSettings;
   onChange: (s: ProgramSettings) => void;
+  onSave: (s: ProgramSettings) => void;
   onToast: (m: string) => void;
 }) {
   return (
@@ -1144,7 +1152,7 @@ function SettingsTab({ settings, onChange, onToast }: {
       </div>
 
       <div className="flex justify-end pt-3 border-t border-border">
-        <Button variant="success" onClick={() => onToast("Loyalty settings saved")}><CheckCircle2 className="h-3.5 w-3.5" />Save settings</Button>
+        <Button variant="success" onClick={() => { onSave(settings); onToast("Loyalty settings saved"); }}><CheckCircle2 className="h-3.5 w-3.5" />Save settings</Button>
       </div>
     </Card>
   );

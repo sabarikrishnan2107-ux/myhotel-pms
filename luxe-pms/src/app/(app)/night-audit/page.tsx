@@ -13,12 +13,13 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { AUDIT_RUNS } from "@/lib/mock-data-ext";
 import { DASHBOARD_KPIS } from "@/lib/mock-data";
 import { money, cn } from "@/lib/utils";
-import { apiPost } from "@/lib/api";
+import { apiGet, apiPost } from "@/lib/api";
 
 type AuditResult = { businessDate: string; roomsPosted: number; totalPosted: number };
 
 // ================== TYPES ==================
-type AuditRun = typeof AUDIT_RUNS[number] & {
+type AuditRunRow = typeof AUDIT_RUNS[number];
+type AuditRun = AuditRunRow & {
   cashVariance?: number;
   anomalies?: string[];
   irn?: boolean;
@@ -27,23 +28,32 @@ type AuditRun = typeof AUDIT_RUNS[number] & {
 };
 
 // ================== ENRICHED SEED ==================
-const ENRICHED_RUNS: AuditRun[] = AUDIT_RUNS.map((r, i) => ({
-  ...r,
-  cashVariance: r.status === "anomaly" ? -500 : 0,
-  anomalies: r.status === "anomaly"
-    ? ["Cash drawer short ₹500 (Shift #4214 · Priya M.)", "2 no-show charges not posted"]
-    : [],
-  irn: true,
-  backup: true,
-  steps: [
-    { name: "Pre-checks (cashier · HK · folios)", duration: "8s", status: "ok" },
-    { name: "Post nightly room charges + GST", duration: "12s", status: "ok" },
-    { name: "No-show check", duration: r.noShows > 0 ? "11s" : "5s", status: r.noShows > 0 ? (i === 3 ? "warn" : "ok") : "ok" },
-    { name: "Roll system date forward", duration: "3s", status: "ok" },
-    { name: "Generate Manager Flash + email", duration: "9s", status: "ok" },
-    { name: "Lock books · backup database", duration: "10s", status: i === 3 ? "warn" : "ok" },
-  ],
-}));
+// Derive the display rows (timeline steps, anomalies, compliance flags) from the
+// base audit-runs rows. Used for both the offline seed and the live API rows.
+function enrichRuns(rows: AuditRunRow[]): AuditRun[] {
+  return rows.map((r, i) => ({
+    ...r,
+    // Backend numeric columns can arrive as strings — coerce so the UI math
+    // (revenue/ADR/RevPAR, noShows > 0, occupancy %) stays correct.
+    occupancy: Number(r.occupancy),
+    revenue: Number(r.revenue),
+    noShows: Number(r.noShows),
+    cashVariance: r.status === "anomaly" ? -500 : 0,
+    anomalies: r.status === "anomaly"
+      ? ["Cash drawer short ₹500 (Shift #4214 · Priya M.)", "2 no-show charges not posted"]
+      : [],
+    irn: true,
+    backup: true,
+    steps: [
+      { name: "Pre-checks (cashier · HK · folios)", duration: "8s", status: "ok" },
+      { name: "Post nightly room charges + GST", duration: "12s", status: "ok" },
+      { name: "No-show check", duration: r.noShows > 0 ? "11s" : "5s", status: r.noShows > 0 ? (i === 3 ? "warn" : "ok") : "ok" },
+      { name: "Roll system date forward", duration: "3s", status: "ok" },
+      { name: "Generate Manager Flash + email", duration: "9s", status: "ok" },
+      { name: "Lock books · backup database", duration: "10s", status: i === 3 ? "warn" : "ok" },
+    ],
+  }));
+}
 
 const WIZARD_STEPS = [
   { id: "precheck",  title: "Pre-audit checks",     description: "Verify cashier shifts, HK reconciled, all folios posted" },
@@ -56,7 +66,17 @@ const WIZARD_STEPS = [
 
 // ================== MAIN PAGE ==================
 export default function NightAuditPage() {
-  const last: AuditRun = ENRICHED_RUNS[0];
+  // Seed with the offline mock (enriched) so the page renders instantly, then
+  // replace with real Postgres rows from /audit-runs once they arrive.
+  const [auditRuns, setAuditRuns] = React.useState<AuditRunRow[]>(AUDIT_RUNS);
+  React.useEffect(() => {
+    apiGet<AuditRunRow[]>("/audit-runs")
+      .then(rows => { if (rows.length) setAuditRuns(rows); })
+      .catch(() => { /* offline: keep the seeded mock */ });
+  }, []);
+
+  const enrichedRuns = React.useMemo(() => enrichRuns(auditRuns), [auditRuns]);
+  const last: AuditRun = enrichedRuns[0];
   const [showWizard, setShowWizard] = React.useState(false);
   const [detailRun, setDetailRun] = React.useState<AuditRun | null>(null);
   const [toast, setToast] = React.useState<string | null>(null);
@@ -201,7 +221,7 @@ export default function NightAuditPage() {
       <Card className="p-0 overflow-hidden">
         <div className="px-5 py-3 bg-surface-elevated border-b border-border flex items-center justify-between">
           <p className="font-semibold">Audit history</p>
-          <Badge tone="neutral">{ENRICHED_RUNS.length} runs</Badge>
+          <Badge tone="neutral">{enrichedRuns.length} runs</Badge>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -219,8 +239,8 @@ export default function NightAuditPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {ENRICHED_RUNS.map(r => (
-                <tr key={r.id} className={cn("hover:bg-surface-sunken/40 transition-colors cursor-pointer", r.status === "anomaly" && "bg-warning-soft/10")} onClick={() => setDetailRun(r)}>
+              {enrichedRuns.map(r => (
+                <tr key={String(r.id)} className={cn("hover:bg-surface-sunken/40 transition-colors cursor-pointer", r.status === "anomaly" && "bg-warning-soft/10")} onClick={() => setDetailRun(r)}>
                   <td className="px-5 py-3 font-medium">{r.date}</td>
                   <td className="px-5 py-3 text-muted-foreground tabular">{r.runAt}</td>
                   <td className="px-5 py-3 text-muted-foreground tabular">{r.duration}</td>

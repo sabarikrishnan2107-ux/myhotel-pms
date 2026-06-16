@@ -26,6 +26,22 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet, apiPut } from "@/lib/api";
+
+type FoundRow = {
+  id: number | string;
+  name: string;
+  category?: string;
+  status?: string;
+  value?: number;
+  hvi?: boolean;
+  daysHeld?: number;
+  foundDate?: string;
+  storageLocation?: string;
+};
+
+const RESOLVED = ["Returned", "Claimed", "Disposed", "Donated"];
+const RETENTION_DAYS = 90;
 
 type DisposalType =
   | "Disposed"
@@ -359,10 +375,53 @@ const SEARCH_ITEMS = [
   "Broken umbrella",
 ];
 
+// A disposal status maps a found-item to one of the closed states.
+function statusForDisposal(t: DisposalType): string {
+  if (t === "Donated") return "Donated";
+  if (t === "Returned to finder") return "Returned";
+  return "Disposed";
+}
+function toPending(i: FoundRow): Pending {
+  return {
+    id: String(i.id),
+    item: i.name,
+    category: i.category || "—",
+    daysInStorage: i.daysHeld ?? 0,
+    value: i.value ?? 0,
+    recommended: i.hvi ? "Police handover" : (i.value ?? 0) > 0 ? "Donated" : "Disposed",
+    approver: "Anjali Iyer (GM)",
+    hvi: i.hvi,
+  };
+}
+function toHistory(i: FoundRow): History {
+  return {
+    id: String(i.id),
+    date: i.foundDate || "—",
+    item: i.name,
+    type: i.status === "Donated" ? "Donated" : "Disposed",
+    approvedBy: "Anjali Iyer (GM)",
+    disposedBy: "—",
+    witness: "—",
+    reason: "Retention period expired",
+    remarks: "",
+  };
+}
+
 export default function DisposalTab({ onToast }: { onToast: (m: string) => void }) {
   const [filter, setFilter] = React.useState<(typeof TYPES)[number]>("All");
-  const [pending, setPending] = React.useState<Pending[]>(PENDING);
   const [showInitiate, setShowInitiate] = React.useState(false);
+
+  // Real found-items drive the pending queue and disposal history.
+  const [found, setFound] = React.useState<FoundRow[] | null>(null);
+  const [dismissed, setDismissed] = React.useState<Set<string>>(new Set());
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<FoundRow[]>("/found-items")
+      .then((r) => { if (!cancelled && r.length) setFound(r); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  const live = !!(found && found.length);
 
   // modal local state
   const [mItem, setMItem] = React.useState("");
@@ -372,7 +431,31 @@ export default function DisposalTab({ onToast }: { onToast: (m: string) => void 
   const [mWitness, setMWitness] = React.useState(WITNESSES[0]);
   const [mPhoto, setMPhoto] = React.useState<string>("");
 
+  const pending: Pending[] = (live
+    ? found!
+        .filter((i) => (i.daysHeld ?? 0) >= RETENTION_DAYS && !RESOLVED.includes(i.status ?? ""))
+        .map(toPending)
+    : PENDING
+  ).filter((p) => !dismissed.has(p.id));
+
+  const history: History[] = live
+    ? found!.filter((i) => i.status === "Disposed" || i.status === "Donated").map(toHistory)
+    : HISTORY;
+
+  // Names offered in the "initiate disposal" item picker.
+  const initiateOptions = live
+    ? found!.filter((i) => !RESOLVED.includes(i.status ?? "")).map((i) => i.name)
+    : SEARCH_ITEMS;
+
   const stats = React.useMemo(() => {
+    if (live) {
+      return {
+        pending: pending.length,
+        disposed: history.filter((h) => h.type === "Disposed" || h.type === "Destroyed").length,
+        donated: history.filter((h) => h.type === "Donated").length,
+        police: history.filter((h) => h.type === "Police handover").length,
+      };
+    }
     const monthCount = (t: DisposalType) => HISTORY.filter(h => h.type === t && h.date.includes("May 2026")).length;
     return {
       pending: pending.length,
@@ -380,20 +463,25 @@ export default function DisposalTab({ onToast }: { onToast: (m: string) => void 
       donated: monthCount("Donated"),
       police: monthCount("Police handover"),
     };
-  }, [pending]);
+  }, [live, pending.length, history]);
 
   const filteredHistory = React.useMemo(() => {
-    if (filter === "All") return HISTORY;
-    return HISTORY.filter(h => h.type === filter);
-  }, [filter]);
+    if (filter === "All") return history;
+    return history.filter(h => h.type === filter);
+  }, [filter, history]);
 
   const approve = (p: Pending) => {
-    setPending(prev => prev.filter(x => x.id !== p.id));
-    onToast(`${p.item} approved for ${p.recommended.toLowerCase()} — workflow triggered`);
+    const status = statusForDisposal(p.recommended);
+    apiPut(`/found-items/${p.id}`, { status })
+      .then(() => {
+        setFound((prev) => (prev ? prev.map((f) => (String(f.id) === p.id ? { ...f, status } : f)) : prev));
+        onToast(`${p.item} approved for ${p.recommended.toLowerCase()} — workflow triggered`);
+      })
+      .catch(() => onToast("⚠ Save failed — backend offline"));
   };
 
   const reject = (p: Pending) => {
-    setPending(prev => prev.filter(x => x.id !== p.id));
+    setDismissed((prev) => new Set(prev).add(p.id));
     onToast(`${p.item} rejected — returned to storage queue`);
   };
 
@@ -406,15 +494,28 @@ export default function DisposalTab({ onToast }: { onToast: (m: string) => void 
       onToast("Manager approval is required to proceed");
       return;
     }
-    setShowInitiate(false);
-    onToast(`Disposal initiated for "${mItem}" (${mType}) — witnessed by ${mWitness.split(" (")[0]}`);
-    // reset
-    setMItem("");
-    setMType("Disposed");
-    setMReason(REASONS[0]);
-    setMApproved(false);
-    setMWitness(WITNESSES[0]);
-    setMPhoto("");
+    const target = live ? found!.find((f) => f.name === mItem) : null;
+    const done = () => {
+      setShowInitiate(false);
+      onToast(`Disposal initiated for "${mItem}" (${mType}) — witnessed by ${mWitness.split(" (")[0]}`);
+      setMItem("");
+      setMType("Disposed");
+      setMReason(REASONS[0]);
+      setMApproved(false);
+      setMWitness(WITNESSES[0]);
+      setMPhoto("");
+    };
+    if (target) {
+      const status = statusForDisposal(mType);
+      apiPut(`/found-items/${target.id}`, { status })
+        .then(() => {
+          setFound((prev) => (prev ? prev.map((f) => (f.id === target.id ? { ...f, status } : f)) : prev));
+          done();
+        })
+        .catch(() => onToast("⚠ Save failed — backend offline"));
+    } else {
+      done();
+    }
   };
 
   return (
@@ -487,7 +588,7 @@ export default function DisposalTab({ onToast }: { onToast: (m: string) => void 
                 {t}
                 {t !== "All" && (
                   <span className="tabular text-[10px] opacity-70">
-                    {HISTORY.filter(h => h.type === t).length}
+                    {history.filter(h => h.type === t).length}
                   </span>
                 )}
               </button>
@@ -796,7 +897,7 @@ export default function DisposalTab({ onToast }: { onToast: (m: string) => void 
                     className="pl-9"
                   />
                   <datalist id="dsp-items">
-                    {SEARCH_ITEMS.map(s => (
+                    {initiateOptions.map(s => (
                       <option key={s} value={s} />
                     ))}
                   </datalist>

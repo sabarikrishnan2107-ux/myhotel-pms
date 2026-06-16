@@ -8,6 +8,7 @@ import { ThemeToggle } from "./theme-toggle";
 import { Avatar } from "@/components/ui/avatar";
 import { NotificationBell } from "@/components/notifications/bell-dropdown";
 import { logout } from "@/lib/api";
+import { clearRole } from "@/lib/auth";
 import { useProperty, hotelName } from "@/lib/use-property";
 
 interface TopBarProps {
@@ -36,6 +37,7 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
 
   const onLogout = async () => {
     await logout();
+    clearRole();
     router.replace("/login");
   };
 

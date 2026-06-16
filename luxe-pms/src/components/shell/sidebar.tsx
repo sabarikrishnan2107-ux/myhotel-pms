@@ -3,6 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV, GROUP_LABEL, type NavItem } from "@/lib/nav";
+import { getRole, rolesFor, type Role } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { Sparkles, X } from "lucide-react";
 
@@ -18,6 +19,13 @@ interface SidebarProps {
 export function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const [expanded, setExpanded] = React.useState(false);
+
+  // Role is read client-side after mount to avoid SSR/localStorage mismatch.
+  const [role, setRoleState] = React.useState<Role>("manager");
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- role only exists client-side
+    setRoleState(getRole());
+  }, [pathname]);
 
   const grouped = React.useMemo(() => {
     const groups: Record<string, NavItem[]> = {};
@@ -63,7 +71,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           {/* Brand header */}
           <div className="h-16 flex items-center justify-between pl-4 pr-3 border-b border-[hsl(var(--sidebar-border))] shrink-0">
             <Link href="/dashboard" className="flex items-center gap-2.5 group min-w-0">
-              <span className="h-9 w-9 shrink-0 rounded-md bg-[hsl(var(--sidebar-active))] text-[hsl(var(--sidebar-bg))] flex items-center justify-center font-bold shadow-sm ring-1 ring-[hsl(var(--sidebar-active))]/40">
+              <span className="h-9 w-9 shrink-0 rounded-lg bg-gradient-to-br from-[hsl(var(--sidebar-active))] to-[hsl(var(--sidebar-active))]/75 text-[hsl(var(--sidebar-bg))] flex items-center justify-center font-bold shadow-md shadow-[hsl(var(--sidebar-active))]/20 ring-1 ring-[hsl(var(--sidebar-active))]/40 group-hover:scale-105 transition-transform">
                 <Sparkles className="h-4.5 w-4.5" />
               </span>
               <span className={cn(
@@ -85,7 +93,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           </div>
 
           <nav className="flex-1 overflow-y-auto py-4">
-            {(["operations", "billing", "people", "erp", "system"] as const).map((group) => (
+            {(["operations", "billing", "people", "erp", "system", "demo"] as const).map((group) => {
+              const items = (grouped[group] ?? []).filter(item => rolesFor(item).includes(role));
+              if (items.length === 0) return null;
+              return (
               <div key={group} className="px-2 mb-4">
                 <p className={cn(
                   "px-3 text-[10px] uppercase tracking-[0.16em] text-[hsl(var(--sidebar-muted))]/70 font-semibold mb-1.5 transition-opacity duration-150 whitespace-nowrap",
@@ -94,7 +105,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                   {GROUP_LABEL[group]}
                 </p>
                 <ul className="space-y-0.5">
-                  {grouped[group]?.map((item) => {
+                  {items.map((item) => {
                     const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
                     const Icon = item.icon;
                     return (
@@ -109,22 +120,25 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                             "transition-[background-color,color,transform] duration-150 ease-out",
                             "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[hsl(var(--sidebar-active))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--sidebar-bg))]",
                             active
-                              ? "bg-[hsl(var(--sidebar-active-bg))] text-[hsl(var(--sidebar-active))] font-medium"
-                              : "text-[hsl(var(--sidebar-muted))] hover:bg-[hsl(var(--sidebar-bg-elevated))] hover:text-[hsl(var(--sidebar-fg))] active:scale-[0.98]"
+                              ? "bg-gradient-to-r from-[hsl(var(--sidebar-active))]/18 via-[hsl(var(--sidebar-active))]/8 to-transparent text-[hsl(var(--sidebar-active))] font-semibold"
+                              : "text-[hsl(var(--sidebar-fg))] hover:bg-[hsl(var(--sidebar-bg-elevated))]/60 active:scale-[0.98]"
                           )}
                         >
                           {/* Left gold indicator on active */}
                           <span
                             aria-hidden="true"
                             className={cn(
-                              "absolute left-0 top-1/2 -translate-y-1/2 w-0.5 rounded-r-full bg-[hsl(var(--sidebar-active))] transition-all duration-200 ease-out",
-                              active ? "h-6 opacity-100" : "h-0 opacity-0"
+                              "absolute left-0 top-1/2 -translate-y-1/2 w-1 rounded-r-full bg-[hsl(var(--sidebar-active))] shadow-[0_0_8px_hsl(var(--sidebar-active))] transition-all duration-200 ease-out",
+                              active ? "h-7 opacity-100" : "h-0 opacity-0"
                             )}
                           />
-                          <Icon className={cn(
-                            "h-4 w-4 shrink-0 transition-colors",
-                            active ? "text-[hsl(var(--sidebar-active))]" : "group-hover:text-[hsl(var(--sidebar-fg))]"
-                          )} />
+                          <Icon
+                            strokeWidth={2}
+                            className={cn(
+                              "h-[18px] w-[18px] shrink-0 transition-colors",
+                              active ? "text-[hsl(var(--sidebar-active))]" : "text-[hsl(var(--sidebar-fg))]"
+                            )}
+                          />
                           <span className={cn(
                             "flex-1 truncate transition-opacity duration-150",
                             expanded ? "lg:opacity-100" : "lg:opacity-0"
@@ -155,7 +169,8 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                   })}
                 </ul>
               </div>
-            ))}
+              );
+            })}
           </nav>
 
           {/* Status footer */}

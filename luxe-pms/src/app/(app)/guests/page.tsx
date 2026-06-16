@@ -15,7 +15,7 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { GUESTS, RESERVATIONS } from "@/lib/mock-data";
 import type { Guest } from "@/lib/types";
 import { money, formatDate, cn } from "@/lib/utils";
-import { apiGet, apiPost, apiPut } from "@/lib/api";
+import { apiGet, apiPost, apiPut, sendEmail } from "@/lib/api";
 
 // ========================= EXTENDED TYPE =========================
 type GuestExt = Guest & {
@@ -324,7 +324,7 @@ export default function GuestsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <Badge tone="neutral"><Globe className="h-2.5 w-2.5" />{g.nationality}</Badge>
-                        <p className="text-[11px] text-muted-foreground tabular mt-1">{g.idType}: {g.idNumber.length > 6 ? `${g.idNumber.slice(0, 4)}•••${g.idNumber.slice(-2)}` : g.idNumber}</p>
+                        <p className="text-[11px] text-muted-foreground tabular mt-1">{g.idType || "ID"}: {g.idNumber && g.idNumber.length > 6 ? `${g.idNumber.slice(0, 4)}•••${g.idNumber.slice(-2)}` : (g.idNumber || "—")}</p>
                       </td>
                       <td className="px-4 py-3">
                         {loy.tier ? <Badge tone={loy.tone}><Star className="h-2.5 w-2.5" />{loy.tier}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
@@ -355,7 +355,15 @@ export default function GuestsPage() {
                               <div className="fixed inset-0 z-30" onClick={() => setActionFor(null)} />
                               <div className="absolute right-0 top-full mt-1 w-48 bg-surface border border-border rounded-md shadow-xl z-40 py-1 text-sm">
                                 <button onClick={() => { setEditGuest(g); setActionFor(null); }} className="w-full px-3 py-1.5 hover:bg-surface-sunken text-left inline-flex items-center gap-2"><Edit className="h-3.5 w-3.5" />Edit profile</button>
-                                <button onClick={() => { showToast(`Welcome email queued to ${g.name}`); setActionFor(null); }} className="w-full px-3 py-1.5 hover:bg-surface-sunken text-left inline-flex items-center gap-2"><Mail className="h-3.5 w-3.5" />Send welcome</button>
+                                <button onClick={() => {
+                                  setActionFor(null);
+                                  const to = g.email;
+                                  if (!to) { showToast(`No email on file for ${g.name}`); return; }
+                                  showToast(`Emailing ${g.name}…`);
+                                  sendEmail({ to, subject: "Welcome to The Pearl Palace", heading: "Welcome", greeting: g.name, intro: "We're delighted to welcome you and look forward to making your stay memorable.", context: "Welcome email" })
+                                    .then(() => showToast(`Welcome email sent to ${g.name}`))
+                                    .catch(() => showToast(`Couldn't email ${g.name}`));
+                                }} className="w-full px-3 py-1.5 hover:bg-surface-sunken text-left inline-flex items-center gap-2"><Mail className="h-3.5 w-3.5" />Send welcome</button>
                                 <button onClick={() => { showToast(`Searching merge candidates for ${g.name}…`); setActionFor(null); }} className="w-full px-3 py-1.5 hover:bg-surface-sunken text-left inline-flex items-center gap-2"><Users className="h-3.5 w-3.5" />Find duplicates</button>
                                 <hr className="my-1 border-border" />
                                 {g.blacklist ? (
@@ -546,7 +554,7 @@ function AddEditGuestModal({ guest, onClose, onSave }: {
             </div>
             <button type="button" onClick={() => update("vip", !form.vip)} className={cn(
               "relative h-6 w-11 rounded-full transition-colors shrink-0",
-              form.vip ? "bg-brand" : "bg-surface-sunken"
+              form.vip ? "bg-success" : "bg-border-strong"
             )} aria-label="Toggle VIP">
               <span className={cn(
                 "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-transform",

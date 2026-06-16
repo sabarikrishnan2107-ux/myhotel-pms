@@ -12,6 +12,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
+// NOTE: pos-tables and loyalty-members are read-only hydration here; no apiPut/apiDelete needed.
 import type { Reservation } from "@/lib/types";
 
 // ------------ DATA ------------
@@ -150,6 +151,17 @@ export default function RestaurantPOSPage() {
     return () => { cancelled = true; };
   }, []);
 
+  // Live floor map from Postgres (falls back to the seed TABLES if offline).
+  // Backend PK is numeric; the UI keys tables by their business code → map id: code.
+  const [tables, setTables] = React.useState<Tbl[]>(TABLES);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Array<Tbl & { code?: string }>>("/pos-tables")
+      .then(r => { if (!cancelled && r.length) setTables(r.map(t => ({ ...t, id: t.code ?? t.id }))); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // Modifier popup
   const [modifierFor, setModifierFor] = React.useState<Item | null>(null);
 
@@ -161,7 +173,7 @@ export default function RestaurantPOSPage() {
   const [discountPct, setDiscountPct] = React.useState(0);
   const [loyaltyApplied, setLoyaltyApplied] = React.useState(0);
 
-  const table = TABLES.find(t => t.id === selectedTable)!;
+  const table = tables.find(t => t.id === selectedTable) ?? tables[0];
   const lines = orders[selectedTable] ?? [];
 
   const filteredItems = React.useMemo(() => {
@@ -287,7 +299,7 @@ export default function RestaurantPOSPage() {
         <Card className="col-span-12 lg:col-span-3 p-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Floor Map</p>
-            <Badge tone="neutral">{TABLES.length} tables</Badge>
+            <Badge tone="neutral">{tables.length} tables</Badge>
           </div>
 
           {/* Legend */}
@@ -301,7 +313,7 @@ export default function RestaurantPOSPage() {
           </div>
 
           <div className="grid grid-cols-3 gap-2">
-            {TABLES.map(t => {
+            {tables.map(t => {
               const s = STATUS_TONE[t.status];
               const active = t.id === selectedTable;
               return (
@@ -1089,8 +1101,25 @@ function LoyaltyModal({ subtotal, onClose, onApply }: {
   onClose: () => void;
   onApply: (amt: number, member: string) => void;
 }) {
-  const [member, setMember] = React.useState("Anjali Iyer · MYH00214");
+  const [member, setMember] = React.useState("Anjali Iyer · MYH00214 · 2,400 pts · Gold");
   const [points, setPoints] = React.useState(0);
+
+  // Live loyalty roster from Postgres (falls back to the hardcoded options if offline/empty).
+  type LoyaltyRow = { name: string; membershipId: string; pointsBalance: number; tier: string };
+  const [members, setMembers] = React.useState<LoyaltyRow[]>([]);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<LoyaltyRow[]>("/loyalty-members")
+      .then(rows => {
+        if (cancelled || !rows.length) return;
+        setMembers(rows);
+        // Default the selection to the first real member (keeps onApply's name-split intact).
+        const m = rows[0];
+        setMember(`${m.name} · ${m.membershipId} · ${m.pointsBalance.toLocaleString("en-IN")} pts · ${m.tier}`);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -1120,10 +1149,19 @@ function LoyaltyModal({ subtotal, onClose, onApply }: {
           <div className="space-y-1.5">
             <Label className="text-xs">Loyalty member</Label>
             <Select value={member} onChange={e => setMember(e.target.value)}>
-              <option>Anjali Iyer · MYH00214 · 2,400 pts · Gold</option>
-              <option>Karan Mehta · MYH01188 · 1,150 pts · Silver</option>
-              <option>Priya Krishnan · MYH00077 · 5,820 pts · Platinum</option>
-              <option>Rohit Sharma · MYH00501 · 380 pts · Silver</option>
+              {members.length > 0 ? (
+                members.map(m => {
+                  const label = `${m.name} · ${m.membershipId} · ${m.pointsBalance.toLocaleString("en-IN")} pts · ${m.tier}`;
+                  return <option key={m.membershipId}>{label}</option>;
+                })
+              ) : (
+                <>
+                  <option>Anjali Iyer · MYH00214 · 2,400 pts · Gold</option>
+                  <option>Karan Mehta · MYH01188 · 1,150 pts · Silver</option>
+                  <option>Priya Krishnan · MYH00077 · 5,820 pts · Platinum</option>
+                  <option>Rohit Sharma · MYH00501 · 380 pts · Silver</option>
+                </>
+              )}
             </Select>
           </div>
 

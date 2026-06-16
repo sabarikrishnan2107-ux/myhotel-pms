@@ -308,6 +308,11 @@ function CardsView({ arrivals, onSelect }: { arrivals: Reservation[]; onSelect: 
                 <LogOut className="h-3.5 w-3.5" />Checkout
               </Button>
             </Link>
+            <Link href={`/checkout/express/${r.bookingNo}`} onClick={e => e.stopPropagation()} title="Express checkout">
+              <Button size="sm" variant="outline" className="w-full">
+                <Zap className="h-3.5 w-3.5" />Express
+              </Button>
+            </Link>
           </div>
         </Card>
       ))}

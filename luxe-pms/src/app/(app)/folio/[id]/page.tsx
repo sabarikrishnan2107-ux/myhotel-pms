@@ -17,7 +17,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Input, Label, Select } from "@/components/ui/input";
 import { RESERVATIONS, GUESTS, SAMPLE_FOLIO_CHARGES, SAMPLE_PAYMENTS } from "@/lib/mock-data";
 import { cn, money, formatDate, formatDateLong, formatTime } from "@/lib/utils";
-import { apiGet, apiPost, apiDelete } from "@/lib/api";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { useProperty, hotelName } from "@/lib/use-property";
 
 const TABS = [
@@ -29,11 +29,8 @@ const TABS = [
 ] as const;
 type TabId = typeof TABS[number]["id"];
 
-// Mock-extension data for the richer folio
-const ADJUSTMENTS = [
-  { id: "ad1", date: "2026-05-24", type: "Discount" as const, desc: "Loyalty member 10% on F&B", amount: -85, approver: "Tom W. (Mgr)" },
-  { id: "ad2", date: "2026-05-25", type: "Comp" as const, desc: "Comp — Welcome amenity (VIP)", amount: -120, approver: "Auto · VIP policy" },
-];
+// Folio-level adjustments & comps — loaded live from /folio-adjustments.
+type Adjustment = { id: string | number; date: string; type: "Discount" | "Comp"; description: string; amount: number; approver?: string };
 
 const AUDIT_LOG = [
   { id: "al1", at: "Today 13:42", actor: "Khalid R.", action: "Added charge", detail: "Airport transfer — ₹1,500 → ₹1,770 incl. GST 18%" },
@@ -60,7 +57,11 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
   // Real booking from Postgres (falls back to the seed only while offline / not found).
   const [liveRes, setLiveRes] = React.useState<typeof RESERVATIONS[number] | null>(null);
   const reservation = liveRes ?? RESERVATIONS.find(r => r.bookingNo === id) ?? RESERVATIONS[0];
-  const guest = GUESTS.find(g => g.name === reservation.guestName);
+  const mockGuest = GUESTS.find(g => g.name === reservation.guestName);
+  // Live guest from Postgres (overlays the seed so KYC fields reflect the DB).
+  const [liveGuest, setLiveGuest] = React.useState<{ id: number; name: string; idType?: string; idNumber?: string; nationality?: string; vip?: boolean; kycVerified?: boolean; kycVerifiedAt?: string; kycVerifiedBy?: string } | null>(null);
+  const guest = (liveGuest ? { ...mockGuest, ...liveGuest } : mockGuest) as
+    (Omit<NonNullable<typeof mockGuest>, "id"> & { id?: string | number; kycVerified?: boolean; kycVerifiedAt?: string; kycVerifiedBy?: string }) | undefined;
 
   const [tab, setTab] = React.useState<TabId>("overview");
   const [groupByDay, setGroupByDay] = React.useState(true);
@@ -82,7 +83,10 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
   const [charges, setCharges] = React.useState(SAMPLE_FOLIO_CHARGES);
   const [voidedIds, setVoidedIds] = React.useState<Set<string>>(new Set());
   const [payments, setPayments] = React.useState(SAMPLE_PAYMENTS);
-  const [extraAdjustments, setExtraAdjustments] = React.useState<typeof ADJUSTMENTS>([]);
+  const [adjustments, setAdjustments] = React.useState<Adjustment[]>([]);
+  const [einvoice, setEinvoice] = React.useState<{ irn?: string; ackNo?: string; ackDate?: string; status?: string; placeOfSupply?: string; recipientGstin?: string; reverseCharge?: boolean; signedJson?: unknown } | null>(null);
+  const [showAddAdjustment, setShowAddAdjustment] = React.useState(false);
+  const [showVerifyKyc, setShowVerifyKyc] = React.useState(false);
   const [internalNotes, setInternalNotes] = React.useState(NOTES.internal);
   const [noteDraft, setNoteDraft] = React.useState("");
 
@@ -96,6 +100,17 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
       .then(rows => { if (!cancelled) setCharges(rows); }).catch(() => {});
     apiGet<typeof SAMPLE_PAYMENTS>(`/folio-payments${q}`)
       .then(rows => { if (!cancelled) setPayments(rows); }).catch(() => {});
+    apiGet<Adjustment[]>(`/folio-adjustments${q}`)
+      .then(rows => { if (!cancelled) setAdjustments(rows); }).catch(() => {});
+    apiGet<NonNullable<typeof einvoice>[]>(`/einvoices${q}`)
+      .then(rows => { if (!cancelled && rows.length) setEinvoice(rows[0]); }).catch(() => {});
+    apiGet<NonNullable<typeof liveGuest>[]>("/guests")
+      .then(rows => {
+        if (cancelled) return;
+        const target = (liveRes?.guestName ?? reservation.guestName);
+        const g = rows.find(x => x.name === target);
+        if (g) setLiveGuest(g);
+      }).catch(() => {});
     return () => { cancelled = true; };
   }, [id]);
 
@@ -103,7 +118,7 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
   const chargesSubtotal = liveCharges.reduce((s, c) => s + (c.amount - c.tax), 0);
   const chargesTax = liveCharges.reduce((s, c) => s + c.tax, 0);
   const chargesTotal = liveCharges.reduce((s, c) => s + c.amount, 0);
-  const mergedAdjustments = [...ADJUSTMENTS, ...extraAdjustments];
+  const mergedAdjustments = adjustments;
 
   // Indian GST split — intra-state (Maharashtra → Maharashtra) uses CGST+SGST,
   // inter-state / foreign uses IGST. Demo logic: foreign nationals trigger IGST.
@@ -114,9 +129,18 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
   const igst = interState ? chargesTax : 0;
   // Indian e-Invoice IRN (mock — real one is 64-char SHA256 hash)
   // Deterministic so SSR matches client render
-  const irnSeed = (parseInt(reservation.bookingNo.slice(2)) || 1).toString(36).toUpperCase().padEnd(8, "X");
-  const eInvoiceIrn = `2705-${reservation.bookingNo.slice(-6)}-${irnSeed}`.slice(0, 20);
-  const eInvoiceAckNo = `1${String(120000000000 + Math.floor((parseInt(reservation.bookingNo.slice(2)) || 0) * 1379)).slice(0, 14)}`;
+  const eInvoiceGenerated = einvoice?.status === "generated";
+  const eInvoiceIrn = einvoice?.irn ?? "";
+  const eInvoiceAckNo = einvoice?.ackNo ?? "";
+  // Persist a generated e-Invoice (IRN/ACK computed server-side from the real folio totals).
+  const generateEInvoice = () => {
+    apiPost<NonNullable<typeof einvoice>>(`/einvoices/generate/${reservation.bookingNo}`, {
+      taxableValue: chargesSubtotal, cgst, sgst, igst,
+      placeOfSupply: interState ? "Inter-state" : "Maharashtra (27)",
+      recipientGstin: null, reverseCharge: false,
+    }).then(row => { setEinvoice(row); showToast("e-Invoice generated"); })
+      .catch(() => showToast("⚠ Could not generate e-Invoice"));
+  };
   const adjustmentsTotal = mergedAdjustments.reduce((s, a) => s + a.amount, 0);
   const grandTotal = chargesTotal + adjustmentsTotal;
   const paymentsTotal = payments.reduce((s, p) => s + p.amount, 0);
@@ -179,7 +203,7 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
                     <h1 className="text-lg font-semibold truncate">{reservation.guestName}</h1>
                     {reservation.vip && <Badge tone="brand"><Crown className="h-3 w-3" />VIP</Badge>}
                   </div>
-                  <p className="text-xs text-muted-foreground tabular mt-0.5">Guest #{guest?.id?.toUpperCase() ?? "—"}</p>
+                  <p className="text-xs text-muted-foreground tabular mt-0.5">Guest #{guest?.id != null ? String(guest.id).toUpperCase() : "—"}</p>
                 </div>
               </div>
               <dl className="mt-3 space-y-1 text-xs">
@@ -343,13 +367,20 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
             </div>
           </Card>
 
-          {/* Adjustments */}
-          {mergedAdjustments.length > 0 && (
-            <Card className="p-0 overflow-hidden">
-              <div className="px-5 py-3 bg-surface-elevated border-b border-border flex items-center justify-between">
-                <CardTitle>Adjustments &amp; Comps</CardTitle>
-                <Badge tone="success">{money(Math.abs(adjustmentsTotal))} off</Badge>
+          {/* Adjustments & Comps — live from /folio-adjustments */}
+          <Card className="p-0 overflow-hidden">
+            <div className="px-5 py-3 bg-surface-elevated border-b border-border flex items-center justify-between">
+              <CardTitle>Adjustments &amp; Comps</CardTitle>
+              <div className="flex items-center gap-2">
+                {adjustmentsTotal !== 0 && <Badge tone="success">{money(Math.abs(adjustmentsTotal))} off</Badge>}
+                <Button size="sm" variant="outline" onClick={() => setShowAddAdjustment(true)}>
+                  <Plus className="h-3.5 w-3.5" />Add
+                </Button>
               </div>
+            </div>
+            {mergedAdjustments.length === 0 ? (
+              <p className="px-5 py-4 text-sm text-muted-foreground">No comps or adjustments on this folio.</p>
+            ) : (
               <ul className="divide-y divide-border">
                 {mergedAdjustments.map(a => (
                   <li key={a.id} className="px-5 py-3 flex items-center gap-3">
@@ -357,15 +388,25 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
                       {a.type === "Discount" ? <Percent className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">{a.desc}</p>
+                      <p className="text-sm font-medium">{a.description}</p>
                       <p className="text-xs text-muted-foreground">{a.approver} · {formatDate(a.date)}</p>
                     </div>
                     <span className="tabular font-semibold text-success">{money(a.amount)}</span>
+                    <button
+                      type="button"
+                      aria-label="Remove adjustment"
+                      className="text-muted-foreground hover:text-danger shrink-0"
+                      onClick={() => {
+                        apiDelete(`/folio-adjustments/${a.id}`)
+                          .then(() => setAdjustments(prev => prev.filter(x => x.id !== a.id)))
+                          .catch(() => showToast("Could not remove"));
+                      }}
+                    ><X className="h-4 w-4" /></button>
                   </li>
                 ))}
               </ul>
-            </Card>
-          )}
+            )}
+          </Card>
 
           {/* India compliance — e-Invoice IRN + Form C for foreign guests */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -375,29 +416,27 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
                   <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-semibold">GST · e-Invoice</p>
                   <CardTitle>e-Invoice Compliance</CardTitle>
                 </div>
-                <Badge tone="success"><CheckCircle2 className="h-3 w-3" />Generated</Badge>
+                {eInvoiceGenerated
+                  ? <Badge tone="success"><CheckCircle2 className="h-3 w-3" />Generated</Badge>
+                  : <Badge tone="warning"><AlertCircle className="h-3 w-3" />Not generated</Badge>}
               </div>
               <dl className="space-y-2 text-sm">
-                <ComplianceRow k="IRN" v={<span className="font-mono text-[11px] tabular break-all">{eInvoiceIrn}…</span>} />
-                <ComplianceRow k="ACK No." v={<span className="font-mono tabular">{eInvoiceAckNo}</span>} />
-                <ComplianceRow k="ACK Date" v="25 May 2026, 13:42" />
-                <ComplianceRow k="Place of Supply" v={interState ? "Inter-state · IGST" : "Maharashtra (27) · CGST + SGST"} />
-                <ComplianceRow k="Recipient GSTIN" v={guest?.vip ? <span className="font-mono tabular">27AAAAA1234A1Z5</span> : <span className="text-muted-foreground italic">URP (Unregistered)</span>} />
-                <ComplianceRow k="Reverse Charge" v="No" />
+                <ComplianceRow k="IRN" v={eInvoiceIrn ? <span className="font-mono text-[11px] tabular break-all">{eInvoiceIrn.slice(0, 20)}…</span> : "—"} />
+                <ComplianceRow k="ACK No." v={<span className="font-mono tabular">{eInvoiceAckNo || "—"}</span>} />
+                <ComplianceRow k="ACK Date" v={einvoice?.ackDate || "—"} />
+                <ComplianceRow k="Place of Supply" v={einvoice?.placeOfSupply ?? (interState ? "Inter-state · IGST" : "Maharashtra (27) · CGST + SGST")} />
+                <ComplianceRow k="Recipient GSTIN" v={einvoice?.recipientGstin ? <span className="font-mono tabular">{einvoice.recipientGstin}</span> : <span className="text-muted-foreground italic">URP (Unregistered)</span>} />
+                <ComplianceRow k="Reverse Charge" v={einvoice?.reverseCharge ? "Yes" : "No"} />
               </dl>
               <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={() => {
-                  const payload = {
-                    Version: "1.1",
-                    Irn: eInvoiceIrn,
-                    AckNo: eInvoiceAckNo,
-                    AckDt: "2026-05-25 13:42:00",
-                    SellerGstin: "27AAACR5055K1Z5",
-                    BuyerGstin: guest?.vip ? "27AAAAA1234A1Z5" : "URP",
-                    DocNo: `INV-${reservation.bookingNo}`,
-                    DocTyp: "INV",
-                    TotInvVal: grandTotal,
-                    Items: liveCharges.map(c => ({ Desc: c.description, Qty: c.qty, UnitPrice: c.rate, TotAmt: c.amount, Tax: c.tax })),
+                {!eInvoiceGenerated && (
+                  <Button size="sm" variant="success" onClick={generateEInvoice}>
+                    <Sparkles className="h-3.5 w-3.5" />Generate e-Invoice
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" disabled={!eInvoiceGenerated} onClick={() => {
+                  const payload = einvoice?.signedJson ?? {
+                    Irn: eInvoiceIrn, AckNo: eInvoiceAckNo, DocNo: `INV-${reservation.bookingNo}`, TotInvVal: grandTotal,
                   };
                   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
                   const url = URL.createObjectURL(blob);
@@ -408,10 +447,11 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
                 }}>
                   <Download className="h-3.5 w-3.5" />Download Signed JSON
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setShowQR(true)}>
+                <Button size="sm" variant="ghost" disabled={!eInvoiceGenerated} onClick={() => setShowQR(true)}>
                   View QR Code
                 </Button>
               </div>
+              <p className="text-[11px] text-muted-foreground mt-3">Locally generated — not NIC-issued. Connect a GST Suvidha Provider for live IRNs.</p>
             </Card>
 
             {/* Form C for foreign guests */}
@@ -445,16 +485,25 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-semibold">Guest KYC</p>
-                    <CardTitle>Identification Verified</CardTitle>
+                    <CardTitle>{guest?.kycVerified ? "Identification Verified" : "Identification Pending"}</CardTitle>
                   </div>
-                  <Badge tone="success"><ShieldCheck className="h-3 w-3" />Verified</Badge>
+                  {guest?.kycVerified
+                    ? <Badge tone="success"><ShieldCheck className="h-3 w-3" />Verified</Badge>
+                    : <Badge tone="warning"><AlertCircle className="h-3 w-3" />Pending</Badge>}
                 </div>
                 <dl className="space-y-2 text-sm">
-                  <ComplianceRow k="ID Type" v={guest?.idType ?? "—"} />
-                  <ComplianceRow k="ID Number" v={<span className="font-mono tabular">{guest?.idNumber ?? "—"}</span>} />
-                  <ComplianceRow k="Verified On" v="23 May 2026, 14:08" />
+                  <ComplianceRow k="ID Type" v={guest?.idType || "—"} />
+                  <ComplianceRow k="ID Number" v={<span className="font-mono tabular">{guest?.idNumber || "—"}</span>} />
+                  <ComplianceRow k="Verified On" v={guest?.kycVerifiedAt || "—"} />
                   <ComplianceRow k="Hotel Register" v={<span className="font-mono tabular">HRR-2026-{reservation.bookingNo.slice(-5)}</span>} />
                 </dl>
+                {guest?.id != null && (
+                  <div className="mt-3 pt-3 border-t border-border">
+                    <Button size="sm" variant={guest?.kycVerified ? "outline" : "success"} onClick={() => setShowVerifyKyc(true)}>
+                      <ShieldCheck className="h-3.5 w-3.5" />{guest?.kycVerified ? "Re-verify KYC" : "Verify KYC"}
+                    </Button>
+                  </div>
+                )}
                 <p className="text-[11px] text-muted-foreground mt-3 pt-3 border-t border-border">
                   As required under the Hotel Register Rules. Indian nationals require Aadhaar / PAN / Driving License / Passport / Voter ID.
                 </p>
@@ -756,6 +805,24 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
           amount: -Math.abs(amount),
           paidBy: "Guest",
         }).then(created => setCharges(prev => [...prev, created])).catch(() => showToast("⚠ Save failed — backend offline"));
+      }} />}
+      {showVerifyKyc && guest?.id != null && <KycModal
+        initialType={guest?.idType ?? ""} initialNumber={guest?.idNumber ?? ""}
+        onClose={() => setShowVerifyKyc(false)}
+        onSave={(idType, idNumber) => {
+          setShowVerifyKyc(false);
+          const at = new Date().toISOString().slice(0, 16).replace("T", " ");
+          apiPut(`/guests/${guest.id}`, { idType, idNumber, kycVerified: true, kycVerifiedAt: at, kycVerifiedBy: "Front Desk" })
+            .then(() => { setLiveGuest(prev => prev ? { ...prev, idType, idNumber, kycVerified: true, kycVerifiedAt: at, kycVerifiedBy: "Front Desk" } : prev); showToast("KYC verified"); })
+            .catch(() => showToast("⚠ Could not verify — backend offline"));
+        }} />}
+      {showAddAdjustment && <AdjustmentModal onClose={() => setShowAddAdjustment(false)} onSave={(type, description, amount, approver) => {
+        setShowAddAdjustment(false);
+        apiPost<Adjustment>("/folio-adjustments", {
+          bookingNo: id, date: new Date().toISOString().slice(0, 10),
+          type, description, amount: -Math.abs(amount), approver,
+        }).then(row => { setAdjustments(prev => [...prev, row]); showToast(`${type} added`); })
+          .catch(() => showToast("⚠ Save failed — backend offline"));
       }} />}
       {showRefund && <RefundModal onClose={() => setShowRefund(false)} paymentsTotal={paymentsTotal} balance={balance} onSave={(amount, mode, reason, approver) => {
         const payload = { bookingNo: id, date: new Date().toISOString().slice(0, 10), mode: `${mode} (Refund)`, amount: -Math.abs(amount), reference: `Refund · ${reason} · ${approver}` };
@@ -1227,6 +1294,101 @@ const DISCOUNT_REASONS = [
   "Loyalty member", "Long-stay (≥7N)", "Group discount", "OTA price-match",
   "Goodwill / Compensation", "Manager comp", "VIP courtesy", "Other",
 ];
+function KycModal({ onClose, onSave, initialType, initialNumber }: {
+  onClose: () => void;
+  onSave: (idType: string, idNumber: string) => void;
+  initialType: string;
+  initialNumber: string;
+}) {
+  const [idType, setIdType] = React.useState(initialType || "Aadhaar");
+  const [idNumber, setIdNumber] = React.useState(initialNumber);
+  const canSave = idNumber.trim().length > 0;
+
+  return (
+    <Modal title="Verify Guest KYC" onClose={onClose}>
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <Label>ID Type *</Label>
+          <Select value={idType} onChange={e => setIdType(e.target.value)} className="h-9">
+            <option>Aadhaar</option>
+            <option>PAN</option>
+            <option>Passport</option>
+            <option>Driving License</option>
+            <option>Voter ID</option>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>ID Number *</Label>
+          <Input value={idNumber} onChange={e => setIdNumber(e.target.value)} placeholder="Enter the document number" className="h-9 font-mono" />
+        </div>
+        <div className="flex justify-end gap-2 pt-3 border-t border-border">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="success" disabled={!canSave} onClick={() => onSave(idType, idNumber.trim())}>
+            <ShieldCheck className="h-4 w-4" />Mark Verified
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function AdjustmentModal({ onClose, onSave }: {
+  onClose: () => void;
+  onSave: (type: "Discount" | "Comp", description: string, amount: number, approver: string) => void;
+}) {
+  const [type, setType] = React.useState<"Comp" | "Discount">("Comp");
+  const [description, setDescription] = React.useState("");
+  const [amount, setAmount] = React.useState(0);
+  const [approver, setApprover] = React.useState("Tom W. (Mgr)");
+  const canSave = description.trim().length > 0 && amount > 0;
+
+  return (
+    <Modal title="Add Adjustment / Comp" onClose={onClose}>
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <Label>Type</Label>
+          <div className="grid grid-cols-2 gap-2">
+            {(["Comp", "Discount"] as const).map(t => (
+              <button key={t} type="button" onClick={() => setType(t)} className={cn(
+                "h-10 rounded-md border-2 text-sm font-medium transition-colors",
+                type === t ? "border-brand bg-brand-soft/30" : "border-border hover:bg-surface-sunken"
+              )}>{t}</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Description *</Label>
+          <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="e.g. Welcome amenity (VIP)" className="h-9" />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Amount (₹) *</Label>
+          <Input type="number" value={amount} onChange={e => setAmount(Math.max(0, Number(e.target.value) || 0))} className="h-10 tabular text-base font-semibold" min={0} />
+          <p className="text-xs text-muted-foreground">Recorded as a credit on the folio (reduces the grand total).</p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Approver</Label>
+          <Select value={approver} onChange={e => setApprover(e.target.value)} className="h-9">
+            <option>Tom W. (Mgr)</option>
+            <option>Anjali S. (Mgr)</option>
+            <option>Auto · VIP policy</option>
+            <option>System · Loyalty rule</option>
+          </Select>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-3 border-t border-border">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="success" disabled={!canSave} onClick={() => onSave(type, description.trim(), amount, approver)}>
+            <Sparkles className="h-4 w-4" />Add {type}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function DiscountModal({ onClose, onSave, chargesTotal }: {
   onClose: () => void;
   onSave: (reason: string, amount: number, approver: string) => void;

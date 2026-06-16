@@ -41,8 +41,8 @@ export default function NewHallBookingPage() {
   const [email, setEmail] = React.useState("");
   const [eventType, setEventType] = React.useState("Wedding");
   const [hallId, setHallId] = React.useState(HALLS[0].id);
-  const [eventDate, setEventDate] = React.useState("2026-05-27");
   const todayISO = new Date().toLocaleDateString("en-CA"); // blocks past dates on event date
+  const [eventDate, setEventDate] = React.useState(todayISO); // default to today, never the past
   const [startTime, setStartTime] = React.useState("18:00");
   const [endTime, setEndTime] = React.useState("23:00");
   const [pax, setPax] = React.useState(150);
@@ -80,7 +80,7 @@ export default function NewHallBookingPage() {
     if (saving || !requiredOk) return;
     setSaving(true);
     apiPost("/hall-bookings", {
-      customer, phone, hall: hall.name, date: eventDate,
+      customer, phone, email, hall: hall.name, date: eventDate,
       start: startTime, end: endTime, guests: pax,
       package: pkg?.name ?? eventType,
       advance: Math.round(advance), total: Math.round(total),
@@ -217,7 +217,7 @@ export default function NewHallBookingPage() {
               {capacityWarning && (
                 <p className="text-xs text-warning inline-flex items-center gap-1 mt-2">
                   <AlertCircle className="h-3 w-3" />
-                  Selected hall capacity is {hall.capacity} · {extraPax} extra guests incur AED 35/pax surcharge
+                  Selected hall capacity is {hall.capacity} · {extraPax} extra guests incur {money(35)}/pax surcharge
                 </p>
               )}
             </Field>

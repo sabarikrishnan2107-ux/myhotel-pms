@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select } from "@/components/ui/input";
+import { Input, Label, Select, NumberInput } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { KPICard } from "@/components/ui/kpi-card";
 import { INVENTORY_ITEMS } from "@/lib/mock-data-ext";
@@ -411,7 +411,8 @@ export default function InventoryPage() {
   const [tab, setTab] = React.useState<TabId>("items");
   const [items, setItems] = React.useState<Item[]>(INVENTORY_ITEMS);
   const [movements, setMovements] = React.useState<Movement[]>(INITIAL_MOVEMENTS);
-  const [pos] = React.useState<PO[]>(INITIAL_POS);
+  const [pos, setPos] = React.useState<PO[]>(INITIAL_POS);
+  const [wastage, setWastage] = React.useState(WASTAGE_LOG);
 
   // Filters
   const [search, setSearch] = React.useState("");
@@ -441,6 +442,16 @@ export default function InventoryPage() {
   const [rLoc, setRLoc] = React.useState<"all" | RoomLocation>("all");
   const [rCond, setRCond] = React.useState<"all" | RoomCondition>("all");
   const [editRoom, setEditRoom] = React.useState<RoomAmenity | "new" | null>(null);
+
+  // Load amenities from Postgres (replace the seed fallback once live data resolves).
+  React.useEffect(() => {
+    apiGet<KitchenAmenity[]>("/kitchen-amenities")
+      .then(rows => { if (rows.length) setKitchen(rows.map(r => ({ ...r, id: String(r.id) }))); })
+      .catch(() => {});
+    apiGet<RoomAmenity[]>("/room-amenities")
+      .then(rows => { if (rows.length) setRoomAm(rows.map(r => ({ ...r, id: String(r.id) }))); })
+      .catch(() => {});
+  }, []);
 
   // Shared grid/list view mode for amenity tabs
   const [amenityView, setAmenityView] = React.useState<"grid" | "list">("grid");
@@ -473,6 +484,10 @@ export default function InventoryPage() {
   React.useEffect(() => {
     let cancelled = false;
     apiGet<Item[]>("/inventory-items").then(r => { if (!cancelled) setItems(r); }).catch(() => {});
+    apiGet<Purchase[]>("/inventory-purchases").then(r => { if (!cancelled && r.length) setPurchases(r); }).catch(() => {});
+    apiGet<Movement[]>("/stock-movements").then(r => { if (!cancelled && r.length) setMovements(r); }).catch(() => {});
+    apiGet<PO[]>("/purchase-orders").then(r => { if (!cancelled && r.length) setPos(r); }).catch(() => {});
+    apiGet<typeof WASTAGE_LOG>("/inventory-wastage").then(r => { if (!cancelled && r.length) setWastage(r); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -696,7 +711,7 @@ export default function InventoryPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {movements.map(m => (
-                <tr key={m.id} className="hover:bg-surface-sunken/40">
+                <tr key={String(m.id)} className="hover:bg-surface-sunken/40">
                   <td className="px-5 py-3 text-muted-foreground tabular">{m.time}</td>
                   <td className="px-5 py-3 font-medium">{m.itemName}</td>
                   <td className="px-5 py-3">
@@ -705,10 +720,10 @@ export default function InventoryPage() {
                     </Badge>
                   </td>
                   <td className={cn("px-5 py-3 text-right tabular font-semibold inline-flex items-center justify-end gap-0.5 w-full",
-                    m.qty > 0 ? "text-success" : "text-warning"
+                    Number(m.qty) > 0 ? "text-success" : "text-warning"
                   )}>
-                    {m.qty > 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
-                    {Math.abs(m.qty)}
+                    {Number(m.qty) > 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                    {Math.abs(Number(m.qty))}
                   </td>
                   <td className="px-5 py-3 text-xs text-muted-foreground">{m.reason}</td>
                   <td className="px-5 py-3 text-xs">{m.by}</td>
@@ -742,11 +757,11 @@ export default function InventoryPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {pos.map(p => (
-                <tr key={p.id} className="hover:bg-surface-sunken/40">
+                <tr key={String(p.id)} className="hover:bg-surface-sunken/40">
                   <td className="px-5 py-3 font-medium tabular">{p.po}</td>
                   <td className="px-5 py-3">{p.vendor}</td>
-                  <td className="px-5 py-3 text-right tabular">{p.items}</td>
-                  <td className="px-5 py-3 text-right tabular font-medium">{money(p.amount)}</td>
+                  <td className="px-5 py-3 text-right tabular">{Number(p.items)}</td>
+                  <td className="px-5 py-3 text-right tabular font-medium">{money(Number(p.amount))}</td>
                   <td className="px-5 py-3 text-muted-foreground">{p.date}</td>
                   <td className="px-5 py-3">
                     <Badge tone={p.status === "Received" ? "success" : p.status === "Sent" ? "info" : p.status === "Draft" ? "neutral" : "danger"}>{p.status}</Badge>
@@ -776,12 +791,12 @@ export default function InventoryPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {WASTAGE_LOG.map(w => (
-                <tr key={w.id}>
+              {wastage.map(w => (
+                <tr key={String(w.id)}>
                   <td className="px-5 py-3 text-muted-foreground">{w.date}</td>
                   <td className="px-5 py-3 font-medium">{w.item}</td>
                   <td className="px-5 py-3 text-right tabular">{w.qty}</td>
-                  <td className="px-5 py-3 text-right tabular text-danger font-medium">{money(w.cost)}</td>
+                  <td className="px-5 py-3 text-right tabular text-danger font-medium">{money(Number(w.cost))}</td>
                   <td className="px-5 py-3 text-xs text-muted-foreground">{w.reason}</td>
                 </tr>
               ))}
@@ -789,7 +804,7 @@ export default function InventoryPage() {
             <tfoot className="bg-surface-elevated border-t border-border">
               <tr>
                 <td colSpan={3} className="px-5 py-2.5 text-right text-xs uppercase tracking-wider font-semibold text-muted-foreground">Total wastage (MTD)</td>
-                <td className="px-5 py-2.5 text-right tabular font-semibold text-danger">{money(WASTAGE_LOG.reduce((s, w) => s + w.cost, 0))}</td>
+                <td className="px-5 py-2.5 text-right tabular font-semibold text-danger">{money(wastage.reduce((s, w) => s + Number(w.cost), 0))}</td>
                 <td></td>
               </tr>
             </tfoot>
@@ -903,7 +918,7 @@ export default function InventoryPage() {
                           </Button>
                           <Button size="sm" variant="ghost" onClick={() => {
                             if (window.confirm(`Remove ${k.name} from registry?`)) {
-                              setKitchen(prev => prev.filter(x => x.id !== k.id));
+                              setKitchen(prev => prev.filter(x => x.id !== k.id)); if (/^\d+$/.test(String(k.id))) apiDelete(`/kitchen-amenities/${k.id}`).catch(() => {});
                               showToast(`${k.name} removed`);
                             }
                           }}>
@@ -969,7 +984,7 @@ export default function InventoryPage() {
                                 </button>
                                 <button type="button" onClick={() => {
                                   if (window.confirm(`Remove ${k.name} from registry?`)) {
-                                    setKitchen(prev => prev.filter(x => x.id !== k.id));
+                                    setKitchen(prev => prev.filter(x => x.id !== k.id)); if (/^\d+$/.test(String(k.id))) apiDelete(`/kitchen-amenities/${k.id}`).catch(() => {});
                                     showToast(`${k.name} removed`);
                                   }
                                 }} className="h-7 w-7 rounded-md border border-border hover:bg-danger-soft hover:text-danger inline-flex items-center justify-center text-muted-foreground" title="Delete">
@@ -1098,7 +1113,7 @@ export default function InventoryPage() {
                           </Button>
                           <Button size="sm" variant="ghost" onClick={() => {
                             if (window.confirm(`Remove ${r.name} from registry?`)) {
-                              setRoomAm(prev => prev.filter(x => x.id !== r.id));
+                              setRoomAm(prev => prev.filter(x => x.id !== r.id)); if (/^\d+$/.test(String(r.id))) apiDelete(`/room-amenities/${r.id}`).catch(() => {});
                               showToast(`${r.name} removed`);
                             }
                           }}>
@@ -1166,7 +1181,7 @@ export default function InventoryPage() {
                                 </button>
                                 <button type="button" onClick={() => {
                                   if (window.confirm(`Remove ${r.name} from registry?`)) {
-                                    setRoomAm(prev => prev.filter(x => x.id !== r.id));
+                                    setRoomAm(prev => prev.filter(x => x.id !== r.id)); if (/^\d+$/.test(String(r.id))) apiDelete(`/room-amenities/${r.id}`).catch(() => {});
                                     showToast(`${r.name} removed`);
                                   }
                                 }} className="h-7 w-7 rounded-md border border-border hover:bg-danger-soft hover:text-danger inline-flex items-center justify-center text-muted-foreground" title="Delete">
@@ -1286,7 +1301,7 @@ export default function InventoryPage() {
                         const totals = purchaseTotals(p);
                         const balance = totals.grandTotal - p.paidAmount;
                         return (
-                          <tr key={p.id} className="hover:bg-surface-sunken/40 transition-colors cursor-pointer" onClick={() => setViewPurchase(p)}>
+                          <tr key={String(p.id)} className="hover:bg-surface-sunken/40 transition-colors cursor-pointer" onClick={() => setViewPurchase(p)}>
                             <td className="px-3 py-2 tabular text-xs">{p.date}</td>
                             <td className="px-3 py-2 font-mono tabular text-xs">{p.billNo}</td>
                             <td className="px-3 py-2">
@@ -1318,6 +1333,7 @@ export default function InventoryPage() {
                                   if (window.confirm(`Delete purchase ${p.billNo} from ${p.vendor}?`)) {
                                     setPurchases(prev => prev.filter(x => x.id !== p.id));
                                     showToast(`Purchase ${p.billNo} removed`);
+                                    apiDelete(`/inventory-purchases/${p.id}`).catch(() => showToast("⚠ Save failed — backend offline"));
                                   }
                                 }} className="h-7 w-7 rounded-md border border-border hover:bg-danger-soft hover:text-danger inline-flex items-center justify-center text-muted-foreground" title="Delete">
                                   <Trash2 className="h-3 w-3" />
@@ -1358,11 +1374,17 @@ export default function InventoryPage() {
           onClose={() => setEditKitchen(null)}
           onSave={(data) => {
             if (editKitchen === "new") {
-              setKitchen(prev => [{ ...data, id: `k-${Date.now().toString(36)}` }, ...prev]);
+              const tempId = `k-${Date.now().toString(36)}`;
+              setKitchen(prev => [{ ...data, id: tempId }, ...prev]);
               showToast(`Added ${data.name}`);
+              apiPost<KitchenAmenity>("/kitchen-amenities", data)
+                .then(created => setKitchen(prev => prev.map(x => x.id === tempId ? { ...created, id: String(created.id) } : x)))
+                .catch(() => showToast("⚠ Save failed — backend offline"));
             } else if (editKitchen && typeof editKitchen === "object") {
-              setKitchen(prev => prev.map(x => x.id === editKitchen.id ? { ...x, ...data, id: x.id } : x));
+              const id = editKitchen.id;
+              setKitchen(prev => prev.map(x => x.id === id ? { ...x, ...data, id } : x));
               showToast(`Updated ${data.name}`);
+              if (/^\d+$/.test(String(id))) apiPut(`/kitchen-amenities/${id}`, data).catch(() => showToast("⚠ Save failed — backend offline"));
             }
             setEditKitchen(null);
           }}
@@ -1374,11 +1396,17 @@ export default function InventoryPage() {
           onClose={() => setEditRoom(null)}
           onSave={(data) => {
             if (editRoom === "new") {
-              setRoomAm(prev => [{ ...data, id: `r-${Date.now().toString(36)}` }, ...prev]);
+              const tempId = `r-${Date.now().toString(36)}`;
+              setRoomAm(prev => [{ ...data, id: tempId }, ...prev]);
               showToast(`Added ${data.name}`);
+              apiPost<RoomAmenity>("/room-amenities", data)
+                .then(created => setRoomAm(prev => prev.map(x => x.id === tempId ? { ...created, id: String(created.id) } : x)))
+                .catch(() => showToast("⚠ Save failed — backend offline"));
             } else if (editRoom && typeof editRoom === "object") {
-              setRoomAm(prev => prev.map(x => x.id === editRoom.id ? { ...x, ...data, id: x.id } : x));
+              const id = editRoom.id;
+              setRoomAm(prev => prev.map(x => x.id === id ? { ...x, ...data, id } : x));
               showToast(`Updated ${data.name}`);
+              if (/^\d+$/.test(String(id))) apiPut(`/room-amenities/${id}`, data).catch(() => showToast("⚠ Save failed — backend offline"));
             }
             setEditRoom(null);
           }}
@@ -1390,11 +1418,19 @@ export default function InventoryPage() {
           onClose={() => setEditPurchase(null)}
           onSave={(data, addAnother) => {
             if (editPurchase === "new") {
-              setPurchases(prev => [{ ...data, id: `pur-${Date.now().toString(36)}` }, ...prev]);
+              const tempId = `pur-${Date.now().toString(36)}`;
+              setPurchases(prev => [{ ...data, id: tempId }, ...prev]);
               showToast(`Purchase ${data.billNo} recorded`);
+              apiPost<Purchase>("/inventory-purchases", data)
+                .then(created => setPurchases(prev => prev.map(x => x.id === tempId ? { ...created, id: String(created.id) } : x)))
+                .catch(() => showToast("⚠ Save failed — backend offline"));
             } else if (editPurchase && typeof editPurchase === "object") {
-              setPurchases(prev => prev.map(x => x.id === editPurchase.id ? { ...data, id: x.id } : x));
+              const id = editPurchase.id;
+              setPurchases(prev => prev.map(x => x.id === id ? { ...data, id } : x));
               showToast(`Purchase ${data.billNo} updated`);
+              apiPut<Purchase>(`/inventory-purchases/${id}`, data)
+                .then(updated => setPurchases(prev => prev.map(x => x.id === id ? { ...updated, id: String(updated.id) } : x)))
+                .catch(() => showToast("⚠ Save failed — backend offline"));
             }
             if (!addAnother) setEditPurchase(null);
             else setEditPurchase("new");
@@ -1510,11 +1546,11 @@ function AddItemModal({ item, vendors, categories, onClose, onSubmit }: { item?:
           </div>
           <div className="space-y-1.5">
             <Label>{isEdit ? "Current stock" : "Opening stock"}</Label>
-            <Input type="number" value={qty} onChange={e => setQty(Number(e.target.value))} />
+            <NumberInput value={qty} onChange={setQty} />
           </div>
           <div className="space-y-1.5">
             <Label>Min stock</Label>
-            <Input type="number" value={min} onChange={e => setMin(Number(e.target.value))} />
+            <NumberInput value={min} onChange={setMin} />
           </div>
           <div className="space-y-1.5">
             <Label>Unit</Label>
@@ -1524,7 +1560,7 @@ function AddItemModal({ item, vendors, categories, onClose, onSubmit }: { item?:
           </div>
           <div className="space-y-1.5">
             <Label>Unit price (₹)</Label>
-            <Input type="number" value={price} onChange={e => setPrice(Number(e.target.value))} step="0.01" />
+            <NumberInput value={price} onChange={setPrice} step="0.01" />
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-2 border-t border-border">

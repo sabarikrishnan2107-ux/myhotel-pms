@@ -149,11 +149,22 @@ export default function MaintenancePage() {
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
+  // Preventive schedules & AMC vendors: seed from the const (offline fallback),
+  // replaced by the backend on mount; .catch keeps the seed when offline.
+  const [schedules, setSchedules] = React.useState<ScheduleItem[]>(SCHEDULES);
+  const [amcVendors, setAmcVendors] = React.useState<AMCVendor[]>(AMC_VENDORS);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<ScheduleItem[]>("/maintenance-schedules").then(r => { if (!cancelled && r.length) setSchedules(r); }).catch(() => {});
+    apiGet<AMCVendor[]>("/amc-contracts").then(r => { if (!cancelled && r.length) setAmcVendors(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // ----- Counts for hero strip -----
-  const dueToday = SCHEDULES.filter(s => dueStatus(s.nextDue).daysOff === 0).length;
-  const overdue = SCHEDULES.filter(s => dueStatus(s.nextDue).daysOff < 0).length;
-  const upcomingWeek = SCHEDULES.filter(s => dueStatus(s.nextDue).daysOff >= 0 && dueStatus(s.nextDue).daysOff <= 7).length;
-  const amcRenewSoon = AMC_VENDORS.filter(a => {
+  const dueToday = schedules.filter(s => dueStatus(s.nextDue).daysOff === 0).length;
+  const overdue = schedules.filter(s => dueStatus(s.nextDue).daysOff < 0).length;
+  const upcomingWeek = schedules.filter(s => dueStatus(s.nextDue).daysOff >= 0 && dueStatus(s.nextDue).daysOff <= 7).length;
+  const amcRenewSoon = amcVendors.filter(a => {
     const d = Math.floor((new Date(a.contractEnd).getTime() - TODAY.getTime()) / (24 * 60 * 60 * 1000));
     return d >= 0 && d <= 90;
   }).length;
@@ -164,6 +175,40 @@ export default function MaintenancePage() {
     apiGet<Ticket[]>("/maintenance-tickets").then(r => { if (!cancelled) setTickets(r); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  // Mark a preventive task done: optimistically advance lastDone -> today,
+  // recompute nextDue by frequency, then PUT (offline-safe).
+  const markScheduleDone = (s: ScheduleItem) => {
+    const FREQ_DAYS: Record<Frequency, number> = { daily: 1, weekly: 7, monthly: 30, quarterly: 90 };
+    const lastDone = isoDate(TODAY);
+    const nd = new Date(TODAY); nd.setDate(nd.getDate() + FREQ_DAYS[s.frequency]);
+    const nextDue = isoDate(nd);
+    setSchedules(prev => prev.map(x => x.id === s.id ? { ...x, lastDone, nextDue } : x));
+    apiPut(`/maintenance-schedules/${s.id}`, { lastDone, nextDue }).catch(() => showToast("⚠ Save failed — backend offline"));
+    showToast(`${s.equipment} marked done · next due ${FREQ_LABEL[s.frequency].toLowerCase()}`);
+  };
+
+  // Renew an AMC contract: optimistically flip status to active, then PUT.
+  const renewVendor = (v: AMCVendor) => {
+    setAmcVendors(prev => prev.map(x => x.id === v.id ? { ...x, status: "active" } : x));
+    apiPut(`/amc-contracts/${v.id}`, { status: "active" }).catch(() => showToast("⚠ Save failed — backend offline"));
+    showToast(`Renewal request sent to ${v.name}`);
+  };
+
+  // ----- Create: new preventive schedule / AMC vendor (persist via POST) -----
+  const [newScheduleOpen, setNewScheduleOpen] = React.useState(false);
+  const [newAmcOpen, setNewAmcOpen] = React.useState(false);
+
+  const addSchedule = (s: Omit<ScheduleItem, "id">) => {
+    apiPost<ScheduleItem>("/maintenance-schedules", s)
+      .then(row => { setSchedules(prev => [{ ...row, id: String(row.id) }, ...prev]); showToast(`Schedule added · ${s.equipment}`); })
+      .catch(() => { setSchedules(prev => [{ id: `sc${Date.now()}`, ...s }, ...prev]); showToast("⚠ Save failed — added locally only"); });
+  };
+  const addAmc = (v: Omit<AMCVendor, "id">) => {
+    apiPost<AMCVendor>("/amc-contracts", v)
+      .then(row => { setAmcVendors(prev => [{ ...row, id: String(row.id) }, ...prev]); showToast(`AMC vendor added · ${v.name}`); })
+      .catch(() => { setAmcVendors(prev => [{ id: `amc${Date.now()}`, ...v }, ...prev]); showToast("⚠ Save failed — added locally only"); });
+  };
 
   // Persist a ticket patch (assign / status change) optimistically.
   const persistTicket = (id: Ticket["id"], patch: Partial<Ticket>) => {
@@ -199,7 +244,7 @@ export default function MaintenancePage() {
       if (statusFilter !== "all" && t.status !== statusFilter) return false;
       return true;
     });
-  }, [q, priority, category, technician, statusFilter]);
+  }, [tickets, q, priority, category, technician, statusFilter]);
 
   const sorted = React.useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -254,7 +299,7 @@ export default function MaintenancePage() {
         {([
           { id: "reactive",  label: "Reactive Tickets",     icon: Wrench,         count: tickets.filter(t => t.status !== "resolved").length },
           { id: "schedule",  label: "Preventive Schedule",  icon: CalendarClock,  count: dueToday + overdue },
-          { id: "amc",       label: "AMC / Vendors",         icon: ShieldCheck,    count: AMC_VENDORS.length },
+          { id: "amc",       label: "AMC / Vendors",         icon: ShieldCheck,    count: amcVendors.length },
         ] as { id: MainTab; label: string; icon: typeof Wrench; count: number }[]).map(t => {
           const Icon = t.icon;
           const active = mainTab === t.id;
@@ -376,16 +421,29 @@ export default function MaintenancePage() {
       {/* ============ PREVENTIVE SCHEDULE TAB ============ */}
       {mainTab === "schedule" && (
         <ScheduleTab
+          schedules={schedules}
           freqFilter={freqFilter}
           setFreqFilter={setFreqFilter}
           onOpenDetail={setScheduleDetail}
           onShowToast={showToast}
+          onMarkDone={markScheduleDone}
+          onNew={() => setNewScheduleOpen(true)}
         />
       )}
 
       {/* ============ AMC VENDORS TAB ============ */}
       {mainTab === "amc" && (
-        <AmcTab onOpenDetail={setAmcDetail} onShowToast={showToast} />
+        <AmcTab vendors={amcVendors} onOpenDetail={setAmcDetail} onRenew={renewVendor} onNew={() => setNewAmcOpen(true)} />
+      )}
+
+      {/* New preventive schedule modal */}
+      {newScheduleOpen && (
+        <NewScheduleModal onClose={() => setNewScheduleOpen(false)} onSave={(s) => { setNewScheduleOpen(false); addSchedule(s); }} />
+      )}
+
+      {/* New AMC vendor modal */}
+      {newAmcOpen && (
+        <NewAmcModal onClose={() => setNewAmcOpen(false)} onSave={(v) => { setNewAmcOpen(false); addAmc(v); }} />
       )}
 
       {/* New Ticket modal */}
@@ -412,6 +470,7 @@ export default function MaintenancePage() {
           item={scheduleDetail}
           onClose={() => setScheduleDetail(null)}
           onAction={(msg) => { setScheduleDetail(null); showToast(msg); }}
+          onMarkDone={(s) => { setScheduleDetail(null); markScheduleDone(s); }}
         />
       )}
 
@@ -421,6 +480,7 @@ export default function MaintenancePage() {
           vendor={amcDetail}
           onClose={() => setAmcDetail(null)}
           onAction={(msg) => { setAmcDetail(null); showToast(msg); }}
+          onRenew={(v) => { setAmcDetail(null); renewVendor(v); }}
         />
       )}
 
@@ -632,20 +692,27 @@ function Th({
 }
 
 // ===================== PREVENTIVE SCHEDULE TAB =====================
-function ScheduleTab({ freqFilter, setFreqFilter, onOpenDetail, onShowToast }: {
+function ScheduleTab({ schedules, freqFilter, setFreqFilter, onOpenDetail, onShowToast, onMarkDone, onNew }: {
+  schedules: ScheduleItem[];
   freqFilter: "all" | Frequency;
   setFreqFilter: (f: "all" | Frequency) => void;
   onOpenDetail: (item: ScheduleItem) => void;
   onShowToast: (m: string) => void;
+  onMarkDone: (s: ScheduleItem) => void;
+  onNew: () => void;
 }) {
-  const list = SCHEDULES.filter(s => freqFilter === "all" || s.frequency === freqFilter);
+  const list = schedules.filter(s => freqFilter === "all" || s.frequency === freqFilter);
   // Group by frequency for upcoming-reminders strip
-  const upcoming = [...SCHEDULES].sort((a, b) => new Date(a.nextDue).getTime() - new Date(b.nextDue).getTime()).slice(0, 5);
-  const overdueItems = SCHEDULES.filter(s => dueStatus(s.nextDue).daysOff < 0);
-  const todayItems = SCHEDULES.filter(s => dueStatus(s.nextDue).daysOff === 0);
+  const upcoming = [...schedules].sort((a, b) => new Date(a.nextDue).getTime() - new Date(b.nextDue).getTime()).slice(0, 5);
+  const overdueItems = schedules.filter(s => dueStatus(s.nextDue).daysOff < 0);
+  const todayItems = schedules.filter(s => dueStatus(s.nextDue).daysOff === 0);
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-muted-foreground">{schedules.length} preventive tasks</h2>
+        <Button size="sm" onClick={onNew}><Plus className="h-4 w-4" />New schedule</Button>
+      </div>
       {/* Upcoming reminders banner */}
       {(overdueItems.length > 0 || todayItems.length > 0) && (
         <Card className={cn(
@@ -675,9 +742,9 @@ function ScheduleTab({ freqFilter, setFreqFilter, onOpenDetail, onShowToast }: {
       {/* Frequency selector */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {(["daily", "weekly", "monthly", "quarterly"] as Frequency[]).map(f => {
-          const count = SCHEDULES.filter(s => s.frequency === f).length;
-          const overdueCount = SCHEDULES.filter(s => s.frequency === f && dueStatus(s.nextDue).daysOff < 0).length;
-          const todayCount = SCHEDULES.filter(s => s.frequency === f && dueStatus(s.nextDue).daysOff === 0).length;
+          const count = schedules.filter(s => s.frequency === f).length;
+          const overdueCount = schedules.filter(s => s.frequency === f && dueStatus(s.nextDue).daysOff < 0).length;
+          const todayCount = schedules.filter(s => s.frequency === f && dueStatus(s.nextDue).daysOff === 0).length;
           const active = freqFilter === f;
           return (
             <button
@@ -763,7 +830,7 @@ function ScheduleTab({ freqFilter, setFreqFilter, onOpenDetail, onShowToast }: {
                         </button>
                         <button
                           type="button"
-                          onClick={() => onShowToast(`${s.equipment} marked done · next due ${FREQ_LABEL[s.frequency].toLowerCase()}`)}
+                          onClick={() => onMarkDone(s)}
                           className="h-8 w-8 rounded-md border border-border hover:bg-success hover:text-white hover:border-success inline-flex items-center justify-center text-muted-foreground transition-colors"
                           title="Mark done"
                         >
@@ -821,27 +888,33 @@ function ScheduleTab({ freqFilter, setFreqFilter, onOpenDetail, onShowToast }: {
 }
 
 // ===================== AMC VENDORS TAB =====================
-function AmcTab({ onOpenDetail, onShowToast }: {
+function AmcTab({ vendors, onOpenDetail, onRenew, onNew }: {
+  vendors: AMCVendor[];
   onOpenDetail: (v: AMCVendor) => void;
-  onShowToast: (m: string) => void;
+  onRenew: (v: AMCVendor) => void;
+  onNew: () => void;
 }) {
-  const totalAnnualFee = AMC_VENDORS.reduce((t, v) => t + v.annualFee, 0);
-  const expiringSoon = AMC_VENDORS.filter(v => {
+  const totalAnnualFee = vendors.reduce((t, v) => t + v.annualFee, 0);
+  const expiringSoon = vendors.filter(v => {
     const d = Math.floor((new Date(v.contractEnd).getTime() - TODAY.getTime()) / (24 * 60 * 60 * 1000));
     return d >= 0 && d <= 90;
   });
-  const expired = AMC_VENDORS.filter(v => v.status === "expired");
+  const expired = vendors.filter(v => v.status === "expired");
 
   const STATUS_TONE_AMC = { active: "success", "renewal-due": "warning", expired: "danger" } as const;
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-muted-foreground">{vendors.length} AMC contracts</h2>
+        <Button size="sm" onClick={onNew}><Plus className="h-4 w-4" />New AMC vendor</Button>
+      </div>
       {/* Strip summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card className="p-4">
           <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Active AMCs</p>
-          <p className="text-2xl font-display font-medium mt-1 tabular">{AMC_VENDORS.filter(v => v.status === "active").length}</p>
-          <p className="text-[11px] text-muted-foreground">of {AMC_VENDORS.length} total contracts</p>
+          <p className="text-2xl font-display font-medium mt-1 tabular">{vendors.filter(v => v.status === "active").length}</p>
+          <p className="text-[11px] text-muted-foreground">of {vendors.length} total contracts</p>
         </Card>
         <Card className="p-4">
           <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold inline-flex items-center gap-1"><IndianRupee className="h-3 w-3" />Annual spend</p>
@@ -879,7 +952,7 @@ function AmcTab({ onOpenDetail, onShowToast }: {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {AMC_VENDORS.map(v => {
+              {vendors.map(v => {
                 const nextV = dueStatus(v.nextVisit);
                 const contractEndDays = Math.floor((new Date(v.contractEnd).getTime() - TODAY.getTime()) / (24 * 60 * 60 * 1000));
                 return (
@@ -941,7 +1014,7 @@ function AmcTab({ onOpenDetail, onShowToast }: {
                         {v.status !== "active" && (
                           <button
                             type="button"
-                            onClick={() => onShowToast(`Renewal request sent to ${v.name}`)}
+                            onClick={() => onRenew(v)}
                             className="h-8 px-2 rounded-md bg-warning text-white text-[11px] font-medium hover:bg-warning/90 inline-flex items-center gap-1"
                             title="Renew contract"
                           >
@@ -1133,10 +1206,11 @@ function QuickAssignModal({ ticket, onClose, onAssign }: {
 }
 
 // ===================== SCHEDULE DETAIL MODAL =====================
-function ScheduleDetailModal({ item, onClose, onAction }: {
+function ScheduleDetailModal({ item, onClose, onAction, onMarkDone }: {
   item: ScheduleItem;
   onClose: () => void;
   onAction: (msg: string) => void;
+  onMarkDone: (s: ScheduleItem) => void;
 }) {
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -1200,7 +1274,7 @@ function ScheduleDetailModal({ item, onClose, onAction }: {
             <Button variant="outline" size="sm" onClick={() => onAction(`Reminder sent to ${item.assignee}`)}>
               <Bell className="h-3.5 w-3.5" />Notify
             </Button>
-            <Button variant="success" size="sm" onClick={() => onAction(`${item.equipment} marked complete · next due ${FREQ_LABEL[item.frequency].toLowerCase()}`)}>
+            <Button variant="success" size="sm" onClick={() => onMarkDone(item)}>
               <CheckCircle2 className="h-3.5 w-3.5" />Mark done
             </Button>
           </div>
@@ -1211,10 +1285,11 @@ function ScheduleDetailModal({ item, onClose, onAction }: {
 }
 
 // ===================== AMC DETAIL MODAL =====================
-function AmcDetailModal({ vendor, onClose, onAction }: {
+function AmcDetailModal({ vendor, onClose, onAction, onRenew }: {
   vendor: AMCVendor;
   onClose: () => void;
   onAction: (msg: string) => void;
+  onRenew: (v: AMCVendor) => void;
 }) {
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -1299,10 +1374,221 @@ function AmcDetailModal({ vendor, onClose, onAction }: {
             <Button
               variant={vendor.status === "expired" ? "danger" : "success"}
               size="sm"
-              onClick={() => onAction(`${vendor.status === "expired" ? "URGENT renewal" : "Renewal"} request sent to ${vendor.name}`)}
+              onClick={() => onRenew(vendor)}
             >
               <RotateCw className="h-3.5 w-3.5" />Renew
             </Button>
+          </div>
+        </Card>
+      </div>
+    </>
+  );
+}
+
+// ===================== NEW PREVENTIVE SCHEDULE MODAL =====================
+function NewScheduleModal({ onClose, onSave }: {
+  onClose: () => void;
+  onSave: (s: Omit<ScheduleItem, "id">) => void;
+}) {
+  const [equipment, setEquipment] = React.useState("");
+  const [area, setArea] = React.useState("");
+  const [category, setCategory] = React.useState(CATEGORIES[0] ?? "HVAC");
+  const [frequency, setFrequency] = React.useState<Frequency>("monthly");
+  const [assignee, setAssignee] = React.useState("");
+  const [durationMin, setDurationMin] = React.useState(30);
+
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [onClose]);
+
+  const valid = equipment.trim() !== "";
+  const save = () => {
+    const FREQ_DAYS: Record<Frequency, number> = { daily: 1, weekly: 7, monthly: 30, quarterly: 90 };
+    const nd = new Date(TODAY); nd.setDate(nd.getDate() + FREQ_DAYS[frequency]);
+    onSave({
+      equipment: equipment.trim(),
+      area: area.trim() || "—",
+      category,
+      frequency,
+      lastDone: isoDate(TODAY),
+      nextDue: isoDate(nd),
+      assignee: assignee.trim() || "Unassigned",
+      durationMin: Number(durationMin) || 30,
+    });
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <Card className="pointer-events-auto w-full max-w-lg p-0 animate-in shadow-xl overflow-hidden">
+          <div className="px-5 py-4 bg-surface-elevated border-b border-border flex items-center gap-3">
+            <span className="h-10 w-10 rounded-md bg-brand-soft text-brand-soft-foreground inline-flex items-center justify-center shrink-0">
+              <CalendarClock className="h-5 w-5" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold">New preventive schedule</h3>
+              <p className="text-xs text-muted-foreground">Recurs automatically · next due is computed from the frequency</p>
+            </div>
+            <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
+          </div>
+
+          <div className="px-5 py-4 space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Equipment / task *</Label>
+              <Input value={equipment} onChange={e => setEquipment(e.target.value)} placeholder="e.g. Generator test run" className="h-9" autoFocus />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Area</Label>
+                <Input value={area} onChange={e => setArea(e.target.value)} placeholder="e.g. Basement · DG room" className="h-9" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Category</Label>
+                <Select value={category} onChange={e => setCategory(e.target.value)} className="h-9">
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Frequency</Label>
+                <Select value={frequency} onChange={e => setFrequency(e.target.value as Frequency)} className="h-9">
+                  {(["daily", "weekly", "monthly", "quarterly"] as Frequency[]).map(f => <option key={f} value={f}>{FREQ_LABEL[f]}</option>)}
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Assignee</Label>
+                <Input value={assignee} onChange={e => setAssignee(e.target.value)} placeholder="e.g. Ravi K." className="h-9" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Duration (min)</Label>
+                <Input type="number" value={durationMin} onChange={e => setDurationMin(Number(e.target.value))} className="h-9 tabular" />
+              </div>
+            </div>
+          </div>
+
+          <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2 bg-surface-sunken/30">
+            <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button size="sm" disabled={!valid} onClick={save}><CheckCircle2 className="h-3.5 w-3.5" />Add schedule</Button>
+          </div>
+        </Card>
+      </div>
+    </>
+  );
+}
+
+// ===================== NEW AMC VENDOR MODAL =====================
+function NewAmcModal({ onClose, onSave }: {
+  onClose: () => void;
+  onSave: (v: Omit<AMCVendor, "id">) => void;
+}) {
+  const [name, setName] = React.useState("");
+  const [category, setCategory] = React.useState("HVAC / Cooling");
+  const [contactPerson, setContactPerson] = React.useState("");
+  const [phone, setPhone] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [annualFee, setAnnualFee] = React.useState(120000);
+  const [visitFrequency, setVisitFrequency] = React.useState<Frequency>("monthly");
+  const [slaResponseHours, setSlaResponseHours] = React.useState(24);
+
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [onClose]);
+
+  const valid = name.trim() !== "";
+  const save = () => {
+    const FREQ_DAYS: Record<Frequency, number> = { daily: 1, weekly: 7, monthly: 30, quarterly: 90 };
+    const end = new Date(TODAY); end.setFullYear(end.getFullYear() + 1);
+    const nv = new Date(TODAY); nv.setDate(nv.getDate() + FREQ_DAYS[visitFrequency]);
+    onSave({
+      name: name.trim(),
+      category,
+      contactPerson: contactPerson.trim() || "—",
+      phone: phone.trim() || "—",
+      // Email must stay a valid address (or empty) — the backend rejects a
+      // placeholder like "—" with 422, which would silently drop the save.
+      email: email.trim(),
+      address: "",
+      contractStart: isoDate(TODAY),
+      contractEnd: isoDate(end),
+      annualFee: Number(annualFee) || 0,
+      visitFrequency,
+      lastVisit: isoDate(TODAY),
+      nextVisit: isoDate(nv),
+      slaResponseHours: Number(slaResponseHours) || 24,
+      status: "active",
+    });
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <Card className="pointer-events-auto w-full max-w-lg p-0 animate-in shadow-xl overflow-hidden">
+          <div className="px-5 py-4 bg-surface-elevated border-b border-border flex items-center gap-3">
+            <span className="h-10 w-10 rounded-md bg-brand-soft text-brand-soft-foreground inline-flex items-center justify-center shrink-0">
+              <ShieldCheck className="h-5 w-5" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold">New AMC vendor</h3>
+              <p className="text-xs text-muted-foreground">Annual maintenance contract · dates default to a 1-year term</p>
+            </div>
+            <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
+          </div>
+
+          <div className="px-5 py-4 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Vendor name *</Label>
+                <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. CoolBreeze HVAC Pvt" className="h-9" autoFocus />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Category</Label>
+                <Input value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. HVAC / Cooling" className="h-9" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Contact person</Label>
+                <Input value={contactPerson} onChange={e => setContactPerson(e.target.value)} placeholder="e.g. Ananya Iyer" className="h-9" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Phone</Label>
+                <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 …" className="h-9" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Email</Label>
+              <Input value={email} onChange={e => setEmail(e.target.value)} placeholder="amc@vendor.in" className="h-9" />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Annual fee (₹)</Label>
+                <Input type="number" value={annualFee} onChange={e => setAnnualFee(Number(e.target.value))} className="h-9 tabular" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Visit freq.</Label>
+                <Select value={visitFrequency} onChange={e => setVisitFrequency(e.target.value as Frequency)} className="h-9">
+                  {(["daily", "weekly", "monthly", "quarterly"] as Frequency[]).map(f => <option key={f} value={f}>{FREQ_LABEL[f]}</option>)}
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">SLA (hrs)</Label>
+                <Input type="number" value={slaResponseHours} onChange={e => setSlaResponseHours(Number(e.target.value))} className="h-9 tabular" />
+              </div>
+            </div>
+          </div>
+
+          <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2 bg-surface-sunken/30">
+            <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button size="sm" disabled={!valid} onClick={save}><CheckCircle2 className="h-3.5 w-3.5" />Add vendor</Button>
           </div>
         </Card>
       </div>

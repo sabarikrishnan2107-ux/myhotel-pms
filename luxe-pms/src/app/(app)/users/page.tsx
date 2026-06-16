@@ -14,7 +14,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { USERS } from "@/lib/mock-data-ext";
 import { cn } from "@/lib/utils";
-import { apiGet, apiPost, apiPut } from "@/lib/api";
+import { apiGet, apiPost, apiPut, sendEmail } from "@/lib/api";
 
 type Role = "Owner" | "Manager" | "Reception" | "Accounts" | "Housekeeping" | "Restaurant";
 
@@ -123,6 +123,16 @@ export default function UsersPage() {
       .then(row => setUsers(prev => [enrich({ ...row, id: String(row.id) }, prev.length), ...prev]))
       .catch(() => showToast("Could not save user"));
     setInviteOpen(false);
+    if (data.sendEmail && data.email) {
+      sendEmail({
+        to: data.email,
+        subject: "You've been invited to The Pearl Palace PMS",
+        heading: "Account Invitation",
+        greeting: data.name,
+        intro: `You've been added to the PMS as ${data.role}. Sign in to set your password and get started.`,
+        context: "User invite",
+      }).catch(() => {});
+    }
     const channels = [data.sendEmail && "Email", data.sendWhatsApp && "WhatsApp"].filter(Boolean).join(" + ");
     showToast(`Invite sent to ${data.name} via ${channels || "Email"}`);
   };
@@ -326,7 +336,14 @@ export default function UsersPage() {
       {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} onSave={handleInvite} />}
       {editUser && <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSave={handleEditSave} />}
       {detailUser && <UserDetailDrawer user={detailUser} onClose={() => setDetailUser(null)} onEdit={() => { setEditUser(detailUser); setDetailUser(null); }} onSuspend={() => { handleSuspend(detailUser); setDetailUser(null); }} onKillSessions={() => { handleKillSessions(detailUser); setDetailUser(prev => prev ? { ...prev, sessions: [] } : null); }} onToast={showToast} />}
-      {resetUser && <ResetPasswordModal user={resetUser} onClose={() => setResetUser(null)} onConfirm={(method) => { setResetUser(null); showToast(`Password reset · ${method} sent to ${resetUser.name}`); }} />}
+      {resetUser && <ResetPasswordModal user={resetUser} onClose={() => setResetUser(null)} onConfirm={(method) => {
+        const target = resetUser;
+        setResetUser(null);
+        if (/email/i.test(method) && target.email) {
+          sendEmail({ to: target.email, subject: "Password reset", heading: "Password Reset", greeting: target.name, intro: "A password reset was requested for your account. Please follow the instructions in the PMS to set a new password.", context: "Password reset" }).catch(() => {});
+        }
+        showToast(`Password reset · ${method} sent to ${target.name}`);
+      }} />}
 
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 bg-foreground text-background rounded-lg px-4 py-3 text-sm shadow-2xl animate-in slide-in-from-bottom-2 inline-flex items-center gap-2.5 ring-1 ring-foreground/20">

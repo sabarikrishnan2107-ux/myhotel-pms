@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
 
 type BeoStatus = "draft" | "confirmed" | "in-progress" | "completed";
 type EventType = "Wedding" | "Conference" | "Birthday" | "Cocktail" | "Corporate Offsite" | "Anniversary";
@@ -30,7 +31,33 @@ type Beo = {
   margin: number;      // pct 0-1
   advance: number;     // INR
   status: BeoStatus;
+  // Section detail (persisted columns) — optional on the base type, required in DraftBeo.
+  startTime?: string;
+  endTime?: string;
+  vegPax?: number;
+  nonVegPax?: number;
+  dietary?: string;
+  barPackage?: string;
+  cocktails?: string;
+  avNotes?: string;
+  decorTheme?: string;
+  decorColor?: string;
+  staffService?: number;
+  staffKitchen?: number;
+  staffCaptains?: number;
+  parking?: number;
+  security?: number;
+  florist?: string;
+  photographer?: string;
+  ancillary?: number;
+  // Backend carry-fields: the human BEO number lives in `beoNo`, the numeric PK
+  // in `_pk`. `id` mirrors `beoNo` so existing JSX/comparisons stay byte-identical.
+  beoNo?: string;
+  _pk?: number;
 };
+
+// Raw row shape as returned by GET /banquet-orders (numeric id + beoNo column).
+type BeoRow = Omit<Beo, "id"> & { id: number; beoNo: string };
 
 const STATUS_TONE: Record<BeoStatus, "neutral"|"info"|"warning"|"success"> = {
   draft: "neutral",
@@ -198,6 +225,16 @@ export default function BeoPage() {
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
   const [beos, setBeos] = React.useState<Beo[]>(SEED);
+
+  // Live load: replace the SEED fallback with real rows. Map the numeric PK onto
+  // `_pk` and surface the human number (beoNo) as `id` so every render is identical.
+  // On network/offline error we keep the SEED already in state.
+  React.useEffect(() => {
+    apiGet<BeoRow[]>("/banquet-orders")
+      .then(rows => { if (rows.length) setBeos(rows.map(rowToBeo)); })
+      .catch(() => {});
+  }, []);
+
   const [q, setQ] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<BeoStatus | "all">("all");
   const [typeFilter, setTypeFilter] = React.useState<EventType | "all">("all");
@@ -227,6 +264,27 @@ export default function BeoPage() {
 
   const openNew = () => { setEditingBeo(null); setCreatorOpen(true); };
   const openEdit = (b: Beo) => { setEditingBeo(b); setCreatorOpen(true); };
+
+  // Persist a saved/approved BEO to the backend. New rows POST (sending the human
+  // number as `beoNo`, dropping the local `id`); existing rows PUT to the numeric
+  // PK. On success we reconcile the server row (carrying `_pk`/`beoNo`) into state.
+  // The caller already applied an optimistic setBeos, so failures are silent and
+  // the offline value stays — UI behaviour is unchanged.
+  const persistBeo = (editing: Beo | null, b: Beo) => {
+    const { id: _id, beoNo: _beoNo, _pk, ...rest } = b;
+    void _id; void _beoNo;
+    const body = { ...rest, beoNo: b.id };
+    if (editing && editing._pk != null) {
+      apiPut<BeoRow>(`/banquet-orders/${editing._pk}`, body)
+        .then(updated => setBeos(prev => prev.map(x => x.id === b.id ? rowToBeo(updated) : x)))
+        .catch(() => {});
+    } else {
+      apiPost<BeoRow>("/banquet-orders", body)
+        .then(created => setBeos(prev => prev.map(x => x.id === b.id ? rowToBeo(created) : x)))
+        .catch(() => {});
+    }
+    void _pk;
+  };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
@@ -418,6 +476,7 @@ export default function BeoPage() {
           onClose={() => setCreatorOpen(false)}
           onSaveDraft={(b) => {
             setBeos(prev => editingBeo ? prev.map(x => x.id === b.id ? b : x) : [b, ...prev]);
+            persistBeo(editingBeo, b);
             showToast(`${b.id} saved as draft`);
             setCreatorOpen(false);
           }}
@@ -425,6 +484,7 @@ export default function BeoPage() {
           onApprove={(b) => {
             const updated = { ...b, status: "confirmed" as BeoStatus };
             setBeos(prev => editingBeo ? prev.map(x => x.id === b.id ? updated : x) : [updated, ...prev]);
+            persistBeo(editingBeo, updated);
             showToast(`${b.id} approved & locked`);
             setCreatorOpen(false);
           }}
@@ -500,26 +560,28 @@ type DraftBeo = Beo & {
 
 function makeDraft(initial: Beo | null): DraftBeo {
   if (initial) {
+    // Use the BEO's saved section detail when present (loaded from the backend);
+    // fall back to sensible demo defaults for any field not yet set.
     return {
       ...initial,
-      startTime: "08:00",
-      endTime: "23:00",
-      vegPax: Math.round(initial.pax * 0.55),
-      nonVegPax: Math.round(initial.pax * 0.45),
-      dietary: "12 Jain, 4 vegan, 2 nut allergies, 8 halal",
-      barPackage: initial.pkg.toLowerCase(),
-      cocktails: "Saffron Sour (signature), Marina Spritz, Bombay Sling",
-      avNotes: "2x line array, 4 lapel mics, 6 wash lights, LED backdrop 12x8 ft",
-      decorTheme: "Royal Rajasthani",
-      decorColor: "Maroon & Gold",
-      staffService: 22,
-      staffKitchen: 14,
-      staffCaptains: 4,
-      parking: 90,
-      security: 6,
-      florist: "Bloom & Bouquet — Bandra",
-      photographer: "ShaadiClicks Studios",
-      ancillary: Math.round(initial.revenue * 0.12),
+      startTime: initial.startTime ?? "08:00",
+      endTime: initial.endTime ?? "23:00",
+      vegPax: initial.vegPax ?? Math.round(initial.pax * 0.55),
+      nonVegPax: initial.nonVegPax ?? Math.round(initial.pax * 0.45),
+      dietary: initial.dietary ?? "12 Jain, 4 vegan, 2 nut allergies, 8 halal",
+      barPackage: initial.barPackage ?? initial.pkg.toLowerCase(),
+      cocktails: initial.cocktails ?? "Saffron Sour (signature), Marina Spritz, Bombay Sling",
+      avNotes: initial.avNotes ?? "2x line array, 4 lapel mics, 6 wash lights, LED backdrop 12x8 ft",
+      decorTheme: initial.decorTheme ?? "Royal Rajasthani",
+      decorColor: initial.decorColor ?? "Maroon & Gold",
+      staffService: initial.staffService ?? 22,
+      staffKitchen: initial.staffKitchen ?? 14,
+      staffCaptains: initial.staffCaptains ?? 4,
+      parking: initial.parking ?? 90,
+      security: initial.security ?? 6,
+      florist: initial.florist ?? "Bloom & Bouquet — Bandra",
+      photographer: initial.photographer ?? "ShaadiClicks Studios",
+      ancillary: initial.ancillary ?? Math.round(initial.revenue * 0.12),
     };
   }
   return {
@@ -586,6 +648,25 @@ function BeoCreator({
     margin: d.margin,
     advance: d.advance,
     status: d.status,
+    // Section detail — round-tripped to the banquet_orders columns.
+    startTime: d.startTime,
+    endTime: d.endTime,
+    vegPax: d.vegPax,
+    nonVegPax: d.nonVegPax,
+    dietary: d.dietary,
+    barPackage: d.barPackage,
+    cocktails: d.cocktails,
+    avNotes: d.avNotes,
+    decorTheme: d.decorTheme,
+    decorColor: d.decorColor,
+    staffService: d.staffService,
+    staffKitchen: d.staffKitchen,
+    staffCaptains: d.staffCaptains,
+    parking: d.parking,
+    security: d.security,
+    florist: d.florist,
+    photographer: d.photographer,
+    ancillary: d.ancillary,
   });
 
   const marginAmount = d.revenue * d.margin;
@@ -1525,6 +1606,13 @@ function SectionBilling({ d, set }: SectionProps) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Map a backend row -> UI Beo. The human number (beoNo) becomes `id` so every
+// existing `{b.id}` render and `x.id === b.id` comparison stays byte-identical;
+// the numeric PK is carried on `_pk` for PUT/DELETE URLs.
+function rowToBeo(r: BeoRow): Beo {
+  return { ...r, id: r.beoNo, beoNo: r.beoNo, _pk: r.id };
+}
 
 function formatBeoDate(iso: string) {
   try {

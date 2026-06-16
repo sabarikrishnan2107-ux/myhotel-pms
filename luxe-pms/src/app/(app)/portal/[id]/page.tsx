@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money, initials } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
 
 // ---------- types & data ----------
 type TabKey = "stay" | "order" | "folio" | "services" | "concierge";
@@ -96,8 +97,39 @@ export default function GuestPortalPage({ params }: { params: Promise<{ id: stri
     { key: "concierge", label: "Concierge", icon: MessageCircle },
   ];
 
-  const guestName = "Anjali Iyer";
-  const roomNo = "412";
+  // Read-only live data: resolve this stay from real guest → booking → folio.
+  // Falls back to the demo values offline so the portal always renders.
+  const [guestName, setGuestName] = React.useState("Anjali Iyer");
+  const [roomNo, setRoomNo] = React.useState("412");
+  const [folioLines, setFolioLines] = React.useState<FolioLine[]>(FOLIO_LINES);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const guests = await apiGet<{ id: number | string; name: string }[]>("/guests");
+        const g = guests.find(x => String(x.id) === String(id));
+        if (!g || cancelled) return;
+        setGuestName(g.name);
+
+        const bookings = await apiGet<{ guestName: string; roomNumber?: string; bookingNo: string; status?: string }[]>("/bookings");
+        const mine = bookings.filter(b => (b.guestName ?? "").toLowerCase() === g.name.toLowerCase());
+        const booking = mine.find(b => /house|check|stay/i.test(b.status ?? "")) ?? mine[0];
+        if (!booking || cancelled) return;
+        if (booking.roomNumber) setRoomNo(booking.roomNumber);
+
+        const charges = await apiGet<{ id: number | string; description: string; date: string; amount: number }[]>(
+          `/folio-charges?bookingNo=${encodeURIComponent(booking.bookingNo)}`,
+        );
+        if (charges.length && !cancelled) {
+          setFolioLines(charges.map(c => ({ id: String(c.id), label: c.description, ts: c.date, amount: c.amount })));
+        }
+      } catch {
+        /* offline → keep the demo fallback */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id]);
 
   return (
     <div className="min-h-screen bg-surface-sunken/40">
@@ -148,7 +180,7 @@ export default function GuestPortalPage({ params }: { params: Promise<{ id: stri
         <div className="px-4 py-4 space-y-4">
           {tab === "stay" && <MyStayTab guestName={guestName} roomNo={roomNo} showToast={showToast} />}
           {tab === "order" && <OrderTab roomNo={roomNo} showToast={showToast} />}
-          {tab === "folio" && <FolioTab showToast={showToast} />}
+          {tab === "folio" && <FolioTab showToast={showToast} folioLines={folioLines} />}
           {tab === "services" && <ServicesTab showToast={showToast} />}
           {tab === "concierge" && <ConciergeTab guestName={guestName} showToast={showToast} />}
         </div>
@@ -446,11 +478,11 @@ function OrderTab({ roomNo, showToast }: { roomNo: string; showToast: (m: string
 }
 
 // ---------- FOLIO ----------
-function FolioTab({ showToast }: { showToast: (m: string) => void }) {
+function FolioTab({ showToast, folioLines = FOLIO_LINES }: { showToast: (m: string) => void; folioLines?: FolioLine[] }) {
   const [tipOpen, setTipOpen] = React.useState(false);
   const [tip, setTip] = React.useState<number>(500);
 
-  const subtotal = FOLIO_LINES.reduce((s, l) => s + l.amount, 0);
+  const subtotal = folioLines.reduce((s, l) => s + l.amount, 0);
   const gst = Math.round(subtotal * 0.18);
   const total = subtotal + gst;
 
@@ -494,7 +526,7 @@ function FolioTab({ showToast }: { showToast: (m: string) => void }) {
               </tr>
             </thead>
             <tbody>
-              {FOLIO_LINES.map((l) => (
+              {folioLines.map((l) => (
                 <tr key={l.id} className="border-t border-border">
                   <td className="px-3 py-2.5">
                     <div className="text-sm leading-tight">{l.label}</div>

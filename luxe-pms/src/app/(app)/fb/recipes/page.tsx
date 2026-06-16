@@ -11,6 +11,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { useProperty, hotelName } from "@/lib/use-property";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
 
 // ----------------------- Types & Mock Pantry -----------------------
 type Ingredient = {
@@ -370,6 +371,23 @@ export default function RecipesPage() {
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
+  // ----- live data: replace seed with real Postgres rows when available -----
+  React.useEffect(() => {
+    apiGet<Recipe[]>("/recipes")
+      .then(rows => {
+        if (Array.isArray(rows) && rows.length) {
+          const norm = rows.map(r => ({
+            ...r,
+            id: String(r.id),
+            ingredients: (r.ingredients ?? []).map(i => ({ ...i, id: String(i.id) })),
+          }));
+          setRecipes(norm);
+          setSelectedId(prev => (norm.some(r => r.id === prev) ? prev : norm[0].id));
+        }
+      })
+      .catch(() => { /* offline — keep SEED_RECIPES fallback */ });
+  }, []);
+
   // ----- derived -----
   const filtered = recipes.filter(r => {
     const matchCat = catFilter === "All" || r.category === catFilter;
@@ -389,6 +407,8 @@ export default function RecipesPage() {
   // ----- mutations on selected -----
   const updateSelected = (patch: Partial<Recipe>) => {
     setRecipes(rs => rs.map(r => r.id === selected.id ? { ...r, ...patch } : r));
+    // Persist the edit to Postgres for backend-backed recipes (numeric id).
+    if (/^\d+$/.test(selected.id)) apiPut(`/recipes/${selected.id}`, patch).catch(() => {});
   };
 
   const removeIngredient = (ingId: string) => {
@@ -437,23 +457,33 @@ export default function RecipesPage() {
 
   const createRecipe = () => {
     if (!draftName.trim()) { showToast("Enter a dish name"); return; }
-    const newR: Recipe = {
-      id: `r${Date.now()}`,
+    const base = {
       name: draftName.trim(),
       category: draftCat,
       menuPrice: parseFloat(draftPrice) || 450,
       portions: 1, prepMin: 15, cookMin: 20,
       labour: 25, overhead: 15,
       description: "New recipe — add description and ingredients.",
-      allergens: [],
+      allergens: [] as Allergen[],
       nutrition: { calories: 0, protein: 0, carbs: 0, fat: 0 },
-      ingredients: [],
+      ingredients: [] as Ingredient[],
     };
-    setRecipes(rs => [newR, ...rs]);
-    setSelectedId(newR.id);
+    const localR: Recipe = { id: `r${Date.now()}`, ...base };
     setShowNewModal(false);
     setDraftName(""); setDraftPrice("450");
-    showToast(`Recipe "${newR.name}" created · add ingredients`);
+    // Persist to Postgres; swap in the server row (real id) on success so later
+    // edits PUT correctly. Fall back to a local-only row if the backend is down.
+    apiPost<Recipe>("/recipes", base)
+      .then(saved => {
+        const norm: Recipe = { ...saved, ...base, id: String(saved.id) };
+        setRecipes(rs => [norm, ...rs]);
+        setSelectedId(norm.id);
+      })
+      .catch(() => {
+        setRecipes(rs => [localR, ...rs]);
+        setSelectedId(localR.id);
+      });
+    showToast(`Recipe "${base.name}" created · add ingredients`);
   };
 
   const ingCost = ingredientCost(selected.ingredients);

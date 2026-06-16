@@ -75,8 +75,11 @@ export function NewGuestForm({ onCancel, onSave }: Props) {
   const dobAge = ageFromIso(data.dob);
   const dobValid = data.dob === "" || (dobAge !== null && dobAge >= MIN_GUEST_AGE && dobAge <= MAX_GUEST_AGE);
 
-  // Required: name, phone, idNumber, idFront, photo + (if DOB entered) valid age
-  const requiredOk = !!(data.name && data.phone && data.idNumber && data.idFront && data.photo) && dobValid;
+  // Required to save: name + phone (and a valid DOB if one was entered).
+  // ID number / ID scans / face photo are optional here — they can be captured
+  // later at check-in. This keeps the form usable so a guest's basic details
+  // (name, phone, email, ID) always save instead of being dropped.
+  const requiredOk = !!(data.name && data.phone) && dobValid;
   const completionPct = (() => {
     const fields: (keyof NewGuestData)[] = ["name", "phone", "email", "address", "nationality", "idType", "idNumber", "idFront", "idBack", "photo", "signature"];
     const filled = fields.filter(f => !!data[f]).length;
@@ -152,11 +155,11 @@ export function NewGuestForm({ onCancel, onSave }: Props) {
       </Section>
 
       {/* Identification + Photo + Signature */}
-      <Section icon={IdCard} title="Identification & Captures" required>
+      <Section icon={IdCard} title="Identification & Captures" optional>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* ID details */}
           <div className="space-y-3">
-            <Field label="ID type *">
+            <Field label="ID type">
               <Select value={data.idType} onChange={e => update("idType", e.target.value)}>
                 {data.nationality === "India" ? (
                   <>
@@ -176,10 +179,10 @@ export function NewGuestForm({ onCancel, onSave }: Props) {
                 )}
               </Select>
             </Field>
-            <Field label="ID number *">
+            <Field label="ID number">
               <Input value={data.idNumber} onChange={e => update("idNumber", e.target.value)} placeholder="A12345678" />
             </Field>
-            <Field label={`${data.idType} — front *`}>
+            <Field label={`${data.idType} — front`}>
               <DocumentUpload label="ID Front" onChange={v => update("idFront", v)} />
             </Field>
             <Field label={`${data.idType} — back`}>
@@ -191,7 +194,7 @@ export function NewGuestForm({ onCancel, onSave }: Props) {
           <div>
             <div className="flex items-center gap-2 mb-1.5">
               <Camera className="h-4 w-4 text-muted-foreground" />
-              <Label>Guest face photo *</Label>
+              <Label>Guest face photo</Label>
             </div>
             <p className="text-[11px] text-muted-foreground mb-2">Webcam capture (recommended) or upload</p>
             <PhotoCapture onChange={v => update("photo", v)} aspect="square" />
@@ -253,20 +256,20 @@ export function NewGuestForm({ onCancel, onSave }: Props) {
           <button
             type="button"
             onClick={() => update("vip", !data.vip)}
-            className={cn(
-              "w-full flex items-center justify-between gap-3 p-3 rounded-md border transition-colors",
-              data.vip ? "border-brand bg-brand-soft" : "border-border hover:bg-surface-sunken"
-            )}
+            className="w-full flex items-center justify-between gap-3 p-3 rounded-md border border-border hover:bg-surface-sunken transition-colors"
           >
             <div className="text-left">
               <p className="text-sm font-medium">Mark as VIP</p>
               <p className="text-xs text-muted-foreground">Priority handling, complimentary upgrade if available</p>
             </div>
             <span className={cn(
-              "h-5 w-9 rounded-full relative transition-colors shrink-0",
-              data.vip ? "bg-brand" : "bg-surface-sunken border border-border"
+              "h-6 w-11 rounded-full relative transition-colors shrink-0",
+              data.vip ? "bg-success" : "bg-border-strong"
             )}>
-              <span className={cn("absolute top-0.5 h-3.5 w-3.5 rounded-full bg-surface shadow-xs transition-transform", data.vip ? "translate-x-4" : "translate-x-0.5")} />
+              <span className={cn(
+                "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-[left] duration-200 ease-out",
+                data.vip ? "left-[calc(100%-1.375rem)]" : "left-0.5"
+              )} />
             </span>
           </button>
           <Field label="Remarks">
@@ -285,8 +288,8 @@ export function NewGuestForm({ onCancel, onSave }: Props) {
       <div className="flex items-center justify-between gap-3 pt-4 border-t border-border">
         <div className="text-xs text-muted-foreground">
           {requiredOk
-            ? "All required captures complete · ready to save"
-            : "Required: name · phone · ID number · ID front · guest photo"}
+            ? "Ready to save · ID & photo can be captured at check-in"
+            : "Required: name · phone"}
         </div>
         <div className="flex gap-2">
           <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>

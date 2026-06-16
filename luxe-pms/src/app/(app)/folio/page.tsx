@@ -12,7 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { KPICard } from "@/components/ui/kpi-card";
 import { RESERVATIONS } from "@/lib/mock-data";
-import type { PaymentStatus } from "@/lib/types";
+import type { PaymentStatus, Reservation } from "@/lib/types";
+import { apiGet, sendEmail } from "@/lib/api";
 import { money, formatTime, cn } from "@/lib/utils";
 
 type SortKey = "balance-desc" | "balance-asc" | "checkin-asc" | "name-asc";
@@ -27,8 +28,16 @@ export default function FolioListPage() {
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
+  // Bookings from Postgres (falls back to seeds only while the API is offline).
+  const [bookings, setBookings] = React.useState<Reservation[]>(RESERVATIONS);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Reservation[]>("/bookings").then(rows => { if (!cancelled) setBookings(rows); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // Active folios = anything not fully paid
-  const allFolios = RESERVATIONS.filter(r => r.paymentStatus !== "paid" || r.balance > 0);
+  const allFolios = bookings.filter(r => r.paymentStatus !== "paid" || r.balance > 0);
 
   const filtered = React.useMemo(() => {
     const list = allFolios.filter(r => {
@@ -50,7 +59,7 @@ export default function FolioListPage() {
   const unpaidCount = allFolios.filter(r => r.paymentStatus === "unpaid").length;
   const partialCount = allFolios.filter(r => r.paymentStatus === "partial").length;
   const avgBalance = allFolios.length > 0 ? Math.round(totalOutstanding / allFolios.length) : 0;
-  const sources = Array.from(new Set(RESERVATIONS.map(r => r.source)));
+  const sources = Array.from(new Set(bookings.map(r => r.source)));
   const activeFilters = (paymentFilter !== "all" ? 1 : 0) + (sourceFilter !== "all" ? 1 : 0) + (search ? 1 : 0);
 
   return (
@@ -202,9 +211,16 @@ export default function FolioListPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
                         setRemindedAt(prev => ({ ...prev, [r.id]: Date.now() }));
-                        showToast(`Reminder sent to ${r.guestName} · Email + WhatsApp`);
+                        showToast(`Emailing ${r.guestName}…`);
+                        try {
+                          const guests = await apiGet<{ name: string; email?: string }[]>("/guests");
+                          const to = guests.find(g => g.name === r.guestName)?.email;
+                          if (!to) { showToast(`No email on file for ${r.guestName}`); return; }
+                          await sendEmail({ to, subject: `Payment Reminder · ${r.bookingNo}`, heading: "Payment Reminder", greeting: r.guestName, intro: "This is a friendly reminder regarding the outstanding balance on your folio.", rows: [{ label: "Booking No", value: r.bookingNo }, { label: "Balance due", value: money(r.balance) }], context: "Folio reminder" });
+                          showToast(`Reminder emailed to ${r.guestName}`);
+                        } catch { showToast(`Couldn't email ${r.guestName}`); }
                       }}
                       className={cn(
                         "h-8 w-8 rounded-md border inline-flex items-center justify-center transition-colors relative",

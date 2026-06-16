@@ -14,11 +14,11 @@ import { Badge } from "@/components/ui/badge";
 import { KPICard } from "@/components/ui/kpi-card";
 import { HALLS, HALL_BOOKINGS } from "@/lib/mock-data-ext";
 import { money, cn, formatDate } from "@/lib/utils";
-import { apiGet, apiPut } from "@/lib/api";
+import { apiGet, apiPut, apiPost } from "@/lib/api";
 
 type Hall = typeof HALLS[number];
 type HallStatus = "confirmed" | "pending" | "in-progress" | "cancelled";
-type HallBooking = Omit<typeof HALL_BOOKINGS[number], "status"> & { status: HallStatus; notes?: string };
+type HallBooking = Omit<typeof HALL_BOOKINGS[number], "status"> & { status: HallStatus; notes?: string; email?: string };
 
 const STATUS_TONE: Record<HallBooking["status"] | "cancelled" | "completed", "success" | "warning" | "info" | "danger" | "neutral"> = {
   confirmed: "success",
@@ -91,6 +91,14 @@ export default function HallsPage() {
     apiPut(`/hall-bookings/${b.id}`, { status: "cancelled" }).catch(() => showToast("Could not cancel"));
     setCancelTarget(null);
     showToast(`${b.customer} cancelled · ${money(refund)} refund processed (${reason})`);
+  };
+  // Sends the booking-confirmation email via the backend (Gmail SMTP).
+  const handleEmail = (b: HallBooking) => {
+    setActionMenuFor(null);
+    showToast(`Emailing ${b.customer}…`);
+    apiPost(`/hall-bookings/${b.id}/send-email`, {})
+      .then(() => showToast(`Confirmation emailed to ${b.customer}`))
+      .catch(() => showToast(`Couldn't email ${b.customer} — no address on file?`));
   };
 
   // Close menu on outside click
@@ -328,7 +336,7 @@ export default function HallsPage() {
                               <button type="button" onClick={() => { showToast(`Itinerary printed for ${b.customer}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
                                 <Printer className="h-3.5 w-3.5 text-muted-foreground" />Print BEO sheet
                               </button>
-                              <button type="button" onClick={() => { showToast(`Email sent to ${b.customer}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                              <button type="button" onClick={() => handleEmail(b)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
                                 <Mail className="h-3.5 w-3.5 text-brand" />Email customer
                               </button>
                               <button type="button" onClick={() => { showToast(`WhatsApp sent to ${b.customer}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
@@ -431,7 +439,7 @@ function HallDetailDrawer({ booking, notes, onClose, onModify, onCancel }: {
           <div className="flex-1 min-w-0">
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Hall booking · {booking.id.toUpperCase()}</p>
             <h2 className="text-xl font-semibold truncate">{booking.customer}</h2>
-            <p className="text-xs text-muted-foreground">{booking.phone}</p>
+            <p className="text-xs text-muted-foreground truncate">{booking.phone}{booking.email ? ` · ${booking.email}` : ""}</p>
           </div>
           <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
         </div>
@@ -664,8 +672,10 @@ function CancelHallDialog({ booking, onClose, onConfirm }: {
     return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
   }, [onClose]);
 
-  // Tiered refund based on days-until-event
-  const today = new Date("2026-05-24");
+  // Tiered refund based on days-until-event, relative to today's real date.
+  // Parse "today" from a YYYY-MM-DD string so it matches how booking.date is
+  // parsed (both land on UTC midnight) and the day diff stays exact.
+  const today = new Date(new Date().toLocaleDateString("en-CA"));
   const ev = new Date(booking.date);
   const daysUntil = Math.floor((ev.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
   let refundPct = 100;

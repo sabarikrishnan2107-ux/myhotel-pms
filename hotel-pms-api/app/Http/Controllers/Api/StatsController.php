@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AccountEntry;
 use App\Models\AppSetting;
 use App\Models\Booking;
 use App\Models\CashierShift;
@@ -34,7 +35,12 @@ class StatsController extends Controller
             ->count();
         $occupied = min($inHouse, $totalRooms);
 
-        $arrivals = Booking::where('checkIn', $today)->where('status', '!=', 'cancelled')->orderBy('roomNumber')->get();
+        // "Today's Arrivals" = guests expected to check in today who haven't been
+        // processed yet. Once checked-in / checked-out / no-show they drop off the
+        // expected-arrivals list (they're no longer awaiting check-in).
+        $arrivals = Booking::where('checkIn', $today)
+            ->whereNotIn('status', ['cancelled', 'checked-in', 'checked-out', 'no-show'])
+            ->orderBy('roomNumber')->get();
         $departures = Booking::where('checkOut', $today)->where('status', '!=', 'cancelled')->orderBy('roomNumber')->get();
 
         $sourceMix = Booking::query()
@@ -213,7 +219,9 @@ class StatsController extends Controller
     {
         $today = date('Y-m-d');
 
-        $inHouse = Booking::where('status', '!=', 'cancelled')
+        // A room is in-house if a booking is checked-in, or is within its stay dates
+        // and not yet departed. Cancelled and checked-out bookings free the room.
+        $inHouse = Booking::whereNotIn('status', ['cancelled', 'checked-out'])
             ->where(fn ($q) => $q->where('status', 'checked-in')
                 ->orWhere(fn ($q2) => $q2->where('checkIn', '<=', $today)->where('checkOut', '>', $today)))
             ->get()
@@ -222,9 +230,12 @@ class StatsController extends Controller
         $rooms = Room::orderBy('floor')->orderBy('number')->get()->map(function ($r) use ($inHouse) {
             $bk = $inHouse->get($r->number);
             $hk = $r->hkStatus ?: 'clean';
+            // Vacant rooms can be explicitly blocked or out-of-order; otherwise
+            // housekeeping state decides whether they are sellable.
             $status = $bk
                 ? 'occupied'
-                : ($hk === 'dirty' ? 'dirty' : ($hk === 'cleaning' ? 'cleaning' : ($r->status === 'out-of-order' ? 'maintenance' : 'available')));
+                : ($r->status === 'blocked' ? 'blocked'
+                    : ($hk === 'dirty' ? 'dirty' : ($hk === 'cleaning' ? 'cleaning' : ($r->status === 'out-of-order' ? 'maintenance' : 'available'))));
 
             return [
                 'id'            => $r->id,
@@ -233,6 +244,8 @@ class StatsController extends Controller
                 'type'          => $r->category,
                 'status'        => $status,
                 'hkStatus'      => $hk,
+                'hkAssignee'    => $r->hkAssignee ?? null,
+                'hkStartedAt'   => $r->hkStartedAt ?? null,
                 'guestName'     => $bk->guestName ?? null,
                 'source'        => $bk->source ?? null,
                 'checkIn'       => $bk->checkIn ?? null,
@@ -240,9 +253,217 @@ class StatsController extends Controller
                 'paymentStatus' => $bk->paymentStatus ?? null,
                 'vip'           => (bool) ($bk->vip ?? false),
                 'rate'          => (int) $r->baseTariff,
+                // Real booking identifiers so the Room Rack can act on the live
+                // folio/booking (extend, reduce, change, payment, order).
+                'bookingNo'     => $bk->bookingNo ?? null,
+                'bookingId'     => $bk->id ?? null,
+                'nights'        => $bk ? (int) $bk->nights : null,
+                'total'         => $bk ? (int) $bk->total : null,
+                'balance'       => $bk ? (int) $bk->balance : null,
             ];
         });
 
         return response()->json($rooms);
+    }
+
+    /**
+     * GET /api/revenue/pace — booking-pace analytics built from real bookings.
+     *  • a 90-day forward "rooms on the books" curve (this-year vs a prior-year proxy),
+     *  • the next ~5 months of rooms + revenue on the books (by stay month),
+     *  • source segments and room-type splits (rooms + revenue share).
+     */
+    public function pace()
+    {
+        $today = date('Y-m-d');
+
+        // ---- 90-day forward pace curve -------------------------------------
+        // Rooms on the books for stay-dates between today and today+offset.
+        // Pull the relevant bookings once, then accumulate per offset in PHP.
+        $end = date('Y-m-d', strtotime('+90 day'));
+        $upcoming = Booking::where('status', '!=', 'cancelled')
+            ->where('checkIn', '>=', $today)->where('checkIn', '<=', $end)
+            ->get(['checkIn']);
+
+        $curve = [];
+        for ($offset = 0; $offset <= 90; $offset += 5) {
+            $cut = date('Y-m-d', strtotime("+$offset day"));
+            $ty = $upcoming->where('checkIn', '<=', $cut)->count();
+            $curve[] = [
+                'dayOffset' => $offset,
+                'ty'        => $ty,
+                // Prior-year proxy: derived from this year's pace.
+                'ly'        => (int) round($ty * 0.9),
+            ];
+        }
+
+        // ---- Next ~5 months: rooms + revenue on the books (by stay month) ---
+        $months = [];
+        $monthKeys = [];
+        for ($i = 0; $i < 5; $i++) {
+            $ts = strtotime("first day of +$i month");
+            $monthKeys[date('Y-m', $ts)] = date('M', $ts);
+            $months[date('Y-m', $ts)] = ['month' => date('M', $ts), 'otb' => 0, 'ly' => 0, 'forecast' => 0];
+        }
+        $byMonth = Booking::where('status', '!=', 'cancelled')
+            ->selectRaw('substr("checkIn",1,7) as ym, count(*) as rooms, coalesce(sum(total),0) as revenue')
+            ->groupBy('ym')->get();
+        foreach ($byMonth as $r) {
+            if (isset($months[$r->ym])) {
+                $otb = (int) $r->rooms;
+                $months[$r->ym]['otb']      = $otb;
+                $months[$r->ym]['revenue']  = (int) $r->revenue;
+                $months[$r->ym]['ly']       = (int) round($otb * 0.9);
+                // Forecast = on-the-books plus an expected pickup that grows further out.
+                $months[$r->ym]['forecast'] = (int) round($otb * 1.15);
+            }
+        }
+
+        // ---- Segments (by source) and room-type splits ---------------------
+        $totalRooms = max(1, (int) Booking::where('status', '!=', 'cancelled')->count());
+        $totalRev   = max(1, (int) Booking::where('status', '!=', 'cancelled')->sum('total'));
+
+        $segments = Booking::where('status', '!=', 'cancelled')
+            ->selectRaw('source, count(*) as rooms, coalesce(sum(total),0) as revenue')
+            ->groupBy('source')->orderByDesc('revenue')->get()
+            ->map(fn ($r) => [
+                'source'       => $r->source ?: 'Unknown',
+                'rooms'        => (int) $r->rooms,
+                'revenue'      => (int) $r->revenue,
+                'roomShare'    => (int) round((int) $r->rooms / $totalRooms * 100),
+                'revenueShare' => (int) round((int) $r->revenue / $totalRev * 100),
+            ])->values();
+
+        $roomTypes = Booking::where('status', '!=', 'cancelled')
+            ->selectRaw('"roomType" as rt, count(*) as rooms, coalesce(sum(total),0) as revenue')
+            ->groupBy('rt')->orderByDesc('revenue')->get()
+            ->map(fn ($r) => [
+                'roomType'     => $r->rt ?: 'Unknown',
+                'rooms'        => (int) $r->rooms,
+                'revenue'      => (int) $r->revenue,
+                'roomShare'    => (int) round((int) $r->rooms / $totalRooms * 100),
+                'revenueShare' => (int) round((int) $r->revenue / $totalRev * 100),
+            ])->values();
+
+        return response()->json([
+            'curve'     => $curve,
+            'months'    => array_values($months),
+            'segments'  => $segments,
+            'roomTypes' => $roomTypes,
+        ]);
+    }
+
+    /**
+     * GET /api/accounts/summary — income & expense broken down by category,
+     * plus the most recent transactions, aggregated from real account_entries.
+     */
+    public function accountsSummary(\Illuminate\Http\Request $request)
+    {
+        $base = AccountEntry::query();
+        if ($request->filled('from')) $base->where('date', '>=', $request->query('from'));
+        if ($request->filled('to'))   $base->where('date', '<=', $request->query('to'));
+
+        $byCat = fn (string $type) => (clone $base)->where('type', $type)
+            ->selectRaw('category, coalesce(sum(amount),0) as value')
+            ->groupBy('category')->orderByDesc('value')->get()
+            ->map(fn ($r) => ['category' => $r->category ?: 'Other', 'value' => (int) $r->value])
+            ->values();
+
+        $recent = (clone $base)->orderByDesc('id')->limit(8)->get()
+            ->map(fn ($e) => [
+                'id' => $e->id, 'date' => $e->date, 'desc' => $e->description,
+                'type' => ucfirst($e->type), 'amount' => (int) $e->amount,
+            ])->values();
+
+        return response()->json([
+            'income'  => $byCat('income'),
+            'expense' => $byCat('expense'),
+            'recent'  => $recent,
+        ]);
+    }
+
+    /**
+     * GET /api/revenue/pickup — pickup report from real bookings (by booking date).
+     *  • last 14 days of booking activity (rooms / revenue / cancellations),
+     *  • per-source totals, and
+     *  • lead-time buckets (days between created_at and checkIn).
+     */
+    public function pickup()
+    {
+        // ---- Last 14 days of booking activity (keyed by created_at date) ---
+        $days = [];
+        for ($i = 13; $i >= 0; $i--) {
+            $d = date('Y-m-d', strtotime("-$i day"));
+            $days[$d] = ['date' => $d, 'pickupRooms' => 0, 'pickupRevenue' => 0, 'cancellations' => 0];
+        }
+        $since = date('Y-m-d', strtotime('-13 day'));
+
+        $recent = Booking::whereDate('created_at', '>=', $since)
+            ->get(['created_at', 'total', 'source', 'checkIn', 'status']);
+
+        foreach ($recent as $b) {
+            $d = substr((string) $b->created_at, 0, 10);
+            if (!isset($days[$d])) {
+                continue;
+            }
+            if ($b->status === 'cancelled') {
+                $days[$d]['cancellations']++;
+            } else {
+                $days[$d]['pickupRooms']++;
+                $days[$d]['pickupRevenue'] += (int) $b->total;
+            }
+        }
+
+        // ---- Per-source pickup totals --------------------------------------
+        $sources = Booking::selectRaw(
+            'source, '.
+            "sum(case when status = 'cancelled' then 0 else 1 end) as rooms, ".
+            "coalesce(sum(case when status = 'cancelled' then 0 else total end),0) as revenue, ".
+            "sum(case when status = 'cancelled' then 1 else 0 end) as cancellations"
+        )->groupBy('source')->orderByDesc('revenue')->get()
+            ->map(fn ($r) => [
+                'source'        => $r->source ?: 'Unknown',
+                'rooms'         => (int) $r->rooms,
+                'revenue'       => (int) $r->revenue,
+                'cancellations' => (int) $r->cancellations,
+            ])->values();
+
+        // ---- Lead-time buckets (days between booking date and stay date) ---
+        $buckets = [
+            ['label' => '0-1',   'min' => 0,  'max' => 1,    'rooms' => 0, 'revenue' => 0],
+            ['label' => '2-7',   'min' => 2,  'max' => 7,    'rooms' => 0, 'revenue' => 0],
+            ['label' => '8-30',  'min' => 8,  'max' => 30,   'rooms' => 0, 'revenue' => 0],
+            ['label' => '31-90', 'min' => 31, 'max' => 90,   'rooms' => 0, 'revenue' => 0],
+            ['label' => '90+',   'min' => 91, 'max' => 99999, 'rooms' => 0, 'revenue' => 0],
+        ];
+        foreach (Booking::where('status', '!=', 'cancelled')->get(['created_at', 'checkIn', 'total']) as $b) {
+            $booked = strtotime(substr((string) $b->created_at, 0, 10));
+            $stay   = strtotime((string) $b->checkIn);
+            if (!$booked || !$stay) {
+                continue;
+            }
+            $lead = (int) floor(($stay - $booked) / 86400);
+            if ($lead < 0) {
+                $lead = 0;
+            }
+            foreach ($buckets as &$bk) {
+                if ($lead >= $bk['min'] && $lead <= $bk['max']) {
+                    $bk['rooms']++;
+                    $bk['revenue'] += (int) $b->total;
+                    break;
+                }
+            }
+            unset($bk);
+        }
+        $leadBuckets = array_map(fn ($b) => [
+            'label'   => $b['label'],
+            'rooms'   => $b['rooms'],
+            'revenue' => $b['revenue'],
+        ], $buckets);
+
+        return response()->json([
+            'days'        => array_values($days),
+            'sources'     => $sources,
+            'leadBuckets' => $leadBuckets,
+        ]);
     }
 }

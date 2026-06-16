@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { cn, money, formatDate } from "@/lib/utils";
-import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
+import { apiGet, apiPost, apiPut, apiDelete, sendEmail } from "@/lib/api";
 
 // ============ TYPES ============
 type EnquiryType = "Room" | "Hall" | "Both";
@@ -455,7 +455,17 @@ export default function EnquiriesPage() {
                         {!e.thankYouSent && (
                           <button
                             type="button"
-                            onClick={ev => { ev.stopPropagation(); updateEnquiry(e.id, { thankYouSent: true }); addFollowUp(e.id, { id: `f${Date.now()}`, date: isoDate(TODAY), kind: "email", by: "System", outcome: "Thank-you letter sent", done: true }); showToast(`Thank-you email sent to ${e.name}`); }}
+                            onClick={ev => {
+                              ev.stopPropagation();
+                              updateEnquiry(e.id, { thankYouSent: true });
+                              addFollowUp(e.id, { id: `f${Date.now()}`, date: isoDate(TODAY), kind: "email", by: "System", outcome: "Thank-you letter sent", done: true });
+                              const to = e.email;
+                              if (!to) { showToast(`Marked thank-you for ${e.name} (no email on file)`); return; }
+                              showToast(`Emailing ${e.name}…`);
+                              sendEmail({ to, subject: "Thank you for your enquiry", heading: "Thank You", greeting: e.name, intro: "Thank you for reaching out to The Pearl Palace. Our team will follow up with you shortly.", context: "Enquiry thank-you" })
+                                .then(() => showToast(`Thank-you email sent to ${e.name}`))
+                                .catch(() => showToast(`Couldn't email ${e.name}`));
+                            }}
                             className="h-8 w-8 rounded-md border border-border hover:bg-success hover:text-white hover:border-success inline-flex items-center justify-center text-muted-foreground transition-colors"
                             title="Send thank-you email"
                           >

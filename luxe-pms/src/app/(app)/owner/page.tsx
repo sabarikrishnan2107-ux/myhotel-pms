@@ -6,12 +6,14 @@ import {
   Mail, Send, Calendar, Clock, AlertTriangle, CheckCircle2, Eye, Download,
   RefreshCw, Plus, X, ChevronRight, Sparkles, Building2, Wallet, Receipt,
   Trash2, Pencil, FileBarChart, Settings, ArrowUpRight, ArrowDownRight,
+  ChevronUp, ChevronDown, EyeOff, RotateCcw,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
+import { apiGet, apiPost, apiPut, apiDelete, sendEmail } from "@/lib/api";
 
 // ============================================================
 // TYPES + SEED
@@ -109,6 +111,40 @@ const PERIOD_LABEL: Record<FlashPeriod, string> = {
   today: "Today", yesterday: "Yesterday", mtd: "Month-to-date", ytd: "Year-to-date", last_month: "Last month",
 };
 
+// Shape returned by GET /api/owner/flash — identical to a FLASH_BY_PERIOD entry.
+type FlashData = (typeof FLASH_BY_PERIOD)[FlashPeriod];
+// GET /api/dashboard/alerts
+type AlertRow = { id: string | number; level: string; text: string; href?: string };
+// 30-day series from GET /api/owner/flash-trend
+type TrendRow = { day: number; revenue: number; occ: number; adr: number };
+// GET /api/owner/flash-insights
+type InsightRow = { text: string; dir: "up" | "down" | "flat" };
+// Row shape from GET /api/email-schedules (id is numeric, json fields may be null)
+type ScheduleRow = {
+  id: number | string; label: string; frequency: EmailSchedule["frequency"];
+  time: string; recipients: string[] | null; format: EmailSchedule["format"];
+  sections: string[] | null; enabled: boolean; lastSentAt?: string | null;
+};
+function normalizeSchedule(r: ScheduleRow): EmailSchedule {
+  return {
+    id: String(r.id),
+    label: r.label ?? "",
+    frequency: r.frequency ?? "daily",
+    time: r.time ?? "08:00",
+    recipients: Array.isArray(r.recipients) ? r.recipients : [],
+    format: r.format ?? "pdf",
+    sections: Array.isArray(r.sections) ? r.sections : [],
+    enabled: !!r.enabled,
+    lastSentAt: r.lastSentAt ?? undefined,
+  };
+}
+// Body sent to the backend (everything except the client id).
+function scheduleBody(s: EmailSchedule) {
+  const { id: _id, ...body } = s;
+  void _id;
+  return body;
+}
+
 type Alert = { id: string; tone: "danger" | "warning" | "info" | "success"; title: string; detail: string };
 const ALERTS_SEED: Alert[] = [
   { id: "a1", tone: "danger",  title: "Cash variance · Shift #4221",   detail: "-₹500 short · Priya M. · 3rd negative variance this month" },
@@ -137,6 +173,17 @@ const SCHEDULES_SEED: EmailSchedule[] = [
   { id: "s4", label: "Banquet weekend recap",       frequency: "weekly",  time: "09:00", recipients: ["sales@thepearl.in"], format: "html", sections: ["Banquet bookings", "F&B revenue"], enabled: false },
 ];
 
+// KPI tiles that the owner can show/hide and reorder (persisted to settings).
+const KPI_DEFS: { id: string; label: string }[] = [
+  { id: "revenue", label: "Total revenue" },
+  { id: "occupancy", label: "Occupancy" },
+  { id: "adr", label: "ADR" },
+  { id: "revpar", label: "RevPAR" },
+  { id: "gop", label: "GOP margin" },
+  { id: "cash", label: "Cash on hand" },
+];
+const DEFAULT_KPI_ORDER = KPI_DEFS.map((k) => k.id);
+
 // ============================================================
 // MAIN PAGE
 // ============================================================
@@ -150,43 +197,290 @@ export default function OwnerFlashPage() {
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
-  const f = FLASH_BY_PERIOD[period];
+  // ---- Live data (falls back to the seed while loading / offline) ----
+  const [flashByPeriod, setFlashByPeriod] = React.useState<Partial<Record<FlashPeriod, FlashData>>>({});
+  const [trend, setTrend] = React.useState<TrendRow[] | null>(null);
+  const [insights, setInsights] = React.useState<InsightRow[] | null>(null);
+
+  // Toolbar: live refresh, CSV export, and persisted KPI layout (customize).
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [showCustomize, setShowCustomize] = React.useState(false);
+  const [kpiOrder, setKpiOrder] = React.useState<string[]>(DEFAULT_KPI_ORDER);
+  const [kpiHidden, setKpiHidden] = React.useState<string[]>([]);
+
+  // Flash snapshot — fetched per period, cached so switching back is instant.
+  React.useEffect(() => {
+    if (flashByPeriod[period]) return;
+    let cancelled = false;
+    apiGet<FlashData>(`/owner/flash?period=${period}`)
+      .then(d => { if (!cancelled) setFlashByPeriod(prev => ({ ...prev, [period]: d })); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [period, flashByPeriod]);
+
+  // Owner-attention alerts derived from real data.
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<AlertRow[]>("/dashboard/alerts")
+      .then(rows => {
+        if (cancelled || !Array.isArray(rows) || rows.length === 0) return;
+        const tones: Alert["tone"][] = ["danger", "warning", "info", "success"];
+        setAlerts(rows.map(r => ({
+          id: String(r.id),
+          tone: (tones as string[]).includes(r.level) ? (r.level as Alert["tone"]) : "warning",
+          title: r.text,
+          detail: r.href ? `Open ${r.href}` : "",
+        })));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persisted email schedules.
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<ScheduleRow[]>("/email-schedules")
+      .then(rows => { if (!cancelled && Array.isArray(rows) && rows.length) setSchedules(rows.map(normalizeSchedule)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persisted dashboard layout (which KPI tiles show, and in what order).
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<{ kpiOrder?: string[]; kpiHidden?: string[] }>("/settings/owner-flash")
+      .then(c => {
+        if (cancelled || !c) return;
+        if (Array.isArray(c.kpiOrder) && c.kpiOrder.length) setKpiOrder(c.kpiOrder);
+        if (Array.isArray(c.kpiHidden)) setKpiHidden(c.kpiHidden);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // 30-day trend + insights — only when the Trends tab is opened.
+  React.useEffect(() => {
+    if (tab !== "trends") return;
+    let cancelled = false;
+    if (!trend) {
+      apiGet<TrendRow[]>("/owner/flash-trend")
+        .then(d => { if (!cancelled && Array.isArray(d) && d.length) setTrend(d); })
+        .catch(() => {});
+    }
+    if (!insights) {
+      apiGet<InsightRow[]>("/owner/flash-insights")
+        .then(d => { if (!cancelled && Array.isArray(d)) setInsights(d); })
+        .catch(() => {});
+    }
+    return () => { cancelled = true; };
+  }, [tab, trend, insights]);
+
+  // ---- Schedule CRUD (persists to backend; optimistic so the UI stays live offline) ----
+  const saveSchedule = async (s: EmailSchedule, isNew: boolean) => {
+    try {
+      if (isNew) {
+        const row = await apiPost<ScheduleRow>("/email-schedules", scheduleBody(s));
+        setSchedules(prev => [...prev, normalizeSchedule(row)]);
+        showToast("Schedule created · runs at the next scheduled time");
+      } else {
+        const row = await apiPut<ScheduleRow>(`/email-schedules/${s.id}`, scheduleBody(s));
+        setSchedules(prev => prev.map(x => x.id === s.id ? normalizeSchedule(row) : x));
+        showToast("Schedule saved");
+      }
+    } catch {
+      // Offline fallback: keep the UI working with local state only.
+      if (isNew) setSchedules(prev => [...prev, { ...s, id: "s" + (prev.length + 1) }]);
+      else setSchedules(prev => prev.map(x => x.id === s.id ? s : x));
+      showToast(isNew ? "Schedule created (offline)" : "Schedule saved (offline)");
+    } finally {
+      setShowScheduleModal(null);
+    }
+  };
+  const toggleSchedule = async (id: string) => {
+    const cur = schedules.find(s => s.id === id);
+    if (!cur) return;
+    setSchedules(prev => prev.map(s => s.id === id ? { ...s, enabled: !s.enabled } : s));
+    showToast("Schedule updated");
+    try { await apiPut(`/email-schedules/${id}`, { enabled: !cur.enabled }); } catch { /* offline */ }
+  };
+  const deleteSchedule = async (id: string) => {
+    setSchedules(prev => prev.filter(s => s.id !== id));
+    showToast("Schedule deleted");
+    try { await apiDelete(`/email-schedules/${id}`); } catch { /* offline */ }
+  };
+  const flashRows = () => {
+    const d = flashByPeriod[period] ?? FLASH_BY_PERIOD[period];
+    const occ = Math.round((d.rooms.sold / d.rooms.total) * 100);
+    return [
+      { label: "Occupancy", value: `${occ}%` },
+      { label: "Rooms sold", value: `${d.rooms.sold} / ${d.rooms.total}` },
+      { label: "Room revenue", value: money(d.revenue.rooms) },
+    ];
+  };
+  const sendSchedule = async (id: string) => {
+    const s = schedules.find(x => x.id === id);
+    if (!s) return;
+    try {
+      const res = await apiPost<{ at: string }>("/owner/flash/send", { scheduleId: id });
+      setSchedules(prev => prev.map(x => x.id === id ? { ...x, lastSentAt: res.at } : x));
+    } catch { /* offline */ }
+    const recips = (s.recipients ?? []).filter(Boolean);
+    await Promise.all(recips.map(to => sendEmail({
+      to, subject: `${s.label} — Owner's Flash`, heading: s.label,
+      intro: "Your scheduled Owner's Flash report is ready. Key figures are summarised below.",
+      rows: flashRows(), context: "Owner's Flash",
+    }).catch(() => {})));
+    showToast(`${s.label} sent to ${recips[0] ?? "recipients"}`);
+  };
+  const sendNow = async (emails: string[]) => {
+    setSendNowModal(false);
+    try { await apiPost("/owner/flash/send", { recipients: emails }); } catch { /* offline */ }
+    await Promise.all(emails.filter(Boolean).map(to => sendEmail({
+      to, subject: "Owner's Flash Report", heading: "Owner's Flash Report",
+      intro: "Here is the latest Owner's Flash report. Key figures are summarised below.",
+      rows: flashRows(), context: "Owner's Flash",
+    }).catch(() => {})));
+    showToast(`Flash report sent to ${emails.length} recipient${emails.length === 1 ? "" : "s"}`);
+  };
+
+  const f = flashByPeriod[period] ?? FLASH_BY_PERIOD[period];
   const occupancy = (f.rooms.sold / f.rooms.total) * 100;
   const adr = f.revenue.rooms / Math.max(1, f.rooms.sold);
   const revpar = f.revenue.rooms / f.rooms.total;
   const gop = ((f.revenue.total - f.revenue.tax - f.costs.total) / Math.max(1, f.revenue.total - f.revenue.tax)) * 100;
   const cashOnHand = f.payments.cash + f.payments.card + f.payments.upi + f.payments.bank;
 
+  // Refresh: re-pull the live snapshot + alerts (and trend/insights if loaded).
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      const jobs: Promise<unknown>[] = [
+        apiGet<FlashData>(`/owner/flash?period=${period}`).then(d => setFlashByPeriod(prev => ({ ...prev, [period]: d }))),
+        apiGet<AlertRow[]>("/dashboard/alerts").then(rows => {
+          if (!Array.isArray(rows) || !rows.length) return;
+          const tones: Alert["tone"][] = ["danger", "warning", "info", "success"];
+          setAlerts(rows.map(r => ({
+            id: String(r.id),
+            tone: (tones as string[]).includes(r.level) ? (r.level as Alert["tone"]) : "warning",
+            title: r.text,
+            detail: r.href ? `Open ${r.href}` : "",
+          })));
+        }),
+      ];
+      if (trend) jobs.push(apiGet<TrendRow[]>("/owner/flash-trend").then(d => { if (Array.isArray(d) && d.length) setTrend(d); }));
+      if (insights) jobs.push(apiGet<InsightRow[]>("/owner/flash-insights").then(d => { if (Array.isArray(d)) setInsights(d); }));
+      await Promise.all(jobs);
+      showToast("Refreshed · live data updated");
+    } catch {
+      showToast("⚠ Refresh failed — backend offline");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Export: build a CSV of the current period's flash and download it client-side.
+  const exportCsv = () => {
+    const rows: (string | number)[][] = [
+      ["Owner's Flash", PERIOD_LABEL[period]],
+      [],
+      ["Metric", "Value"],
+      ["Total revenue", f.revenue.total],
+      ["Occupancy %", occupancy.toFixed(1)],
+      ["ADR", Math.round(adr)],
+      ["RevPAR", Math.round(revpar)],
+      ["GOP margin %", gop.toFixed(1)],
+      ["Cash on hand", cashOnHand],
+      [],
+      ["Revenue breakdown", ""],
+      ["Room revenue", f.revenue.rooms],
+      ["F&B revenue", f.revenue.fb],
+      ["Banquet & halls", f.revenue.banquet],
+      ["Other (spa, etc)", f.revenue.other],
+      ["Tax collected", f.revenue.tax],
+      ["Total revenue", f.revenue.total],
+      [],
+      ["Operating costs", ""],
+      ["Payroll", f.costs.payroll],
+      ["OTA commissions", f.costs.otaCommission],
+      ["Utilities", f.costs.utilities],
+      ["Supplies & F&B", f.costs.supplies],
+      ["Misc", f.costs.misc],
+      ["Total costs", f.costs.total],
+    ];
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `owner-flash-${period}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast(`Exported · owner-flash-${period}.csv`);
+  };
+
+  // Customize: persist the chosen KPI order + hidden set to settings.
+  const applyLayout = (order: string[], hidden: string[]) => {
+    setKpiOrder(order);
+    setKpiHidden(hidden);
+    apiPut("/settings/owner-flash", { kpiOrder: order, kpiHidden: hidden }).catch(() => {});
+    showToast("Dashboard layout saved");
+  };
+
+  // KPI tiles keyed by id so the layout config can order/hide them.
+  const kpiNodes: Record<string, React.ReactNode> = {
+    revenue: <KpiCard label="Total revenue" value={money(f.revenue.total)} change={f.vs.revenueChange} icon={IndianRupee} accent="brand" sub={`${PERIOD_LABEL[period]} · all channels`} />,
+    occupancy: <KpiCard label="Occupancy" value={`${occupancy.toFixed(1)}%`} change={f.vs.occChange} icon={BedDouble} accent="info" sub={`${f.rooms.sold}/${f.rooms.total} rooms`} />,
+    adr: <KpiCard label="ADR" value={money(adr)} change={f.vs.adrChange} icon={TrendingUp} accent="success" sub="Avg daily rate" />,
+    revpar: <KpiCard label="RevPAR" value={money(revpar)} change={f.vs.revenueChange - f.vs.occChange} icon={BarChart3} accent="accent" sub="Rev per room" />,
+    gop: <KpiCard label="GOP margin" value={`${gop.toFixed(1)}%`} change={null} icon={Wallet} accent="warning" sub="Gross op. profit" />,
+    cash: <KpiCard label="Cash on hand" value={money(cashOnHand)} change={null} icon={Receipt} accent="neutral" sub="All channels" />,
+  };
+  const visibleKpis = kpiOrder.filter((id) => kpiNodes[id] && !kpiHidden.includes(id));
+
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-5">
+    <div className="p-4 sm:p-6 lg:p-7 space-y-4">
       {/* HEADER */}
-      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <span className="h-12 w-12 rounded-xl bg-linear-to-br from-amber-400 to-orange-500 text-white inline-flex items-center justify-center shadow-md">
-            <Crown className="h-6 w-6" />
-          </span>
-          <div>
-            <h1 className="text-2xl font-display font-medium tracking-tight">Owner&apos;s Flash Dashboard</h1>
-            <p className="text-muted-foreground text-sm mt-1">The Pearl Marina · Mumbai · live snapshot · auto-email every morning at 8:00 AM</p>
+      <div className="header-band -mx-4 sm:-mx-6 lg:-mx-7 -mt-4 sm:-mt-6 lg:-mt-7 px-4 sm:px-6 lg:px-7 pt-4 sm:pt-5 lg:pt-6 pb-4 border-b border-border/70">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="h-10 w-10 rounded-xl bg-linear-to-br from-amber-400 to-orange-500 text-white inline-flex items-center justify-center shadow-md shadow-orange-500/25 ring-1 ring-white/20">
+              <Crown className="h-5 w-5" />
+            </span>
+            <div>
+              <h1 className="text-xl font-display font-medium tracking-tight leading-none">Owner&apos;s Flash Dashboard</h1>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground text-sm mt-1.5">
+                <span className="font-medium text-foreground/80">The Pearl Marina · Mumbai</span>
+                <span className="text-border-strong">·</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-success live-dot" />live snapshot
+                </span>
+                <span className="text-border-strong">·</span>
+                <span>auto-email daily at 8:00 AM</span>
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button onClick={() => showToast("Property switcher · The Pearl Marina is your only property today")} className="h-8 inline-flex items-center gap-1.5 px-3 rounded-md border border-border hover:bg-surface-sunken text-xs font-medium">
-            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />The Pearl Marina · Mumbai
-            <ChevronRight className="h-3 w-3 text-muted-foreground" />
-          </button>
-          <Button variant="outline" size="sm" onClick={() => showToast("Refreshed · live data updated")}>
-            <RefreshCw className="h-3.5 w-3.5" />Refresh
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => showToast("PDF generated · download starting")}>
-            <Download className="h-3.5 w-3.5" />Export PDF
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => showToast("Dashboard customization · drag KPIs to reorder")}>
-            <Settings className="h-3.5 w-3.5" />Customize
-          </Button>
-          <Button size="sm" onClick={() => setSendNowModal(true)}>
-            <Send className="h-3.5 w-3.5" />Email now
-          </Button>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button onClick={() => showToast("Property switcher · The Pearl Marina is your only property today")} className="h-9 inline-flex items-center gap-1.5 px-3 rounded-lg border border-border bg-surface/60 hover:bg-surface-sunken hover:border-border-strong text-xs font-medium transition-colors">
+              <Building2 className="h-3.5 w-3.5 text-accent" />The Pearl Marina · Mumbai
+              <ChevronRight className="h-3 w-3 text-muted-foreground" />
+            </button>
+            <div className="h-9 inline-flex items-center gap-1 p-1 rounded-lg border border-border bg-surface/60">
+              <button onClick={refresh} disabled={refreshing} className="h-7 inline-flex items-center gap-1.5 px-2.5 rounded-md hover:bg-surface-sunken text-xs font-medium transition-colors disabled:opacity-60">
+                <RefreshCw className={cn("h-3.5 w-3.5 text-muted-foreground", refreshing && "animate-spin")} />Refresh
+              </button>
+              <button onClick={exportCsv} className="h-7 inline-flex items-center gap-1.5 px-2.5 rounded-md hover:bg-surface-sunken text-xs font-medium transition-colors">
+                <Download className="h-3.5 w-3.5 text-muted-foreground" />Export
+              </button>
+              <button onClick={() => setShowCustomize(true)} className="h-7 inline-flex items-center gap-1.5 px-2.5 rounded-md hover:bg-surface-sunken text-xs font-medium transition-colors">
+                <Settings className="h-3.5 w-3.5 text-muted-foreground" />Customize
+              </button>
+            </div>
+            <Button size="sm" className="h-9 shadow-md shadow-brand/15" onClick={() => setSendNowModal(true)}>
+              <Send className="h-3.5 w-3.5" />Email now
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -228,97 +522,99 @@ export default function OwnerFlashPage() {
       {/* FLASH SNAPSHOT TAB */}
       {tab === "flash" && (
         <>
-          {/* KPI STRIP */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            <KpiCard label="Total revenue"   value={money(f.revenue.total)}   change={f.vs.revenueChange} icon={IndianRupee} accent="brand" />
-            <KpiCard label="Occupancy"       value={`${occupancy.toFixed(1)}%`} change={f.vs.occChange} icon={BedDouble}   accent="info" sub={`${f.rooms.sold}/${f.rooms.total} rooms`} />
-            <KpiCard label="ADR"             value={money(adr)}               change={f.vs.adrChange} icon={TrendingUp}  accent="success" />
-            <KpiCard label="RevPAR"          value={money(revpar)}            change={f.vs.revenueChange - f.vs.occChange} icon={BarChart3} accent="accent" />
-            <KpiCard label="GOP margin"      value={`${gop.toFixed(1)}%`}     change={null} icon={Wallet} accent="warning" sub="Gross operating profit" />
-            <KpiCard label="Cash on hand"    value={money(cashOnHand)}        change={null} icon={Receipt} accent="neutral" sub="Across all channels" />
+          {/* KPI STRIP (order + visibility configurable via Customize) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+            {visibleKpis.map((id) => (
+              <React.Fragment key={id}>{kpiNodes[id]}</React.Fragment>
+            ))}
           </div>
 
           {/* REVENUE + COSTS BREAKDOWN */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Card className="p-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <Card className="rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
-                <p className="font-semibold inline-flex items-center gap-2"><IndianRupee className="h-4 w-4 text-brand" />Revenue breakdown</p>
+                <p className="font-semibold inline-flex items-center gap-2"><span className="h-7 w-7 rounded-lg bg-brand-soft text-brand-soft-foreground inline-flex items-center justify-center"><IndianRupee className="h-4 w-4" /></span>Revenue breakdown</p>
                 <Badge tone="brand">{PERIOD_LABEL[period]}</Badge>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {([
-                  { label: "Room revenue",     value: f.revenue.rooms,   tone: "bg-brand" },
-                  { label: "F&B revenue",      value: f.revenue.fb,      tone: "bg-info" },
-                  { label: "Banquet & halls",  value: f.revenue.banquet, tone: "bg-accent" },
-                  { label: "Other (spa, etc)", value: f.revenue.other,   tone: "bg-success" },
-                  { label: "Tax collected",    value: f.revenue.tax,     tone: "bg-warning" },
+                  { label: "Room revenue",     value: f.revenue.rooms,   tone: "from-brand/60 to-brand" },
+                  { label: "F&B revenue",      value: f.revenue.fb,      tone: "from-info/60 to-info" },
+                  { label: "Banquet & halls",  value: f.revenue.banquet, tone: "from-accent/60 to-accent" },
+                  { label: "Other (spa, etc)", value: f.revenue.other,   tone: "from-success/60 to-success" },
+                  { label: "Tax collected",    value: f.revenue.tax,     tone: "from-warning/60 to-warning" },
                 ]).map(r => {
                   const pct = (r.value / f.revenue.total) * 100;
                   return (
                     <div key={r.label}>
-                      <div className="flex items-baseline justify-between text-xs mb-0.5">
-                        <span className="text-muted-foreground">{r.label}</span>
+                      <div className="flex items-baseline justify-between text-xs mb-1">
+                        <span className="text-muted-foreground font-medium">{r.label}</span>
                         <span className="tabular font-semibold">{money(r.value)} <span className="text-muted-foreground font-normal">· {pct.toFixed(1)}%</span></span>
                       </div>
-                      <div className="h-2 rounded-full bg-surface-sunken overflow-hidden">
-                        <div className={cn("h-full transition-all", r.tone)} style={{ width: `${pct}%` }} />
+                      <div className="h-2 rounded-full bar-track overflow-hidden">
+                        <div className={cn("h-full rounded-full bg-linear-to-r transition-all duration-500", r.tone)} style={{ width: `${Math.max(pct, 1.5)}%` }} />
                       </div>
                     </div>
                   );
                 })}
               </div>
-              <div className="pt-3 mt-3 border-t border-border flex items-center justify-between">
+              <div className="pt-3.5 mt-4 border-t border-border flex items-center justify-between">
                 <span className="text-sm font-semibold">Total revenue</span>
-                <span className="text-xl font-bold tabular text-brand">{money(f.revenue.total)}</span>
+                <span className="text-xl font-bold tabular text-brand tracking-tight">{money(f.revenue.total)}</span>
               </div>
             </Card>
 
-            <Card className="p-4">
+            <Card className="rounded-xl p-4 flex flex-col">
               <div className="flex items-center justify-between mb-3">
-                <p className="font-semibold inline-flex items-center gap-2"><Wallet className="h-4 w-4 text-danger" />Operating costs</p>
+                <p className="font-semibold inline-flex items-center gap-2"><span className="h-7 w-7 rounded-lg bg-danger-soft text-danger inline-flex items-center justify-center"><Wallet className="h-4 w-4" /></span>Operating costs</p>
                 <Badge tone="neutral">{PERIOD_LABEL[period]}</Badge>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {([
-                  { label: "Payroll",           value: f.costs.payroll,       tone: "bg-danger" },
-                  { label: "OTA commissions",   value: f.costs.otaCommission, tone: "bg-warning" },
-                  { label: "Utilities",         value: f.costs.utilities,     tone: "bg-info" },
-                  { label: "Supplies & F&B",    value: f.costs.supplies,      tone: "bg-accent" },
-                  { label: "Misc",              value: f.costs.misc,          tone: "bg-neutral-foreground" },
+                  { label: "Payroll",           value: f.costs.payroll,       tone: "from-danger/60 to-danger" },
+                  { label: "OTA commissions",   value: f.costs.otaCommission, tone: "from-warning/60 to-warning" },
+                  { label: "Utilities",         value: f.costs.utilities,     tone: "from-info/60 to-info" },
+                  { label: "Supplies & F&B",    value: f.costs.supplies,      tone: "from-accent/60 to-accent" },
+                  { label: "Misc",              value: f.costs.misc,          tone: "from-border-strong to-muted-foreground" },
                 ]).map(r => {
                   const pct = (r.value / f.costs.total) * 100;
                   return (
                     <div key={r.label}>
-                      <div className="flex items-baseline justify-between text-xs mb-0.5">
-                        <span className="text-muted-foreground">{r.label}</span>
+                      <div className="flex items-baseline justify-between text-xs mb-1">
+                        <span className="text-muted-foreground font-medium">{r.label}</span>
                         <span className="tabular font-semibold">{money(r.value)} <span className="text-muted-foreground font-normal">· {pct.toFixed(1)}%</span></span>
                       </div>
-                      <div className="h-2 rounded-full bg-surface-sunken overflow-hidden">
-                        <div className={cn("h-full transition-all", r.tone)} style={{ width: `${pct}%` }} />
+                      <div className="h-2 rounded-full bar-track overflow-hidden">
+                        <div className={cn("h-full rounded-full bg-linear-to-r transition-all duration-500", r.tone)} style={{ width: `${Math.max(pct, 1.5)}%` }} />
                       </div>
                     </div>
                   );
                 })}
               </div>
-              <div className="pt-3 mt-3 border-t border-border flex items-center justify-between">
+              <div className="pt-3.5 mt-4 border-t border-border flex items-center justify-between">
                 <span className="text-sm font-semibold">Total costs</span>
-                <span className="text-xl font-bold tabular text-danger">{money(f.costs.total)}</span>
+                <span className="text-xl font-bold tabular text-danger tracking-tight">{money(f.costs.total)}</span>
               </div>
-              <div className="pt-2 flex items-center justify-between">
-                <span className="text-sm font-semibold inline-flex items-center gap-1.5"><TrendingUp className="h-3.5 w-3.5 text-success" />Net (before tax & financing)</span>
-                <span className="text-xl font-bold tabular text-success">{money(f.revenue.total - f.revenue.tax - f.costs.total)}</span>
+              <div className="mt-auto pt-3">
+                <div className="flex items-center justify-between rounded-lg bg-success-soft/50 ring-1 ring-success/20 px-3.5 py-2.5">
+                  <span className="text-sm font-semibold inline-flex items-center gap-1.5"><TrendingUp className="h-4 w-4 text-success" />Net · before tax &amp; financing</span>
+                  <span className="text-xl font-bold tabular text-success tracking-tight">{money(f.revenue.total - f.revenue.tax - f.costs.total)}</span>
+                </div>
               </div>
             </Card>
           </div>
 
           {/* SEGMENTS + PAYMENTS + GUESTS */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <Card className="p-4">
-              <p className="font-semibold mb-3 inline-flex items-center gap-2"><BarChart3 className="h-4 w-4" />Top revenue segments</p>
-              <ul className="space-y-2">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <Card className="rounded-xl p-4">
+              <p className="font-semibold mb-3 inline-flex items-center gap-2"><span className="h-7 w-7 rounded-lg bg-accent-soft text-accent inline-flex items-center justify-center"><BarChart3 className="h-4 w-4" /></span>Top revenue segments</p>
+              <ul className="space-y-2.5">
                 {f.topSegments.map((s, i) => (
                   <li key={s.name} className="flex items-center gap-3">
-                    <span className="h-7 w-7 rounded-md bg-surface-sunken inline-flex items-center justify-center font-bold text-xs tabular shrink-0">{i + 1}</span>
+                    <span className={cn(
+                      "h-7 w-7 rounded-lg inline-flex items-center justify-center font-bold text-xs tabular shrink-0",
+                      i === 0 ? "bg-linear-to-br from-amber-400 to-orange-500 text-white shadow-sm" : "bg-surface-sunken text-muted-foreground"
+                    )}>{i + 1}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate">{s.name}</p>
                       <div className="flex items-baseline gap-2 mt-0.5">
@@ -326,38 +622,34 @@ export default function OwnerFlashPage() {
                         <span className="text-[10px] text-muted-foreground tabular">{s.share}%</span>
                       </div>
                     </div>
-                    <div className="w-20 h-1.5 rounded-full bg-surface-sunken overflow-hidden">
-                      <div className="h-full bg-brand" style={{ width: `${s.share * 3}%` }} />
+                    <div className="w-20 h-1.5 rounded-full bar-track overflow-hidden">
+                      <div className={cn("h-full rounded-full bg-linear-to-r", i === 0 ? "from-amber-400 to-orange-500" : "from-brand/60 to-brand")} style={{ width: `${Math.min(s.share * 3, 100)}%` }} />
                     </div>
                   </li>
                 ))}
               </ul>
             </Card>
 
-            <Card className="p-4">
-              <p className="font-semibold mb-3 inline-flex items-center gap-2"><Wallet className="h-4 w-4" />Payment mix</p>
-              <div className="space-y-2.5">
+            <Card className="rounded-xl p-4">
+              <p className="font-semibold mb-3 inline-flex items-center gap-2"><span className="h-7 w-7 rounded-lg bg-info-soft text-info inline-flex items-center justify-center"><Wallet className="h-4 w-4" /></span>Payment mix</p>
+              <div className="space-y-3">
                 {([
-                  { label: "Card (POS)",     value: f.payments.card,  tone: "info" as const },
-                  { label: "UPI",            value: f.payments.upi,   tone: "success" as const },
-                  { label: "Cash",           value: f.payments.cash,  tone: "warning" as const },
-                  { label: "Bank transfer",  value: f.payments.bank,  tone: "brand" as const },
+                  { label: "Card (POS)",     value: f.payments.card,  tone: "from-info/60 to-info" },
+                  { label: "UPI",            value: f.payments.upi,   tone: "from-success/60 to-success" },
+                  { label: "Cash",           value: f.payments.cash,  tone: "from-warning/60 to-warning" },
+                  { label: "Bank transfer",  value: f.payments.bank,  tone: "from-brand/60 to-brand" },
                 ]).map(p => {
                   const total = cashOnHand;
                   const pct = (p.value / total) * 100;
                   return (
                     <div key={p.label}>
                       <div className="flex items-baseline justify-between text-xs mb-1">
-                        <span className="text-muted-foreground">{p.label}</span>
+                        <span className="text-muted-foreground font-medium">{p.label}</span>
                         <span className="tabular font-semibold">{money(p.value)}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <div className="flex-1 h-2 rounded-full bg-surface-sunken overflow-hidden">
-                          <div className={cn("h-full",
-                            p.tone === "info" ? "bg-info" :
-                            p.tone === "success" ? "bg-success" :
-                            p.tone === "warning" ? "bg-warning" : "bg-brand"
-                          )} style={{ width: `${pct}%` }} />
+                        <div className="flex-1 h-2 rounded-full bar-track overflow-hidden">
+                          <div className={cn("h-full rounded-full bg-linear-to-r transition-all duration-500", p.tone)} style={{ width: `${pct}%` }} />
                         </div>
                         <span className="text-[10px] tabular text-muted-foreground w-10 text-right">{pct.toFixed(1)}%</span>
                       </div>
@@ -367,60 +659,70 @@ export default function OwnerFlashPage() {
               </div>
             </Card>
 
-            <Card className="p-4">
-              <p className="font-semibold mb-3 inline-flex items-center gap-2"><Users className="h-4 w-4" />Guest mix</p>
+            <Card className="rounded-xl p-4">
+              <p className="font-semibold mb-3 inline-flex items-center gap-2"><span className="h-7 w-7 rounded-lg bg-success-soft text-success inline-flex items-center justify-center"><Users className="h-4 w-4" /></span>Guest mix</p>
               <div className="grid grid-cols-2 gap-2 text-center">
                 {([
-                  { label: "OTA",        value: f.guests.ota,       tone: "warning" as const },
-                  { label: "Corporate",  value: f.guests.corporate, tone: "info" as const },
-                  { label: "Direct",     value: f.guests.direct,    tone: "brand" as const },
-                  { label: "Walk-in",    value: f.guests.walkIn,    tone: "accent" as const },
-                  { label: "Loyalty",    value: f.guests.loyalty,   tone: "success" as const },
+                  { label: "OTA",        value: f.guests.ota,       tone: "warning" as const,  cls: "bg-warning-soft/50 ring-warning/20" },
+                  { label: "Corporate",  value: f.guests.corporate, tone: "info" as const,     cls: "bg-info-soft/50 ring-info/20" },
+                  { label: "Direct",     value: f.guests.direct,    tone: "brand" as const,    cls: "bg-brand-soft/50 ring-brand/15" },
+                  { label: "Walk-in",    value: f.guests.walkIn,    tone: "accent" as const,   cls: "bg-accent-soft/50 ring-accent/20" },
+                  { label: "Loyalty",    value: f.guests.loyalty,   tone: "success" as const,  cls: "bg-success-soft/50 ring-success/20" },
                 ]).map(g => (
-                  <div key={g.label} className="rounded-md border border-border p-2.5">
-                    <p className="text-2xl font-bold tabular">{g.value}</p>
+                  <div key={g.label} className={cn("rounded-lg ring-1 p-2.5 flex flex-col items-center gap-1", g.cls)}>
+                    <p className="text-xl font-bold tabular">{g.value}</p>
                     <Badge tone={g.tone}>{g.label}</Badge>
                   </div>
                 ))}
-                <div className="rounded-md border-2 border-brand bg-brand-soft/20 p-2.5 inline-flex flex-col items-center justify-center">
-                  <p className="text-2xl font-bold tabular text-brand">{f.guests.ota + f.guests.corporate + f.guests.direct + f.guests.walkIn + f.guests.loyalty}</p>
-                  <span className="text-[10px] uppercase tracking-wider font-bold text-brand">Total guests</span>
+                <div className="rounded-lg bg-linear-to-br from-brand to-brand/80 text-brand-foreground p-2.5 inline-flex flex-col items-center justify-center gap-0.5 shadow-sm">
+                  <p className="text-xl font-bold tabular">{f.guests.ota + f.guests.corporate + f.guests.direct + f.guests.walkIn + f.guests.loyalty}</p>
+                  <span className="text-[10px] uppercase tracking-wider font-bold opacity-90">Total guests</span>
                 </div>
               </div>
             </Card>
           </div>
 
           {/* ALERTS + HIGHLIGHTS */}
-          <Card className="p-4">
+          <Card className="rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
-              <p className="font-semibold inline-flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-warning" />Owner attention required</p>
-              <Badge tone="warning">{alerts.length}</Badge>
+              <p className="font-semibold inline-flex items-center gap-2"><span className="h-7 w-7 rounded-lg bg-warning-soft text-warning inline-flex items-center justify-center"><AlertTriangle className="h-4 w-4" /></span>Owner attention required</p>
+              <Badge tone="warning">{alerts.length} open</Badge>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-              {alerts.map(a => (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {alerts.map(a => {
+                const AlertIcon = a.tone === "info" ? Eye : a.tone === "success" ? CheckCircle2 : AlertTriangle;
+                return (
                 <div key={a.id} className={cn(
-                  "p-3 rounded-md border flex items-start gap-2.5",
-                  a.tone === "danger" && "border-l-4 border-l-danger bg-danger-soft/10",
-                  a.tone === "warning" && "border-l-4 border-l-warning bg-warning-soft/10",
-                  a.tone === "info" && "border-l-4 border-l-info bg-info-soft/10",
-                  a.tone === "success" && "border-l-4 border-l-success bg-success-soft/10",
+                  "group p-3 rounded-lg border flex items-start gap-2.5 hover-lift",
+                  a.tone === "danger" && "border-danger/25 bg-danger-soft/15",
+                  a.tone === "warning" && "border-warning/25 bg-warning-soft/15",
+                  a.tone === "info" && "border-info/25 bg-info-soft/15",
+                  a.tone === "success" && "border-success/25 bg-success-soft/15",
                 )}>
-                  {a.tone === "danger" && <AlertTriangle className="h-4 w-4 text-danger shrink-0 mt-0.5" />}
-                  {a.tone === "warning" && <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />}
-                  {a.tone === "info" && <Eye className="h-4 w-4 text-info shrink-0 mt-0.5" />}
-                  {a.tone === "success" && <CheckCircle2 className="h-4 w-4 text-success shrink-0 mt-0.5" />}
+                  <span className={cn(
+                    "h-7 w-7 rounded-lg inline-flex items-center justify-center shrink-0",
+                    a.tone === "danger" && "bg-danger-soft text-danger",
+                    a.tone === "warning" && "bg-warning-soft text-warning",
+                    a.tone === "info" && "bg-info-soft text-info",
+                    a.tone === "success" && "bg-success-soft text-success",
+                  )}>
+                    <AlertIcon className="h-3.5 w-3.5" />
+                  </span>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold leading-tight">{a.title}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{a.detail}</p>
+                    {a.detail && <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{a.detail}</p>}
                   </div>
-                  <button onClick={() => { setAlerts(prev => prev.filter(x => x.id !== a.id)); showToast("Alert acknowledged"); }} className="text-subtle-foreground hover:text-foreground shrink-0" title="Dismiss">
-                    <X className="h-3 w-3" />
+                  <button onClick={() => { setAlerts(prev => prev.filter(x => x.id !== a.id)); showToast("Alert acknowledged"); }} className="text-subtle-foreground hover:text-foreground shrink-0 opacity-50 group-hover:opacity-100 transition-opacity" title="Dismiss">
+                    <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
-              ))}
+                );
+              })}
               {alerts.length === 0 && (
-                <div className="col-span-full text-center py-8 text-sm text-muted-foreground">
-                  <CheckCircle2 className="h-6 w-6 mx-auto mb-2 text-success" />All clear · no items pending owner review
+                <div className="col-span-full text-center py-10 text-sm text-muted-foreground">
+                  <span className="h-12 w-12 rounded-full bg-success-soft text-success inline-flex items-center justify-center mb-3"><CheckCircle2 className="h-6 w-6" /></span>
+                  <p className="font-medium text-foreground">All clear</p>
+                  <p className="text-xs mt-0.5">No items pending owner review</p>
                 </div>
               )}
             </div>
@@ -429,17 +731,17 @@ export default function OwnerFlashPage() {
       )}
 
       {/* TRENDS TAB */}
-      {tab === "trends" && <TrendsTab period={period} />}
+      {tab === "trends" && <TrendsTab period={period} data={trend} insights={insights} />}
 
       {/* EMAIL SCHEDULES TAB */}
       {tab === "email" && (
         <EmailSchedulesTab
           schedules={schedules}
-          onToggle={(id) => { setSchedules(prev => prev.map(s => s.id === id ? { ...s, enabled: !s.enabled } : s)); showToast("Schedule updated"); }}
+          onToggle={toggleSchedule}
           onEdit={(s) => setShowScheduleModal(s)}
-          onDelete={(id) => { setSchedules(prev => prev.filter(s => s.id !== id)); showToast("Schedule deleted"); }}
+          onDelete={deleteSchedule}
           onNew={() => setShowScheduleModal("new")}
-          onSendNow={(id) => { const s = schedules.find(x => x.id === id); if (s) showToast(`${s.label} sent to ${s.recipients[0]}`); }}
+          onSendNow={sendSchedule}
         />
       )}
 
@@ -448,16 +750,7 @@ export default function OwnerFlashPage() {
         <ScheduleEditModal
           existing={showScheduleModal === "new" ? null : showScheduleModal}
           onClose={() => setShowScheduleModal(null)}
-          onSave={(s) => {
-            if (showScheduleModal === "new") {
-              setSchedules(prev => [...prev, { ...s, id: "s" + (prev.length + 1) }]);
-              showToast("Schedule created · runs tomorrow morning");
-            } else {
-              setSchedules(prev => prev.map(x => x.id === s.id ? s : x));
-              showToast("Schedule saved");
-            }
-            setShowScheduleModal(null);
-          }}
+          onSave={(s) => saveSchedule(s, showScheduleModal === "new")}
         />
       )}
 
@@ -465,7 +758,17 @@ export default function OwnerFlashPage() {
       {sendNowModal && (
         <SendNowModal
           onClose={() => setSendNowModal(false)}
-          onSend={(emails) => { setSendNowModal(false); showToast(`Flash report sent to ${emails.length} recipient${emails.length === 1 ? "" : "s"}`); }}
+          onSend={sendNow}
+        />
+      )}
+
+      {/* CUSTOMIZE MODAL */}
+      {showCustomize && (
+        <CustomizeModal
+          order={kpiOrder}
+          hidden={kpiHidden}
+          onClose={() => setShowCustomize(false)}
+          onSave={(order, hidden) => { applyLayout(order, hidden); setShowCustomize(false); }}
         />
       )}
 
@@ -483,7 +786,7 @@ export default function OwnerFlashPage() {
 // KPI CARD
 // ============================================================
 function KpiCard({
-  label, value, change, icon: Icon, accent, sub,
+  label, value, change, icon: Icon, accent, sub, className,
 }: {
   label: string;
   value: string;
@@ -491,6 +794,7 @@ function KpiCard({
   icon: React.ComponentType<{ className?: string }>;
   accent: "brand" | "info" | "success" | "warning" | "danger" | "accent" | "neutral";
   sub?: string;
+  className?: string;
 }) {
   const dir: ChangeDir = change === null ? "flat" : change > 0 ? "up" : change < 0 ? "down" : "flat";
   const ACCENT_BG: Record<string, string> = {
@@ -502,24 +806,27 @@ function KpiCard({
     accent: "bg-accent-soft text-accent",
     neutral: "bg-surface-sunken text-muted-foreground",
   };
+  const changePill = change !== null && (
+    <span className={cn(
+      "text-[10px] tabular font-bold inline-flex items-center gap-0.5 rounded-full px-1 py-0.5",
+      dir === "up" ? "text-success bg-success-soft" : dir === "down" ? "text-danger bg-danger-soft" : "text-muted-foreground bg-surface-sunken"
+    )}>
+      {dir === "up" ? <TrendingUp className="h-2.5 w-2.5" /> : dir === "down" ? <TrendingDown className="h-2.5 w-2.5" /> : null}
+      {dir === "up" ? "+" : ""}{change.toFixed(1)}%
+    </span>
+  );
+
   return (
-    <Card className="p-4">
-      <div className="flex items-start justify-between mb-2">
-        <span className={cn("h-8 w-8 rounded-md inline-flex items-center justify-center", ACCENT_BG[accent])}>
-          <Icon className="h-4 w-4" />
+    <Card className={cn("hover-lift p-3", className)}>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className={cn("h-6 w-6 rounded-md inline-flex items-center justify-center", ACCENT_BG[accent])}>
+          <Icon className="h-3.5 w-3.5" />
         </span>
-        {change !== null && (
-          <span className={cn("text-[10px] tabular font-semibold inline-flex items-center gap-0.5",
-            dir === "up" ? "text-success" : dir === "down" ? "text-danger" : "text-muted-foreground"
-          )}>
-            {dir === "up" ? <TrendingUp className="h-3 w-3" /> : dir === "down" ? <TrendingDown className="h-3 w-3" /> : null}
-            {dir === "up" ? "+" : ""}{change.toFixed(1)}%
-          </span>
-        )}
+        {changePill}
       </div>
-      <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">{label}</p>
-      <p className="text-xl font-bold tabular mt-0.5 truncate">{value}</p>
-      {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
+      <p className="text-[9px] uppercase tracking-wider font-semibold text-muted-foreground truncate">{label}</p>
+      <p className="text-base font-bold tabular mt-0.5 truncate tracking-tight">{value}</p>
+      {sub && <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{sub}</p>}
     </Card>
   );
 }
@@ -539,37 +846,42 @@ const TREND_DATA: { day: number; revenue: number; occ: number; adr: number }[] =
   };
 });
 
-function TrendsTab({ period }: { period: FlashPeriod }) {
-  const maxRev = Math.max(...TREND_DATA.map(d => d.revenue));
-  const maxAdr = Math.max(...TREND_DATA.map(d => d.adr));
+function TrendsTab({ period, data, insights }: { period: FlashPeriod; data: TrendRow[] | null; insights: InsightRow[] | null }) {
+  const series = data && data.length ? data : TREND_DATA;
+  const maxRev = Math.max(...series.map(d => d.revenue), 1);
+  const maxAdr = Math.max(...series.map(d => d.adr), 1);
 
   return (
-    <div className="space-y-4">
-      <Card className="p-4">
+    <div className="space-y-3">
+      <Card className="rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
-          <p className="font-semibold inline-flex items-center gap-2"><TrendingUp className="h-4 w-4 text-brand" />Revenue trend · 30 days</p>
+          <p className="font-semibold inline-flex items-center gap-2"><span className="h-7 w-7 rounded-lg bg-brand-soft text-brand-soft-foreground inline-flex items-center justify-center"><TrendingUp className="h-4 w-4" /></span>Revenue trend · 30 days</p>
           <Badge tone="brand">{PERIOD_LABEL[period]}</Badge>
         </div>
-        <div className="flex items-end gap-1 h-48">
-          {TREND_DATA.map(d => (
-            <div key={d.day} className="flex-1 flex flex-col items-center gap-1 group cursor-pointer">
-              <div className="w-full bg-brand-soft hover:bg-brand rounded-t transition-colors relative" style={{ height: `${(d.revenue / maxRev) * 100}%` }}>
-                <div className="absolute -top-7 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-foreground text-background text-[10px] tabular px-1.5 py-0.5 rounded whitespace-nowrap z-10">
+        <div className="flex items-end gap-1 h-48 border-b border-border/70">
+          {series.map(d => (
+            <div key={d.day} className="flex-1 flex flex-col items-center gap-1 group cursor-pointer h-full justify-end">
+              <div className="w-full bg-linear-to-t from-brand/30 to-brand/70 group-hover:from-brand group-hover:to-accent rounded-t-md transition-all relative" style={{ height: `${(d.revenue / maxRev) * 100}%` }}>
+                <div className="absolute -top-7 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-foreground text-background text-[10px] tabular px-1.5 py-0.5 rounded whitespace-nowrap z-10 shadow-md">
                   {money(d.revenue)}
                 </div>
               </div>
-              <span className="text-[9px] tabular text-muted-foreground">{d.day}</span>
             </div>
+          ))}
+        </div>
+        <div className="flex items-end gap-1 mt-1.5">
+          {series.map(d => (
+            <span key={d.day} className="flex-1 text-center text-[9px] tabular text-muted-foreground">{d.day % 5 === 0 || d.day === 1 ? d.day : ""}</span>
           ))}
         </div>
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card className="p-4">
-          <p className="font-semibold mb-3 inline-flex items-center gap-2"><BedDouble className="h-4 w-4 text-info" />Occupancy trend · 30 days</p>
-          <div className="flex items-end gap-1 h-32">
-            {TREND_DATA.map(d => (
-              <div key={d.day} className="flex-1 bg-info-soft rounded-t" style={{ height: `${d.occ}%` }} />
+        <Card className="rounded-xl p-4">
+          <p className="font-semibold mb-3 inline-flex items-center gap-2"><span className="h-7 w-7 rounded-lg bg-info-soft text-info inline-flex items-center justify-center"><BedDouble className="h-4 w-4" /></span>Occupancy trend · 30 days</p>
+          <div className="flex items-end gap-1 h-32 border-b border-border/70">
+            {series.map(d => (
+              <div key={d.day} className="flex-1 bg-linear-to-t from-info/25 to-info/70 hover:to-info rounded-t-md transition-all" style={{ height: `${d.occ}%` }} />
             ))}
           </div>
           <div className="flex justify-between text-[10px] text-muted-foreground tabular mt-1.5">
@@ -577,11 +889,11 @@ function TrendsTab({ period }: { period: FlashPeriod }) {
           </div>
         </Card>
 
-        <Card className="p-4">
-          <p className="font-semibold mb-3 inline-flex items-center gap-2"><TrendingUp className="h-4 w-4 text-success" />ADR trend · 30 days</p>
-          <div className="flex items-end gap-1 h-32">
-            {TREND_DATA.map(d => (
-              <div key={d.day} className="flex-1 bg-success-soft rounded-t" style={{ height: `${(d.adr / maxAdr) * 100}%` }} />
+        <Card className="rounded-xl p-4">
+          <p className="font-semibold mb-3 inline-flex items-center gap-2"><span className="h-7 w-7 rounded-lg bg-success-soft text-success inline-flex items-center justify-center"><TrendingUp className="h-4 w-4" /></span>ADR trend · 30 days</p>
+          <div className="flex items-end gap-1 h-32 border-b border-border/70">
+            {series.map(d => (
+              <div key={d.day} className="flex-1 bg-linear-to-t from-success/25 to-success/70 hover:to-success rounded-t-md transition-all" style={{ height: `${(d.adr / maxAdr) * 100}%` }} />
             ))}
           </div>
           <div className="flex justify-between text-[10px] text-muted-foreground tabular mt-1.5">
@@ -590,15 +902,30 @@ function TrendsTab({ period }: { period: FlashPeriod }) {
         </Card>
       </div>
 
-      <Card className="p-4">
-        <p className="font-semibold mb-3 inline-flex items-center gap-2"><Sparkles className="h-4 w-4 text-brand" />Insights</p>
-        <ul className="space-y-1.5 text-sm">
-          <li className="inline-flex items-start gap-2"><ArrowUpRight className="h-3.5 w-3.5 text-success shrink-0 mt-0.5" />Weekends (Fri-Sun) consistently drive 38% higher revenue · consider weekend premium pricing</li>
-          <li className="inline-flex items-start gap-2"><TrendingUp className="h-3.5 w-3.5 text-success shrink-0 mt-0.5" />ADR up 7.6% MoM despite occupancy gain — successful yield management</li>
-          <li className="inline-flex items-start gap-2"><TrendingDown className="h-3.5 w-3.5 text-warning shrink-0 mt-0.5" />OTA commission cost rising 8% faster than revenue · push more direct bookings</li>
-          <li className="inline-flex items-start gap-2"><ArrowDownRight className="h-3.5 w-3.5 text-danger shrink-0 mt-0.5" />Walk-in covers down 12% MoM · consider street-level signage refresh</li>
-          <li className="inline-flex items-start gap-2"><TrendingUp className="h-3.5 w-3.5 text-success shrink-0 mt-0.5" />F&B attach rate at 39% (above 35% target) · room service performing well</li>
-        </ul>
+      <Card className="rounded-xl p-4">
+        <p className="font-semibold mb-3 inline-flex items-center gap-2"><span className="h-7 w-7 rounded-lg bg-accent-soft text-accent inline-flex items-center justify-center"><Sparkles className="h-4 w-4" /></span>Insights</p>
+        {insights && insights.length > 0 ? (
+          <ul className="space-y-1.5 text-sm">
+            {insights.map((ins, i) => (
+              <li key={i} className="inline-flex items-start gap-2">
+                {ins.dir === "down"
+                  ? <ArrowDownRight className="h-3.5 w-3.5 text-warning shrink-0 mt-0.5" />
+                  : <ArrowUpRight className="h-3.5 w-3.5 text-success shrink-0 mt-0.5" />}
+                {ins.text}
+              </li>
+            ))}
+          </ul>
+        ) : insights ? (
+          <p className="text-sm text-muted-foreground py-2">Not enough historical data yet to surface insights.</p>
+        ) : (
+          <ul className="space-y-1.5 text-sm">
+            <li className="inline-flex items-start gap-2"><ArrowUpRight className="h-3.5 w-3.5 text-success shrink-0 mt-0.5" />Weekends (Fri-Sun) consistently drive 38% higher revenue · consider weekend premium pricing</li>
+            <li className="inline-flex items-start gap-2"><TrendingUp className="h-3.5 w-3.5 text-success shrink-0 mt-0.5" />ADR up 7.6% MoM despite occupancy gain — successful yield management</li>
+            <li className="inline-flex items-start gap-2"><TrendingDown className="h-3.5 w-3.5 text-warning shrink-0 mt-0.5" />OTA commission cost rising 8% faster than revenue · push more direct bookings</li>
+            <li className="inline-flex items-start gap-2"><ArrowDownRight className="h-3.5 w-3.5 text-danger shrink-0 mt-0.5" />Walk-in covers down 12% MoM · consider street-level signage refresh</li>
+            <li className="inline-flex items-start gap-2"><TrendingUp className="h-3.5 w-3.5 text-success shrink-0 mt-0.5" />F&B attach rate at 39% (above 35% target) · room service performing well</li>
+          </ul>
+        )}
         <div className="mt-4 pt-3 border-t border-border flex justify-end">
           <Link href="/reports" className="text-xs text-brand hover:underline inline-flex items-center gap-1"><FileBarChart className="h-3 w-3" />Open detailed P&L report<ChevronRight className="h-3 w-3" /></Link>
         </div>
@@ -692,7 +1019,7 @@ function ScheduleEditModal({ existing, onClose, onSave }: {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
       <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto p-5">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold">{existing ? "Edit schedule" : "New email schedule"}</h2>
           <button onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
         </div>
@@ -785,7 +1112,7 @@ function SendNowModal({ onClose, onSend }: { onClose: () => void; onSend: (email
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
       <Card className="w-full max-w-md p-5">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold inline-flex items-center gap-2"><Send className="h-4 w-4 text-brand" />Send flash report now</h2>
           <button onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
         </div>
@@ -814,6 +1141,78 @@ function SendNowModal({ onClose, onSend }: { onClose: () => void; onSend: (email
         <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-border">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button onClick={() => onSend(emails.split(",").map(e => e.trim()).filter(Boolean))}><Send className="h-3.5 w-3.5" />Send now</Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// CUSTOMIZE MODAL — reorder + show/hide KPI tiles (persisted)
+// ============================================================
+function CustomizeModal({
+  order, hidden, onClose, onSave,
+}: {
+  order: string[];
+  hidden: string[];
+  onClose: () => void;
+  onSave: (order: string[], hidden: string[]) => void;
+}) {
+  // Start from the saved order, then append any KPIs not yet listed.
+  const [ord, setOrd] = React.useState<string[]>(() => {
+    const known = order.filter((id) => KPI_DEFS.some((k) => k.id === id));
+    const missing = KPI_DEFS.map((k) => k.id).filter((id) => !known.includes(id));
+    return [...known, ...missing];
+  });
+  const [hid, setHid] = React.useState<string[]>(hidden);
+  const label = (id: string) => KPI_DEFS.find((k) => k.id === id)?.label ?? id;
+
+  const move = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= ord.length) return;
+    const next = [...ord];
+    [next[i], next[j]] = [next[j], next[i]];
+    setOrd(next);
+  };
+  const toggle = (id: string) =>
+    setHid((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+      <Card className="w-full max-w-md p-5">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-lg font-semibold inline-flex items-center gap-2"><Settings className="h-4 w-4 text-brand" />Customize KPI tiles</h2>
+          <button onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">Reorder with the arrows, toggle the eye to show or hide. Saved to your profile.</p>
+
+        <div className="space-y-1.5">
+          {ord.map((id, i) => {
+            const isHidden = hid.includes(id);
+            return (
+              <div key={id} className={cn("flex items-center gap-2 rounded-lg border border-border px-2.5 py-2", isHidden && "opacity-55")}>
+                <span className="tabular text-[10px] text-muted-foreground w-4 text-center">{i + 1}</span>
+                <span className="flex-1 text-sm font-medium">{label(id)}</span>
+                <button onClick={() => toggle(id)} title={isHidden ? "Show" : "Hide"} className="h-7 w-7 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center text-muted-foreground">
+                  {isHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </button>
+                <button onClick={() => move(i, -1)} disabled={i === 0} title="Move up" className="h-7 w-7 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center text-muted-foreground disabled:opacity-30">
+                  <ChevronUp className="h-3.5 w-3.5" />
+                </button>
+                <button onClick={() => move(i, 1)} disabled={i === ord.length - 1} title="Move down" className="h-7 w-7 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center text-muted-foreground disabled:opacity-30">
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center justify-between gap-2 mt-5 pt-4 border-t border-border">
+          <Button variant="ghost" onClick={() => { setOrd(DEFAULT_KPI_ORDER); setHid([]); }}><RotateCcw className="h-3.5 w-3.5" />Reset</Button>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button onClick={() => onSave(ord, hid)}>Save layout</Button>
+          </div>
         </div>
       </Card>
     </div>
