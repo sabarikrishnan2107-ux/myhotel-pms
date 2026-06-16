@@ -190,7 +190,7 @@ export default function UsersPage() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <KPICard label="Total users" value={users.length} icon={UsersIcon} accent="brand" />
         <KPICard label="Active" value={active} icon={CheckCircle2} accent="success" hint={`${users.length - active} disabled`} />
-        <KPICard label="2FA coverage" value={`${Math.round(twoFA / users.length * 100)}%`} icon={ShieldCheck} accent={twoFA / users.length >= 0.75 ? "success" : "warning"} hint={`${twoFA} of ${users.length}`} />
+        <KPICard label="2FA coverage" value={`${users.length ? Math.round(twoFA / users.length * 100) : 0}%`} icon={ShieldCheck} accent={users.length > 0 && twoFA / users.length >= 0.75 ? "success" : "warning"} hint={`${twoFA} of ${users.length}`} />
         <KPICard label="Live sessions" value={sessionsNow} icon={Activity} accent="info" hint="signed in now" />
         <KPICard label="Roles defined" value={ROLES.length} icon={KeySquare} accent="accent" />
       </div>
