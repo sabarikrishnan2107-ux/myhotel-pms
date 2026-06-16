@@ -16,13 +16,22 @@ import { USERS } from "@/lib/mock-data-ext";
 import { cn } from "@/lib/utils";
 import { apiGet, apiPost, apiPut, sendEmail } from "@/lib/api";
 
-type Role = "Owner" | "Manager" | "Reception" | "Accounts" | "Housekeeping" | "Restaurant";
+// Roles are master data from Configuration → Roles & Permissions (/roles).
+type Role = string;
+type Tone = "brand" | "info" | "neutral" | "accent" | "warning" | "success";
 
-const ROLE_TONE: Record<Role, "brand" | "info" | "neutral" | "accent" | "warning" | "success"> = {
+const ROLE_TONE: Record<string, Tone> = {
   Owner: "brand", Manager: "info", Reception: "neutral",
   Accounts: "accent", Housekeeping: "warning", Restaurant: "success",
 };
-const ROLES: Role[] = ["Owner", "Manager", "Reception", "Accounts", "Housekeeping", "Restaurant"];
+// Deterministic colour for any role (known ones keep their colour).
+const TONE_CYCLE: Tone[] = ["brand", "info", "accent", "warning", "success", "neutral"];
+function roleTone(name: string): Tone {
+  if (ROLE_TONE[name]) return ROLE_TONE[name];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h + name.charCodeAt(i)) % TONE_CYCLE.length;
+  return TONE_CYCLE[h];
+}
 
 type SeededUser = typeof USERS[number];
 type Status = "active" | "disabled";
@@ -61,11 +70,23 @@ function enrich(u: SeededUser & { phone?: string; joinedAt?: string }, i: number
 
 export default function UsersPage() {
   const [users, setUsers] = React.useState<UserExt[]>([]);
+  // Master roles from Configuration → Roles & Permissions.
+  const [roles, setRoles] = React.useState<{ id: string; name: string }[]>([]);
+  const roleNames = roles.map(r => r.name);
   React.useEffect(() => {
     apiGet<(SeededUser & { phone?: string; joinedAt?: string })[]>("/app-users")
       .then(rows => setUsers(rows.map((r, i) => enrich({ ...r, id: String(r.id) }, i))))
       .catch(() => {});
+    apiGet<{ id: number | string; name: string }[]>("/roles")
+      .then(rows => setRoles(rows.map(r => ({ id: String(r.id), name: r.name })))).catch(() => {});
   }, []);
+  const [newRoleOpen, setNewRoleOpen] = React.useState(false);
+  const createRole = (name: string) => {
+    apiPost<{ id: number | string; name: string }>("/roles", { name, permissions: [] })
+      .then(r => { setRoles(prev => [...prev, { id: String(r.id), name: r.name }]); showToast(`Role "${name}" created`); })
+      .catch(() => showToast("⚠ Could not create role — backend offline"));
+    setNewRoleOpen(false);
+  };
   const [search, setSearch] = React.useState("");
   const [roleFilter, setRoleFilter] = React.useState<"all" | Role>("all");
   const [statusFilter, setStatusFilter] = React.useState<"all" | Status>("all");
@@ -147,6 +168,28 @@ export default function UsersPage() {
 
   const activeFilters = (search ? 1 : 0) + (roleFilter !== "all" ? 1 : 0) + (statusFilter !== "all" ? 1 : 0);
 
+  const [orgOpen, setOrgOpen] = React.useState(false);
+  const csvInputRef = React.useRef<HTMLInputElement>(null);
+  // Parse a CSV (header: name,email,role,phone) and create each user in the DB.
+  const importCsv = async (file: File) => {
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (!lines.length) { showToast("CSV is empty"); return; }
+    const header = lines[0].toLowerCase().split(",").map(h => h.trim());
+    const col = (name: string) => header.indexOf(name);
+    const [iName, iEmail, iRole, iPhone] = [col("name"), col("email"), col("role"), col("phone")];
+    if (iName < 0 || iEmail < 0) { showToast("CSV needs at least name,email columns"); return; }
+    const rows = lines.slice(1).map(l => l.split(",").map(c => c.trim()));
+    let ok = 0;
+    for (const r of rows) {
+      const draft = { name: r[iName], email: r[iEmail], role: (iRole >= 0 && r[iRole]) || roleNames[0] || "Reception", phone: iPhone >= 0 ? r[iPhone] : "", status: "active" as const, twoFA: false, last: "Never" };
+      if (!draft.name || !draft.email) continue;
+      try { const created = await apiPost<SeededUser>("/app-users", draft); setUsers(prev => [...prev, enrich({ ...created, id: String(created.id) }, prev.length)]); ok++; }
+      catch { /* skip failed row */ }
+    }
+    showToast(ok ? `Imported ${ok} user${ok === 1 ? "" : "s"} from CSV` : "No users imported");
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
@@ -155,13 +198,14 @@ export default function UsersPage() {
           <p className="text-muted-foreground text-sm mt-1">Staff accounts · roles · 2FA · sessions · activity</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => showToast(`Org chart opened · ${users.length} staff across ${new Set(users.map(u => u.role)).size} roles`)}>
+          <Button variant="outline" onClick={() => setOrgOpen(true)}>
             <Users className="h-4 w-4" />Org chart
           </Button>
-          <Button variant="outline" onClick={() => showToast("Bulk-import CSV template downloaded")}>
+          <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) importCsv(f); e.target.value = ""; }} />
+          <Button variant="outline" onClick={() => csvInputRef.current?.click()}>
             <Upload className="h-4 w-4" />Import CSV
           </Button>
-          <Button variant="outline" onClick={() => showToast("New role draft opened")}>
+          <Button variant="outline" onClick={() => setNewRoleOpen(true)}>
             <Plus className="h-4 w-4" />New role
           </Button>
           <Button onClick={() => setInviteOpen(true)}><UserPlus className="h-4 w-4" />Invite user</Button>
@@ -192,13 +236,13 @@ export default function UsersPage() {
         <KPICard label="Active" value={active} icon={CheckCircle2} accent="success" hint={`${users.length - active} disabled`} />
         <KPICard label="2FA coverage" value={`${users.length ? Math.round(twoFA / users.length * 100) : 0}%`} icon={ShieldCheck} accent={users.length > 0 && twoFA / users.length >= 0.75 ? "success" : "warning"} hint={`${twoFA} of ${users.length}`} />
         <KPICard label="Live sessions" value={sessionsNow} icon={Activity} accent="info" hint="signed in now" />
-        <KPICard label="Roles defined" value={ROLES.length} icon={KeySquare} accent="accent" />
+        <KPICard label="Roles defined" value={roles.length} icon={KeySquare} accent="accent" />
       </div>
 
       {/* Filter bar */}
       <Card className="p-3 space-y-2.5">
         <div className="flex flex-wrap items-center gap-1.5">
-          {(["all", ...ROLES] as const).map(r => (
+          {["all", ...roleNames].map(r => (
             <button key={r} onClick={() => setRoleFilter(r as "all" | Role)} className={cn(
               "h-8 px-3 rounded-full text-xs font-medium border transition-colors inline-flex items-center gap-1.5",
               roleFilter === r ? "bg-foreground text-background border-foreground" : "border-border hover:bg-surface-sunken text-muted-foreground"
@@ -273,7 +317,7 @@ export default function UsersPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3"><Badge tone={ROLE_TONE[u.role as Role] ?? "neutral"}>{u.role}</Badge></td>
+                    <td className="px-4 py-3"><Badge tone={roleTone(u.role)}>{u.role}</Badge></td>
                     <td className="px-4 py-3"><Badge tone={u.status === "active" ? "success" : "neutral"}>{u.status}</Badge></td>
                     <td className="px-4 py-3">
                       {u.twoFA ? (
@@ -333,8 +377,10 @@ export default function UsersPage() {
       </Card>
 
       {/* Modals */}
-      {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} onSave={handleInvite} />}
-      {editUser && <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSave={handleEditSave} />}
+      {inviteOpen && <InviteModal roles={roleNames} onClose={() => setInviteOpen(false)} onSave={handleInvite} />}
+      {editUser && <EditUserModal user={editUser} roles={roleNames} onClose={() => setEditUser(null)} onSave={handleEditSave} />}
+      {newRoleOpen && <NewRoleModal existing={roleNames} onClose={() => setNewRoleOpen(false)} onSave={createRole} />}
+      {orgOpen && <OrgChartModal roles={roleNames} users={users} onClose={() => setOrgOpen(false)} />}
       {detailUser && <UserDetailDrawer user={detailUser} onClose={() => setDetailUser(null)} onEdit={() => { setEditUser(detailUser); setDetailUser(null); }} onSuspend={() => { handleSuspend(detailUser); setDetailUser(null); }} onKillSessions={() => { handleKillSessions(detailUser); setDetailUser(prev => prev ? { ...prev, sessions: [] } : null); }} onToast={showToast} />}
       {resetUser && <ResetPasswordModal user={resetUser} onClose={() => setResetUser(null)} onConfirm={(method) => {
         const target = resetUser;
@@ -356,14 +402,15 @@ export default function UsersPage() {
 }
 
 // ============== INVITE MODAL ==============
-function InviteModal({ onClose, onSave }: {
+function InviteModal({ onClose, onSave, roles }: {
   onClose: () => void;
   onSave: (data: { name: string; email: string; role: Role; phone: string; sendEmail: boolean; sendWhatsApp: boolean }) => void;
+  roles: string[];
 }) {
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [phone, setPhone] = React.useState("+91 ");
-  const [role, setRole] = React.useState<Role>("Reception");
+  const [role, setRole] = React.useState<Role>(roles[0] ?? "");
   const [sendEmail, setSendEmail] = React.useState(true);
   const [sendWhatsApp, setSendWhatsApp] = React.useState(true);
 
@@ -407,7 +454,7 @@ function InviteModal({ onClose, onSave }: {
           <div className="space-y-1.5">
             <Label className="text-xs">Role *</Label>
             <div className="grid grid-cols-3 gap-1.5">
-              {ROLES.map(r => (
+              {roles.map(r => (
                 <button key={r} type="button" onClick={() => setRole(r)} className={cn(
                   "h-9 rounded-md border text-xs font-medium transition-colors",
                   role === r ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
@@ -449,10 +496,11 @@ function InviteModal({ onClose, onSave }: {
 }
 
 // ============== EDIT USER MODAL ==============
-function EditUserModal({ user, onClose, onSave }: {
+function EditUserModal({ user, onClose, onSave, roles }: {
   user: UserExt;
   onClose: () => void;
   onSave: (u: UserExt) => void;
+  roles: string[];
 }) {
   const [form, setForm] = React.useState<UserExt>(user);
 
@@ -495,7 +543,7 @@ function EditUserModal({ user, onClose, onSave }: {
           <div className="space-y-1.5">
             <Label className="text-xs">Role</Label>
             <Select value={form.role} onChange={e => update("role", e.target.value)} className="h-9">
-              {ROLES.map(r => <option key={r}>{r}</option>)}
+              {roles.map(r => <option key={r}>{r}</option>)}
             </Select>
           </div>
         </div>
@@ -505,6 +553,104 @@ function EditUserModal({ user, onClose, onSave }: {
           <Button onClick={() => onSave(form)}>
             <CheckCircle2 className="h-3.5 w-3.5" />Save changes
           </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============== ORG CHART MODAL ==============
+function OrgChartModal({ roles, users, onClose }: {
+  roles: string[];
+  users: UserExt[];
+  onClose: () => void;
+}) {
+  React.useEffect(() => {
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKey); };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-surface rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
+          <div>
+            <h3 className="font-semibold">Org chart</h3>
+            <p className="text-xs text-muted-foreground">{users.length} staff across {roles.length} roles</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="p-5 space-y-4 overflow-y-auto">
+          {roles.map(r => {
+            const members = users.filter(u => u.role === r);
+            return (
+              <div key={r}>
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge tone={roleTone(r)}>{r}</Badge>
+                  <span className="text-xs text-muted-foreground">{members.length} {members.length === 1 ? "person" : "people"}</span>
+                </div>
+                {members.length === 0
+                  ? <p className="text-xs text-muted-foreground pl-1">No staff assigned</p>
+                  : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-1">
+                      {members.map(m => (
+                        <div key={m.id} className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
+                          <Avatar name={m.name} size={28} />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{m.name}</p>
+                            <p className="text-[11px] text-muted-foreground truncate">{m.email}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============== NEW ROLE MODAL ==============
+function NewRoleModal({ existing, onClose, onSave }: {
+  existing: string[];
+  onClose: () => void;
+  onSave: (name: string) => void;
+}) {
+  const [name, setName] = React.useState("");
+  React.useEffect(() => {
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKey); };
+  }, [onClose]);
+  const trimmed = name.trim();
+  const dup = existing.some(r => r.toLowerCase() === trimmed.toLowerCase());
+  const valid = trimmed.length > 1 && !dup;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-surface rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
+          <h3 className="font-semibold">New role</h3>
+          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Role name *</Label>
+            <Input value={name} autoFocus placeholder="e.g. Night Auditor" onChange={e => setName(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && valid) onSave(trimmed); }} />
+            {dup && <p className="text-xs text-warning">A role with that name already exists.</p>}
+            <p className="text-xs text-muted-foreground">Saved to Configuration → Roles &amp; Permissions; set its permissions there.</p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-3.5 border-t border-border">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button disabled={!valid} onClick={() => onSave(trimmed)}><Plus className="h-4 w-4" />Create role</Button>
         </div>
       </div>
     </div>
@@ -600,7 +746,7 @@ function UserDetailDrawer({ user, onClose, onEdit, onSuspend, onKillSessions, on
                 <h3 className="font-semibold text-lg truncate">{user.name}</h3>
                 <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                 <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                  <Badge tone={ROLE_TONE[user.role as Role] ?? "neutral"}>{user.role}</Badge>
+                  <Badge tone={roleTone(user.role)}>{user.role}</Badge>
                   <Badge tone={user.status === "active" ? "success" : "neutral"}>{user.status}</Badge>
                   {user.twoFA ? <Badge tone="success"><ShieldCheck className="h-2.5 w-2.5" />2FA</Badge> : <Badge tone="warning">No 2FA</Badge>}
                 </div>
