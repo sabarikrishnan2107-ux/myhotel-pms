@@ -18,21 +18,10 @@ type Venue = { id: string; name: string; capacity: number; hourly: number; halfD
 
 const EVENT_TYPES = ["Wedding", "Engagement", "Conference", "Corporate Meeting", "Birthday", "Anniversary", "Product Launch", "Other"];
 
-const PACKAGES = [
-  { id: "p1", name: "Veg Royal", desc: "12 starters · 6 mains · 4 desserts · live counters", pricePerPax: 285, veg: true },
-  { id: "p2", name: "Non-Veg Premium", desc: "14 starters · 8 mains · 5 desserts · live grill", pricePerPax: 365, veg: false },
-  { id: "p3", name: "Continental Buffet", desc: "International cuisine · 30 dishes", pricePerPax: 425, veg: false },
-  { id: "p4", name: "High Tea / Cocktail", desc: "Finger food · 18 items · bar service", pricePerPax: 195, veg: false },
-];
-
-const EXTRA_SERVICES = [
-  { id: "decor-basic", label: "Decoration — Standard", price: 4500 },
-  { id: "decor-premium", label: "Decoration — Premium (florals + drapes)", price: 12000 },
-  { id: "av", label: "AV & Stage — DJ, lights, projector", price: 3800 },
-  { id: "photographer", label: "Photographer (4 hours)", price: 2500 },
-  { id: "valet", label: "Valet parking — up to 100 cars", price: 1800 },
-  { id: "security", label: "Extra security — 4 personnel", price: 1200 },
-];
+// Banquet catering packages + add-on services are master data from
+// Configuration → Food & Hall Packages (/banquet-packages, /extra-services).
+type BanquetPkg = { id: string; name: string; desc?: string; pricePerPax: number; veg: boolean };
+type ExtraService = { id: string; label: string; price: number };
 
 const TIME_SLOTS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00"];
 
@@ -55,13 +44,22 @@ export default function NewHallBookingPage() {
   const [startTime, setStartTime] = React.useState("18:00");
   const [endTime, setEndTime] = React.useState("23:00");
   const [pax, setPax] = React.useState(150);
-  const [packageId, setPackageId] = React.useState<string>("p1");
-  const [extras, setExtras] = React.useState<string[]>(["decor-basic"]);
+  const [banquetPkgs, setBanquetPkgs] = React.useState<BanquetPkg[]>([]);
+  const [extraServices, setExtraServices] = React.useState<ExtraService[]>([]);
+  React.useEffect(() => {
+    apiGet<BanquetPkg[]>("/banquet-packages").then(rows => setBanquetPkgs(rows.map(p => ({ ...p, id: String(p.id) })))).catch(() => {});
+    apiGet<ExtraService[]>("/extra-services").then(rows => setExtraServices(rows.map(s => ({ ...s, id: String(s.id) })))).catch(() => {});
+  }, []);
+  const [packageId, setPackageId] = React.useState<string>("");
+  const [extras, setExtras] = React.useState<string[]>([]);
+  React.useEffect(() => {
+    if (banquetPkgs.length && !banquetPkgs.some(p => p.id === packageId)) setPackageId(banquetPkgs[0].id);
+  }, [banquetPkgs, packageId]);
   const [advancePct, setAdvancePct] = React.useState(30);
   const [notes, setNotes] = React.useState("");
 
   const hall = halls.find(h => h.id === hallId);
-  const pkg = PACKAGES.find(p => p.id === packageId);
+  const pkg = banquetPkgs.find(p => p.id === packageId);
 
   // Pricing math
   const startH = parseInt(startTime);
@@ -70,7 +68,7 @@ export default function NewHallBookingPage() {
   const slotType: "hourly" | "halfDay" | "fullDay" = hours >= 9 ? "fullDay" : hours >= 5 ? "halfDay" : "hourly";
   const hallCost = slotType === "fullDay" ? (hall?.fullDay ?? 0) : slotType === "halfDay" ? (hall?.halfDay ?? 0) : (hall?.hourly ?? 0) * hours;
   const foodCost = pkg ? pkg.pricePerPax * pax : 0;
-  const extrasCost = extras.reduce((s, id) => s + (EXTRA_SERVICES.find(e => e.id === id)?.price ?? 0), 0);
+  const extrasCost = extras.reduce((s, id) => s + (extraServices.find(e => e.id === id)?.price ?? 0), 0);
   const capacityWarning = !!hall && pax > hall.capacity;
   const extraPax = capacityWarning && hall ? pax - hall.capacity : 0;
   const extraPaxCost = extraPax * 35; // surcharge per extra guest
@@ -233,7 +231,7 @@ export default function NewHallBookingPage() {
 
             <Field label="Food package *">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {PACKAGES.map(p => (
+                {banquetPkgs.map(p => (
                   <button
                     key={p.id}
                     type="button"
@@ -262,7 +260,7 @@ export default function NewHallBookingPage() {
           <Card className="p-6 space-y-4">
             <SectionHead icon={Sparkles} title="Extra Services" optional />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {EXTRA_SERVICES.map(s => {
+              {extraServices.map(s => {
                 const on = extras.includes(s.id);
                 return (
                   <button

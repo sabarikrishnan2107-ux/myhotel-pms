@@ -244,6 +244,8 @@ const HOLIDAYS_SEED: Holiday[] = [
 // ============ F&B + HALL PACKAGES ============
 type FBPackage = { id: string; name: string; type: "Breakfast" | "Lunch" | "Dinner" | "High Tea" | "Buffet"; pax: number; price: number; gst: number; active: boolean };
 type HallPackage = { id: string; name: string; capacity: number; hourly: number; halfDay: number; fullDay: number; setupFee: number; gst: number; active: boolean };
+type BanquetPkg = { id: string; name: string; desc: string; pricePerPax: number; veg: boolean; active: boolean };
+type ExtraSvc = { id: string; label: string; price: number; active: boolean };
 const FB_PACKAGES_SEED: FBPackage[] = [
   { id: "fb1", name: "Continental Breakfast", type: "Breakfast", pax: 1, price: 450, gst: 5, active: true },
   { id: "fb2", name: "Buffet Lunch — Veg",   type: "Lunch",     pax: 1, price: 850, gst: 5, active: true },
@@ -464,6 +466,8 @@ export function SetupView() {
   const [holidays, setHolidays] = React.useState<Holiday[]>([]);
   const [fbPkgs, setFbPkgs] = React.useState<FBPackage[]>([]);
   const [hallPkgs, setHallPkgs] = React.useState<HallPackage[]>([]);
+  const [banquetPkgs, setBanquetPkgs] = React.useState<BanquetPkg[]>([]);
+  const [extraServices, setExtraServices] = React.useState<ExtraSvc[]>([]);
   const [agents, setAgents] = React.useState<AgentRec[]>([]);
   const [gstSlabs, setGstSlabs] = React.useState<GSTSlab[]>([]);
   const [paymentMethods, setPaymentMethods] = React.useState<PaymentMethod[]>([]);
@@ -506,6 +510,8 @@ export function SetupView() {
       apiGet<Holiday[]>("/holidays").then(r => { if (!cancelled) setHolidays(r); }),
       apiGet<FBPackage[]>("/fb-packages").then(r => { if (!cancelled) setFbPkgs(r); }),
       apiGet<HallPackage[]>("/hall-packages").then(r => { if (!cancelled) setHallPkgs(r); }),
+      apiGet<BanquetPkg[]>("/banquet-packages").then(r => { if (!cancelled) setBanquetPkgs(r); }),
+      apiGet<ExtraSvc[]>("/extra-services").then(r => { if (!cancelled) setExtraServices(r); }),
       apiGet<AgentRec[]>("/agents").then(r => { if (!cancelled) setAgents(r); }),
       apiGet<GSTSlab[]>("/gst-slabs").then(r => { if (!cancelled) setGstSlabs(r); }),
       apiGet<PaymentMethod[]>("/payment-methods").then(r => { if (!cancelled) setPaymentMethods(r); }),
@@ -831,7 +837,10 @@ export function SetupView() {
                 onMarkComplete={() => setCompleted(c => new Set([...c, "seasons"]))} />
             )}
             {active === "food" && (
-              <FoodHallManager fb={fbPkgs} halls={hallPkgs} onFbChange={next => persistList("fb-packages", fbPkgs, next, setFbPkgs)} onHallsChange={next => persistList("hall-packages", hallPkgs, next, setHallPkgs)} onToast={showToast}
+              <FoodHallManager fb={fbPkgs} halls={hallPkgs} banquet={banquetPkgs} extras={extraServices}
+                onFbChange={next => persistList("fb-packages", fbPkgs, next, setFbPkgs)} onHallsChange={next => persistList("hall-packages", hallPkgs, next, setHallPkgs)}
+                onBanquetChange={next => persistList("banquet-packages", banquetPkgs, next, setBanquetPkgs)} onExtrasChange={next => persistList("extra-services", extraServices, next, setExtraServices)}
+                onToast={showToast}
                 onMarkComplete={() => setCompleted(c => new Set([...c, "food"]))} />
             )}
             {active === "agents" && (
@@ -1963,13 +1972,16 @@ function SeasonsManager({ seasons, holidays, onSeasonsChange, onHolidaysChange, 
 }
 
 // ===================== F&B + HALL PACKAGES =====================
-function FoodHallManager({ fb, halls, onFbChange, onHallsChange, onToast, onMarkComplete }: {
-  fb: FBPackage[]; halls: HallPackage[];
+function FoodHallManager({ fb, halls, banquet, extras, onFbChange, onHallsChange, onBanquetChange, onExtrasChange, onToast, onMarkComplete }: {
+  fb: FBPackage[]; halls: HallPackage[]; banquet: BanquetPkg[]; extras: ExtraSvc[];
   onFbChange: (f: FBPackage[]) => void; onHallsChange: (h: HallPackage[]) => void;
+  onBanquetChange: (b: BanquetPkg[]) => void; onExtrasChange: (e: ExtraSvc[]) => void;
   onToast: (m: string) => void; onMarkComplete: () => void;
 }) {
   const updFb = (id: string, patch: Partial<FBPackage>) => onFbChange(fb.map(p => p.id === id ? { ...p, ...patch } : p));
   const updHall = (id: string, patch: Partial<HallPackage>) => onHallsChange(halls.map(h => h.id === id ? { ...h, ...patch } : h));
+  const updBanquet = (id: string, patch: Partial<BanquetPkg>) => onBanquetChange(banquet.map(b => b.id === id ? { ...b, ...patch } : b));
+  const updExtra = (id: string, patch: Partial<ExtraSvc>) => onExtrasChange(extras.map(e => e.id === id ? { ...e, ...patch } : e));
 
   return (
     <div className="space-y-5">
@@ -2047,6 +2059,68 @@ function FoodHallManager({ fb, halls, onFbChange, onHallsChange, onToast, onMark
                   <td className="px-3 py-2 text-right"><Input type="number" value={h.setupFee} onChange={e => updHall(h.id, { setupFee: Number(e.target.value) })} className="h-8 w-20 tabular text-right" /></td>
                   <td className="px-3 py-2 text-right"><div className="inline-flex items-center gap-1"><Input type="number" value={h.gst} onChange={e => updHall(h.id, { gst: Number(e.target.value) })} className="h-8 w-14 tabular text-right" /><span className="text-xs text-muted-foreground">%</span></div></td>
                   <td className="px-3 py-2 text-right"><button type="button" onClick={() => { onHallsChange(halls.filter(x => x.id !== h.id)); onToast("Hall removed"); }} className="h-7 w-7 rounded-md border border-border hover:bg-danger hover:text-white hover:border-danger inline-flex items-center justify-center text-muted-foreground"><Trash2 className="h-3.5 w-3.5" /></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Banquet catering packages (per pax) — used by New Hall Booking</p>
+          <Button size="sm" onClick={() => { onBanquetChange([...banquet, { id: `bq${tempSeq()}`, name: "New package", desc: "", pricePerPax: 250, veg: true, active: true }]); onToast("Banquet package added"); }}><Plus className="h-3.5 w-3.5" />Add</Button>
+        </div>
+        <div className="rounded-md border border-border overflow-hidden overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-surface-elevated border-b border-border">
+              <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+                <th className="px-3 py-2 font-semibold">Name</th>
+                <th className="px-3 py-2 font-semibold">Description</th>
+                <th className="px-3 py-2 font-semibold text-right">Price/pax</th>
+                <th className="px-3 py-2 font-semibold">Veg</th>
+                <th className="px-3 py-2 font-semibold">Active</th>
+                <th className="px-3 py-2 font-semibold text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {banquet.map(b => (
+                <tr key={b.id} className="hover:bg-surface-sunken/30">
+                  <td className="px-3 py-2"><Input value={b.name} onChange={e => updBanquet(b.id, { name: e.target.value })} className="h-8" /></td>
+                  <td className="px-3 py-2"><Input value={b.desc} onChange={e => updBanquet(b.id, { desc: e.target.value })} className="h-8" /></td>
+                  <td className="px-3 py-2 text-right"><Input type="number" value={b.pricePerPax} onChange={e => updBanquet(b.id, { pricePerPax: Number(e.target.value) })} className="h-8 w-24 tabular text-right" /></td>
+                  <td className="px-3 py-2 text-center"><input type="checkbox" checked={b.veg} onChange={e => updBanquet(b.id, { veg: e.target.checked })} className="h-4 w-4" /></td>
+                  <td className="px-3 py-2 text-center"><input type="checkbox" checked={b.active} onChange={e => updBanquet(b.id, { active: e.target.checked })} className="h-4 w-4" /></td>
+                  <td className="px-3 py-2 text-right"><button type="button" onClick={() => { onBanquetChange(banquet.filter(x => x.id !== b.id)); onToast("Package removed"); }} className="h-7 w-7 rounded-md border border-border hover:bg-danger hover:text-white hover:border-danger inline-flex items-center justify-center text-muted-foreground"><Trash2 className="h-3.5 w-3.5" /></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Add-on services — used by New Hall Booking</p>
+          <Button size="sm" onClick={() => { onExtrasChange([...extras, { id: `xs${tempSeq()}`, label: "New service", price: 1000, active: true }]); onToast("Service added"); }}><Plus className="h-3.5 w-3.5" />Add</Button>
+        </div>
+        <div className="rounded-md border border-border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-surface-elevated border-b border-border">
+              <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+                <th className="px-3 py-2 font-semibold">Service</th>
+                <th className="px-3 py-2 font-semibold text-right">Price</th>
+                <th className="px-3 py-2 font-semibold">Active</th>
+                <th className="px-3 py-2 font-semibold text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {extras.map(s => (
+                <tr key={s.id} className="hover:bg-surface-sunken/30">
+                  <td className="px-3 py-2"><Input value={s.label} onChange={e => updExtra(s.id, { label: e.target.value })} className="h-8" /></td>
+                  <td className="px-3 py-2 text-right"><Input type="number" value={s.price} onChange={e => updExtra(s.id, { price: Number(e.target.value) })} className="h-8 w-24 tabular text-right" /></td>
+                  <td className="px-3 py-2 text-center"><input type="checkbox" checked={s.active} onChange={e => updExtra(s.id, { active: e.target.checked })} className="h-4 w-4" /></td>
+                  <td className="px-3 py-2 text-right"><button type="button" onClick={() => { onExtrasChange(extras.filter(x => x.id !== s.id)); onToast("Service removed"); }} className="h-7 w-7 rounded-md border border-border hover:bg-danger hover:text-white hover:border-danger inline-flex items-center justify-center text-muted-foreground"><Trash2 className="h-3.5 w-3.5" /></button></td>
                 </tr>
               ))}
             </tbody>

@@ -94,4 +94,15 @@ class MockToLiveTest extends TestCase
             ->assertCreated()->assertJsonFragment(['code' => 'CP']);
         $this->getJson('/api/meal-plans')->assertOk()->assertJsonFragment(['perPaxPerDay' => 950]);
     }
+
+    public function test_banquet_packages_and_extra_services_crud(): void
+    {
+        $this->postJson('/api/banquet-packages', ['name' => 'Veg Royal', 'pricePerPax' => 285, 'veg' => true])
+            ->assertCreated()->assertJsonFragment(['name' => 'Veg Royal', 'veg' => true]);
+        $this->getJson('/api/banquet-packages')->assertOk()->assertJsonFragment(['pricePerPax' => 285]);
+
+        $this->postJson('/api/extra-services', ['label' => 'AV & Stage', 'price' => 3800])
+            ->assertCreated()->assertJsonFragment(['label' => 'AV & Stage']);
+        $this->getJson('/api/extra-services')->assertOk()->assertJsonFragment(['price' => 3800]);
+    }
 }

@@ -9,8 +9,10 @@ use App\Models\AuditLog;
 use App\Models\AppUser;
 use App\Models\Booking;
 use App\Models\Channel;
+use App\Models\BanquetPackage;
 use App\Models\Competitor;
 use App\Models\CompetitorRate;
+use App\Models\ExtraService;
 use App\Models\ComplianceLicense;
 use App\Models\EInvoice;
 use App\Models\EmailSchedule;
@@ -117,6 +119,8 @@ class ResourceController extends Controller
         'competitors'            => Competitor::class,
         'competitor-rates'       => CompetitorRate::class,
         'meal-plans'             => MealPlan::class,
+        'banquet-packages'       => BanquetPackage::class,
+        'extra-services'         => ExtraService::class,
         'staff'                  => Staff::class,
         'vendors'                => Vendor::class,
         'inventory-items'        => InventoryItem::class,
@@ -316,6 +320,13 @@ class ResourceController extends Controller
         'meal-plans' => [
             'code' => 'string|max:20', 'name' => 'string|max:255',
             'perPaxPerDay' => 'integer|min:0', 'desc' => 'string|max:500', 'active' => 'boolean',
+        ],
+        'banquet-packages' => [
+            'name' => 'string|max:255', 'desc' => 'string|max:500', 'pricePerPax' => 'integer|min:0',
+            'veg' => 'boolean', 'active' => 'boolean',
+        ],
+        'extra-services' => [
+            'label' => 'string|max:255', 'price' => 'integer|min:0', 'active' => 'boolean',
         ],
         'staff' => [
             'name' => 'string|max:255', 'role' => 'string|max:100', 'dept' => 'string|max:100',
@@ -846,6 +857,8 @@ class ResourceController extends Controller
         'competitors' => ['hotel'],
         'competitor-rates' => ['competitorId', 'rate'],
         'meal-plans' => ['code', 'name'],
+        'banquet-packages' => ['name'],
+        'extra-services' => ['label'],
         'staff' => ['name'], 'vendors' => ['name'], 'inventory-items' => ['name'],
         'menu-items' => ['name'], 'fb-orders' => ['tableNo'],
         'maintenance-tickets' => ['title'], 'enquiries' => ['name'], 'found-items' => ['name'],

@@ -45,6 +45,8 @@ class DatabaseSeeder extends Seeder
             CompetitorSeeder::class,
             MealPlanSeeder::class,
             BanquetCateringSeeder::class,
+            BanquetPackageSeeder::class,
+            ExtraServiceSeeder::class,
             AuditLogSeeder::class,
             OwnerFlashSeeder::class,
             BanquetOrderSeeder::class,
