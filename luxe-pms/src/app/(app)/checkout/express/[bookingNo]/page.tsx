@@ -122,6 +122,28 @@ export default function ExpressCheckoutPage({ params }: { params: Promise<{ book
         const room = rooms?.find(r => r.number === booking.roomNumber);
         if (room) return apiPut(`/rooms/${room.id}`, { hkStatus: "dirty" });
       })
+      // Actually email the GST invoice when the Email-invoice toggle is on.
+      // (Previously the toggle was cosmetic — the success screen claimed the
+      // invoice was sent but nothing was dispatched.)
+      .then(() => {
+        if (emailOn && email.trim()) {
+          return apiPost("/email/invoice", {
+            to: email.trim(),
+            invoiceNo: `INV-2026-${booking.bookingNo.slice(2)}`,
+            hotel: name,
+            guestName: booking.guestName,
+            date: new Date().toLocaleDateString("en-CA"),
+            paymentMode: modeLabel,
+            items: activeItems.map(i => ({ label: i.desc ?? "Charge", amount: i.amount ?? 0 })),
+            subtotal: preTaxSubtotal,
+            tax: gstTotal,
+            discount: 0,
+            grandTotal: chargesTotal,
+            paid: chargesTotal,
+            balance: 0,
+          }).catch(() => {});
+        }
+      })
       .catch(() => {})
       .finally(() => { setSubmitting(false); setSuccess(true); });
   };
