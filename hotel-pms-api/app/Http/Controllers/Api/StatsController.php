@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AccountEntry;
 use App\Models\AppSetting;
 use App\Models\Booking;
 use App\Models\CashierShift;
@@ -348,6 +349,35 @@ class StatsController extends Controller
             'months'    => array_values($months),
             'segments'  => $segments,
             'roomTypes' => $roomTypes,
+        ]);
+    }
+
+    /**
+     * GET /api/accounts/summary — income & expense broken down by category,
+     * plus the most recent transactions, aggregated from real account_entries.
+     */
+    public function accountsSummary(\Illuminate\Http\Request $request)
+    {
+        $base = AccountEntry::query();
+        if ($request->filled('from')) $base->where('date', '>=', $request->query('from'));
+        if ($request->filled('to'))   $base->where('date', '<=', $request->query('to'));
+
+        $byCat = fn (string $type) => (clone $base)->where('type', $type)
+            ->selectRaw('category, coalesce(sum(amount),0) as value')
+            ->groupBy('category')->orderByDesc('value')->get()
+            ->map(fn ($r) => ['category' => $r->category ?: 'Other', 'value' => (int) $r->value])
+            ->values();
+
+        $recent = (clone $base)->orderByDesc('id')->limit(8)->get()
+            ->map(fn ($e) => [
+                'id' => $e->id, 'date' => $e->date, 'desc' => $e->description,
+                'type' => ucfirst($e->type), 'amount' => (int) $e->amount,
+            ])->values();
+
+        return response()->json([
+            'income'  => $byCat('income'),
+            'expense' => $byCat('expense'),
+            'recent'  => $recent,
         ]);
     }
 

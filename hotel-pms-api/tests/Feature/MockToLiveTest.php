@@ -62,4 +62,17 @@ class MockToLiveTest extends TestCase
 
         $this->getJson('/api/einvoices?bookingNo=BK101083')->assertOk()->assertJsonCount(1);
     }
+
+    public function test_accounts_summary_aggregates_entries(): void
+    {
+        $this->postJson('/api/account-entries', ['type' => 'income', 'category' => 'Room', 'description' => 'Room rev', 'amount' => 10000]);
+        $this->postJson('/api/account-entries', ['type' => 'income', 'category' => 'Room', 'description' => 'Room rev 2', 'amount' => 5000]);
+        $this->postJson('/api/account-entries', ['type' => 'expense', 'category' => 'Payroll', 'description' => 'Salary', 'amount' => 8000]);
+
+        $res = $this->getJson('/api/accounts/summary')->assertOk()
+            ->assertJsonStructure(['income', 'expense', 'recent']);
+
+        $income = collect($res->json('income'))->firstWhere('category', 'Room');
+        $this->assertSame(15000, $income['value']);
+    }
 }
