@@ -14,6 +14,7 @@ use App\Models\EmailSchedule;
 use App\Models\Enquiry;
 use App\Models\FbPackage;
 use App\Models\Floor;
+use App\Models\FolioAdjustment;
 use App\Models\FolioCharge;
 use App\Models\FolioPayment;
 use App\Models\FbOrder;
@@ -107,6 +108,7 @@ class ResourceController extends Controller
         'bookings'               => Booking::class,
         'folio-charges'          => FolioCharge::class,
         'folio-payments'         => FolioPayment::class,
+        'folio-adjustments'      => FolioAdjustment::class,
         'staff'                  => Staff::class,
         'vendors'                => Vendor::class,
         'inventory-items'        => InventoryItem::class,
@@ -171,6 +173,7 @@ class ResourceController extends Controller
     private const FILTER_BY = [
         'folio-charges'  => 'bookingNo',
         'folio-payments' => 'bookingNo',
+        'folio-adjustments' => 'bookingNo',
         'group-rooming'  => 'groupCode',
     ];
 
@@ -279,6 +282,11 @@ class ResourceController extends Controller
         'folio-payments' => [
             'bookingNo' => 'string|max:50', 'date' => 'string|max:50', 'mode' => 'string|max:100',
             'reference' => 'string|max:255|nullable', 'amount' => 'integer',
+        ],
+        'folio-adjustments' => [
+            'bookingNo' => 'string|max:50', 'date' => 'string|max:50',
+            'type' => 'string|max:50', 'description' => 'string|max:500',
+            'amount' => 'integer', 'approver' => 'string|max:255',
         ],
         'staff' => [
             'name' => 'string|max:255', 'role' => 'string|max:100', 'dept' => 'string|max:100',
@@ -804,6 +812,7 @@ class ResourceController extends Controller
         'roles' => ['name'], 'webhooks' => ['url'],
         'guests' => ['name'], 'bookings' => ['guestName'],
         'folio-charges' => ['bookingNo', 'description'], 'folio-payments' => ['bookingNo'],
+        'folio-adjustments' => ['bookingNo', 'type', 'amount'],
         'staff' => ['name'], 'vendors' => ['name'], 'inventory-items' => ['name'],
         'menu-items' => ['name'], 'fb-orders' => ['tableNo'],
         'maintenance-tickets' => ['title'], 'enquiries' => ['name'], 'found-items' => ['name'],
