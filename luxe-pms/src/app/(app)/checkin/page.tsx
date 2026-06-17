@@ -766,11 +766,14 @@ function CheckinProcessModal({
   // Step 2 — Room assignment. Booking reserves a room TYPE; here we pick a
   // currently-available room of that type (plus the pre-assigned one if any).
   const isUnassigned = !reservation.roomNumber || reservation.roomNumber === "Unassigned";
-  // Assignable at check-in = ready rooms plus housekeeping-pending ones
-  // (dirty / cleaning). Occupied / blocked / out-of-order rooms are excluded.
+  // Assignable at check-in = only rooms that are free right now. Rooms that are
+  // already booked / occupied, blocked, out-of-order, or in housekeeping
+  // (dirty / cleaning) are excluded. The pre-assigned room is always kept so it
+  // can be reassigned. Type is matched case-insensitively because a booking's
+  // roomType (e.g. "deluxe") may not match the room category casing ("Deluxe").
   const availableForType = React.useMemo(
-    () => rooms.filter(r => r.type === reservation.roomType
-      && (r.status === "available" || r.status === "dirty" || r.status === "cleaning" || r.number === reservation.roomNumber)),
+    () => rooms.filter(r => r.type.toLowerCase() === reservation.roomType.toLowerCase()
+      && (r.status === "available" || r.number === reservation.roomNumber)),
     [rooms, reservation.roomType, reservation.roomNumber],
   );
   const [assignedRoom, setAssignedRoom] = React.useState(isUnassigned ? "" : reservation.roomNumber);
@@ -1177,7 +1180,7 @@ function CheckinProcessModal({
                       </p>
                     )}
                     {availableForType.length === 0 && (
-                      <p className="text-xs text-warning mt-1.5">No {reservation.roomType} rooms are assignable right now (all occupied or out of order) — free one up or change the room type.</p>
+                      <p className="text-xs text-warning mt-1.5">No {reservation.roomType} rooms are free right now (all booked, being cleaned, or out of order) — free one up or change the room type.</p>
                     )}
                   </div>
                 </div>
