@@ -27,6 +27,7 @@ use App\Models\FormCRegistration;
 use App\Models\FoundItem;
 use App\Models\GroupBooking;
 use App\Models\GuestRequest;
+use App\Models\HousekeepingTask;
 use App\Models\GroupRooming;
 use App\Models\GstSlab;
 use App\Models\HallBooking;
@@ -129,6 +130,7 @@ class ResourceController extends Controller
         'fb-orders'              => FbOrder::class,
         'maintenance-tickets'    => MaintenanceTicket::class,
         'guest-requests'         => GuestRequest::class,
+        'housekeeping-tasks'     => HousekeepingTask::class,
         'enquiries'              => Enquiry::class,
         'found-items'            => FoundItem::class,
         'loyalty-members'        => LoyaltyMember::class,
@@ -189,6 +191,7 @@ class ResourceController extends Controller
         'folio-payments' => 'bookingNo',
         'folio-adjustments' => 'bookingNo',
         'einvoices' => 'bookingNo',
+        'housekeeping-tasks' => 'assignee',
         'competitor-rates' => 'competitorId',
         'group-rooming'  => 'groupCode',
     ];
@@ -362,6 +365,11 @@ class ResourceController extends Controller
             'code' => 'string|max:50', 'room' => 'string|max:50|nullable', 'guestName' => 'string|max:255',
             'type' => 'string|max:50', 'title' => 'string|max:255', 'status' => 'string|max:50',
             'assignee' => 'string|max:100|nullable', 'requestedAt' => 'string|max:50', 'notes' => 'string|max:1000|nullable',
+        ],
+        'housekeeping-tasks' => [
+            'room' => 'string|max:50', 'roomType' => 'string|max:50', 'assignee' => 'string|max:100',
+            'assignedBy' => 'string|max:100|nullable', 'status' => 'string|max:50', 'assignedAt' => 'string|max:50',
+            'startedAt' => 'string|max:50|nullable', 'completedAt' => 'string|max:50|nullable', 'durationMin' => 'integer|min:0',
         ],
         'enquiries' => [
             'enqNo' => 'string|max:50', 'type' => 'string|max:50', 'name' => 'string|max:255',
@@ -868,7 +876,7 @@ class ResourceController extends Controller
         'extra-services' => ['label'],
         'staff' => ['name'], 'vendors' => ['name'], 'inventory-items' => ['name'],
         'menu-items' => ['name'], 'fb-orders' => ['tableNo'],
-        'maintenance-tickets' => ['title'], 'guest-requests' => ['title', 'guestName', 'room'], 'enquiries' => ['name'], 'found-items' => ['name'],
+        'maintenance-tickets' => ['title'], 'guest-requests' => ['title', 'guestName', 'room'], 'housekeeping-tasks' => ['room', 'assignee'], 'enquiries' => ['name'], 'found-items' => ['name'],
         'loyalty-members' => ['name'],
         'loyalty-tiers' => ['level'],
         'loyalty-rewards' => ['name'],
@@ -1026,7 +1034,7 @@ class ResourceController extends Controller
     /** Slugs whose friendly module name differs from a plain title-case. */
     private const MODULE_LABELS = [
         'folio-charges' => 'Folio', 'folio-payments' => 'Payment', 'fb-orders' => 'F&B',
-        'menu-items' => 'F&B', 'inventory-items' => 'Inventory', 'maintenance-tickets' => 'Maintenance', 'guest-requests' => 'Guest Requests',
+        'menu-items' => 'F&B', 'inventory-items' => 'Inventory', 'maintenance-tickets' => 'Maintenance', 'guest-requests' => 'Guest Requests', 'housekeeping-tasks' => 'Housekeeping',
         'found-items' => 'Lost & Found', 'lost-reports' => 'Lost & Found', 'loyalty-members' => 'Loyalty', 'account-entries' => 'Accounts',
         'app-users' => 'Users', 'hall-bookings' => 'Halls', 'group-bookings' => 'Groups',
         'rate-plans' => 'Rate Plans', 'gst-slabs' => 'GST', 'payment-methods' => 'Payment Methods',
