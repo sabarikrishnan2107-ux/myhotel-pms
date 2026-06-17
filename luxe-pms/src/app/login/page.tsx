@@ -3,10 +3,11 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Sparkles, ArrowRight, ShieldCheck, Eye, EyeOff, AlertCircle,
+  ArrowRight, ShieldCheck, Eye, EyeOff, AlertCircle,
   Mail, Lock, BarChart3, Users, User,
 } from "lucide-react";
 import { login, getToken } from "@/lib/api";
+import { Logo } from "@/components/logo";
 import { setRole, isRole, ROLE_HOME, type Role } from "@/lib/auth";
 
 // All demo roles share the one demo account for the API token; the selected
@@ -184,11 +185,8 @@ export default function LoginPage() {
         {/* top bar */}
         <div className="flex items-center justify-between px-6 py-6 sm:px-11">
           <div className="flex items-center gap-3">
-            <span
-              className="grid h-11 w-11 place-items-center rounded-xl text-[#07142A] shadow-lg"
-              style={{ background: `linear-gradient(135deg, ${GOLD}, #C38A1E)` }}
-            >
-              <Sparkles className="h-5 w-5" />
+            <span className="grid h-11 w-11 place-items-center overflow-hidden rounded-xl shadow-lg">
+              <Logo />
             </span>
             <div>
               <div className="text-[18px] font-extrabold tracking-[0.06em]">
@@ -270,11 +268,8 @@ export default function LoginPage() {
 
               {/* property crest */}
               <div className="login-fade mb-5 flex items-center gap-3" style={{ ...tz(20), animationDelay: ".12s" }}>
-                <div
-                  className="font-display grid h-[46px] w-[46px] place-items-center rounded-[13px] text-[18px] font-semibold"
-                  style={{ background: "linear-gradient(150deg, rgba(230,184,75,.22), rgba(230,184,75,.06))", border: "1px solid rgba(230,184,75,.4)", color: GOLD }}
-                >
-                  PM
+                <div className="grid h-[46px] w-[46px] place-items-center overflow-hidden rounded-[13px]" style={{ border: "1px solid rgba(230,184,75,.4)" }}>
+                  <Logo />
                 </div>
                 <div className="leading-tight">
                   <div className="text-[14px] font-bold" style={{ color: C.text }}>The Pearl Marina</div>

@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { NAV, GROUP_LABEL, type NavItem } from "@/lib/nav";
 import { getRole, rolesFor, canAccessPage, type Role } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-import { Sparkles, X } from "lucide-react";
+import { X } from "lucide-react";
+import { Logo } from "@/components/logo";
 
 interface SidebarProps {
   open: boolean;
@@ -71,8 +72,8 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           {/* Brand header */}
           <div className="h-16 flex items-center justify-between pl-4 pr-3 border-b border-[hsl(var(--sidebar-border))] shrink-0">
             <Link href="/dashboard" className="flex items-center gap-2.5 group min-w-0">
-              <span className="h-9 w-9 shrink-0 rounded-lg bg-gradient-to-br from-[hsl(var(--sidebar-active))] to-[hsl(var(--sidebar-active))]/75 text-[hsl(var(--sidebar-bg))] flex items-center justify-center font-bold shadow-md shadow-[hsl(var(--sidebar-active))]/20 ring-1 ring-[hsl(var(--sidebar-active))]/40 group-hover:scale-105 transition-transform">
-                <Sparkles className="h-4.5 w-4.5" />
+              <span className="h-9 w-9 shrink-0 overflow-hidden rounded-lg shadow-md ring-1 ring-[hsl(var(--sidebar-active))]/40 group-hover:scale-105 transition-transform">
+                <Logo />
               </span>
               <span className={cn(
                 "flex flex-col leading-tight transition-opacity duration-150 min-w-0",
