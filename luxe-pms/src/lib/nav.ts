@@ -44,6 +44,7 @@ export const NAV: NavItem[] = [
   { href: "/halls", label: "Hall Booking", icon: Building2, group: "operations" },
   { href: "/food", label: "Food & Room Service", icon: UtensilsCrossed, group: "operations" },
   { href: "/housekeeping", label: "Housekeeping", icon: Sparkles, group: "operations" },
+  { href: "/hk-report", label: "HK Productivity", icon: ClipboardCheck, group: "operations" },
   { href: "/maintenance", label: "Maintenance", icon: Wrench, group: "operations" },
   { href: "/lost-found", label: "Lost & Found", icon: Search, group: "operations" },
 
