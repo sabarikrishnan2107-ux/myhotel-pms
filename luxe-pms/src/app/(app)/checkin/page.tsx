@@ -24,19 +24,42 @@ import { SignaturePad } from "@/components/guests/signature-pad";
 import { useGuests, useRooms } from "@/lib/use-directory";
 import type { Reservation, PaymentStatus, BookingSource, Guest } from "@/lib/types";
 import { cn, money, formatTime } from "@/lib/utils";
-import { apiGet, apiPut, sendEmail } from "@/lib/api";
+import { apiGet, apiPut, apiPost, sendEmail } from "@/lib/api";
 import { useProperty, hotelName } from "@/lib/use-property";
 
-// Mark a booking checked-in in Postgres (looked up by its bookingNo).
-async function persistCheckIn(bookingNo: string, roomNumber?: string) {
+// Money collected at the check-in payment step (amount in ₹, plus mode/reference).
+type CheckInPayment = { amount: number; mode: string; reference: string };
+
+// Mark a booking checked-in in Postgres (looked up by its bookingNo) and, when a
+// payment was collected at the desk, record it on the folio and roll the
+// booking's advance / balance / paymentStatus forward — same flow checkout uses,
+// so the collected money is actually reflected at checkout instead of "unpaid".
+async function persistCheckIn(bookingNo: string, roomNumber?: string, payment?: CheckInPayment) {
   try {
-    const list = await apiGet<{ id: number; bookingNo: string }[]>("/bookings");
+    const list = await apiGet<{ id: number; bookingNo: string; advance?: number; balance?: number }[]>("/bookings");
     const bk = list.find(b => b.bookingNo === bookingNo);
-    if (bk) {
-      const patch: Record<string, string> = { status: "checked-in" };
-      if (roomNumber) patch.roomNumber = roomNumber;   // write the room assigned at check-in
-      await apiPut(`/bookings/${bk.id}`, patch);
+    if (!bk) return;
+
+    const patch: Record<string, string | number> = { status: "checked-in" };
+    if (roomNumber) patch.roomNumber = roomNumber;   // write the room assigned at check-in
+
+    if (payment && payment.amount > 0) {
+      const newAdvance = (bk.advance ?? 0) + payment.amount;
+      const newBalance = Math.max(0, (bk.balance ?? 0) - payment.amount);
+      patch.advance = newAdvance;
+      patch.balance = newBalance;
+      patch.paymentStatus = newBalance === 0 ? "paid" : "partial";
+      // Record the actual payment line on the folio (mode + reference for reconciliation).
+      await apiPost("/folio-payments", {
+        bookingNo,
+        date: new Date().toISOString().slice(0, 10),
+        mode: payment.mode,
+        reference: payment.reference.trim() || null,
+        amount: payment.amount,
+      });
     }
+
+    await apiPut(`/bookings/${bk.id}`, patch);
   } catch { /* offline — UI still reflects the check-in locally */ }
 }
 
@@ -541,12 +564,12 @@ export default function CheckinPage() {
           reservation={checkingIn}
           forceKycCapture={expressWalkInIds.has(checkingIn.id)}
           onClose={() => setCheckingIn(null)}
-          onComplete={(res, msg, room) => {
+          onComplete={(res, msg, room, payment) => {
             setCompletedIds(s => new Set([...s, res.id]));
             setCheckingIn(null);
             setToast(msg);
             setTimeout(() => setToast(null), 3000);
-            persistCheckIn(res.bookingNo, room);
+            persistCheckIn(res.bookingNo, room, payment);
           }}
         />
       )}
@@ -718,7 +741,7 @@ function CheckinProcessModal({
 }: {
   reservation: Reservation;
   onClose: () => void;
-  onComplete: (r: Reservation, msg: string, roomNumber: string) => void;
+  onComplete: (r: Reservation, msg: string, roomNumber: string, payment: CheckInPayment) => void;
   forceKycCapture?: boolean;
 }) {
   const name = hotelName(useProperty());
@@ -766,15 +789,47 @@ function CheckinProcessModal({
   // Step 2 — Room assignment. Booking reserves a room TYPE; here we pick a
   // currently-available room of that type (plus the pre-assigned one if any).
   const isUnassigned = !reservation.roomNumber || reservation.roomNumber === "Unassigned";
-  // Assignable at check-in = only rooms that are free right now. Rooms that are
-  // already booked / occupied, blocked, out-of-order, or in housekeeping
-  // (dirty / cleaning) are excluded. The pre-assigned room is always kept so it
-  // can be reassigned. Type is matched case-insensitively because a booking's
-  // roomType (e.g. "deluxe") may not match the room category casing ("Deluxe").
+
+  // Rooms already committed to ANOTHER booking whose stay overlaps this guest's
+  // stay must not be offered — the room board only flags rooms occupied *today*,
+  // so a room pre-assigned to a future/overlapping booking would otherwise look
+  // free here and get double-booked. We compute the overlap against all active
+  // (non-cancelled, non-checked-out) bookings.
+  const [allBookings, setAllBookings] = React.useState<
+    { bookingNo?: string; roomNumber?: string; status?: string; checkIn?: string; checkOut?: string }[]
+  >([]);
+  React.useEffect(() => {
+    apiGet<typeof allBookings>("/bookings").then(setAllBookings).catch(() => {});
+  }, []);
+  const blockedRooms = React.useMemo(() => {
+    const day = (s?: string) => (s ?? "").slice(0, 10);
+    const rIn = day(reservation.checkIn);
+    const rOut = day(reservation.checkOut);
+    const blocked = new Set<string>();
+    allBookings.forEach(b => {
+      const st = b.status ?? "confirmed";
+      if (st === "cancelled" || st === "checked-out") return;       // freed rooms
+      if (b.bookingNo === reservation.bookingNo) return;            // ignore this booking itself
+      if (!b.roomNumber || b.roomNumber === "Unassigned") return;
+      const bIn = day(b.checkIn);
+      const bOut = day(b.checkOut);
+      if (!bIn || !bOut || !rIn || !rOut) return;
+      // Half-open overlap: [bIn, bOut) intersects [rIn, rOut). Same-day turnover is allowed.
+      if (bIn < rOut && bOut > rIn) blocked.add(b.roomNumber);
+    });
+    return blocked;
+  }, [allBookings, reservation.bookingNo, reservation.checkIn, reservation.checkOut]);
+
+  // Assignable at check-in = only rooms that are free for this stay. Rooms that
+  // are occupied/blocked/out-of-order/in-housekeeping (via the board) or already
+  // assigned to another overlapping booking are excluded. The pre-assigned room
+  // is always kept so it can be reassigned. Type is matched case-insensitively
+  // because a booking's roomType ("deluxe") may not match the category ("Deluxe").
   const availableForType = React.useMemo(
     () => rooms.filter(r => r.type.toLowerCase() === reservation.roomType.toLowerCase()
-      && (r.status === "available" || r.number === reservation.roomNumber)),
-    [rooms, reservation.roomType, reservation.roomNumber],
+      && (r.number === reservation.roomNumber
+        || (r.status === "available" && !blockedRooms.has(r.number)))),
+    [rooms, reservation.roomType, reservation.roomNumber, blockedRooms],
   );
   const [assignedRoom, setAssignedRoom] = React.useState(isUnassigned ? "" : reservation.roomNumber);
   const selectedRoomObj = availableForType.find(r => r.number === assignedRoom);
@@ -862,7 +917,8 @@ function CheckinProcessModal({
       }
     }
 
-    setTimeout(() => onComplete(reservation, `${reservation.guestName} checked in · Room ${assignedRoom}${emailNote}`, assignedRoom), 1600);
+    const collectedPayment: CheckInPayment = { amount: collectAmount, mode: paymentMode, reference: paymentRef };
+    setTimeout(() => onComplete(reservation, `${reservation.guestName} checked in · Room ${assignedRoom}${emailNote}`, assignedRoom, collectedPayment), 1600);
   };
 
   if (done) {

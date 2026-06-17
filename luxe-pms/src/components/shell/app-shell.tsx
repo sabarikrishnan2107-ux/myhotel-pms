@@ -5,6 +5,7 @@ import { Sidebar } from "./sidebar";
 import { TopBar } from "./top-bar";
 import { RouteProgress } from "./route-progress";
 import { NotificationsProvider } from "@/components/notifications/store";
+import { PreferencesBootstrap } from "@/components/preferences-bootstrap";
 import { getToken, apiGet } from "@/lib/api";
 import { getRole, canAccess, canAccessPage, setSessionUser, ROLE_HOME } from "@/lib/auth";
 
@@ -53,6 +54,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <NotificationsProvider>
+      <PreferencesBootstrap />
       <div className="flex min-h-svh bg-background">
         <RouteProgress />
         <Sidebar open={open} onClose={() => setOpen(false)} />

@@ -17,6 +17,7 @@ import { cn, money } from "@/lib/utils";
 import { apiGet, apiPut, apiPost, apiUpload, apiDownload, syncList } from "@/lib/api";
 import { PreferencesPanel, SecurityPanel, NotificationChannelsPanel, WebhooksPanel, useSettingsPersistence } from "./personal-panels";
 import { NAV, GROUP_LABEL } from "@/lib/nav";
+import { applyBranding } from "@/lib/use-branding";
 
 // Monotonic counter for client-side temp ids on newly-added rows (replaced by
 // the real DB id once the create round-trips). Pure & collision-free.
@@ -2659,6 +2660,12 @@ function BrandingManager({ onToast, onMarkComplete }: { onToast: (m: string) => 
       if (v.fontPair !== undefined) setFontPair(v.fontPair);
     },
   );
+
+  // Live-apply brand colors / fonts / favicon / email signature as they change,
+  // so the operator sees the effect immediately (persisted on Save).
+  React.useEffect(() => {
+    applyBranding({ logoUrl, faviconUrl, brandColor, accentColor, emailSig, fontPair });
+  }, [logoUrl, faviconUrl, brandColor, accentColor, emailSig, fontPair]);
 
   const onFile = (kind: "logo" | "favicon") => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

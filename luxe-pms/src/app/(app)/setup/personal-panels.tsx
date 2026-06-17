@@ -11,6 +11,9 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { apiGet, apiPut, apiPost, syncList } from "@/lib/api";
+import { useTheme } from "next-themes";
+import { applyAppearance, setPrefsCache } from "@/lib/preferences";
+import { setDateTimePrefs } from "@/lib/utils";
 
 // Loads a single-row settings section from Postgres on mount, and returns a
 // save() that persists the current values. `hydrate` applies a loaded blob.
@@ -67,23 +70,47 @@ export function PreferencesPanel() {
   const [dateFormat, setDateFormat] = React.useState("DD/MM/YYYY");
   const [timeFormat, setTimeFormat] = React.useState("24-hour");
   const [density, setDensity] = React.useState<"compact" | "cozy" | "comfortable">("cozy");
-  const [theme, setTheme] = React.useState<"light" | "dark" | "auto">("auto");
   const [landing, setLanding] = React.useState("/dashboard");
   const [highContrast, setHighContrast] = React.useState(false);
   const [reducedMotion, setReducedMotion] = React.useState(false);
   const [textSize, setTextSize] = React.useState(100);
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
 
+  // next-themes owns the real theme (.dark class + persistence). The buttons
+  // below drive it directly so they actually switch the app and stay in sync
+  // with the top-bar toggle. The active button reflects next-themes' value.
+  const { theme: ntTheme, setTheme: setNtTheme } = useTheme();
+  const activeTheme: "light" | "dark" | "auto" =
+    ntTheme === "light" || ntTheme === "dark" ? ntTheme : "auto";
+  const chooseTheme = (t: "light" | "dark" | "auto") => {
+    setNtTheme(t === "auto" ? "system" : t);
+  };
+
+  // Live-apply appearance + accessibility to the document as the user tweaks
+  // them, so changes are visible immediately (persisted on Save). Theme is NOT
+  // a dependency here — it's owned by next-themes; coupling them would re-toggle
+  // <html> classes on every theme change and loop with next-themes' own class
+  // management.
+  React.useEffect(() => {
+    applyAppearance({ density, textSize, highContrast, reducedMotion });
+    setPrefsCache({ density, textSize, highContrast, reducedMotion });
+  }, [density, textSize, highContrast, reducedMotion]);
+
+  // Keep the date/time formatter cache in sync as the user changes locale prefs.
+  React.useEffect(() => {
+    setDateTimePrefs({ dateFormat, timeFormat, timezone });
+  }, [dateFormat, timeFormat, timezone]);
+
   const save = useSettingsPersistence(
     "preferences",
-    { language, timezone, dateFormat, timeFormat, density, theme, landing, highContrast, reducedMotion, textSize },
+    { language, timezone, dateFormat, timeFormat, density, theme: activeTheme, landing, highContrast, reducedMotion, textSize },
     v => {
       if (v.language !== undefined) setLanguage(v.language);
       if (v.timezone !== undefined) setTimezone(v.timezone);
       if (v.dateFormat !== undefined) setDateFormat(v.dateFormat);
       if (v.timeFormat !== undefined) setTimeFormat(v.timeFormat);
       if (v.density !== undefined) setDensity(v.density);
-      if (v.theme !== undefined) setTheme(v.theme);
+      if (v.theme !== undefined) setNtTheme(v.theme === "auto" ? "system" : v.theme);
       if (v.landing !== undefined) setLanding(v.landing);
       if (v.highContrast !== undefined) setHighContrast(v.highContrast);
       if (v.reducedMotion !== undefined) setReducedMotion(v.reducedMotion);
@@ -128,9 +155,9 @@ export function PreferencesPanel() {
       <Field2 label="Theme">
         <div className="grid grid-cols-3 gap-2">
           {(["light", "dark", "auto"] as const).map(t => (
-            <button key={t} type="button" onClick={() => setTheme(t)} className={cn(
+            <button key={t} type="button" onClick={() => chooseTheme(t)} className={cn(
               "h-10 rounded-md border text-xs font-medium capitalize transition-colors",
-              theme === t ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
+              activeTheme === t ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
             )}>{t === "auto" ? "System" : t}</button>
           ))}
         </div>

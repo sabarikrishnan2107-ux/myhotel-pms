@@ -84,11 +84,17 @@ const PAYMENT_BAR: Record<PaymentStatus, string> = {
   refunded: "bg-muted-foreground",
 };
 
+// Window anchor: a few days before today so the current day shows with a little
+// lead-in (recent arrivals / in-house guests) rather than sitting at the edge.
+function defaultWindowStart() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - 3);
+  return d;
+}
+
 export default function CalendarPage() {
-  const [startDate, setStartDate] = React.useState(() => {
-    const d = new Date("2026-06-02");
-    return d;
-  });
+  const [startDate, setStartDate] = React.useState(defaultWindowStart);
   const [selected, setSelected] = React.useState<{ guest: Guest; reservation: Reservation } | null>(null);
 
   // Live reservations, rooms and guests — sourced entirely from Postgres.
@@ -277,7 +283,7 @@ export default function CalendarPage() {
             </span>
             <button onClick={() => moveDays(DAYS)} className="h-9 px-2 hover:bg-surface-sunken inline-flex items-center justify-center border-l border-border" title={`Next ${DAYS} days`}><ChevronRight className="h-4 w-4" /></button>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => setStartDate(new Date("2026-05-22"))}>
+          <Button variant="ghost" size="sm" onClick={() => setStartDate(defaultWindowStart())}>
             <CalendarIcon className="h-3.5 w-3.5" /> Today
           </Button>
           {/* Date jumper */}
@@ -398,7 +404,7 @@ export default function CalendarPage() {
               </div>
               {days.map((d, i) => {
                 const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                const isToday = d.toDateString() === new Date("2026-05-24").toDateString();
+                const isToday = d.toDateString() === new Date().toDateString();
                 return (
                   <div
                     key={i}
@@ -452,7 +458,7 @@ export default function CalendarPage() {
                       <div className="absolute inset-0 flex">
                         {days.map((d, i) => {
                           const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                          const isToday = d.toDateString() === new Date("2026-05-24").toDateString();
+                          const isToday = d.toDateString() === new Date().toDateString();
                           return (
                             <div
                               key={i}

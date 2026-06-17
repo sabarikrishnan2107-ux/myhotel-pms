@@ -19,6 +19,7 @@ import { RESERVATIONS, GUESTS, SAMPLE_FOLIO_CHARGES, SAMPLE_PAYMENTS } from "@/l
 import { cn, money, formatDate, formatDateLong, formatTime } from "@/lib/utils";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { useProperty, hotelName } from "@/lib/use-property";
+import { useBranding } from "@/lib/use-branding";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: FileBarChart },
@@ -54,6 +55,7 @@ const NOTES = {
 export default function FolioDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const name = hotelName(useProperty());
+  const branding = useBranding();
   // Real booking from Postgres (falls back to the seed only while offline / not found).
   const [liveRes, setLiveRes] = React.useState<typeof RESERVATIONS[number] | null>(null);
   const reservation = liveRes ?? RESERVATIONS.find(r => r.bookingNo === id) ?? RESERVATIONS[0];
@@ -176,12 +178,19 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
         {/* Top strip: hotel brand + invoice meta */}
         <div className="px-6 py-4 bg-linear-to-r from-brand-soft/40 via-surface to-accent-soft/30 border-b border-border flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            <span className="h-10 w-10 rounded-md bg-brand text-brand-foreground flex items-center justify-center shadow-md">
-              <Sparkles className="h-5 w-5" />
-            </span>
+            {branding.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={branding.logoUrl} alt={name} className="h-10 w-auto max-w-[140px] object-contain" />
+            ) : (
+              <span className="h-10 w-10 rounded-md bg-brand text-brand-foreground flex items-center justify-center shadow-md">
+                <Sparkles className="h-5 w-5" />
+              </span>
+            )}
             <div>
               <p className="font-display text-lg font-medium tracking-tight">{name}</p>
-              <p className="text-[11px] text-muted-foreground">Main Tower · MG Road, Bandra West, Mumbai 400050 · GSTIN <span className="font-medium text-foreground tabular">27AAACR5055K1Z5</span> · PAN AAACR5055K</p>
+              {branding.letterhead
+                ? <p className="text-[11px] text-muted-foreground whitespace-pre-line">{branding.letterhead}</p>
+                : <p className="text-[11px] text-muted-foreground">Main Tower · MG Road, Bandra West, Mumbai 400050 · GSTIN <span className="font-medium text-foreground tabular">27AAACR5055K1Z5</span> · PAN AAACR5055K</p>}
             </div>
           </div>
           <div className="text-right">
@@ -1051,6 +1060,7 @@ function PrintModal({ onClose, onPrint, reservation, grandTotal, paymentsTotal, 
   reservation: typeof RESERVATIONS[number]; grandTotal: number; paymentsTotal: number; balance: number; chargesSubtotal: number; chargesTax: number;
 }) {
   const name = hotelName(useProperty());
+  const branding = useBranding();
   return (
     <Modal title="Print / Export Invoice" onClose={onClose} wide>
       <div className="space-y-4">
@@ -1080,8 +1090,8 @@ function PrintModal({ onClose, onPrint, reservation, grandTotal, paymentsTotal, 
             <div className="flex justify-between"><span className="text-muted-foreground">Paid</span><span className="tabular text-success">{money(paymentsTotal)}</span></div>
             <div className="flex justify-between"><span className="font-semibold">{balance >= 0 ? "Balance Due" : "Refund Due"}</span><span className="font-bold tabular">{money(Math.abs(balance))}</span></div>
           </div>
-          <p className="text-[10px] text-muted-foreground border-t border-border pt-2 italic">
-            Subject to Mumbai jurisdiction. Goods/Services once sold will not be taken back. This is a computer generated invoice.
+          <p className="text-[10px] text-muted-foreground border-t border-border pt-2 italic whitespace-pre-line">
+            {branding.invoiceFooter}
           </p>
         </div>
         <div className="flex justify-end gap-2 pt-3 border-t border-border">

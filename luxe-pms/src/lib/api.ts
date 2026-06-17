@@ -91,6 +91,12 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// Default email signature (from Branding & Assets). Set once by the branding
+// bootstrap/panel so every outbound email is signed without each caller knowing
+// about branding. Kept here (not in use-branding) to avoid a circular import.
+let emailSignature = "";
+export function setEmailSignature(sig: string) { emailSignature = sig || ""; }
+
 // Sends a branded email through the backend's single configured mail account
 // (Gmail SMTP). Every "email customer/guest/staff" action funnels through here.
 export type EmailRow = { label: string; value?: string };
@@ -104,7 +110,10 @@ export async function sendEmail(payload: {
   note?: string;
   context?: string;
 }): Promise<{ sent: true; to: string }> {
-  return apiPost("/email/send", payload);
+  // Append the configured signature to the note so it lands at the foot of
+  // every email; callers' own notes are preserved above it.
+  const note = [payload.note, emailSignature].filter(Boolean).join("\n\n") || undefined;
+  return apiPost("/email/send", { ...payload, note });
 }
 
 export async function apiUpload(file: File): Promise<{ url: string; path: string }> {

@@ -6,9 +6,22 @@ import {
   ArrowRight, ShieldCheck, Eye, EyeOff, AlertCircle,
   Mail, Lock, BarChart3, Users, User,
 } from "lucide-react";
-import { login, getToken } from "@/lib/api";
+import { login, getToken, apiGet } from "@/lib/api";
 import { Logo } from "@/components/logo";
-import { setRole, isRole, ROLE_HOME, type Role } from "@/lib/auth";
+import { setRole, getRole, isRole, canAccess, ROLE_HOME, type Role } from "@/lib/auth";
+
+// Where to send a user after login: their saved "Default landing page"
+// preference when it's set and allowed for their role, else the role's home.
+// Guests always go to their portal. The shell still gates page access on
+// arrival, so an out-of-bounds preference is corrected there.
+async function resolveLanding(role: Role): Promise<string> {
+  if (role === "guest") return ROLE_HOME.guest;
+  try {
+    const prefs = await apiGet<{ landing?: string }>("/settings/preferences");
+    if (prefs?.landing && canAccess(prefs.landing, role)) return prefs.landing;
+  } catch { /* backend offline — fall back to role home */ }
+  return ROLE_HOME[role];
+}
 
 // All demo roles share the one demo account for the API token; the selected
 // access level is a client-side overlay that decides nav + landing page.
@@ -55,7 +68,7 @@ export default function LoginPage() {
     try {
       await login(DEMO_EMAIL, DEMO_PASSWORD);
       setRole(r);
-      router.replace(ROLE_HOME[r]);
+      router.replace(await resolveLanding(r));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
       setLoading(false);
@@ -67,7 +80,7 @@ export default function LoginPage() {
   React.useEffect(() => {
     const as = new URLSearchParams(window.location.search).get("as");
     if (isRole(as)) { loginAs(as); return; }
-    if (getToken()) router.replace("/dashboard");
+    if (getToken()) resolveLanding(getRole()).then(d => router.replace(d));
   }, [router, loginAs]);
 
   // Time-aware concierge greeting (client-only to avoid hydration mismatch).
@@ -88,7 +101,7 @@ export default function LoginPage() {
         return;
       }
       setRole(role); // chosen access level decides nav + landing page
-      router.replace(ROLE_HOME[role]);
+      router.replace(await resolveLanding(role));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
       setLoading(false);
