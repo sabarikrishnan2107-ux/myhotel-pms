@@ -619,13 +619,10 @@ function SettingsModal({ onClose, onSave }: { onClose: () => void; onSave: () =>
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <button type="button" onClick={() => onChange(!on)} className={cn(
-      "relative h-6 w-11 rounded-full transition-colors shrink-0",
-      on ? "bg-success" : "bg-border-strong"
+      "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors",
+      on ? "bg-success justify-end" : "bg-zinc-300 dark:bg-zinc-600 justify-start"
     )}>
-      <span className={cn(
-        "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-transform",
-        on ? "translate-x-[22px]" : "translate-x-0.5"
-      )} />
+      <span className="h-5 w-5 rounded-full bg-white shadow-sm" />
     </button>
   );
 }

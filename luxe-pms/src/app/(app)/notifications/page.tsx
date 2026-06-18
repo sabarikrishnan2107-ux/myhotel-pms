@@ -479,13 +479,10 @@ function PreferencesTab({ onToast }: { onToast: (m: string) => void }) {
 function Toggle({ on, onChange, icon: Icon }: { on: boolean; onChange: (v: boolean) => void; icon?: React.ComponentType<{ className?: string }> }) {
   return (
     <button type="button" onClick={() => onChange(!on)} className={cn(
-      "relative h-6 w-11 rounded-full transition-colors inline-flex items-center shrink-0",
-      on ? "bg-success" : "bg-border-strong"
+      "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors",
+      on ? "bg-success justify-end" : "bg-zinc-300 dark:bg-zinc-600 justify-start"
     )} aria-label="Toggle">
-      <span className={cn(
-        "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform inline-flex items-center justify-center text-foreground",
-        on ? "translate-x-[22px]" : "translate-x-0.5"
-      )}>
+      <span className="h-5 w-5 rounded-full bg-white shadow-sm inline-flex items-center justify-center text-foreground">
         {Icon && <Icon className="h-2.5 w-2.5" />}
       </span>
     </button>

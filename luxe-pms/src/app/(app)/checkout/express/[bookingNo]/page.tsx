@@ -450,14 +450,11 @@ export default function ExpressCheckoutPage({ params }: { params: Promise<{ book
                   type="button"
                   onClick={() => { setEmailOn(v => !v); showToast(`Email invoice ${!emailOn ? "enabled" : "disabled"}`); }}
                   className={cn(
-                    "mt-0.5 h-6 w-11 rounded-full transition-colors shrink-0 relative",
-                    emailOn ? "bg-success" : "bg-border-strong"
+                    "mt-0.5 relative inline-flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors",
+                    emailOn ? "bg-success justify-end" : "bg-zinc-300 dark:bg-zinc-600 justify-start"
                   )}
                 >
-                  <span className={cn(
-                    "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
-                    emailOn ? "translate-x-[22px]" : "translate-x-0.5"
-                  )} />
+                  <span className="h-5 w-5 rounded-full bg-white shadow-sm" />
                 </button>
                 <Mail className="h-4 w-4 text-muted-foreground mt-1 shrink-0" />
                 <div className="flex-1 min-w-0">
@@ -478,14 +475,11 @@ export default function ExpressCheckoutPage({ params }: { params: Promise<{ book
                   type="button"
                   onClick={() => { setWaOn(v => !v); showToast(`WhatsApp invoice ${!waOn ? "enabled" : "disabled"}`); }}
                   className={cn(
-                    "mt-0.5 h-6 w-11 rounded-full transition-colors shrink-0 relative",
-                    waOn ? "bg-success" : "bg-border-strong"
+                    "mt-0.5 relative inline-flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors",
+                    waOn ? "bg-success justify-end" : "bg-zinc-300 dark:bg-zinc-600 justify-start"
                   )}
                 >
-                  <span className={cn(
-                    "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
-                    waOn ? "translate-x-[22px]" : "translate-x-0.5"
-                  )} />
+                  <span className="h-5 w-5 rounded-full bg-white shadow-sm" />
                 </button>
                 <MessageCircle className="h-4 w-4 text-muted-foreground mt-1 shrink-0" />
                 <div className="flex-1 min-w-0">

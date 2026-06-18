@@ -553,13 +553,10 @@ function AddEditGuestModal({ guest, onClose, onSave }: {
               <p className="text-xs text-muted-foreground mt-0.5">Priority service · room upgrades · complimentary amenities</p>
             </div>
             <button type="button" onClick={() => update("vip", !form.vip)} className={cn(
-              "relative h-6 w-11 rounded-full transition-colors shrink-0",
-              form.vip ? "bg-success" : "bg-border-strong"
+              "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors",
+              form.vip ? "bg-success justify-end" : "bg-zinc-300 dark:bg-zinc-600 justify-start"
             )} aria-label="Toggle VIP">
-              <span className={cn(
-                "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-transform",
-                form.vip ? "translate-x-[22px]" : "translate-x-0.5"
-              )} />
+              <span className="h-5 w-5 rounded-full bg-white shadow-sm" />
             </button>
           </div>
         </div>

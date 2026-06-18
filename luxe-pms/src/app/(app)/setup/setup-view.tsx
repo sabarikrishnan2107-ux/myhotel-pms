@@ -18,6 +18,7 @@ import { apiGet, apiPut, apiPost, apiUpload, apiDownload, syncList } from "@/lib
 import { PreferencesPanel, SecurityPanel, NotificationChannelsPanel, WebhooksPanel, useSettingsPersistence } from "./personal-panels";
 import { NAV, GROUP_LABEL } from "@/lib/nav";
 import { applyBranding } from "@/lib/use-branding";
+import { Switch } from "@/components/ui/switch";
 
 // Monotonic counter for client-side temp ids on newly-added rows (replaced by
 // the real DB id once the create round-trips). Pure & collision-free.
@@ -2929,17 +2930,7 @@ function IntegrationsManager({ onToast, onMarkComplete }: { onToast: (m: string)
 }
 
 function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
-  return (
-    <button type="button" onClick={onChange} className={cn(
-      "relative h-6 w-11 rounded-full transition-colors shrink-0",
-      on ? "bg-success" : "bg-border-strong"
-    )} aria-label="Toggle">
-      <span className={cn(
-        "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
-        on ? "translate-x-[22px]" : "translate-x-0.5"
-      )} />
-    </button>
-  );
+  return <Switch checked={on} onChange={() => onChange()} />;
 }
 
 function IntegrationConfigModal({ integration, onClose, onSave, onTest }: {

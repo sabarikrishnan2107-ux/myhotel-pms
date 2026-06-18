@@ -500,16 +500,11 @@ function ToggleSwitch({
       aria-checked={on}
       onClick={onChange}
       className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors",
-        on ? "bg-success" : "bg-border-strong"
+        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full px-0.5 transition-colors",
+        on ? "bg-success justify-end" : "bg-zinc-300 dark:bg-zinc-600 justify-start"
       )}
     >
-      <span
-        className={cn(
-          "inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform",
-          on ? "translate-x-[22px]" : "translate-x-0.5"
-        )}
-      />
+      <span className="inline-block h-5 w-5 rounded-full bg-white shadow-sm" />
     </button>
   );
 }

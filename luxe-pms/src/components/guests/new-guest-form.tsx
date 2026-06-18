@@ -263,13 +263,10 @@ export function NewGuestForm({ onCancel, onSave }: Props) {
               <p className="text-xs text-muted-foreground">Priority handling, complimentary upgrade if available</p>
             </div>
             <span className={cn(
-              "h-6 w-11 rounded-full relative transition-colors shrink-0",
-              data.vip ? "bg-success" : "bg-border-strong"
+              "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors",
+              data.vip ? "bg-success justify-end" : "bg-zinc-300 dark:bg-zinc-600 justify-start"
             )}>
-              <span className={cn(
-                "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-[left] duration-200 ease-out",
-                data.vip ? "left-[calc(100%-1.375rem)]" : "left-0.5"
-              )} />
+              <span className="h-5 w-5 rounded-full bg-white shadow-sm" />
             </span>
           </button>
           <Field label="Remarks">
