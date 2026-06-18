@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   Plus, Search, Calendar, Users, Clock, Building2,
@@ -39,6 +40,9 @@ export default function HallsPage() {
   const [hallFilter, setHallFilter] = React.useState<"all" | string>("all");
   const [statusFilter, setStatusFilter] = React.useState<"all" | HallBooking["status"] | "cancelled">("all");
   const [actionMenuFor, setActionMenuFor] = React.useState<string | null>(null);
+  // Anchor rect of the open trigger — the menu is portalled to <body> so the
+  // table's overflow doesn't clip it.
+  const [menuRect, setMenuRect] = React.useState<DOMRect | null>(null);
 
   // Venues (master) + bookings load from the database; cancel/modify layer over them and persist.
   const [halls, setHalls] = React.useState<Hall[]>([]);
@@ -105,15 +109,23 @@ export default function HallsPage() {
       .catch(() => showToast(`Couldn't email ${b.customer} — no address on file?`));
   };
 
-  // Close menu on outside click
+  // Close menu on outside click, or when the page scrolls/resizes (the menu is
+  // fixed-positioned from the trigger rect).
   React.useEffect(() => {
     if (!actionMenuFor) return;
+    const close = () => setActionMenuFor(null);
     const onClick = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
       if (!t.closest("[data-action-menu]")) setActionMenuFor(null);
     };
     document.addEventListener("click", onClick);
-    return () => document.removeEventListener("click", onClick);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("click", onClick);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
   }, [actionMenuFor]);
 
   const activeFilters = (hallFilter !== "all" ? 1 : 0) + (statusFilter !== "all" ? 1 : 0) + (search ? 1 : 0);
@@ -323,7 +335,11 @@ export default function HallsPage() {
                         <div className="relative">
                           <button
                             type="button"
-                            onClick={() => setActionMenuFor(isOpen ? null : b.id)}
+                            onClick={(e) => {
+                              if (isOpen) { setActionMenuFor(null); return; }
+                              setMenuRect(e.currentTarget.getBoundingClientRect());
+                              setActionMenuFor(b.id);
+                            }}
                             className={cn(
                               "h-8 w-8 rounded-md border inline-flex items-center justify-center transition-colors",
                               isOpen ? "bg-brand-soft border-brand text-brand-soft-foreground" : "border-border hover:bg-surface-sunken text-muted-foreground"
@@ -332,29 +348,6 @@ export default function HallsPage() {
                           >
                             <MoreHorizontal className="h-3.5 w-3.5" />
                           </button>
-                          {isOpen && (
-                            <div className="absolute right-0 top-full mt-1 z-30 w-56 rounded-md border border-border bg-surface shadow-lg py-1 animate-in slide-in-from-top-1">
-                              <button type="button" onClick={() => { setSelected(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
-                                <Eye className="h-3.5 w-3.5 text-muted-foreground" />View detail
-                              </button>
-                              <button type="button" onClick={() => { showToast(`Itinerary printed for ${b.customer}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
-                                <Printer className="h-3.5 w-3.5 text-muted-foreground" />Print BEO sheet
-                              </button>
-                              <button type="button" onClick={() => handleEmail(b)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
-                                <Mail className="h-3.5 w-3.5 text-brand" />Email customer
-                              </button>
-                              <button type="button" onClick={() => { showToast(`WhatsApp sent to ${b.customer}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
-                                <MessageCircle className="h-3.5 w-3.5 text-success" />WhatsApp customer
-                              </button>
-                              <div className="my-1 h-px bg-border" />
-                              <button type="button" disabled={isCancelled} onClick={() => { setModifyTarget(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left disabled:opacity-40 disabled:cursor-not-allowed">
-                                <Edit className="h-3.5 w-3.5 text-muted-foreground" />Modify booking
-                              </button>
-                              <button type="button" disabled={isCancelled} onClick={() => { setCancelTarget(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-danger-soft text-danger inline-flex items-center gap-2.5 text-left disabled:opacity-40 disabled:cursor-not-allowed">
-                                <Ban className="h-3.5 w-3.5" />Cancel booking
-                              </button>
-                            </div>
-                          )}
                         </div>
                       </div>
                     </td>
@@ -372,6 +365,44 @@ export default function HallsPage() {
           </table>
         </div>
       </Card>
+
+      {/* Row actions menu — portalled to <body> so the table's overflow never
+          clips it; positioned from the trigger rect, flipping up near the bottom. */}
+      {actionMenuFor && menuRect && typeof document !== "undefined" && (() => {
+        const b = list.find(x => x.id === actionMenuFor);
+        if (!b) return null;
+        const isCancelled = b.status === "cancelled";
+        const dropUp = menuRect.bottom + 300 > window.innerHeight;
+        const style: React.CSSProperties = {
+          position: "fixed",
+          right: Math.max(8, window.innerWidth - menuRect.right),
+          ...(dropUp ? { bottom: window.innerHeight - menuRect.top + 4 } : { top: menuRect.bottom + 4 }),
+        };
+        return createPortal(
+          <div data-action-menu style={style} className="z-50 w-56 rounded-md border border-border bg-surface shadow-lg py-1 animate-in slide-in-from-top-1">
+            <button type="button" onClick={() => { setSelected(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+              <Eye className="h-3.5 w-3.5 text-muted-foreground" />View detail
+            </button>
+            <button type="button" onClick={() => { showToast(`Itinerary printed for ${b.customer}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+              <Printer className="h-3.5 w-3.5 text-muted-foreground" />Print BEO sheet
+            </button>
+            <button type="button" onClick={() => handleEmail(b)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+              <Mail className="h-3.5 w-3.5 text-brand" />Email customer
+            </button>
+            <button type="button" onClick={() => { showToast(`WhatsApp sent to ${b.customer}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+              <MessageCircle className="h-3.5 w-3.5 text-success" />WhatsApp customer
+            </button>
+            <div className="my-1 h-px bg-border" />
+            <button type="button" disabled={isCancelled} onClick={() => { setModifyTarget(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left disabled:opacity-40 disabled:cursor-not-allowed">
+              <Edit className="h-3.5 w-3.5 text-muted-foreground" />Modify booking
+            </button>
+            <button type="button" disabled={isCancelled} onClick={() => { setCancelTarget(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-danger-soft text-danger inline-flex items-center gap-2.5 text-left disabled:opacity-40 disabled:cursor-not-allowed">
+              <Ban className="h-3.5 w-3.5" />Cancel booking
+            </button>
+          </div>,
+          document.body,
+        );
+      })()}
 
       {/* Detail drawer */}
       {selected && (

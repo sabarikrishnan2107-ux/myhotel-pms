@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { use } from "react";
 import {
@@ -13,11 +14,12 @@ import { Badge } from "@/components/ui/badge";
 import { KPICard } from "@/components/ui/kpi-card";
 import { Input, Label, Select } from "@/components/ui/input";
 import { GROUP_BOOKINGS, SAMPLE_ROOMING_LIST, GROUP_TIMELINE, type GroupStatus, type GroupBooking } from "@/lib/mock-data-ext";
-import { apiGet, apiPost, apiPut } from "@/lib/api";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 
 type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string };
 type AuditRow = { id: string; action: string; entity: string; module: string; user: string; date: string; time: string };
-type RoomBoardRow = { number: string; status: string };
+type RoomBoardRow = { number: string; status: string; type?: string; floor?: number };
+type BookingLite = { roomNumber?: string; status?: string; checkIn?: string; checkOut?: string };
 import { cn, money, formatDate } from "@/lib/utils";
 
 const STATUS_TONE: Record<GroupStatus, "neutral" | "info" | "success" | "brand" | "warning" | "danger"> = {
@@ -55,8 +57,27 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   // Rooming list — group-scoped, loaded from the API.
   const [rooming, setRooming] = React.useState<RoomingEntry[]>(SAMPLE_ROOMING_LIST);
   const [assignId, setAssignId] = React.useState<string | null>(null);
-  const [assignVal, setAssignVal] = React.useState("");
   const [addGuestOpen, setAddGuestOpen] = React.useState(false);
+  // Per-row "..." actions menu, portalled to <body> (the table card clips overflow).
+  const [rowMenuFor, setRowMenuFor] = React.useState<string | null>(null);
+  const [rowMenuRect, setRowMenuRect] = React.useState<DOMRect | null>(null);
+  React.useEffect(() => {
+    if (!rowMenuFor) return;
+    const close = () => setRowMenuFor(null);
+    const onClick = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest("[data-row-menu]")) setRowMenuFor(null); };
+    document.addEventListener("click", onClick);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => { document.removeEventListener("click", onClick); window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
+  }, [rowMenuFor]);
+
+  // Room inventory + bookings, to offer only rooms free for the group's stay.
+  const [board, setBoard] = React.useState<RoomBoardRow[]>([]);
+  const [allBookings, setAllBookings] = React.useState<BookingLite[]>([]);
+  React.useEffect(() => {
+    apiGet<RoomBoardRow[]>("/room-board").then(setBoard).catch(() => {});
+    apiGet<BookingLite[]>("/bookings").then(setAllBookings).catch(() => {});
+  }, []);
   const [toast, setToast] = React.useState<string | null>(null);
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
@@ -69,15 +90,57 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const assignRoom = (entry: RoomingEntry, roomNo: string) => {
     setRooming(prev => prev.map(r => r.id === entry.id ? { ...r, roomNo } : r));
     apiPut(`/group-rooming/${entry.id}`, { roomNo }).catch(() => flash("⚠ Save failed — backend offline"));
-    setAssignId(null); setAssignVal("");
+    setAssignId(null);
     flash(`Room ${roomNo} assigned to ${entry.lead}`);
   };
+
+  // Rooms physically free for the group's stay window: not blocked/out-of-order
+  // and not held by another booking overlapping [arrival, departure). Today's
+  // dirty/cleaning/occupied state doesn't apply to a future window.
+  const freeRooms = React.useMemo(() => {
+    const day = (s?: string) => (s ?? "").slice(0, 10);
+    const rIn = day(group.arrival), rOut = day(group.departure);
+    const occupied = new Set<string>();
+    if (rIn && rOut && rIn < rOut) {
+      allBookings.forEach(b => {
+        const st = b.status ?? "confirmed";
+        if (st === "cancelled" || st === "checked-out") return;
+        if (!b.roomNumber || b.roomNumber === "Unassigned") return;
+        const bIn = day(b.checkIn), bOut = day(b.checkOut);
+        if (bIn && bOut && bIn < rOut && bOut > rIn) occupied.add(b.roomNumber);
+      });
+    }
+    return board.filter(r => r.status !== "blocked" && r.status !== "maintenance" && !occupied.has(r.number));
+  }, [board, allBookings, group.arrival, group.departure]);
+
+  // Rooms a given rooming entry can be assigned: free rooms of the matching type
+  // that aren't already taken by another guest in THIS group (no duplicates).
+  const assignableFor = React.useCallback((entry: RoomingEntry) => {
+    const taken = new Set(rooming.filter(r => r.id !== entry.id && r.roomNo).map(r => r.roomNo as string));
+    const ofType = freeRooms.filter(r => !taken.has(r.number) && (!entry.roomType || (r.type ?? "").toLowerCase() === entry.roomType.toLowerCase()));
+    // If none of the exact type are free, fall back to any free room so the desk isn't stuck.
+    return ofType.length ? ofType : freeRooms.filter(r => !taken.has(r.number));
+  }, [freeRooms, rooming]);
   const addGuest = (g: { lead: string; roomType: string; pax: number; phone?: string; remarks?: string }) => {
     apiPost<RoomingEntry>("/group-rooming", { ...g, groupCode: id, roomNo: null })
       .then(row => setRooming(prev => [...prev, { ...row, id: String(row.id) }]))
       .catch(() => flash("⚠ Save failed — backend offline"));
     setAddGuestOpen(false);
     flash(`${g.lead} added to rooming list`);
+  };
+  // Remove a guest (and free their room) from the rooming list.
+  const removeGuest = (entry: RoomingEntry) => {
+    setRooming(prev => prev.filter(r => r.id !== entry.id));
+    setRowMenuFor(null);
+    apiDelete(`/group-rooming/${entry.id}`).catch(() => flash("⚠ Save failed — backend offline"));
+    flash(`${entry.lead} removed from rooming list`);
+  };
+  // Clear a room assignment without removing the guest.
+  const clearRoom = (entry: RoomingEntry) => {
+    setRooming(prev => prev.map(r => r.id === entry.id ? { ...r, roomNo: null } : r));
+    setRowMenuFor(null);
+    apiPut(`/group-rooming/${entry.id}`, { roomNo: null }).catch(() => flash("⚠ Save failed — backend offline"));
+    flash(`Room cleared for ${entry.lead}`);
   };
 
   // Activity timeline — real audit-log entries scoped to this group.
@@ -119,15 +182,12 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   };
 
   // Auto-assign available rooms to unassigned guests and persist each.
-  const autoAssign = async () => {
+  const autoAssign = () => {
     const unassigned = rooming.filter(r => !r.roomNo);
     if (!unassigned.length) { flash("All guests already have rooms"); return; }
-    let pool: string[] = [];
-    try {
-      const board = await apiGet<RoomBoardRow[]>("/room-board");
-      const taken = new Set(rooming.map(r => r.roomNo).filter(Boolean) as string[]);
-      pool = board.filter(b => b.status === "available").map(b => b.number).filter(n => !taken.has(n));
-    } catch { flash("⚠ Could not load room board — backend offline"); return; }
+    // Only rooms free for the group's stay window, minus ones already taken.
+    const taken = new Set(rooming.map(r => r.roomNo).filter(Boolean) as string[]);
+    const pool: string[] = freeRooms.map(r => r.number).filter(n => !taken.has(n));
     const updated = [...rooming];
     let assigned = 0;
     for (const entry of unassigned) {
@@ -362,18 +422,27 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
               {rooming.map(g => (
                 <tr key={g.id} className={cn("hover:bg-surface-sunken/40", !g.roomNo && "bg-warning-soft/30")}>
                   <td className="px-5 py-3 font-medium tabular">
-                    {g.roomNo ? g.roomNo : assignId === g.id ? (
-                      <input
-                        autoFocus
-                        value={assignVal}
-                        onChange={e => setAssignVal(e.target.value)}
-                        onKeyDown={e => { if (e.key === "Enter" && assignVal.trim()) assignRoom(g, assignVal.trim()); if (e.key === "Escape") { setAssignId(null); setAssignVal(""); } }}
-                        onBlur={() => { if (assignVal.trim()) assignRoom(g, assignVal.trim()); else { setAssignId(null); setAssignVal(""); } }}
-                        placeholder="Room #"
-                        className="w-20 h-7 px-2 rounded border border-brand bg-surface text-sm tabular outline-none"
-                      />
+                    {assignId === g.id ? (() => {
+                      const options = assignableFor(g);
+                      return (
+                        <Select
+                          autoFocus
+                          value={g.roomNo ?? ""}
+                          onChange={e => { if (e.target.value) assignRoom(g, e.target.value); }}
+                          onBlur={() => setAssignId(null)}
+                          className="h-7 w-36 text-sm"
+                        >
+                          <option value="">Select a free room…</option>
+                          {options.map(r => (
+                            <option key={r.number} value={r.number}>Room {r.number}{r.type ? ` · ${r.type}` : ""}</option>
+                          ))}
+                          {options.length === 0 && <option value="" disabled>No rooms free for these dates</option>}
+                        </Select>
+                      );
+                    })() : g.roomNo ? (
+                      <button className="tabular hover:underline" onClick={() => setAssignId(g.id)} title="Click to reassign">{g.roomNo}</button>
                     ) : (
-                      <button className="text-xs text-brand hover:underline" onClick={() => { setAssignId(g.id); setAssignVal(""); }}>Assign</button>
+                      <button className="text-xs text-brand hover:underline" onClick={() => setAssignId(g.id)}>Assign</button>
                     )}
                   </td>
                   <td className="px-5 py-3"><Badge tone="neutral">{g.roomType}</Badge></td>
@@ -382,7 +451,18 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                   <td className="px-5 py-3 text-xs text-muted-foreground tabular">{g.phone ?? "—"}</td>
                   <td className="px-5 py-3 text-xs text-muted-foreground">{g.remarks ?? "—"}</td>
                   <td className="px-5 py-3 text-right">
-                    <button className="text-muted-foreground hover:text-foreground"><MoreVertical className="h-4 w-4" /></button>
+                    <button
+                      data-row-menu
+                      className={cn("h-7 w-7 rounded-md inline-flex items-center justify-center transition-colors", rowMenuFor === g.id ? "bg-brand-soft text-brand-soft-foreground" : "text-muted-foreground hover:bg-surface-sunken hover:text-foreground")}
+                      title="Row actions"
+                      onClick={(e) => {
+                        if (rowMenuFor === g.id) { setRowMenuFor(null); return; }
+                        setRowMenuRect(e.currentTarget.getBoundingClientRect());
+                        setRowMenuFor(g.id);
+                      }}
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -543,6 +623,35 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
       )}
 
       {addGuestOpen && <AddGuestModal onClose={() => setAddGuestOpen(false)} onSave={addGuest} />}
+
+      {/* Rooming row actions — portalled so the table card's overflow can't clip it. */}
+      {rowMenuFor && rowMenuRect && typeof document !== "undefined" && (() => {
+        const entry = rooming.find(r => r.id === rowMenuFor);
+        if (!entry) return null;
+        const dropUp = rowMenuRect.bottom + 160 > window.innerHeight;
+        const style: React.CSSProperties = {
+          position: "fixed",
+          right: Math.max(8, window.innerWidth - rowMenuRect.right),
+          ...(dropUp ? { bottom: window.innerHeight - rowMenuRect.top + 4 } : { top: rowMenuRect.bottom + 4 }),
+        };
+        return createPortal(
+          <div data-row-menu style={style} className="z-50 w-52 rounded-md border border-border bg-surface shadow-lg py-1 animate-in slide-in-from-top-1">
+            <button type="button" onClick={() => { setRowMenuFor(null); setAssignId(entry.id); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+              <BedDouble className="h-3.5 w-3.5 text-muted-foreground" />{entry.roomNo ? "Reassign room" : "Assign room"}
+            </button>
+            {entry.roomNo && (
+              <button type="button" onClick={() => clearRoom(entry)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                <X className="h-3.5 w-3.5 text-muted-foreground" />Clear room
+              </button>
+            )}
+            <div className="my-1 h-px bg-border" />
+            <button type="button" onClick={() => removeGuest(entry)} className="w-full px-3 py-2 text-sm hover:bg-danger-soft text-danger inline-flex items-center gap-2.5 text-left">
+              <X className="h-3.5 w-3.5" />Remove from list
+            </button>
+          </div>,
+          document.body,
+        );
+      })()}
 
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-md bg-foreground text-background px-4 py-2.5 text-sm font-medium shadow-lg">
