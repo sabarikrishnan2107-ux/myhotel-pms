@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select } from "@/components/ui/input";
+import { Input, Label } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { cn, money } from "@/lib/utils";
@@ -134,7 +134,9 @@ export default function BookingWizardPage() {
   // F&B add-on packages (per-pax counts × nights)
   const [fbAddons, setFbAddons] = React.useState<Record<string, number>>({}); // { id: count-of-pax-per-day }
   const [paymentPct, setPaymentPct] = React.useState(30);
-  const [source, setSource] = React.useState("Walk-in");
+  // "Booked by" — how the booking came in. Stored in the booking's `source`.
+  const [source, setSource] = React.useState("Direct Guest");
+  const BOOKED_BY = ["Direct Guest", "Travel Agent", "Corporate", "OTA"];
   const [paymentMode, setPaymentMode] = React.useState("UPI");
   const [paymentRef, setPaymentRef] = React.useState("");
   // Cash / Pay-at-hotel need no reference; electronic modes must record one
@@ -337,6 +339,27 @@ export default function BookingWizardPage() {
                 >
                   <Plus className="h-3.5 w-3.5" />Create New Guest
                 </button>
+              </div>
+
+              {/* Booked by — asked for every booking, new or existing guest */}
+              <div>
+                <Label>Booked by</Label>
+                <div className="mt-1.5 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {BOOKED_BY.map(opt => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => setSource(opt)}
+                      className={cn(
+                        "h-10 rounded-md border text-sm font-medium transition-colors",
+                        source === opt ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
+                      )}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1.5">How this booking came in.</p>
               </div>
             </div>
           )}
@@ -640,14 +663,6 @@ export default function BookingWizardPage() {
 
           {step === 5 && (
             <div className="space-y-5">
-              <div className="space-y-1.5">
-                <Label>Booking source</Label>
-                <Select value={source} onChange={e => setSource(e.target.value)}>
-                  <option>Walk-in</option><option>Website</option><option>Phone</option>
-                  <option>OTA: Booking.com</option><option>Agent</option><option>Corporate</option>
-                </Select>
-              </div>
-
               <div>
                 <Label>Advance payment percentage</Label>
                 <div className="flex gap-2 mt-1.5">
@@ -735,6 +750,7 @@ export default function BookingWizardPage() {
               {/* Final review */}
               <div className="rounded-md border border-border divide-y divide-border">
                 <ReviewRow label="Guest" value={selectedGuestDisplay?.name ?? "—"} sub={selectedGuestDisplay?.phone ?? ""} onEdit={() => setStep(1)} />
+                <ReviewRow label="Booked by" value={source} onEdit={() => setStep(1)} />
                 <ReviewRow
                   label="Stay"
                   value={`${new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short" })} → ${new Date(checkOut).toLocaleDateString(undefined, { day: "2-digit", month: "short" })}`}
@@ -911,7 +927,7 @@ export default function BookingWizardPage() {
                       guestName: selectedGuestDisplay!.name,
                       roomNumber: "Unassigned",   // specific room assigned at check-in
                       roomType,
-                      source: "Walk-in",
+                      source,
                       checkIn,
                       checkOut,
                       nights,
