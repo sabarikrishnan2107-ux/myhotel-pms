@@ -11,6 +11,7 @@ use App\Models\ComplianceLicense;
 use App\Models\FbOrder;
 use App\Models\FolioCharge;
 use App\Models\FolioPayment;
+use App\Models\GroupBooking;
 use App\Models\Guest;
 use App\Models\HallBooking;
 use App\Models\InventoryItem;
@@ -42,6 +43,12 @@ class StatsController extends Controller
             ->whereNotIn('status', ['cancelled', 'checked-in', 'checked-out', 'no-show'])
             ->orderBy('roomNumber')->get();
         $departures = Booking::where('checkOut', $today)->where('status', '!=', 'cancelled')->orderBy('roomNumber')->get();
+
+        // Group bookings + hall/banquet events are separate from room bookings —
+        // surface today's group check-ins/outs and hall events alongside arrivals.
+        $groupArrivals   = GroupBooking::where('arrival', $today)->where('status', '!=', 'cancelled')->orderBy('name')->get();
+        $groupDepartures = GroupBooking::where('departure', $today)->where('status', '!=', 'cancelled')->orderBy('name')->get();
+        $hallEvents      = HallBooking::where('date', $today)->where('status', '!=', 'cancelled')->orderBy('start')->get();
 
         $sourceMix = Booking::query()
             ->selectRaw('source, count(*) as bookings, coalesce(sum(total),0) as revenue')
@@ -96,6 +103,9 @@ class StatsController extends Controller
             ],
             'arrivals'   => $arrivals,
             'departures' => $departures,
+            'groupArrivals'   => $groupArrivals,
+            'groupDepartures' => $groupDepartures,
+            'hallEvents'      => $hallEvents,
             'sourceMix'  => $sourceMix,
         ]);
     }

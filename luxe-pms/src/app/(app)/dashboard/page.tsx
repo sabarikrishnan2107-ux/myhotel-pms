@@ -148,8 +148,15 @@ type DashStats = {
   quickCounts: { checkin: number; checkout: number; housekeeping: number };
   arrivals: Reservation[];
   departures: Reservation[];
+  groupArrivals?: GroupRow[];
+  groupDepartures?: GroupRow[];
+  hallEvents?: HallRow[];
   sourceMix: { source: string; bookings: number; revenue: number }[];
 };
+
+// Group bookings + hall events shown alongside room arrivals/departures.
+type GroupRow = { id: number | string; code?: string; name?: string; totalRooms?: number; totalPax?: number; contactName?: string };
+type HallRow = { id: number | string; customer?: string; hall?: string; start?: string; end?: string; package?: string | null };
 
 type RoomBoardRow = {
   id: string; number: string; floor: number; type: string;
@@ -179,6 +186,11 @@ export default function DashboardPage() {
 
   const arrivals = stats?.arrivals ?? [];
   const departures = stats?.departures ?? [];
+  const groupArrivals = stats?.groupArrivals ?? [];
+  const groupDepartures = stats?.groupDepartures ?? [];
+  const hallEvents = stats?.hallEvents ?? [];
+  const hasArrivals = arrivals.length + groupArrivals.length + hallEvents.length > 0;
+  const hasDepartures = departures.length + groupDepartures.length > 0;
 
   const [nowMs, setNowMs] = React.useState<number>(0);
   const [period, setPeriod] = React.useState<{ label: string; day: number; days: number } | null>(null);
@@ -536,17 +548,41 @@ export default function DashboardPage() {
               </span>
               <div>
                 <h2 className="text-base font-semibold leading-none">Today&apos;s Arrivals</h2>
-                <p className="text-[11px] text-muted-foreground mt-1">{arrivals.length} expected · {money(arrivalsBalance, cur)} to collect</p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {arrivals.length} room{arrivals.length === 1 ? "" : "s"} · {money(arrivalsBalance, cur)} to collect
+                  {groupArrivals.length > 0 && ` · ${groupArrivals.length} group`}
+                  {hallEvents.length > 0 && ` · ${hallEvents.length} hall`}
+                </p>
               </div>
             </div>
             <Link href="/checkin" className="text-xs text-brand hover:underline inline-flex items-center gap-1 font-medium">
               View all <ChevronRight className="h-3 w-3" />
             </Link>
           </div>
-          {arrivals.length === 0 ? (
+          {!hasArrivals ? (
             <p className="px-5 py-10 text-center text-sm text-muted-foreground border-t border-border">No arrivals scheduled today.</p>
           ) : (
             <ul className="divide-y divide-border border-t border-border max-h-[336px] overflow-y-auto">
+              {groupArrivals.map(g => (
+                <li key={`ga-${g.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-sunken transition-colors">
+                  <span className="h-9 w-9 rounded-full bg-accent-soft text-accent inline-flex items-center justify-center shrink-0"><CalendarRange className="h-[18px] w-[18px]" /></span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2"><p className="font-medium text-sm truncate">{g.name}</p><Badge tone="accent">Group</Badge></div>
+                    <p className="text-xs text-muted-foreground truncate mt-0.5"><span className="font-mono">{g.code}</span> · {g.totalRooms ?? 0} rooms · {g.totalPax ?? 0} pax</p>
+                  </div>
+                  <Link href={`/groups/${g.code}`}><Button size="sm" variant="outline">Open</Button></Link>
+                </li>
+              ))}
+              {hallEvents.map(h => (
+                <li key={`he-${h.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-sunken transition-colors">
+                  <span className="h-9 w-9 rounded-full bg-info-soft text-info inline-flex items-center justify-center shrink-0"><Building2 className="h-[18px] w-[18px]" /></span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2"><p className="font-medium text-sm truncate">{h.hall || "Hall event"}</p><Badge tone="info">Hall</Badge></div>
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">{h.customer || "—"}{h.start ? ` · ${h.start}${h.end ? `–${h.end}` : ""}` : ""}{h.package ? ` · ${h.package}` : ""}</p>
+                  </div>
+                  <Link href="/halls"><Button size="sm" variant="outline">Open</Button></Link>
+                </li>
+              ))}
               {arrivals.map(r => (
                 <li
                   key={r.id}
@@ -601,17 +637,30 @@ export default function DashboardPage() {
               </span>
               <div>
                 <h2 className="text-base font-semibold leading-none">Today&apos;s Departures</h2>
-                <p className="text-[11px] text-muted-foreground mt-1">{departures.length} checking out</p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {departures.length} room{departures.length === 1 ? "" : "s"} checking out
+                  {groupDepartures.length > 0 && ` · ${groupDepartures.length} group`}
+                </p>
               </div>
             </div>
             <Link href="/checkout" className="text-xs text-brand hover:underline inline-flex items-center gap-1 font-medium">
               View all <ChevronRight className="h-3 w-3" />
             </Link>
           </div>
-          {departures.length === 0 ? (
+          {!hasDepartures ? (
             <p className="px-5 py-10 text-center text-sm text-muted-foreground border-t border-border">No departures due today.</p>
           ) : (
             <ul className="divide-y divide-border border-t border-border max-h-[336px] overflow-y-auto">
+              {groupDepartures.map(g => (
+                <li key={`gd-${g.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-sunken transition-colors">
+                  <span className="h-9 w-9 rounded-full bg-accent-soft text-accent inline-flex items-center justify-center shrink-0"><CalendarRange className="h-[18px] w-[18px]" /></span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2"><p className="font-medium text-sm truncate">{g.name}</p><Badge tone="accent">Group</Badge></div>
+                    <p className="text-xs text-muted-foreground truncate mt-0.5"><span className="font-mono">{g.code}</span> · {g.totalRooms ?? 0} rooms · {g.totalPax ?? 0} pax</p>
+                  </div>
+                  <Link href={`/groups/${g.code}`}><Button size="sm" variant="outline">Open</Button></Link>
+                </li>
+              ))}
               {departures.map(r => (
                 <li key={r.id} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-sunken transition-colors">
                   <Avatar name={r.guestName} size={38} vip={r.vip} />

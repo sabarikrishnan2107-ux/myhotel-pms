@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   Plus, Search, UsersRound, BedDouble, Wallet, Calendar, FileDown,
@@ -49,6 +50,9 @@ export default function GroupsPage() {
   const [typeFilter, setTypeFilter] = React.useState<"all" | GroupType>("all");
   const [dateWindow, setDateWindow] = React.useState<DateWindow>("all");
   const [actionMenuFor, setActionMenuFor] = React.useState<string | null>(null);
+  // Anchor rect of the open "more actions" trigger — the menu is portalled to
+  // <body> and positioned from this, so the table's overflow doesn't clip it.
+  const [menuRect, setMenuRect] = React.useState<DOMRect | null>(null);
 
   // Groups load from the database; cancel/modify layer over them and persist.
   const [groups, setGroups] = React.useState<GroupBooking[]>([]);
@@ -118,15 +122,23 @@ export default function GroupsPage() {
     showToast(`CSV export ready · ${list.length} groups`);
   };
 
-  // Close menu on outside click
+  // Close menu on outside click, or when the page scrolls/resizes (the menu is
+  // fixed-positioned from the trigger rect, so it must re-anchor or close).
   React.useEffect(() => {
     if (!actionMenuFor) return;
+    const close = () => setActionMenuFor(null);
     const onClick = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
       if (!t.closest("[data-action-menu]")) setActionMenuFor(null);
     };
     document.addEventListener("click", onClick);
-    return () => document.removeEventListener("click", onClick);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("click", onClick);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
   }, [actionMenuFor]);
 
   const STATUS_CHIPS: ("all" | GroupStatus)[] = ["all", "tentative", "confirmed", "in-house", "completed", "cancelled"];
@@ -321,7 +333,11 @@ export default function GroupsPage() {
                         <div className="relative">
                           <button
                             type="button"
-                            onClick={() => setActionMenuFor(isOpen ? null : g.id)}
+                            onClick={(e) => {
+                              if (isOpen) { setActionMenuFor(null); return; }
+                              setMenuRect(e.currentTarget.getBoundingClientRect());
+                              setActionMenuFor(g.id);
+                            }}
                             className={cn(
                               "h-8 w-8 rounded-md border inline-flex items-center justify-center transition-colors",
                               isOpen ? "bg-brand-soft border-brand text-brand-soft-foreground" : "border-border hover:bg-surface-sunken text-muted-foreground"
@@ -330,37 +346,6 @@ export default function GroupsPage() {
                           >
                             <MoreHorizontal className="h-3.5 w-3.5" />
                           </button>
-                          {isOpen && (
-                            <div className="absolute right-0 top-full mt-1 z-30 w-56 rounded-md border border-border bg-surface shadow-lg py-1 animate-in slide-in-from-top-1">
-                              <Link href={`/groups/${g.code}`} onClick={() => setActionMenuFor(null)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5">
-                                <CalendarRange className="h-3.5 w-3.5 text-muted-foreground" />Open detail
-                              </Link>
-                              <button type="button" onClick={() => { showToast(`Itinerary printed for ${g.code}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
-                                <Printer className="h-3.5 w-3.5 text-muted-foreground" />Print rooming list
-                              </button>
-                              <button type="button" onClick={() => {
-                                setActionMenuFor(null);
-                                const to = g.contactEmail;
-                                if (!to) { showToast(`No email on file for ${g.contactName}`); return; }
-                                showToast(`Emailing ${g.contactName}…`);
-                                sendEmail({ to, subject: `Group Booking · ${g.code}`, heading: "Group Booking Update", greeting: g.contactName, intro: "Here is an update regarding your group booking. Please contact us with any questions.", rows: [{ label: "Group", value: g.name }, { label: "Code", value: g.code }], context: "Group email" })
-                                  .then(() => showToast(`Email sent to ${g.contactName}`))
-                                  .catch(() => showToast(`Couldn't email ${g.contactName}`));
-                              }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
-                                <Mail className="h-3.5 w-3.5 text-brand" />Email contact
-                              </button>
-                              <button type="button" onClick={() => { showToast(`WhatsApp sent to ${g.contactName}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
-                                <MessageCircle className="h-3.5 w-3.5 text-success" />WhatsApp contact
-                              </button>
-                              <div className="my-1 h-px bg-border" />
-                              <button type="button" disabled={isCancelled} onClick={() => { setModifyTarget(g); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left disabled:opacity-40 disabled:cursor-not-allowed">
-                                <Edit className="h-3.5 w-3.5 text-muted-foreground" />Modify group
-                              </button>
-                              <button type="button" disabled={isCancelled || g.status === "completed"} onClick={() => { setCancelTarget(g); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-danger-soft text-danger inline-flex items-center gap-2.5 text-left disabled:opacity-40 disabled:cursor-not-allowed">
-                                <Ban className="h-3.5 w-3.5" />Cancel group
-                              </button>
-                            </div>
-                          )}
                         </div>
                       </div>
                     </td>
@@ -378,6 +363,52 @@ export default function GroupsPage() {
           </table>
         </div>
       </Card>
+
+      {/* More-actions menu — portalled to <body> so the table's overflow never
+          clips it; positioned from the trigger rect, flipping up near the bottom. */}
+      {actionMenuFor && menuRect && typeof document !== "undefined" && (() => {
+        const g = list.find(x => x.id === actionMenuFor);
+        if (!g) return null;
+        const isCancelled = g.status === "cancelled";
+        const dropUp = menuRect.bottom + 300 > window.innerHeight;
+        const style: React.CSSProperties = {
+          position: "fixed",
+          right: Math.max(8, window.innerWidth - menuRect.right),
+          ...(dropUp ? { bottom: window.innerHeight - menuRect.top + 4 } : { top: menuRect.bottom + 4 }),
+        };
+        return createPortal(
+          <div data-action-menu style={style} className="z-50 w-56 rounded-md border border-border bg-surface shadow-lg py-1 animate-in slide-in-from-top-1">
+            <Link href={`/groups/${g.code}`} onClick={() => setActionMenuFor(null)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5">
+              <CalendarRange className="h-3.5 w-3.5 text-muted-foreground" />Open detail
+            </Link>
+            <button type="button" onClick={() => { showToast(`Itinerary printed for ${g.code}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+              <Printer className="h-3.5 w-3.5 text-muted-foreground" />Print rooming list
+            </button>
+            <button type="button" onClick={() => {
+              setActionMenuFor(null);
+              const to = g.contactEmail;
+              if (!to) { showToast(`No email on file for ${g.contactName}`); return; }
+              showToast(`Emailing ${g.contactName}…`);
+              sendEmail({ to, subject: `Group Booking · ${g.code}`, heading: "Group Booking Update", greeting: g.contactName, intro: "Here is an update regarding your group booking. Please contact us with any questions.", rows: [{ label: "Group", value: g.name }, { label: "Code", value: g.code }], context: "Group email" })
+                .then(() => showToast(`Email sent to ${g.contactName}`))
+                .catch(() => showToast(`Couldn't email ${g.contactName}`));
+            }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+              <Mail className="h-3.5 w-3.5 text-brand" />Email contact
+            </button>
+            <button type="button" onClick={() => { showToast(`WhatsApp sent to ${g.contactName}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+              <MessageCircle className="h-3.5 w-3.5 text-success" />WhatsApp contact
+            </button>
+            <div className="my-1 h-px bg-border" />
+            <button type="button" disabled={isCancelled} onClick={() => { setModifyTarget(g); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left disabled:opacity-40 disabled:cursor-not-allowed">
+              <Edit className="h-3.5 w-3.5 text-muted-foreground" />Modify group
+            </button>
+            <button type="button" disabled={isCancelled || g.status === "completed"} onClick={() => { setCancelTarget(g); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-danger-soft text-danger inline-flex items-center gap-2.5 text-left disabled:opacity-40 disabled:cursor-not-allowed">
+              <Ban className="h-3.5 w-3.5" />Cancel group
+            </button>
+          </div>,
+          document.body,
+        );
+      })()}
 
       {/* Modify dialog */}
       {modifyTarget && (

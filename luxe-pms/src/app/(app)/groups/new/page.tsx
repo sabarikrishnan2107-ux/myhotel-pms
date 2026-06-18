@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
-import { apiPost } from "@/lib/api";
+import { apiGet, apiPost } from "@/lib/api";
 
 interface BlockRow { id: string; type: string; qty: number; rate: number; }
 
@@ -123,6 +123,68 @@ export default function NewGroupPage() {
     { id: "b1", type: "Deluxe", qty: 0, rate: 650 },
   ]);
 
+  // Live room inventory + bookings, so the block can only reserve rooms that are
+  // actually free for the chosen dates (specific rooms are picked at check-in).
+  const [rooms, setRooms] = React.useState<{ number: string; type: string; status: string }[]>([]);
+  const [allBookings, setAllBookings] = React.useState<
+    { roomNumber?: string; status?: string; checkIn?: string; checkOut?: string }[]
+  >([]);
+  React.useEffect(() => {
+    apiGet<typeof rooms>("/room-board").then(setRooms).catch(() => {});
+    apiGet<typeof allBookings>("/bookings").then(setAllBookings).catch(() => {});
+  }, []);
+
+  // Free rooms per type for [arrival, departure): all rooms of the type minus
+  // those blocked/out-of-order or held by another active overlapping booking.
+  // (Today's dirty/cleaning/occupied state doesn't apply to a future window.)
+  const availabilityByType = React.useMemo(() => {
+    const day = (s?: string) => (s ?? "").slice(0, 10);
+    const rIn = day(arrival), rOut = day(departure);
+    const result: Record<string, number> = {};
+    if (!rIn || !rOut || rIn >= rOut) return result;
+    const occupied = new Set<string>();
+    allBookings.forEach(b => {
+      const st = b.status ?? "confirmed";
+      if (st === "cancelled" || st === "checked-out") return;
+      if (!b.roomNumber || b.roomNumber === "Unassigned") return;
+      const bIn = day(b.checkIn), bOut = day(b.checkOut);
+      if (bIn && bOut && bIn < rOut && bOut > rIn) occupied.add(b.roomNumber);
+    });
+    rooms.forEach(r => {
+      if (r.status === "blocked" || r.status === "maintenance" || occupied.has(r.number)) return;
+      const key = r.type.toLowerCase();
+      result[key] = (result[key] ?? 0) + 1;
+    });
+    return result;
+  }, [rooms, allBookings, arrival, departure]);
+
+  const datesChosen = !!(arrival && departure && arrival < departure);
+  // Max qty for a row = free rooms of its type minus what earlier rows of the
+  // same type already reserved (so multiple rows can't double-book the pool).
+  const maxQtyForRow = React.useCallback((arr: BlockRow[], i: number) => {
+    const r = arr[i];
+    const avail = availabilityByType[r.type.toLowerCase()] ?? 0;
+    const usedBefore = arr.slice(0, i)
+      .filter(x => x.type.toLowerCase() === r.type.toLowerCase())
+      .reduce((s, x) => s + x.qty, 0);
+    return Math.max(0, avail - usedBefore);
+  }, [availabilityByType]);
+
+  // When the date window (and thus availability) changes, clamp any quantity
+  // that now exceeds what's free.
+  React.useEffect(() => {
+    if (!datesChosen) return;
+    setBlock(prev => {
+      let changed = false;
+      const next = prev.map((r, i, arr) => {
+        const max = maxQtyForRow(arr, i);
+        if (r.qty > max) { changed = true; return { ...r, qty: max }; }
+        return r;
+      });
+      return changed ? next : prev;
+    });
+  }, [datesChosen, maxQtyForRow]);
+
   // Imported rooming list (CSV upload / clipboard paste). Persisted to
   // /group-rooming after the group is created.
   const [rooming, setRooming] = React.useState<RoomingGuest[]>([]);
@@ -179,7 +241,7 @@ export default function NewGroupPage() {
     setBlock(b => b.map(r => r.id === id ? { ...r, [key]: value } : r));
   };
   const removeBlock = (id: string) => setBlock(b => b.filter(r => r.id !== id));
-  const addBlock = () => setBlock(b => [...b, { id: `b${Date.now()}`, type: "Deluxe", qty: 5, rate: 650 }]);
+  const addBlock = () => setBlock(b => [...b, { id: `b${Date.now()}`, type: "Deluxe", qty: 0, rate: 650 }]);
 
   const router = useRouter();
   const [saving, setSaving] = React.useState(false);
@@ -311,10 +373,20 @@ export default function NewGroupPage() {
 
           {/* Room block */}
           <Card className="p-6 space-y-4">
-            <SectionHead icon={BedDouble} title="Room Block" hint="Allocate rooms by type — group rate may differ from rack rate" />
+            <SectionHead icon={BedDouble} title="Room Block" hint="Allocate rooms by type — only rooms free for these dates can be blocked" />
+
+            {!datesChosen && (
+              <p className="text-xs text-warning inline-flex items-center gap-1.5">
+                <Calendar className="h-3.5 w-3.5" />Pick arrival &amp; departure dates above to see how many rooms are available.
+              </p>
+            )}
 
             <div className="space-y-2">
-              {block.map(row => (
+              {block.map((row, i) => {
+                const typeAvail = availabilityByType[row.type.toLowerCase()] ?? 0;
+                const maxQty = maxQtyForRow(block, i);
+                const atMax = datesChosen && row.qty >= maxQty;
+                return (
                 <div key={row.id} className="grid grid-cols-12 gap-2 items-end p-3 rounded-md border border-border bg-surface-sunken/30">
                   <div className="col-span-12 sm:col-span-4">
                     <Label>Room type</Label>
@@ -323,16 +395,25 @@ export default function NewGroupPage() {
                       updateBlock(row.id, "type", e.target.value);
                       if (def) updateBlock(row.id, "rate", def.base);
                     }}>
-                      {ROOM_TYPES.map(t => <option key={t.name}>{t.name}</option>)}
+                      {ROOM_TYPES.map(t => (
+                        <option key={t.name}>
+                          {t.name}{datesChosen ? ` — ${availabilityByType[t.name.toLowerCase()] ?? 0} free` : ""}
+                        </option>
+                      ))}
                     </Select>
                   </div>
                   <div className="col-span-5 sm:col-span-3">
                     <Label>Quantity</Label>
                     <div className="flex items-center border border-border rounded-md h-10 bg-surface">
-                      <button type="button" onClick={() => updateBlock(row.id, "qty", Math.max(1, row.qty - 1))} className="h-full w-10 hover:bg-surface-sunken inline-flex items-center justify-center border-r border-border"><Minus className="h-3.5 w-3.5" /></button>
+                      <button type="button" onClick={() => updateBlock(row.id, "qty", Math.max(0, row.qty - 1))} className="h-full w-10 hover:bg-surface-sunken inline-flex items-center justify-center border-r border-border disabled:opacity-40 disabled:cursor-not-allowed" disabled={row.qty <= 0}><Minus className="h-3.5 w-3.5" /></button>
                       <span className="flex-1 text-center font-medium tabular">{row.qty}</span>
-                      <button type="button" onClick={() => updateBlock(row.id, "qty", row.qty + 1)} className="h-full w-10 hover:bg-surface-sunken inline-flex items-center justify-center border-l border-border"><Plus className="h-3.5 w-3.5" /></button>
+                      <button type="button" onClick={() => updateBlock(row.id, "qty", Math.min(maxQty, row.qty + 1))} className="h-full w-10 hover:bg-surface-sunken inline-flex items-center justify-center border-l border-border disabled:opacity-40 disabled:cursor-not-allowed" disabled={!datesChosen || atMax} title={!datesChosen ? "Select dates first" : atMax ? "No more rooms of this type free for these dates" : "Add a room"}><Plus className="h-3.5 w-3.5" /></button>
                     </div>
+                    {datesChosen && (
+                      <p className={cn("text-[10px] mt-1", typeAvail === 0 ? "text-danger" : atMax ? "text-warning" : "text-muted-foreground")}>
+                        {typeAvail === 0 ? "None free for these dates" : `${maxQty} of ${typeAvail} still available`}
+                      </p>
+                    )}
                   </div>
                   <div className="col-span-5 sm:col-span-3">
                     <Label>Group rate / night</Label>
@@ -344,7 +425,8 @@ export default function NewGroupPage() {
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
               <Button variant="outline" size="sm" onClick={addBlock}><Plus className="h-3.5 w-3.5" />Add room type</Button>
             </div>
 
