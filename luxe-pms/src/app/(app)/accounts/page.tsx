@@ -433,6 +433,8 @@ export default function AccountsPage() {
   const [toast, setToast] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
   const [expensesView, setExpensesView] = React.useState<"bills" | "daybook">("bills");
+  const [cashflowView, setCashflowView] = React.useState<"statements" | "reconcile">("statements");
+  const [plView, setPlView] = React.useState<"statement" | "journal">("statement");
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
@@ -1006,7 +1008,13 @@ export default function AccountsPage() {
           : statementPeriod;
 
         return (
-          <>
+          <div className="space-y-5">
+            <SubToggle
+              value={cashflowView}
+              onChange={setCashflowView}
+              options={[{ id: "statements", label: "Statements" }, { id: "reconcile", label: "Bank reconcile" }]}
+            />
+            {cashflowView === "statements" && (<>
             {/* Top totals strip — Total accounts · Receivable · Payable · Net */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <KPICard label="Total cash & bank" value={money(totalAssets)} icon={Wallet} accent="info" hint={`${ACCOUNTS.filter(a => a.type === "cash" || a.type === "bank" || a.type === "petty").length} accounts`} />
@@ -1326,7 +1334,9 @@ export default function AccountsPage() {
                 </table>
               )}
             </Card>
-          </>
+            </>)}
+            {cashflowView === "reconcile" && <BankReconcileTab onToast={showToast} />}
+          </div>
         );
       })()}
 
@@ -1515,12 +1525,19 @@ export default function AccountsPage() {
         />
       )}
 
-      {/* ============ BANK RECONCILIATION ============ */}
-      {(tab as string) === "bank" && <BankReconcileTab onToast={showToast} />}
       {tab === "vendor" && <PayablesTab onToast={showToast} />}
       {tab === "receivables" && <ReceivablesTab onToast={showToast} />}
-      {tab === "profitloss" && <PnlBsTab entries={entries} />}
-      {(tab as string) === "journal" && <JournalTab onToast={showToast} />}
+      {tab === "profitloss" && (
+        <div className="space-y-5">
+          <SubToggle
+            value={plView}
+            onChange={setPlView}
+            options={[{ id: "statement", label: "P&L / Balance sheet" }, { id: "journal", label: "Journal & ledger" }]}
+          />
+          {plView === "statement" && <PnlBsTab entries={entries} />}
+          {plView === "journal" && <JournalTab onToast={showToast} />}
+        </div>
+      )}
       {tab === "reports" && <CashierTab onToast={showToast} />}
 
       {/* Toast */}
