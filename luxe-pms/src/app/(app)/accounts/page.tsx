@@ -4,6 +4,7 @@ import {
   Plus, FileDown, TrendingUp, TrendingDown, Wallet, Receipt, ArrowUp, ArrowDown,
   X, Bot, Calendar, CheckCircle2, AlertCircle, Search, Sparkles, FileText, Printer,
   ChevronRight, Users, Eye, Lock, ShieldCheck, ClipboardList, Minus, Trash2,
+  FileBarChart,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -435,6 +436,7 @@ export default function AccountsPage() {
   const [expensesView, setExpensesView] = React.useState<"bills" | "daybook">("bills");
   const [cashflowView, setCashflowView] = React.useState<"statements" | "reconcile">("statements");
   const [plView, setPlView] = React.useState<"statement" | "journal">("statement");
+  const [reportsView, setReportsView] = React.useState<"downloads" | "cashier">("downloads");
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
@@ -1538,7 +1540,48 @@ export default function AccountsPage() {
           {plView === "journal" && <JournalTab onToast={showToast} />}
         </div>
       )}
-      {tab === "reports" && <CashierTab onToast={showToast} />}
+      {tab === "reports" && (
+        <div className="space-y-5">
+          <SubToggle
+            value={reportsView}
+            onChange={setReportsView}
+            options={[{ id: "downloads", label: "Statements & summaries" }, { id: "cashier", label: "Cashier shifts" }]}
+          />
+          {reportsView === "downloads" && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[
+                { name: "Profit & Loss statement", desc: "Revenue, costs and net profit for the period.", icon: FileBarChart },
+                { name: "Cash flow statement", desc: "Opening, movements and closing balances.", icon: Wallet },
+                { name: "VAT summary", desc: "Output VAT, input VAT and net payable.", icon: Receipt },
+                { name: "Day book export", desc: "Every transaction, ready for your accountant.", icon: ClipboardList },
+                { name: "Receivables aging", desc: "Outstanding by guest, agent and company.", icon: Users },
+                { name: "Vendor payables", desc: "Bills due and payment status.", icon: FileText },
+              ].map(r => (
+                <Card key={r.name} className="p-5 flex flex-col gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className="h-9 w-9 rounded-md bg-brand-soft text-brand-soft-foreground flex items-center justify-center shrink-0">
+                      <r.icon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm truncate">{r.name}</p>
+                      <p className="text-xs text-muted-foreground">{r.desc}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-auto">
+                    <Button size="sm" variant="outline" className="flex-1" onClick={() => showToast(`${r.name} · CSV downloaded`)}>
+                      <FileDown className="h-3.5 w-3.5" />CSV
+                    </Button>
+                    <Button size="sm" variant="outline" className="flex-1" onClick={() => showToast(`${r.name} · PDF generated`)}>
+                      <Printer className="h-3.5 w-3.5" />PDF
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+          {reportsView === "cashier" && <CashierTab onToast={showToast} />}
+        </div>
+      )}
 
       {/* Toast */}
       {toast && (
