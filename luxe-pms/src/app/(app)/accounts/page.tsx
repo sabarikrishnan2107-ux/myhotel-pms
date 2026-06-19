@@ -18,14 +18,10 @@ import { apiGet, apiPost } from "@/lib/api";
 import { useProperty, hotelName } from "@/lib/use-property";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend, LineChart, Line } from "recharts";
 import {
-  PL_TREND, CASH_FLOW, BANK_ACCOUNTS, RECONCILE, VENDOR_BILLS, RECEIVABLES,
-  PNL_REVENUE, PNL_DIRECT_COSTS, PNL_INDIRECT_COSTS, BS_ASSETS, BS_LIABILITIES,
-  CHART_OF_ACCOUNTS, JOURNAL_ENTRIES, CASHIER_SHIFTS, ACCOUNTS, HDFC_STATEMENT,
+  PL_TREND, CASH_FLOW, ACCOUNTS, HDFC_STATEMENT,
   AGING_RECEIVABLES, AGING_PAYABLES, GSTR_RETURNS, INCOME_CATS, EXPENSE_CATS,
-  SEED_ENTRIES, blankLine,
-  type BankAccount, type ReconcileEntry, type VendorBill, type ReceivableEntry,
-  type PnlRow, type ChartAccount, type JournalEntry, type CashierShift,
-  type LedgerAccount, type LedgerEntry, type EntryType, type ExpenseLine, type Entry,
+  blankLine,
+  type EntryType, type ExpenseLine, type Entry,
 } from "./_data";
 import { BankReconcileTab } from "./_tabs/bank-reconcile-tab";
 import { PayablesTab } from "./_tabs/payables-tab";
