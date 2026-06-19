@@ -374,6 +374,28 @@ function TabHint({ children }: { children: React.ReactNode }) {
   );
 }
 
+function SubToggle<T extends string>({ value, onChange, options }: {
+  value: T; onChange: (v: T) => void; options: { id: T; label: string }[];
+}) {
+  return (
+    <div className="inline-flex rounded-md border border-border bg-surface-sunken/40 p-0.5">
+      {options.map(o => (
+        <button
+          key={o.id}
+          type="button"
+          onClick={() => onChange(o.id)}
+          className={cn(
+            "px-3 py-1.5 text-sm font-medium rounded-[5px] transition-colors",
+            value === o.id ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function AccountsPage() {
   const [tab, setTab] = React.useState<TabId>("dashboard");
   const [entries, setEntries] = React.useState<Entry[]>([]);
@@ -410,6 +432,7 @@ export default function AccountsPage() {
   const [statementToDate, setStatementToDate] = React.useState<string>("2026-05-31");
   const [toast, setToast] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
+  const [expensesView, setExpensesView] = React.useState<"bills" | "daybook">("bills");
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
@@ -735,169 +758,176 @@ export default function AccountsPage() {
         </>
       )}
 
-      {/* === DAY BOOK === (merged into Expenses in Task 2; kept until then) */}
-      {(tab as string) === "daybook" && (
-        <>
-          <Card className="p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative flex-1 min-w-[240px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-subtle-foreground" />
-                <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by description, category, reference…" className="pl-9 h-9" />
-              </div>
-              <Select className="h-9 w-auto"><option>All types</option><option>Income</option><option>Expense</option><option>Refund</option></Select>
-              <Select className="h-9 w-auto"><option>All categories</option>{[...INCOME_CATS, ...EXPENSE_CATS].map(c => <option key={c}>{c}</option>)}</Select>
-              <Select className="h-9 w-auto"><option>Today</option><option>This week</option><option>This month</option></Select>
-            </div>
-          </Card>
-          <Card className="p-0 overflow-hidden">
-            <CardHeader className="bg-surface-elevated">
-              <div className="flex items-center justify-between">
-                <CardTitle>Day Book</CardTitle>
-                <p className="text-xs text-muted-foreground">{filteredEntries.length} entries</p>
-              </div>
-            </CardHeader>
-            <table className="w-full text-sm">
-              <thead className="bg-surface-sunken/50 border-y border-border">
-                <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-                  <th className="px-5 py-2.5 font-semibold">Date</th>
-                  <th className="px-5 py-2.5 font-semibold">Type</th>
-                  <th className="px-5 py-2.5 font-semibold">Category</th>
-                  <th className="px-5 py-2.5 font-semibold">Description</th>
-                  <th className="px-5 py-2.5 font-semibold">Mode</th>
-                  <th className="px-5 py-2.5 font-semibold">Ref</th>
-                  <th className="px-5 py-2.5 font-semibold text-right">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filteredEntries.map(e => (
-                  <tr key={e.id} className="hover:bg-surface-sunken/40">
-                    <td className="px-5 py-3 text-muted-foreground tabular">{e.date}</td>
-                    <td className="px-5 py-3">
-                      <span className={cn("inline-flex items-center gap-1 text-xs", e.type === "income" ? "text-success" : e.type === "expense" ? "text-warning" : "text-muted-foreground")}>
-                        {e.type === "income" ? <ArrowUp className="h-3 w-3" /> : e.type === "expense" ? <ArrowDown className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
-                        {e.type}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3"><Badge tone="neutral">{e.category}</Badge></td>
-                    <td className="px-5 py-3">{e.description}</td>
-                    <td className="px-5 py-3 text-xs text-muted-foreground">{e.mode}</td>
-                    <td className="px-5 py-3 text-xs tabular text-muted-foreground">{e.ref}</td>
-                    <td className={cn("px-5 py-3 text-right tabular font-medium", e.type === "income" ? "text-success" : "text-warning")}>
-                      {e.type === "income" ? "+" : "-"}{money(e.amount)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
-        </>
-      )}
-
       {/* === EXPENSES === */}
       {tab === "expenses" && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <KPICard label="Expense MTD" value={money(expense)} icon={TrendingDown} accent="warning" />
-            <KPICard label="Biggest Category" value="Payroll" icon={Wallet} accent="brand" hint={money(385000)} />
-            <KPICard label="Pending Bills" value={money(124800)} icon={Receipt} accent="info" />
-            <KPICard label="ITC Available" value={money(28400)} icon={Sparkles} accent="success" hint="GST input credit" />
-          </div>
-
-          <Card className="p-0 overflow-hidden">
-            <CardHeader className="bg-surface-elevated">
-              <div className="flex items-center justify-between">
-                <CardTitle>Recorded Expenses</CardTitle>
-                <Button size="sm" onClick={() => setShowExpenseFull(true)}><Plus className="h-3.5 w-3.5" />Add Expense</Button>
+          <SubToggle
+            value={expensesView}
+            onChange={setExpensesView}
+            options={[{ id: "bills", label: "Expenses & bills" }, { id: "daybook", label: "Day book (all entries)" }]}
+          />
+          {expensesView === "bills" && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <KPICard label="Expense MTD" value={money(expense)} icon={TrendingDown} accent="warning" />
+                <KPICard label="Biggest Category" value="Payroll" icon={Wallet} accent="brand" hint={money(385000)} />
+                <KPICard label="Pending Bills" value={money(124800)} icon={Receipt} accent="info" />
+                <KPICard label="ITC Available" value={money(28400)} icon={Sparkles} accent="success" hint="GST input credit" />
               </div>
-            </CardHeader>
-            <table className="w-full text-sm">
-              <thead className="bg-surface-sunken/50 border-b border-border">
-                <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-                  <th className="px-4 py-3 font-semibold">Date</th>
-                  <th className="px-4 py-3 font-semibold">Vendor / Description</th>
-                  <th className="px-4 py-3 font-semibold">Category</th>
-                  <th className="px-4 py-3 font-semibold tabular">GSTIN / Inv #</th>
-                  <th className="px-4 py-3 font-semibold text-right">Amount</th>
-                  <th className="px-4 py-3 font-semibold">Bill</th>
-                  <th className="px-4 py-3 font-semibold text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {entries.filter(e => e.type === "expense").map(e => (
-                  <tr key={e.id} className="hover:bg-surface-sunken/40">
-                    <td className="px-4 py-3 text-muted-foreground tabular">{e.date}</td>
-                    <td className="px-4 py-3">
-                      {e.vendor && <p className="font-medium">{e.vendor}</p>}
-                      <p className={cn("text-xs", e.vendor ? "text-muted-foreground" : "")}>{e.description}</p>
-                      {e.lines && e.lines.length > 1 && (
-                        <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-medium text-info bg-info-soft px-1.5 py-0.5 rounded-full">
-                          <FileText className="h-2.5 w-2.5" />
-                          {e.lines.length} line items
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3"><Badge tone="neutral">{e.category}</Badge></td>
-                    <td className="px-4 py-3 text-xs tabular">
-                      {e.gstin && <p className="font-mono">{e.gstin}</p>}
-                      {e.ref && <p className="text-muted-foreground">{e.ref}</p>}
-                      {e.hsnSac && <p className="text-[10px] text-muted-foreground">HSN/SAC {e.hsnSac}</p>}
-                    </td>
-                    <td className="px-4 py-3 text-right tabular font-medium text-warning">{money(e.amount)}</td>
-                    <td className="px-4 py-3">
-                      {e.attachment ? (
-                        <a
-                          href={e.attachment.dataUrl}
-                          download={e.attachment.name}
-                          className="inline-flex items-center gap-1 text-xs text-success hover:underline"
-                          title={e.attachment.name}
-                        >
-                          <FileText className="h-3.5 w-3.5" />Attached
-                        </a>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-xs text-warning">
-                          <AlertCircle className="h-3.5 w-3.5" />Missing
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Button size="sm" variant="ghost" onClick={() => setVoucherEntry(e)}>
-                        <Printer className="h-3.5 w-3.5" />Voucher
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-                {entries.filter(e => e.type === "expense").length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-muted-foreground">No expenses recorded yet.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </Card>
 
-          <Card className="p-0 overflow-hidden">
-            <CardHeader className="bg-surface-elevated">
-              <CardTitle>Expense Categories — MTD</CardTitle>
-            </CardHeader>
-            <ul className="divide-y divide-border">
-              {expenseBreakdown.map(c => {
-                const pctOfTotal = (c.value / expense) * 100;
-                return (
-                  <li key={c.label} className="flex items-center gap-3 px-5 py-3">
-                    <span className="h-3 w-3 rounded-full shrink-0" style={{ background: c.color }} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <p className="font-medium text-sm">{c.label}</p>
-                        <p className="text-sm font-semibold tabular">{money(c.value)}</p>
-                      </div>
-                      <div className="mt-1 h-1.5 bg-surface-sunken rounded-full overflow-hidden">
-                        <div className="h-full" style={{ width: `${pctOfTotal}%`, background: c.color }} />
-                      </div>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">{pctOfTotal.toFixed(1)}% of total expenses</p>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </Card>
+              <Card className="p-0 overflow-hidden">
+                <CardHeader className="bg-surface-elevated">
+                  <div className="flex items-center justify-between">
+                    <CardTitle>Recorded Expenses</CardTitle>
+                    <Button size="sm" onClick={() => setShowExpenseFull(true)}><Plus className="h-3.5 w-3.5" />Add Expense</Button>
+                  </div>
+                </CardHeader>
+                <table className="w-full text-sm">
+                  <thead className="bg-surface-sunken/50 border-b border-border">
+                    <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+                      <th className="px-4 py-3 font-semibold">Date</th>
+                      <th className="px-4 py-3 font-semibold">Vendor / Description</th>
+                      <th className="px-4 py-3 font-semibold">Category</th>
+                      <th className="px-4 py-3 font-semibold tabular">GSTIN / Inv #</th>
+                      <th className="px-4 py-3 font-semibold text-right">Amount</th>
+                      <th className="px-4 py-3 font-semibold">Bill</th>
+                      <th className="px-4 py-3 font-semibold text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {entries.filter(e => e.type === "expense").map(e => (
+                      <tr key={e.id} className="hover:bg-surface-sunken/40">
+                        <td className="px-4 py-3 text-muted-foreground tabular">{e.date}</td>
+                        <td className="px-4 py-3">
+                          {e.vendor && <p className="font-medium">{e.vendor}</p>}
+                          <p className={cn("text-xs", e.vendor ? "text-muted-foreground" : "")}>{e.description}</p>
+                          {e.lines && e.lines.length > 1 && (
+                            <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-medium text-info bg-info-soft px-1.5 py-0.5 rounded-full">
+                              <FileText className="h-2.5 w-2.5" />
+                              {e.lines.length} line items
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3"><Badge tone="neutral">{e.category}</Badge></td>
+                        <td className="px-4 py-3 text-xs tabular">
+                          {e.gstin && <p className="font-mono">{e.gstin}</p>}
+                          {e.ref && <p className="text-muted-foreground">{e.ref}</p>}
+                          {e.hsnSac && <p className="text-[10px] text-muted-foreground">HSN/SAC {e.hsnSac}</p>}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular font-medium text-warning">{money(e.amount)}</td>
+                        <td className="px-4 py-3">
+                          {e.attachment ? (
+                            <a
+                              href={e.attachment.dataUrl}
+                              download={e.attachment.name}
+                              className="inline-flex items-center gap-1 text-xs text-success hover:underline"
+                              title={e.attachment.name}
+                            >
+                              <FileText className="h-3.5 w-3.5" />Attached
+                            </a>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs text-warning">
+                              <AlertCircle className="h-3.5 w-3.5" />Missing
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <Button size="sm" variant="ghost" onClick={() => setVoucherEntry(e)}>
+                            <Printer className="h-3.5 w-3.5" />Voucher
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                    {entries.filter(e => e.type === "expense").length === 0 && (
+                      <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-muted-foreground">No expenses recorded yet.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </Card>
+
+              <Card className="p-0 overflow-hidden">
+                <CardHeader className="bg-surface-elevated">
+                  <CardTitle>Expense Categories — MTD</CardTitle>
+                </CardHeader>
+                <ul className="divide-y divide-border">
+                  {expenseBreakdown.map(c => {
+                    const pctOfTotal = (c.value / expense) * 100;
+                    return (
+                      <li key={c.label} className="flex items-center gap-3 px-5 py-3">
+                        <span className="h-3 w-3 rounded-full shrink-0" style={{ background: c.color }} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <p className="font-medium text-sm">{c.label}</p>
+                            <p className="text-sm font-semibold tabular">{money(c.value)}</p>
+                          </div>
+                          <div className="mt-1 h-1.5 bg-surface-sunken rounded-full overflow-hidden">
+                            <div className="h-full" style={{ width: `${pctOfTotal}%`, background: c.color }} />
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">{pctOfTotal.toFixed(1)}% of total expenses</p>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Card>
+            </>
+          )}
+          {expensesView === "daybook" && (
+            <>
+              <Card className="p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative flex-1 min-w-[240px]">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-subtle-foreground" />
+                    <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by description, category, reference…" className="pl-9 h-9" />
+                  </div>
+                  <Select className="h-9 w-auto"><option>All types</option><option>Income</option><option>Expense</option><option>Refund</option></Select>
+                  <Select className="h-9 w-auto"><option>All categories</option>{[...INCOME_CATS, ...EXPENSE_CATS].map(c => <option key={c}>{c}</option>)}</Select>
+                  <Select className="h-9 w-auto"><option>Today</option><option>This week</option><option>This month</option></Select>
+                </div>
+              </Card>
+              <Card className="p-0 overflow-hidden">
+                <CardHeader className="bg-surface-elevated">
+                  <div className="flex items-center justify-between">
+                    <CardTitle>Day Book</CardTitle>
+                    <p className="text-xs text-muted-foreground">{filteredEntries.length} entries</p>
+                  </div>
+                </CardHeader>
+                <table className="w-full text-sm">
+                  <thead className="bg-surface-sunken/50 border-y border-border">
+                    <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+                      <th className="px-5 py-2.5 font-semibold">Date</th>
+                      <th className="px-5 py-2.5 font-semibold">Type</th>
+                      <th className="px-5 py-2.5 font-semibold">Category</th>
+                      <th className="px-5 py-2.5 font-semibold">Description</th>
+                      <th className="px-5 py-2.5 font-semibold">Mode</th>
+                      <th className="px-5 py-2.5 font-semibold">Ref</th>
+                      <th className="px-5 py-2.5 font-semibold text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {filteredEntries.map(e => (
+                      <tr key={e.id} className="hover:bg-surface-sunken/40">
+                        <td className="px-5 py-3 text-muted-foreground tabular">{e.date}</td>
+                        <td className="px-5 py-3">
+                          <span className={cn("inline-flex items-center gap-1 text-xs", e.type === "income" ? "text-success" : e.type === "expense" ? "text-warning" : "text-muted-foreground")}>
+                            {e.type === "income" ? <ArrowUp className="h-3 w-3" /> : e.type === "expense" ? <ArrowDown className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                            {e.type}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3"><Badge tone="neutral">{e.category}</Badge></td>
+                        <td className="px-5 py-3">{e.description}</td>
+                        <td className="px-5 py-3 text-xs text-muted-foreground">{e.mode}</td>
+                        <td className="px-5 py-3 text-xs tabular text-muted-foreground">{e.ref}</td>
+                        <td className={cn("px-5 py-3 text-right tabular font-medium", e.type === "income" ? "text-success" : "text-warning")}>
+                          {e.type === "income" ? "+" : "-"}{money(e.amount)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            </>
+          )}
         </>
       )}
 
