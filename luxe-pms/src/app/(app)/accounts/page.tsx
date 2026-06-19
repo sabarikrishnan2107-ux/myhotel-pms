@@ -32,18 +32,15 @@ const CASH_FLOW = Array.from({ length: 30 }, (_, i) => ({
 }));
 
 const TABS = [
-  { id: "overview", label: "Overview" },
-  { id: "daybook", label: "Day Book" },
-  { id: "expenses", label: "Expenses" },
-  { id: "income", label: "Income" },
-  { id: "statements", label: "Statements" },
-  { id: "bank", label: "Bank Reconcile" },
-  { id: "payable", label: "Payables" },
-  { id: "receivable", label: "Receivables" },
-  { id: "pnl", label: "P&L / BS" },
-  { id: "journal", label: "Journal" },
-  { id: "cashier", label: "Cashier Summary" },
-  { id: "tax", label: "GST & Tax" },
+  { id: "dashboard",   label: "Dashboard",         hint: "Your money at a glance — income, expenses, profit and cash position this month." },
+  { id: "income",      label: "Income",            hint: "Every payment coming in, broken down by source." },
+  { id: "expenses",    label: "Expenses",          hint: "Every payment going out, with bills, categories and the full day book." },
+  { id: "profitloss",  label: "Profit & Loss",     hint: "What you earned minus what you spent — plus balance sheet and journal." },
+  { id: "cashflow",    label: "Cash Flow",         hint: "Money moving through your bank and cash accounts, and reconciliation." },
+  { id: "vendor",      label: "Vendor Payments",   hint: "Bills you owe suppliers, due dates and payment status." },
+  { id: "receivables", label: "Guest Receivables", hint: "Money guests, agents and companies still owe you." },
+  { id: "vat",         label: "VAT Report",        hint: "VAT you've collected and paid, and your filing status." },
+  { id: "reports",     label: "Reports",           hint: "Download statements and summaries, and review cashier shifts." },
 ] as const;
 type TabId = typeof TABS[number]["id"];
 
@@ -371,8 +368,14 @@ const SEED_ENTRIES: Entry[] = [
   { id: "e9", date: "21 May", type: "expense", category: "OTA Commissions", description: "Booking.com monthly commission", amount: 7100, mode: "Bank", ref: "BDC-MAY" },
 ];
 
+function TabHint({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-sm text-muted-foreground -mt-1">{children}</p>
+  );
+}
+
 export default function AccountsPage() {
-  const [tab, setTab] = React.useState<TabId>("overview");
+  const [tab, setTab] = React.useState<TabId>("dashboard");
   const [entries, setEntries] = React.useState<Entry[]>([]);
   const [summary, setSummary] = React.useState<{ income: { category: string; value: number }[]; expense: { category: string; value: number }[]; recent: { id: number; date: string; desc: string; type: string; amount: number }[] } | null>(null);
   React.useEffect(() => {
@@ -466,7 +469,7 @@ export default function AccountsPage() {
             One uncategorised expense detected — auto-suggested category: <span className="font-semibold">Maintenance</span>.
           </>
         }
-        action={{ label: "Review uncategorised entries", onClick: () => setTab("daybook") }}
+        action={{ label: "Review uncategorised entries", onClick: () => setTab("expenses") }}
       />
 
       {/* Tabs */}
@@ -486,8 +489,11 @@ export default function AccountsPage() {
         ))}
       </div>
 
-      {/* === OVERVIEW === */}
-      {tab === "overview" && (
+      {/* One-line description of the active section */}
+      <TabHint>{TABS.find(t => t.id === tab)?.hint}</TabHint>
+
+      {/* === DASHBOARD === */}
+      {tab === "dashboard" && (
         <>
           {/* P&L trend */}
           <Card>
@@ -629,13 +635,13 @@ export default function AccountsPage() {
             <Card className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <CardTitle>Cash &amp; Bank Position</CardTitle>
-                <Button size="sm" variant="ghost" onClick={() => setTab("statements")}>
+                <Button size="sm" variant="ghost" onClick={() => setTab("cashflow")}>
                   <ChevronRight className="h-3.5 w-3.5" />Open
                 </Button>
               </div>
               <ul className="space-y-2.5">
                 {ACCOUNTS.filter(a => a.type === "cash" || a.type === "bank" || a.type === "petty").map(a => (
-                  <li key={a.id} className="flex items-center gap-3 p-2.5 rounded-md border border-border hover:bg-surface-sunken/40 cursor-pointer" onClick={() => { setStatementAccountId(a.id); setTab("statements"); }}>
+                  <li key={a.id} className="flex items-center gap-3 p-2.5 rounded-md border border-border hover:bg-surface-sunken/40 cursor-pointer" onClick={() => { setStatementAccountId(a.id); setTab("cashflow"); }}>
                     <span className={cn(
                       "h-8 w-8 rounded-md flex items-center justify-center shrink-0",
                       a.type === "bank" ? "bg-info-soft text-info" :
@@ -729,8 +735,8 @@ export default function AccountsPage() {
         </>
       )}
 
-      {/* === DAY BOOK === */}
-      {tab === "daybook" && (
+      {/* === DAY BOOK === (merged into Expenses in Task 2; kept until then) */}
+      {(tab as string) === "daybook" && (
         <>
           <Card className="p-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -931,8 +937,8 @@ export default function AccountsPage() {
         </>
       )}
 
-      {/* === STATEMENTS === */}
-      {tab === "statements" && (() => {
+      {/* === CASH FLOW === */}
+      {tab === "cashflow" && (() => {
         const selectedAccount = ACCOUNTS.find(a => a.id === statementAccountId) ?? ACCOUNTS[0];
         // Compute running balance for HDFC sample
         let runningBalance = selectedAccount.openingBalance;
@@ -1294,8 +1300,8 @@ export default function AccountsPage() {
         );
       })()}
 
-      {/* === GST & TAX === */}
-      {tab === "tax" && (
+      {/* === VAT REPORT === */}
+      {tab === "vat" && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <KPICard label="Output GST (CGST+SGST 18%)" value={money(income * 0.18)} icon={Receipt} accent="warning" hint="Tax collected on sales" />
@@ -1480,12 +1486,12 @@ export default function AccountsPage() {
       )}
 
       {/* ============ BANK RECONCILIATION ============ */}
-      {tab === "bank" && <BankReconcileTab onToast={showToast} />}
-      {tab === "payable" && <PayablesTab onToast={showToast} />}
-      {tab === "receivable" && <ReceivablesTab onToast={showToast} />}
-      {tab === "pnl" && <PnlBsTab entries={entries} />}
-      {tab === "journal" && <JournalTab onToast={showToast} />}
-      {tab === "cashier" && <CashierTab onToast={showToast} />}
+      {(tab as string) === "bank" && <BankReconcileTab onToast={showToast} />}
+      {tab === "vendor" && <PayablesTab onToast={showToast} />}
+      {tab === "receivables" && <ReceivablesTab onToast={showToast} />}
+      {tab === "profitloss" && <PnlBsTab entries={entries} />}
+      {(tab as string) === "journal" && <JournalTab onToast={showToast} />}
+      {tab === "reports" && <CashierTab onToast={showToast} />}
 
       {/* Toast */}
       {toast && (
