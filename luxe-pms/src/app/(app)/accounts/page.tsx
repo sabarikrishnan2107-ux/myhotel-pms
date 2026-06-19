@@ -1368,7 +1368,7 @@ export default function AccountsPage() {
             text={
               <>
                 <span className="font-semibold">GSTR-3B</span> for May 2026 is due in <span className="font-semibold text-warning">26 days</span> (20 Jun).
-                Net liability: <span className="font-semibold">{money(income * 0.18 - 28400)}</span> · ITC available: <span className="font-semibold text-success">{money(28400)}</span>.
+                Net liability: <span className="font-semibold">{money(income * 0.05 - 28400)}</span> · ITC available: <span className="font-semibold text-success">{money(28400)}</span>.
                 Annual return <span className="font-semibold">GSTR-9</span> window opens 1 Apr 2027. e-Invoice generation: <span className="font-semibold text-success">enabled</span> (NIC portal).
               </>
             }
