@@ -440,6 +440,16 @@ export default function AccountsPage() {
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
+  // Reset all sub-views when the top-level tab changes so users always land
+  // on the default sub-view rather than whatever they had open last time.
+  const changeTab = (next: TabId) => {
+    setTab(next);
+    setExpensesView("bills");
+    setCashflowView("statements");
+    setPlView("statement");
+    setReportsView("downloads");
+  };
+
   // Headline KPIs derive from the real posted entries (fall back to the
   // illustrative breakdown only before any entry has loaded).
   const sumByType = (t: EntryType) => entries.filter(e => e.type === t).reduce((s, e) => s + e.amount, 0);
@@ -467,7 +477,7 @@ export default function AccountsPage() {
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-display font-medium tracking-tight">Accounts</h1>
-          <p className="text-muted-foreground text-sm mt-1">P&amp;L, day book, expenses, income, tax · May 2026</p>
+          <p className="text-muted-foreground text-sm mt-1">Income, expenses, profit, cash flow and VAT — May 2026</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => showToast(`Accounts export ready · ${entries.length} entries · CSV downloaded`)}>
@@ -496,7 +506,7 @@ export default function AccountsPage() {
             One uncategorised expense detected — auto-suggested category: <span className="font-semibold">Maintenance</span>.
           </>
         }
-        action={{ label: "Review uncategorised entries", onClick: () => setTab("expenses") }}
+        action={{ label: "Review uncategorised entries", onClick: () => changeTab("expenses") }}
       />
 
       {/* Tabs */}
@@ -505,7 +515,7 @@ export default function AccountsPage() {
           <button
             key={t.id}
             type="button"
-            onClick={() => setTab(t.id)}
+            onClick={() => changeTab(t.id)}
             className={cn(
               "px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
               tab === t.id ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
@@ -662,13 +672,13 @@ export default function AccountsPage() {
             <Card className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <CardTitle>Cash &amp; Bank Position</CardTitle>
-                <Button size="sm" variant="ghost" onClick={() => setTab("cashflow")}>
+                <Button size="sm" variant="ghost" onClick={() => changeTab("cashflow")}>
                   <ChevronRight className="h-3.5 w-3.5" />Open
                 </Button>
               </div>
               <ul className="space-y-2.5">
                 {ACCOUNTS.filter(a => a.type === "cash" || a.type === "bank" || a.type === "petty").map(a => (
-                  <li key={a.id} className="flex items-center gap-3 p-2.5 rounded-md border border-border hover:bg-surface-sunken/40 cursor-pointer" onClick={() => { setStatementAccountId(a.id); setTab("cashflow"); }}>
+                  <li key={a.id} className="flex items-center gap-3 p-2.5 rounded-md border border-border hover:bg-surface-sunken/40 cursor-pointer" onClick={() => { setStatementAccountId(a.id); changeTab("cashflow"); }}>
                     <span className={cn(
                       "h-8 w-8 rounded-md flex items-center justify-center shrink-0",
                       a.type === "bank" ? "bg-info-soft text-info" :
@@ -1346,9 +1356,9 @@ export default function AccountsPage() {
       {tab === "vat" && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <KPICard label="Output GST (CGST+SGST 18%)" value={money(income * 0.18)} icon={Receipt} accent="warning" hint="Tax collected on sales" />
-            <KPICard label="Input GST (ITC available)" value={money(28400)} icon={Receipt} accent="success" hint="Reclaimable from vendor bills" />
-            <KPICard label="Net GST Payable" value={money(income * 0.18 - 28400)} icon={Wallet} accent="brand" hint="After ITC offset" />
+            <KPICard label="Output VAT (5%)" value={money(income * 0.05)} icon={Receipt} accent="warning" hint="Tax collected on sales" />
+            <KPICard label="Input VAT (recoverable)" value={money(28400)} icon={Receipt} accent="success" hint="Reclaimable from vendor bills" />
+            <KPICard label="Net VAT Payable" value={money(income * 0.05 - 28400)} icon={Wallet} accent="brand" hint="After input VAT offset" />
             <KPICard label="TDS Deducted" value={money(12400)} icon={FileDown} accent="info" hint="Sec 194H + 194J" />
           </div>
 
@@ -1369,7 +1379,7 @@ export default function AccountsPage() {
           <Card className="p-0 overflow-hidden">
             <CardHeader className="bg-surface-elevated">
               <div className="flex items-center justify-between">
-                <CardTitle>GST Returns Tracker</CardTitle>
+                <CardTitle>VAT Returns Tracker</CardTitle>
                 <Button size="sm" variant="outline" onClick={() => showToast("GSTR-3B JSON downloaded · ready for NIC portal upload")}>
                   <FileDown className="h-3.5 w-3.5" />Download JSON
                 </Button>
