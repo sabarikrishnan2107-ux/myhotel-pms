@@ -182,20 +182,6 @@ export default function AccountsPage() {
         <KPICard label="VAT Liability" value={money(income * 0.05)} icon={Receipt} accent="info" />
       </div>
 
-      {/* AI Insight */}
-      <AIInsight
-        variant="panel"
-        title="AI Financial Anomaly Watch"
-        text={
-          <>
-            <span className="font-semibold">OTA Commissions</span> are tracking <span className="font-semibold text-warning">+18% vs last month</span> — driven by 11 more Booking.com reservations.
-            Cash balance trend remains <span className="font-semibold text-success">healthy</span>; next 30 days projected positive cash position averaging <span className="font-semibold">{money(58400)}</span>.
-            One uncategorised expense detected — auto-suggested category: <span className="font-semibold">Maintenance</span>.
-          </>
-        }
-        action={{ label: "Review uncategorised entries", onClick: () => changeTab("expenses") }}
-      />
-
       {/* Tabs */}
       <div className="border-b border-border flex items-center gap-1 overflow-x-auto">
         {TABS.map(t => (
