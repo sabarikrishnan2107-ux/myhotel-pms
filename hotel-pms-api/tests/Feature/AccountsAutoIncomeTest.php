@@ -62,4 +62,23 @@ class AccountsAutoIncomeTest extends TestCase
         $res->assertJsonMissing(['category' => 'Banquet']);
         $this->assertSame(500, $res->json('incomeTotal'));
     }
+
+    public function test_summary_returns_monthly_and_cash_trends(): void
+    {
+        $today = date('Y-m-d');
+        FolioPayment::create(['bookingNo' => 'BK1', 'date' => $today, 'mode' => 'Cash', 'amount' => 50000]);
+        AccountEntry::create(['date' => $today, 'type' => 'expense', 'category' => 'Salaries', 'description' => 'payroll', 'amount' => 20000]);
+
+        $res = $this->getJson('/api/accounts/summary')->assertOk();
+
+        $monthly = $res->json('monthlyTrend');
+        $this->assertCount(6, $monthly);
+        $this->assertSame(50000, $monthly[5]['income']);   // current month
+        $this->assertSame(20000, $monthly[5]['expense']);
+
+        $cash = $res->json('cashTrend');
+        $this->assertCount(30, $cash);
+        // Only today has activity: +50000 income − 20000 expense = +30000 cumulative on the last day.
+        $this->assertSame(30000, $cash[29]['balance']);
+    }
 }

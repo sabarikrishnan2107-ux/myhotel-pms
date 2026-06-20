@@ -416,11 +416,63 @@ class StatsController extends Controller
             ->sortByDesc('value')
             ->values();
 
+        // ---- monthlyTrend: last 6 months, income (cash received) vs expense ----
+        $months = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $ts = strtotime("first day of -$i month");
+            $months[date('Y-m', $ts)] = ['month' => date('M', $ts), 'income' => 0, 'expense' => 0];
+        }
+        $addMonthly = function ($rows, string $key) use (&$months) {
+            foreach ($rows as $r) {
+                if (isset($months[$r->ym])) $months[$r->ym][$key] += (int) $r->v;
+            }
+        };
+        $monthAgg = fn ($query, string $dateCol, string $amountCol) => $query
+            ->selectRaw('substr("'.$dateCol.'",1,7) as ym, coalesce(sum("'.$amountCol.'"),0) as v')
+            ->groupBy('ym')->get();
+
+        $addMonthly($monthAgg(FolioPayment::query(), 'date', 'amount'), 'income');
+        $addMonthly($monthAgg(GroupBooking::query(), 'createdAt', 'advance'), 'income');
+        $addMonthly($monthAgg(HallBooking::query(), 'date', 'advance'), 'income');
+        $addMonthly($monthAgg(BanquetOrder::query(), 'date', 'advance'), 'income');
+        $addMonthly($monthAgg(AccountEntry::where('type', 'income')->whereNotIn('category', $autoNames), 'date', 'amount'), 'income');
+        $addMonthly($monthAgg(AccountEntry::whereIn('type', ['expense', 'refund']), 'date', 'amount'), 'expense');
+        $monthlyTrend = array_values($months);
+
+        // ---- cashTrend: last 30 days, cumulative net cash movement ----
+        $days = [];
+        for ($i = 29; $i >= 0; $i--) {
+            $days[date('Y-m-d', strtotime("-$i day"))] = 0;
+        }
+        $addDaily = function ($rows, int $sign) use (&$days) {
+            foreach ($rows as $r) {
+                if (isset($days[$r->d])) $days[$r->d] += $sign * (int) $r->v;
+            }
+        };
+        $dayAgg = fn ($query, string $dateCol, string $amountCol) => $query
+            ->selectRaw('substr("'.$dateCol.'",1,10) as d, coalesce(sum("'.$amountCol.'"),0) as v')
+            ->groupBy('d')->get();
+
+        $addDaily($dayAgg(FolioPayment::query(), 'date', 'amount'), 1);
+        $addDaily($dayAgg(GroupBooking::query(), 'createdAt', 'advance'), 1);
+        $addDaily($dayAgg(HallBooking::query(), 'date', 'advance'), 1);
+        $addDaily($dayAgg(BanquetOrder::query(), 'date', 'advance'), 1);
+        $addDaily($dayAgg(AccountEntry::where('type', 'income')->whereNotIn('category', $autoNames), 'date', 'amount'), 1);
+        $addDaily($dayAgg(AccountEntry::whereIn('type', ['expense', 'refund']), 'date', 'amount'), -1);
+
+        $bal = 0; $cashTrend = []; $n = 0;
+        foreach ($days as $net) {
+            $bal += $net;
+            $cashTrend[] = ['day' => (string) (++$n), 'balance' => $bal];
+        }
+
         return response()->json([
             'income'      => $income,
             'incomeTotal' => (int) $income->sum('value'),
             'expense'     => $byCat('expense'),
             'recent'      => $recent,
+            'monthlyTrend' => $monthlyTrend,
+            'cashTrend'    => $cashTrend,
         ]);
     }
 
