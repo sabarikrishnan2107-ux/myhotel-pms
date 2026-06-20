@@ -2,7 +2,7 @@
 import * as React from "react";
 import {
   Plus, FileDown, TrendingUp, TrendingDown, Wallet, Receipt, ArrowUp, ArrowDown,
-  X, Bot, CheckCircle2, AlertCircle, Search, Sparkles, FileText, Printer,
+  X, CheckCircle2, AlertCircle, Search, Sparkles, FileText, Printer,
   ChevronRight, Users, ClipboardList,
   FileBarChart,
 } from "lucide-react";
@@ -104,6 +104,13 @@ export default function AccountsPage() {
   const recentTxn = (summary?.recent ?? []).map(r => ({ id: String(r.id), date: r.date, desc: r.desc, type: r.type as "Income" | "Expense" | "Refund", amount: r.amount }));
   const monthlyTrend = summary?.monthlyTrend ?? [];
   const cashTrend = summary?.cashTrend ?? [];
+  // Real month-over-month deltas from the last two months of the trend.
+  const pctDelta = (cur: number, prev: number) => (prev > 0 ? Number((((cur - prev) / prev) * 100).toFixed(1)) : 0);
+  const lastM = monthlyTrend[monthlyTrend.length - 1];
+  const prevM = monthlyTrend[monthlyTrend.length - 2];
+  const incomeDelta = lastM && prevM ? pctDelta(lastM.income, prevM.income) : 0;
+  const expenseDelta = lastM && prevM ? pctDelta(lastM.expense, prevM.expense) : 0;
+  const profitDelta = lastM && prevM ? pctDelta(lastM.income - lastM.expense, prevM.income - prevM.expense) : 0;
   const [showEntry, setShowEntry] = React.useState<EntryType | null>(null);
   const [showExpenseFull, setShowExpenseFull] = React.useState(false);
   const [voucherEntry, setVoucherEntry] = React.useState<Entry | null>(null);
@@ -167,9 +174,9 @@ export default function AccountsPage() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPICard label="Total Income" value={money(income)} icon={TrendingUp} accent="success" delta={4.9} />
-        <KPICard label="Total Expense" value={money(expense)} icon={TrendingDown} accent="warning" delta={-2.7} />
-        <KPICard label="Net Profit" value={money(profit)} icon={Wallet} accent="brand" delta={8.4} hint={`Margin ${margin}%`} />
+        <KPICard label="Total Income" value={money(income)} icon={TrendingUp} accent="success" delta={incomeDelta} />
+        <KPICard label="Total Expense" value={money(expense)} icon={TrendingDown} accent="warning" delta={expenseDelta} />
+        <KPICard label="Net Profit" value={money(profit)} icon={Wallet} accent="brand" delta={profitDelta} hint={`Margin ${margin}%`} />
         <KPICard label="VAT Liability" value={money(income * 0.05)} icon={Receipt} accent="info" />
       </div>
 
@@ -201,23 +208,27 @@ export default function AccountsPage() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Income vs Expense — last 6 months</CardTitle>
-                <Badge tone="success">+8.4% MoM profit</Badge>
+                <Badge tone={profitDelta >= 0 ? "success" : "danger"}>{profitDelta >= 0 ? "+" : ""}{profitDelta}% MoM profit</Badge>
               </div>
             </CardHeader>
             <CardContent className="pl-0">
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlyTrend} margin={{ top: 8, right: 16, bottom: 0, left: 8 }} barGap={4}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-                    <XAxis dataKey="month" stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
-                    <YAxis stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ background: "var(--color-surface-elevated)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12, color: "var(--color-foreground)" }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="income" name="Income" fill="var(--color-accent)" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="expense" name="Expense" fill="var(--color-warning)" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              {monthlyTrend.length === 0 ? (
+                <div className="h-64 flex items-center justify-center text-sm text-muted-foreground">No income or expense recorded yet</div>
+              ) : (
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={monthlyTrend} margin={{ top: 8, right: 16, bottom: 0, left: 8 }} barGap={4}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+                      <XAxis dataKey="month" stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
+                      <YAxis stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={{ background: "var(--color-surface-elevated)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12, color: "var(--color-foreground)" }} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar dataKey="income" name="Income" fill="var(--color-accent)" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="expense" name="Expense" fill="var(--color-warning)" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -225,22 +236,25 @@ export default function AccountsPage() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle>Cash Balance Trend — last 30 days</CardTitle>
-                <Badge tone="brand"><Bot className="h-3 w-3" />AI projection enabled</Badge>
+                <CardTitle>Net Cash Movement — last 30 days</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="pl-0">
-              <div className="h-44">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={cashTrend} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-                    <XAxis dataKey="day" stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
-                    <YAxis stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ background: "var(--color-surface-elevated)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12, color: "var(--color-foreground)" }} />
-                    <Line type="monotone" dataKey="balance" stroke="var(--color-brand)" strokeWidth={2} dot={false} name="Cash balance" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+              {cashTrend.length === 0 ? (
+                <div className="h-44 flex items-center justify-center text-sm text-muted-foreground">No cash movement in the last 30 days</div>
+              ) : (
+                <div className="h-44">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={cashTrend} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+                      <XAxis dataKey="day" stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
+                      <YAxis stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={{ background: "var(--color-surface-elevated)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12, color: "var(--color-foreground)" }} />
+                      <Line type="monotone" dataKey="balance" stroke="var(--color-brand)" strokeWidth={2} dot={false} name="Cash balance" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </CardContent>
           </Card>
 
