@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AccountEntry;
 use App\Models\AppSetting;
+use App\Models\BanquetOrder;
 use App\Models\Booking;
 use App\Models\CashierShift;
 use App\Models\ComplianceLicense;
@@ -368,9 +369,12 @@ class StatsController extends Controller
      */
     public function accountsSummary(\Illuminate\Http\Request $request)
     {
+        $from = $request->query('from');
+        $to   = $request->query('to');
+
         $base = AccountEntry::query();
-        if ($request->filled('from')) $base->where('date', '>=', $request->query('from'));
-        if ($request->filled('to'))   $base->where('date', '<=', $request->query('to'));
+        if ($from) $base->where('date', '>=', $from);
+        if ($to)   $base->where('date', '<=', $to);
 
         $byCat = fn (string $type) => (clone $base)->where('type', $type)
             ->selectRaw('category, coalesce(sum(amount),0) as value')
@@ -384,10 +388,39 @@ class StatsController extends Controller
                 'type' => ucfirst($e->type), 'amount' => (int) $e->amount,
             ])->values();
 
+        // ---- Live cash received from bookings (authoritative income categories) ----
+        // Each source is filtered on its own date column when a range is supplied;
+        // with no range, all rows are summed. Only the `advance`/payment amount is
+        // counted (cash received), never the booked total/balance.
+        $sumBetween = function ($query, string $col, string $amountCol) use ($from, $to) {
+            if ($from) $query->where($col, '>=', $from);
+            if ($to)   $query->where($col, '<=', $to);
+            return (int) $query->sum($amountCol);
+        };
+
+        $autoCats = [
+            ['category' => 'Room Revenue',   'value' => $sumBetween(FolioPayment::query(), 'date', 'amount')],
+            ['category' => 'Group Bookings', 'value' => $sumBetween(GroupBooking::query(), 'createdAt', 'advance')],
+            ['category' => 'Hall Bookings',  'value' => $sumBetween(HallBooking::query(), 'date', 'advance')],
+            ['category' => 'Banquet',        'value' => $sumBetween(BanquetOrder::query(), 'date', 'advance')],
+        ];
+        $autoNames = ['Room Revenue', 'Group Bookings', 'Hall Bookings', 'Banquet'];
+
+        // Manual income, minus the categories the live booking figures supersede.
+        $manualIncome = $byCat('income')
+            ->reject(fn ($r) => in_array($r['category'], $autoNames, true));
+
+        $income = collect($autoCats)
+            ->filter(fn ($r) => $r['value'] > 0)
+            ->merge($manualIncome)
+            ->sortByDesc('value')
+            ->values();
+
         return response()->json([
-            'income'  => $byCat('income'),
-            'expense' => $byCat('expense'),
-            'recent'  => $recent,
+            'income'      => $income,
+            'incomeTotal' => (int) $income->sum('value'),
+            'expense'     => $byCat('expense'),
+            'recent'      => $recent,
         ]);
     }
 
