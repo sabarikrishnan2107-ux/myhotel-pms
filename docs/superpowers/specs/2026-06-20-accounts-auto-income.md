@@ -100,8 +100,58 @@ Resulting response shape:
 
 - Auto-posting individual journal/day-book rows per payment (Approach B).
 - Accrual revenue, receivables/outstanding balances.
-- The P&L trend chart (`PL_TREND`) — remains illustrative.
 - F&B/Restaurant POS as an income source (not requested).
+- Non-dashboard tabs (Income/Expenses/P&L/Cash Flow/Vendor/Receivables/VAT/Reports)
+  beyond what already reads from `summary` — only the **Dashboard** tab is in scope
+  for the real-data + UI pass.
+
+(Note: the "P&L trend / cash trend remain illustrative" exclusion from the original
+narrow spec is **superseded** by the Dashboard expansion section above — those charts
+are now real.)
+
+## Dashboard expansion (added 2026-06-20 — "all real, no hardcoded, better UI")
+
+The whole Accounts **Dashboard** tab must run on real data and get an honest UI
+pass. All aggregations are folded into the existing `GET /api/accounts/summary`
+so the page makes one fetch.
+
+### Additional backend output (same `accountsSummary` method)
+
+- `monthlyTrend`: last 6 calendar months, `[{ month: "Jan", income, expense }]`.
+  - `income` per month = Σ folio_payments.amount (by `date`) + Σ group/hall/banquet
+    `advance` (by their date columns) + manual income entries (by `date`) whose
+    category is **not** one of the 4 authoritative names (same de-dup rule).
+  - `expense` per month = Σ account_entries where `type IN ('expense','refund')` (by `date`).
+  - Month bucket key = `substr(date,1,7)` (`YYYY-MM`); label = short month name.
+- `cashTrend`: last 30 days, `[{ day: "1".."30", balance }]` where `balance` is the
+  **cumulative net cash movement** over the window: running sum of (daily inflows −
+  daily outflows). Inflows = folio_payments + advances + manual income that day;
+  outflows = expenses + refunds that day. Starts at 0 on day −29. (Honest label:
+  this is net cash movement, not a bank balance.)
+
+These two windows are fixed (6 months / 30 days) and ignore the `from`/`to` params.
+
+### Frontend dashboard changes (`accounts/page.tsx`)
+
+- Income vs Expense chart: data `= summary.monthlyTrend` (was `PL_TREND`).
+- Cash trend chart: data `= summary.cashTrend` (was `CASH_FLOW`); card title →
+  "Net Cash Movement — last 30 days"; **remove** the fake "AI projection enabled" badge.
+- KPI deltas: compute real month-over-month % from `monthlyTrend` (last vs prev
+  month) for Income, Expense, Net Profit — replacing the hardcoded `4.9 / -2.7 / 8.4`.
+- "+8.4% MoM profit" badge → real computed MoM profit % (tone success/danger by sign).
+- Remove all mock fallbacks and imports: `PL_TREND`, `CASH_FLOW` (from `_data`),
+  `INCOME_BREAKDOWN`, `EXPENSE_BREAKDOWN`, `RECENT_TXN` (from `mock-data-ext`),
+  and the `seedIncome`/`seedExpense` fallbacks. Charts/lists render real data or a
+  clean empty state.
+- UI polish (conservative, within the existing design system): consistent KPI card
+  hints, ensure empty states for charts, keep spacing/typography aligned with the
+  rest of the app. No radical redesign.
+
+### Double-count consistency
+
+`monthlyTrend.income` and `cashTrend` inflows use the **same** de-dup rule as
+`incomeTotal` (the 4 authoritative booking categories supersede manual rows of the
+same name), so headline Income and the trend agree.
 
 ## Testing / verification
 
