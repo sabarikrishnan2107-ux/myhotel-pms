@@ -16,6 +16,7 @@ import { apiGet, apiPost } from "@/lib/api";
 import type { Reservation } from "@/lib/types";
 import { type MenuItemPayload } from "@/lib/menu-item";
 import { MenuItemDialog } from "@/components/menu-item-dialog";
+import { computePosKpis, openOrderForTable } from "@/lib/pos-data";
 
 // ------------ DATA ------------
 type TableStatus = "free" | "seated" | "ordering" | "billing" | "dirty";
@@ -120,15 +121,6 @@ type LineItem = {
   instructions?: string;
 };
 
-// Preloaded order for T3
-const PRELOADED: Record<string, LineItem[]> = {
-  T3: [
-    { uid: "t3-1", itemId: "i1", name: "Butter Chicken", price: 540, qty: 2, spice: "medium", extras: ["Extra cream"] },
-    { uid: "t3-2", itemId: "i2", name: "Dal Makhani", price: 320, qty: 1, spice: "mild" },
-    { uid: "t3-3", itemId: "sd1", name: "Garlic Naan", price: 90, qty: 6 },
-    { uid: "t3-4", itemId: "bv2", name: "Fresh Lime Soda", price: 140, qty: 3, instructions: "Less sugar" },
-  ],
-};
 
 // Monotonic KOT (kitchen order ticket) number — pure, collision-free.
 let __kot = 7000;
@@ -142,7 +134,7 @@ export default function RestaurantPOSPage() {
   const [selectedTable, setSelectedTable] = React.useState<string>("T3");
   const [cat, setCat] = React.useState<Category>("Indian");
   const [search, setSearch] = React.useState("");
-  const [orders, setOrders] = React.useState<Record<string, LineItem[]>>(PRELOADED);
+  const [orders, setOrders] = React.useState<Record<string, LineItem[]>>({});
   const [chargeRoomOpen, setChargeRoomOpen] = React.useState(false);
 
   // Live menu from Postgres (falls back to the seed menu if offline).
@@ -163,6 +155,29 @@ export default function RestaurantPOSPage() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  // Live F&B orders — used to hydrate the selected table's ticket and the KPI strip.
+  type FbOrderRow = { id: number | string; tableNo?: string; status?: string; total?: number; items?: Array<{ name: string; qty: number; price: number }> | null; created_at?: string };
+  const [fbOrders, setFbOrders] = React.useState<FbOrderRow[]>([]);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<FbOrderRow[]>("/fb-orders").then(r => { if (!cancelled && Array.isArray(r)) setFbOrders(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // When a table is selected, hydrate its ticket from the open F&B order once
+  // (further edits stay in local state and are not overwritten).
+  React.useEffect(() => {
+    setOrders(o => {
+      if (o[selectedTable]) return o;
+      const open = openOrderForTable(fbOrders, selectedTable);
+      if (!open || !Array.isArray(open.items) || open.items.length === 0) return o;
+      const seeded: LineItem[] = open.items.map((it, i) => ({
+        uid: `${selectedTable}-fb-${i}`, itemId: "", name: it.name, price: Number(it.price) || 0, qty: Number(it.qty) || 1,
+      }));
+      return { ...o, [selectedTable]: seeded };
+    });
+  }, [selectedTable, fbOrders]);
 
   // Modifier popup
   const [modifierFor, setModifierFor] = React.useState<Item | null>(null);
@@ -198,6 +213,8 @@ export default function RestaurantPOSPage() {
     const q = search.trim().toLowerCase();
     return menu.filter(m => m.cat === cat && (!q || m.name.toLowerCase().includes(q)));
   }, [menu, cat, search]);
+
+  const kpis = React.useMemo(() => computePosKpis(fbOrders, tables, new Date()), [fbOrders, tables]);
 
   const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0);
   const discountAmt = Math.round(subtotal * (discountPct / 100));
@@ -305,10 +322,10 @@ export default function RestaurantPOSPage() {
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard icon={ChefHat} tone="warning" label="Active KOTs" value="7" sub="3 in queue · 4 cooking" />
-        <KpiCard icon={Clock} tone="info" label="Avg dwell" value="48 min" sub="vs 52 min yest" />
-        <KpiCard icon={Users} tone="brand" label="Covers today" value="142" sub="Lunch + Dinner" />
-        <KpiCard icon={TrendingUp} tone="success" label="Revenue today" value={money(186400)} sub="Target ₹2.2L" />
+        <KpiCard icon={ChefHat} tone="warning" label="Active KOTs" value={String(kpis.activeKots)} sub={`${kpis.inQueue} in queue · ${kpis.cooking} cooking`} />
+        <KpiCard icon={Clock} tone="info" label="Avg dwell" value={kpis.avgDwellMin == null ? "—" : `${kpis.avgDwellMin} min`} sub="live floor" />
+        <KpiCard icon={Users} tone="brand" label="Covers" value={String(kpis.covers)} sub="seated now" />
+        <KpiCard icon={TrendingUp} tone="success" label="Revenue today" value={money(kpis.revenue)} sub="all orders today" />
       </div>
 
       {/* MAIN 3-COLUMN LAYOUT */}
