@@ -350,6 +350,7 @@ class ResourceController extends Controller
         'menu-items' => [
             'cat' => 'string|max:100', 'name' => 'string|max:255', 'price' => 'integer|min:0',
             'veg' => 'boolean', 'spice' => 'string|max:50|nullable', 'tag' => 'string|max:100|nullable',
+            'photo' => 'string|max:2000|nullable',
         ],
         'fb-orders' => [
             'orderNo' => 'string|max:50', 'tableNo' => 'string|max:50', 'server' => 'string|max:100|nullable',
