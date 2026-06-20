@@ -55,7 +55,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
-import { apiGet, apiPost, apiPut } from "@/lib/api";
+import { apiGet, apiPost, apiPut, apiUpload } from "@/lib/api";
 
 type Status = "Waiting" | "Notified" | "Claimed" | "Returned" | "Storage" | "Disposed" | "Donated";
 type Category =
@@ -109,6 +109,7 @@ type FoundItem = {
   contact?: string;
   email?: string;
   remarks?: string;
+  photos?: string[];
   timeline: { date: string; text: string }[];
 };
 
@@ -1208,20 +1209,34 @@ function DetailDrawer({
         <div className="p-4 space-y-5">
           {/* photo gallery 3 */}
           <div className="grid grid-cols-3 gap-2">
-            <div
-              className={cn(
-                "aspect-square rounded-md flex items-center justify-center",
-                item.hvi ? "bg-linear-to-br from-amber-400 to-orange-500 text-white" : "bg-surface-sunken text-muted-foreground"
-              )}
-            >
-              <Icon className="size-10" />
-            </div>
-            <div className="aspect-square rounded-md bg-surface-sunken flex items-center justify-center text-muted-foreground">
-              <ImageIcon className="size-6" />
-            </div>
-            <div className="aspect-square rounded-md bg-surface-sunken flex items-center justify-center text-muted-foreground">
-              <ImageIcon className="size-6" />
-            </div>
+            {item.photos && item.photos.length > 0 ? (
+              item.photos.slice(0, 6).map((url, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={i}
+                  src={url}
+                  alt={`${item.name} photo ${i + 1}`}
+                  className="aspect-square w-full rounded-md object-cover border border-border"
+                />
+              ))
+            ) : (
+              <>
+                <div
+                  className={cn(
+                    "aspect-square rounded-md flex items-center justify-center",
+                    item.hvi ? "bg-linear-to-br from-amber-400 to-orange-500 text-white" : "bg-surface-sunken text-muted-foreground"
+                  )}
+                >
+                  <Icon className="size-10" />
+                </div>
+                <div className="aspect-square rounded-md bg-surface-sunken flex items-center justify-center text-muted-foreground">
+                  <ImageIcon className="size-6" />
+                </div>
+                <div className="aspect-square rounded-md bg-surface-sunken flex items-center justify-center text-muted-foreground">
+                  <ImageIcon className="size-6" />
+                </div>
+              </>
+            )}
           </div>
 
           {/* fields */}
@@ -1360,6 +1375,27 @@ function RegisterModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (
   const [value, setValue] = React.useState(0);
   const [foundLocation, setFoundLocation] = React.useState("");
   const [foundBy, setFoundBy] = React.useState("");
+  const [photos, setPhotos] = React.useState<string[]>([]);
+  const [uploading, setUploading] = React.useState(false);
+  const [uploadError, setUploadError] = React.useState<string | null>(null);
+  const uploadRef = React.useRef<HTMLInputElement>(null);
+  const captureRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      for (const file of Array.from(files)) {
+        const { url } = await apiUpload(file);
+        setPhotos((prev) => [...prev, url]);
+      }
+    } catch {
+      setUploadError("Upload failed — check the backend is running.");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
     <div
@@ -1536,29 +1572,73 @@ function RegisterModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (
             {section === "photos" && (
               <div className="space-y-4">
                 <SectionHeader title="Photos" subtitle="Capture or upload images — at least one photo is required." />
+                {/* hidden inputs: camera capture + file picker */}
+                <input
+                  ref={captureRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => { void handleFiles(e.target.files); e.target.value = ""; }}
+                />
+                <input
+                  ref={uploadRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => { void handleFiles(e.target.files); e.target.value = ""; }}
+                />
                 <div className="grid grid-cols-3 gap-3">
                   <button
                     type="button"
-                    className="aspect-square rounded-md border-2 border-dashed border-border flex flex-col items-center justify-center gap-1.5 text-muted-foreground hover:bg-surface-sunken hover:border-brand transition-colors"
+                    onClick={() => captureRef.current?.click()}
+                    disabled={uploading}
+                    className="aspect-square rounded-md border-2 border-dashed border-border flex flex-col items-center justify-center gap-1.5 text-muted-foreground hover:bg-surface-sunken hover:border-brand transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Camera className="size-6" />
                     <span className="text-xs font-medium">Capture</span>
                   </button>
                   <button
                     type="button"
-                    className="aspect-square rounded-md border-2 border-dashed border-border flex flex-col items-center justify-center gap-1.5 text-muted-foreground hover:bg-surface-sunken hover:border-brand transition-colors"
+                    onClick={() => uploadRef.current?.click()}
+                    disabled={uploading}
+                    className="aspect-square rounded-md border-2 border-dashed border-border flex flex-col items-center justify-center gap-1.5 text-muted-foreground hover:bg-surface-sunken hover:border-brand transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Upload className="size-6" />
-                    <span className="text-xs font-medium">Upload file</span>
+                    <span className="text-xs font-medium">{uploading ? "Uploading…" : "Upload file"}</span>
                   </button>
                   <button
                     type="button"
-                    className="aspect-square rounded-md border-2 border-dashed border-border flex flex-col items-center justify-center gap-1.5 text-muted-foreground hover:bg-surface-sunken hover:border-brand transition-colors"
+                    onClick={() => uploadRef.current?.click()}
+                    disabled={uploading}
+                    className="aspect-square rounded-md border-2 border-dashed border-border flex flex-col items-center justify-center gap-1.5 text-muted-foreground hover:bg-surface-sunken hover:border-brand transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <ImageIcon className="size-6" />
                     <span className="text-xs font-medium">Add more</span>
                   </button>
                 </div>
+                {photos.length > 0 && (
+                  <div className="grid grid-cols-4 gap-2">
+                    {photos.map((url, i) => (
+                      <div key={url} className="relative aspect-square rounded-md overflow-hidden border border-border group">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setPhotos((prev) => prev.filter((p) => p !== url))}
+                          className="absolute top-1 right-1 size-5 rounded-full bg-black/60 text-white inline-flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-label="Remove photo"
+                        >
+                          <X className="size-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {uploadError && (
+                  <div className="text-xs text-danger bg-danger-soft/40 rounded-md p-3">{uploadError}</div>
+                )}
                 <div className="text-xs text-muted-foreground bg-surface-sunken rounded-md p-3">
                   Tip: Capture all sides for HVI items. Include serial number, hallmark or any identifying marks.
                 </div>
@@ -1664,10 +1744,10 @@ function RegisterModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (
             <Button size="sm" variant="ghost" onClick={onClose}>
               Cancel
             </Button>
-            <Button size="sm" variant="outline" onClick={() => onSubmit({ name, category, condition, hvi, value, foundLocation, foundBy, status: "Storage" })}>
+            <Button size="sm" variant="outline" onClick={() => onSubmit({ name, category, condition, hvi, value, foundLocation, foundBy, photos, status: "Storage" })}>
               <Save className="size-4" /> Save draft
             </Button>
-            <Button size="sm" disabled={!name.trim()} onClick={() => onSubmit({ name, category, condition, hvi, value, foundLocation, foundBy, status: "Waiting" })}>
+            <Button size="sm" disabled={!name.trim()} onClick={() => onSubmit({ name, category, condition, hvi, value, foundLocation, foundBy, photos, status: "Waiting" })}>
               <CheckCircle2 className="size-4" /> Register item
             </Button>
           </div>

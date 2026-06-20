@@ -387,6 +387,7 @@ class ResourceController extends Controller
             'foundLocation' => 'string|max:255|nullable', 'foundDate' => 'string|max:50|nullable',
             'foundBy' => 'string|max:100|nullable', 'storageLocation' => 'string|max:255|nullable',
             'condition' => 'string|max:50', 'description' => 'string|max:2000|nullable', 'timeline' => 'array',
+            'photos' => 'array', 'photos.*' => 'string|max:2000',
         ],
         'channels' => [
             'name' => 'string|max:255', 'status' => 'string|max:50', 'lastSync' => 'string|max:100|nullable',
