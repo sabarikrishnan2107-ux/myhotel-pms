@@ -38,12 +38,12 @@ describe("openOrderForTable", () => {
 });
 
 describe("computePosKpis", () => {
-  const now = new Date("2026-06-20T13:00:00Z");
+  const now = new Date(2026, 5, 20, 13, 0, 0); // local 2026-06-20 13:00
   const orders = [
     { status: "placed", total: 1000, created_at: "2026-06-20T12:58:00Z" },
     { status: "preparing", total: 1500, created_at: "2026-06-20T12:50:00Z" },
     { status: "ready", total: 800, created_at: "2026-06-20T12:46:00Z" },
-    { status: "paid", total: 1300, created_at: "2026-06-19T20:00:00Z" }, // yesterday
+    { status: "paid", total: 1300, created_at: "2026-06-15T20:00:00Z" }, // excluded – not today
   ];
   const tables = [
     { covers: 3, seatedAt: "12:30" },

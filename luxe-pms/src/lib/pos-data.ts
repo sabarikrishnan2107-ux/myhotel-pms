@@ -49,22 +49,26 @@ export function computePosKpis(
   const cooking = orders.filter(o => lc(o.status) === "preparing").length;
   const ready = orders.filter(o => lc(o.status) === "ready").length;
 
-  const today = now.toISOString().slice(0, 10);
+  const sameLocalDay = (iso?: string | null) => {
+    if (!iso) return false;
+    const d = new Date(iso);
+    return d.getFullYear() === now.getFullYear()
+      && d.getMonth() === now.getMonth()
+      && d.getDate() === now.getDate();
+  };
   const revenue = orders
-    .filter(o => (o.created_at ?? "").slice(0, 10) === today)
+    .filter(o => sameLocalDay(o.created_at))
     .reduce((s, o) => s + (Number(o.total) || 0), 0);
 
   const covers = tables.reduce((s, t) => s + (Number(t.covers) || 0), 0);
 
+  // Dwell is wall-clock: "HH:MM" seated time vs now's local minutes-of-day.
+  const nowMin = now.getHours() * 60 + now.getMinutes();
   const dwell: number[] = [];
-  const nowMs = now.getTime();
-  const nowDate = now.toISOString().slice(0, 10); // "YYYY-MM-DD"
   for (const t of tables) {
-    const at = (t.seatedAt ?? "").trim();
-    const m = /^(\d{1,2}):(\d{2})$/.exec(at);
+    const m = /^(\d{1,2}):(\d{2})$/.exec((t.seatedAt ?? "").trim());
     if (!m) continue;
-    const seatedMs = Date.parse(`${nowDate}T${m[1].padStart(2, "0")}:${m[2]}:00Z`);
-    dwell.push(Math.max(0, Math.round((nowMs - seatedMs) / 60000)));
+    dwell.push(Math.max(0, nowMin - (Number(m[1]) * 60 + Number(m[2]))));
   }
   const avgDwellMin = dwell.length
     ? Math.round(dwell.reduce((a, b) => a + b, 0) / dwell.length)
