@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPut, apiPost, apiUpload, apiDownload, syncList } from "@/lib/api";
 import { PreferencesPanel, SecurityPanel, NotificationChannelsPanel, WebhooksPanel, useSettingsPersistence } from "./personal-panels";
+import { MenuItemsManager } from "./menu-items-manager";
 import { NAV, GROUP_LABEL } from "@/lib/nav";
 import { applyBranding } from "@/lib/use-branding";
 import { Switch } from "@/components/ui/switch";
@@ -61,6 +62,7 @@ const SECTIONS = [
   { id: "pricing",      group: "Rates & Packages" as SectionGroup,        label: "Pricing & Rate Plans",     icon: Tag,          hint: "5 rate plans · weekend +20%",    accent: "accent"  as const },
   { id: "seasons",      group: "Rates & Packages" as SectionGroup,        label: "Seasons & Holidays",       icon: Calendar,     hint: "Define peak / off-peak windows", accent: "accent"  as const },
   { id: "food",         group: "Rates & Packages" as SectionGroup,        label: "Food & Hall Packages",     icon: Utensils,     hint: "4 F&B · 6 hall packages",        accent: "accent"  as const },
+  { id: "menu-items",  group: "Rates & Packages" as SectionGroup,        label: "Menu Items",               icon: Utensils,     hint: "Dish catalog · price · photo · POS", accent: "accent"  as const },
   { id: "agents",       group: "Partners & Compliance" as SectionGroup,   label: "Agents & Corporates",      icon: Briefcase,    hint: "6 accounts with credit",         accent: "warning" as const },
   { id: "tax",          group: "Partners & Compliance" as SectionGroup,   label: "Tax & Payment Methods",    icon: Receipt,      hint: "GST 18% · 6 payment methods",    accent: "warning" as const },
   { id: "integrations", group: "Partners & Compliance" as SectionGroup,   label: "Integrations",             icon: Plug,         hint: "OTAs · WhatsApp · POS · accounting", accent: "warning" as const },
@@ -413,6 +415,7 @@ const INITIAL_DATA: Record<SectionId, Field[]> = {
     { kind: "string", label: "Off-peak", value: "Jun – Sep (Monsoon)" },
     { kind: "string", label: "Holidays", value: "Republic Day, Holi, Independence Day, Gandhi Jayanti, Diwali, Christmas" },
   ],
+  "menu-items": [],
   food: [
     { kind: "number", label: "F&B packages", value: 4 },
     { kind: "number", label: "Hall packages", value: 6 },
@@ -846,6 +849,7 @@ export function SetupView() {
                 onToast={showToast}
                 onMarkComplete={() => setCompleted(c => new Set([...c, "food"]))} />
             )}
+            {active === "menu-items" && <MenuItemsManager onToast={showToast} />}
             {active === "agents" && (
               <AgentsManager agents={agents} onChange={next => persistList("agents", agents, next, setAgents)} onToast={showToast}
                 onMarkComplete={() => setCompleted(c => new Set([...c, "agents"]))} />
