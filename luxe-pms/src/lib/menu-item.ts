@@ -45,3 +45,9 @@ export function buildMenuItemPayload(form: MenuItemFormState): MenuItemPayload {
   if (photo) payload.photo = photo;
   return payload;
 }
+
+/** The fixed F&B menu categories used across the POS and Setup manager. */
+export const MENU_CATEGORIES = [
+  "Starters", "Mains", "Indian", "Continental", "Sides", "Desserts", "Bar", "Beverages",
+] as const;
+export type MenuCategory = typeof MENU_CATEGORIES[number];
