@@ -29,6 +29,7 @@ import { ReceivablesTab } from "./_tabs/receivables-tab";
 import { PnlBsTab } from "./_tabs/pnl-bs-tab";
 import { JournalTab } from "./_tabs/journal-tab";
 import { CashierTab } from "./_tabs/cashier-tab";
+import { NewExpenseForm } from "./_components/new-expense-form";
 
 const TABS = [
   { id: "dashboard",   label: "Dashboard",         hint: "Your money at a glance — income, expenses, profit and cash position this month." },
@@ -1212,7 +1213,7 @@ export default function AccountsPage() {
       )}
 
       {showExpenseFull && (
-        <FullScreenExpenseForm
+        <NewExpenseForm
           expenseCats={EXPENSE_CATS}
           onClose={() => setShowExpenseFull(false)}
           onSubmit={(entry, andAddAnother) => {
