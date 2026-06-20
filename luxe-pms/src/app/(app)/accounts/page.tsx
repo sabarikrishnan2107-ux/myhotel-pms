@@ -1868,7 +1868,7 @@ function PaymentVoucherModal({ entry, onClose }: { entry: Entry; onClose: () => 
                 </>
               )}
               {(entry.igst ?? 0) > 0 && (
-                <div className="flex justify-between"><span className="text-muted-foreground">IGST</span><span className="tabular">{money(entry.igst!)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">VAT</span><span className="tabular">{money(entry.igst!)}</span></div>
               )}
               <div className="flex justify-between border-t border-border pt-1 mt-1">
                 <span className="font-semibold">Gross Amount Paid</span>
