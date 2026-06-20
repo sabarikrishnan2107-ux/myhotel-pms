@@ -309,9 +309,8 @@ export default function KDSPage() {
     : "--:--:--";
 
   return (
-    // Forced dark, high-contrast canvas — a kitchen wall screen reads best dark
-    // regardless of the app's light/dark setting.
-    <div className="dark bg-background text-foreground min-h-screen p-4 sm:p-6 lg:p-8 space-y-5">
+    // Follows the app's light/dark theme setting.
+    <div className="bg-background text-foreground min-h-screen p-4 sm:p-6 lg:p-8 space-y-5">
       {/* HEADER */}
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3.5">
