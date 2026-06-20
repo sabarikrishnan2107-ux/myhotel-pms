@@ -195,56 +195,6 @@ type StoredItem = {
   dualSig?: "Pending" | "Complete";
 };
 
-const ITEMS: StoredItem[] = [
-  // General storage (22 items shown selection)
-  { id: "LF-7041", name: "Black umbrella (Cheap Monday)", photo: "bg-linear-to-br from-slate-300 to-slate-500", storedOn: "28 May 2026", storedBy: "Sunita Devi", slot: "Shelf A-12", verifiedBy: "Priya Krishnan", daysHeld: 5, area: "general", retentionDays: 90, value: 800 },
-  { id: "LF-7042", name: "Welspun bath towel (white)", photo: "bg-linear-to-br from-stone-200 to-stone-400", storedOn: "26 May 2026", storedBy: "Sunita Devi", slot: "Shelf A-13", verifiedBy: "Priya Krishnan", daysHeld: 7, area: "general", retentionDays: 60, value: 1200 },
-  { id: "LF-7043", name: "Kids' colouring book", photo: "bg-linear-to-br from-pink-200 to-rose-400", storedOn: "20 May 2026", storedBy: "Ramesh Naidu", slot: "Shelf B-04", verifiedBy: "Priya Krishnan", daysHeld: 13, area: "general", retentionDays: 60, value: 250 },
-  { id: "LF-7044", name: "Sports cap (Mumbai Indians)", photo: "bg-linear-to-br from-blue-300 to-indigo-500", storedOn: "18 May 2026", storedBy: "Karan Mehta", slot: "Shelf B-07", verifiedBy: "Anjali Iyer", daysHeld: 15, area: "general", retentionDays: 90, value: 950 },
-  { id: "LF-7045", name: "Cotton kurta — size M", photo: "bg-linear-to-br from-amber-200 to-orange-300", storedOn: "10 Mar 2026", storedBy: "Sunita Devi", slot: "Shelf C-01", verifiedBy: "Priya Krishnan", daysHeld: 84, area: "general", retentionDays: 90, value: 1800 },
-  { id: "LF-7046", name: "Reading glasses + case", photo: "bg-linear-to-br from-zinc-300 to-zinc-500", storedOn: "01 Mar 2026", storedBy: "Ramesh Naidu", slot: "Shelf C-09", verifiedBy: "Karan Mehta", daysHeld: 93, area: "general", retentionDays: 90, value: 1500 },
-
-  // Security locker
-  { id: "LF-7101", name: "Sony WH-1000XM5 headphones", photo: "bg-linear-to-br from-neutral-400 to-neutral-700", storedOn: "29 May 2026", storedBy: "Ramesh Naidu", slot: "Locker S-03", verifiedBy: "Karan Mehta", daysHeld: 4, area: "security", retentionDays: 90, value: 32990 },
-  { id: "LF-7102", name: "Designer sunglasses (Ray-Ban)", photo: "bg-linear-to-br from-amber-300 to-yellow-500", storedOn: "22 May 2026", storedBy: "Ramesh Naidu", slot: "Locker S-05", verifiedBy: "Karan Mehta", daysHeld: 11, area: "security", retentionDays: 90, value: 9800 },
-  { id: "LF-7103", name: "Leather backpack (unbranded)", photo: "bg-linear-to-br from-amber-700 to-amber-900", storedOn: "15 May 2026", storedBy: "Sunita Devi", slot: "Locker S-08", verifiedBy: "Ramesh Naidu", daysHeld: 18, area: "security", retentionDays: 60, value: 4500 },
-
-  // Manager safe (HVI)
-  { id: "LF-7201", name: "Gold-plated wristwatch (Titan)", photo: "bg-linear-to-br from-amber-400 to-orange-500", storedOn: "12 Feb 2026", storedBy: "Anjali Iyer", slot: "Safe M-02", verifiedBy: "Karan Mehta", daysHeld: 110, area: "manager", retentionDays: 120, value: 24500, hvi: true, safeLocker: "M-02", dualSig: "Complete" },
-  { id: "LF-7202", name: "Apple AirPods Pro (2nd gen)", photo: "bg-linear-to-br from-amber-400 to-orange-500", storedOn: "01 Mar 2026", storedBy: "Anjali Iyer", slot: "Safe M-04", verifiedBy: "Karan Mehta", daysHeld: 93, area: "manager", retentionDays: 90, value: 19900, hvi: true, safeLocker: "M-04", dualSig: "Complete" },
-  { id: "LF-7203", name: "iPhone 14 Pro (silver, 256GB)", photo: "bg-linear-to-br from-amber-400 to-orange-500", storedOn: "27 May 2026", storedBy: "Anjali Iyer", slot: "Safe M-05", verifiedBy: "Karan Mehta", daysHeld: 6, area: "manager", retentionDays: 120, value: 124900, hvi: true, safeLocker: "M-05", dualSig: "Complete" },
-  { id: "LF-7204", name: "Designer purse (Hidesign)", photo: "bg-linear-to-br from-amber-400 to-orange-500", storedOn: "30 May 2026", storedBy: "Anjali Iyer", slot: "Safe M-06", verifiedBy: "Karan Mehta", daysHeld: 3, area: "manager", retentionDays: 90, value: 8500, hvi: true, safeLocker: "M-06", dualSig: "Pending" },
-
-  // Refrigerated
-  { id: "LF-7301", name: "Insulin pen (Lantus SoloStar)", photo: "bg-linear-to-br from-sky-200 to-cyan-400", storedOn: "01 Jun 2026", storedBy: "Sunita Devi", slot: "Bag F-01", verifiedBy: "Dr. Suresh Pillai", daysHeld: 1, area: "fridge", retentionDays: 7, value: 1200 },
-  { id: "LF-7302", name: "Breast milk bag (sealed)", photo: "bg-linear-to-br from-sky-100 to-sky-300", storedOn: "31 May 2026", storedBy: "Sunita Devi", slot: "Bag F-02", verifiedBy: "Priya Krishnan", daysHeld: 2, area: "fridge", retentionDays: 3 },
-  { id: "LF-7303", name: "Box of mithai (Mawa peda)", photo: "bg-linear-to-br from-amber-100 to-yellow-300", storedOn: "30 May 2026", storedBy: "Sunita Devi", slot: "Bag F-03", verifiedBy: "Priya Krishnan", daysHeld: 3, area: "fridge", retentionDays: 3 },
-
-  // Document locker
-  { id: "LF-7401", name: "Indian passport — P. Krishnan", photo: "bg-linear-to-br from-blue-700 to-indigo-900", storedOn: "16 Apr 2026", storedBy: "Karan Mehta", slot: "Box D-01", verifiedBy: "Anjali Iyer", daysHeld: 47, area: "documents", retentionDays: 60 },
-  { id: "LF-7402", name: "Aadhaar card — A. Iyer (lookalike)", photo: "bg-linear-to-br from-orange-300 to-rose-500", storedOn: "20 May 2026", storedBy: "Karan Mehta", slot: "Box D-02", verifiedBy: "Anjali Iyer", daysHeld: 13, area: "documents", retentionDays: 60 },
-  { id: "LF-7403", name: "PAN card — R. Sharma", photo: "bg-linear-to-br from-emerald-300 to-emerald-600", storedOn: "10 May 2026", storedBy: "Karan Mehta", slot: "Box D-03", verifiedBy: "Anjali Iyer", daysHeld: 23, area: "documents", retentionDays: 60 },
-  { id: "LF-7404", name: "Driving licence + RC book", photo: "bg-linear-to-br from-lime-300 to-green-500", storedOn: "02 Apr 2026", storedBy: "Karan Mehta", slot: "Box D-04", verifiedBy: "Anjali Iyer", daysHeld: 61, area: "documents", retentionDays: 60 },
-
-  // Electronics cabinet
-  { id: "LF-7501", name: "MacBook charger (USB-C 96W)", photo: "bg-linear-to-br from-zinc-200 to-zinc-500", storedOn: "29 May 2026", storedBy: "Karan Mehta", slot: "Shelf E-01", verifiedBy: "Ramesh Naidu", daysHeld: 4, area: "electronics", retentionDays: 60, value: 5900 },
-  { id: "LF-7502", name: "Kindle Paperwhite (11th gen)", photo: "bg-linear-to-br from-slate-400 to-slate-700", storedOn: "25 May 2026", storedBy: "Karan Mehta", slot: "Shelf E-02", verifiedBy: "Ramesh Naidu", daysHeld: 8, area: "electronics", retentionDays: 90, value: 13999 },
-  { id: "LF-7503", name: "Bose SoundLink Flex speaker", photo: "bg-linear-to-br from-blue-400 to-cyan-600", storedOn: "20 May 2026", storedBy: "Karan Mehta", slot: "Shelf E-04", verifiedBy: "Ramesh Naidu", daysHeld: 13, area: "electronics", retentionDays: 90, value: 17900 },
-  { id: "LF-7504", name: "Samsung Galaxy Buds2", photo: "bg-linear-to-br from-violet-300 to-purple-500", storedOn: "10 Mar 2026", storedBy: "Karan Mehta", slot: "Shelf E-06", verifiedBy: "Ramesh Naidu", daysHeld: 84, area: "electronics", retentionDays: 90, value: 8990 },
-
-  // Cash safe (HVI)
-  { id: "LF-7601", name: "Cash envelope — INR notes", photo: "bg-linear-to-br from-amber-400 to-orange-500", storedOn: "27 May 2026", storedBy: "Anjali Iyer", slot: "Safe C-01", verifiedBy: "Karan Mehta", daysHeld: 6, area: "cash", retentionDays: 90, value: 42000, hvi: true, safeLocker: "C-01", dualSig: "Complete" },
-  { id: "LF-7602", name: "USD foreign currency pouch", photo: "bg-linear-to-br from-amber-400 to-orange-500", storedOn: "18 May 2026", storedBy: "Anjali Iyer", slot: "Safe C-02", verifiedBy: "Karan Mehta", daysHeld: 15, area: "cash", retentionDays: 120, value: 28500, hvi: true, safeLocker: "C-02", dualSig: "Complete" },
-  { id: "LF-7603", name: "Travellers cheques (Thomas Cook)", photo: "bg-linear-to-br from-amber-400 to-orange-500", storedOn: "30 May 2026", storedBy: "Anjali Iyer", slot: "Safe C-03", verifiedBy: "Karan Mehta", daysHeld: 3, area: "cash", retentionDays: 90, value: 15000, hvi: true, safeLocker: "C-03", dualSig: "Pending" },
-
-  // Jewellery safe (HVI)
-  { id: "LF-7701", name: "Gold mangalsutra (22kt)", photo: "bg-linear-to-br from-amber-400 to-orange-500", storedOn: "22 May 2026", storedBy: "Anjali Iyer", slot: "Safe J-01", verifiedBy: "Karan Mehta", daysHeld: 11, area: "jewellery", retentionDays: 180, value: 68000, hvi: true, safeLocker: "J-01", dualSig: "Complete" },
-  { id: "LF-7702", name: "Diamond stud earrings (pair)", photo: "bg-linear-to-br from-amber-400 to-orange-500", storedOn: "19 May 2026", storedBy: "Anjali Iyer", slot: "Safe J-02", verifiedBy: "Karan Mehta", daysHeld: 14, area: "jewellery", retentionDays: 180, value: 145000, hvi: true, safeLocker: "J-02", dualSig: "Complete" },
-  { id: "LF-7703", name: "Pearl necklace (Hyderabadi)", photo: "bg-linear-to-br from-amber-400 to-orange-500", storedOn: "05 Mar 2026", storedBy: "Anjali Iyer", slot: "Safe J-03", verifiedBy: "Karan Mehta", daysHeld: 89, area: "jewellery", retentionDays: 180, value: 56000, hvi: true, safeLocker: "J-03", dualSig: "Complete" },
-  { id: "LF-7704", name: "Silver anklet (Rajasthani)", photo: "bg-linear-to-br from-amber-400 to-orange-500", storedOn: "01 Jun 2026", storedBy: "Anjali Iyer", slot: "Safe J-04", verifiedBy: "Karan Mehta", daysHeld: 1, area: "jewellery", retentionDays: 180, value: 12500, hvi: true, safeLocker: "J-04", dualSig: "Pending" },
-  { id: "LF-7705", name: "Gents' gold chain (18kt)", photo: "bg-linear-to-br from-amber-400 to-orange-500", storedOn: "10 May 2026", storedBy: "Anjali Iyer", slot: "Safe J-05", verifiedBy: "Karan Mehta", daysHeld: 23, area: "jewellery", retentionDays: 180, value: 89000, hvi: true, safeLocker: "J-05", dualSig: "Complete" },
-];
-
 const UNASSIGNED = [
   { id: "LF-7801", name: "Black leather wallet" },
   { id: "LF-7802", name: "Spar shopping bag (groceries)" },
@@ -267,7 +217,7 @@ export default function StorageTab({ onToast }: { onToast: (m: string) => void }
   const [storedBy, setStoredBy] = React.useState<string>(STAFF[2]);
   const [verifiedBy, setVerifiedBy] = React.useState<string>(STAFF[0]);
 
-  // Real found-items power every list below; mock arrays stay as offline fallback.
+  // Real found-items power every list below.
   const [found, setFound] = React.useState<FoundRow[] | null>(null);
   const [assignItem, setAssignItem] = React.useState<string>(UNASSIGNED[0].id);
   React.useEffect(() => {
@@ -283,41 +233,36 @@ export default function StorageTab({ onToast }: { onToast: (m: string) => void }
     return () => { cancelled = true; };
   }, []);
 
-  const live = found && found.length > 0;
+  const itemsData: StoredItem[] = (found ?? [])
+    .filter((i) => i.storageLocation && !RESOLVED.includes(i.status ?? ""))
+    .map((i) => ({
+      id: String(i.id),
+      name: i.name,
+      photo: i.hvi ? "bg-linear-to-br from-amber-400 to-orange-500" : "bg-linear-to-br from-slate-300 to-slate-500",
+      storedOn: i.foundDate || "—",
+      storedBy: i.foundBy || "—",
+      slot: i.storageShelf || i.storageLocation || "—",
+      verifiedBy: "—",
+      daysHeld: i.daysHeld ?? 0,
+      area: areaForFound(i),
+      retentionDays: 90,
+      value: i.value,
+      hvi: i.hvi,
+      safeLocker: i.storageShelf || i.storageLocation,
+      dualSig: i.hvi ? "Complete" : undefined,
+    }));
 
-  const itemsData: StoredItem[] = live
-    ? found!
-        .filter((i) => i.storageLocation && !RESOLVED.includes(i.status ?? ""))
-        .map((i) => ({
-          id: String(i.id),
-          name: i.name,
-          photo: i.hvi ? "bg-linear-to-br from-amber-400 to-orange-500" : "bg-linear-to-br from-slate-300 to-slate-500",
-          storedOn: i.foundDate || "—",
-          storedBy: i.foundBy || "—",
-          slot: i.storageShelf || i.storageLocation || "—",
-          verifiedBy: "—",
-          daysHeld: i.daysHeld ?? 0,
-          area: areaForFound(i),
-          retentionDays: 90,
-          value: i.value,
-          hvi: i.hvi,
-          safeLocker: i.storageShelf || i.storageLocation,
-          dualSig: i.hvi ? "Complete" : undefined,
-        }))
-    : ITEMS;
+  const unassignedData = (found ?? [])
+    .filter((i) => !i.storageLocation && !RESOLVED.includes(i.status ?? ""))
+    .map((i) => ({ id: String(i.id), name: i.name }));
 
-  const unassignedData = live
-    ? found!
-        .filter((i) => !i.storageLocation && !RESOLVED.includes(i.status ?? ""))
-        .map((i) => ({ id: String(i.id), name: i.name }))
-    : UNASSIGNED;
-
-  const areasData: StorageArea[] = live
-    ? AREAS.map((a) => ({ ...a, count: itemsData.filter((it) => it.area === a.key).length }))
-    : AREAS;
+  const areasData: StorageArea[] = AREAS.map((a) => ({
+    ...a,
+    count: itemsData.filter((it) => it.area === a.key).length,
+  }));
 
   const totalLocations = areasData.length;
-  const totalItems = live ? itemsData.length : areasData.reduce((s, a) => s + a.count, 0);
+  const totalItems = itemsData.length;
   const totalCap = areasData.reduce((s, a) => s + a.capacity, 0);
   const capUsedPct = Math.round((totalItems / totalCap) * 100);
   const overdueItems = itemsData.filter((i) => i.daysHeld > i.retentionDays);

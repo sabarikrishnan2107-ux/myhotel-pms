@@ -88,342 +88,6 @@ const URGENCY_TONE: Record<Urgency, ToneType> = {
   Low: "neutral",
 };
 
-// ---- SEED DATA ----
-const LOST_REPORTS: LostReport[] = [
-  {
-    id: "LR-2814",
-    guest: "Mr. Rohit Sharma",
-    room: "1208",
-    stayDates: "28 May - 31 May 2026",
-    itemName: "Gold-rimmed sunglasses",
-    category: "Eyewear",
-    description: "Aviator style with brown gradient lenses, gold metal frame, slight scratch on left lens",
-    color: "Gold / Brown",
-    brand: "Ray-Ban",
-    location: "Likely pool deck or Azure restaurant",
-    reportedAt: "01 Jun, 09:14",
-    urgency: "High",
-    hasPhoto: true,
-    contact: "+91 98201 44782",
-  },
-  {
-    id: "LR-2817",
-    guest: "Anjali Iyer",
-    room: "0742",
-    stayDates: "30 May - 01 Jun 2026",
-    itemName: "Silver charm bracelet",
-    category: "Jewellery",
-    description: "Delicate silver chain with three small charms - a star, a heart and an elephant. Sentimental value.",
-    color: "Silver",
-    brand: "Tanishq",
-    location: "Spa changing room or guest room bathroom",
-    reportedAt: "01 Jun, 16:42",
-    urgency: "High",
-    hasPhoto: true,
-    contact: "+91 99304 22019",
-  },
-  {
-    id: "LR-2819",
-    guest: "Karan Mehta",
-    room: "1503",
-    stayDates: "29 May - 02 Jun 2026",
-    itemName: "Black leather wallet",
-    category: "Personal",
-    description: "Bi-fold black leather wallet with stitching, contained business cards and a transit pass",
-    color: "Black",
-    brand: "Hidesign",
-    location: "Lobby bar or executive lounge",
-    reportedAt: "02 Jun, 08:05",
-    urgency: "Medium",
-    hasPhoto: false,
-    contact: "+91 98677 31550",
-  },
-];
-
-const CANDIDATES_BY_REPORT: Record<string, Candidate[]> = {
-  "LR-2814": [
-    {
-      score: 92,
-      foundItem: {
-        id: "FI-9921",
-        name: "Ray-Ban gold aviators",
-        category: "Eyewear",
-        value: 14500,
-        color: "Gold / Brown",
-        brand: "Ray-Ban",
-        foundLocation: "Pool deck - cabana 4",
-        foundDate: "31 May, 18:20",
-        foundRoom: "Near 1208",
-        description: "Gold frame aviators with brown gradient lenses, light scratch on one lens. Found on lounger.",
-        hvi: true,
-      },
-      rows: [
-        { label: "Room number", icon: Building2, lost: "1208", found: "Near 1208", matched: true },
-        { label: "Stay dates", icon: Calendar, lost: "28-31 May", found: "Found 31 May", matched: true },
-        { label: "Item category", icon: Tag, lost: "Eyewear", found: "Eyewear", matched: true },
-        { label: "Location", icon: MapPin, lost: "Pool deck", found: "Pool deck", matched: true },
-        { label: "Color", icon: Palette, lost: "Gold / Brown", found: "Gold / Brown", matched: true },
-        { label: "Brand", icon: Tag, lost: "Ray-Ban", found: "Ray-Ban", matched: true },
-      ],
-    },
-    {
-      score: 74,
-      foundItem: {
-        id: "FI-9908",
-        name: "Aviator sunglasses (unbranded)",
-        category: "Eyewear",
-        value: 2200,
-        color: "Gold / Green",
-        brand: "Unmarked",
-        foundLocation: "Azure restaurant - table 12",
-        foundDate: "30 May, 21:45",
-        foundRoom: "—",
-        description: "Aviator sunglasses, gold frame with green tinted lenses. No visible brand mark.",
-        hvi: false,
-      },
-      rows: [
-        { label: "Room number", icon: Building2, lost: "1208", found: "Unknown", matched: false },
-        { label: "Stay dates", icon: Calendar, lost: "28-31 May", found: "Found 30 May", matched: true },
-        { label: "Item category", icon: Tag, lost: "Eyewear", found: "Eyewear", matched: true },
-        { label: "Location", icon: MapPin, lost: "Azure restaurant", found: "Azure restaurant", matched: true },
-        { label: "Color", icon: Palette, lost: "Gold / Brown", found: "Gold / Green", matched: false },
-        { label: "Brand", icon: Tag, lost: "Ray-Ban", found: "Unmarked", matched: false },
-      ],
-    },
-    {
-      score: 58,
-      foundItem: {
-        id: "FI-9885",
-        name: "Reading glasses with case",
-        category: "Eyewear",
-        value: 1800,
-        color: "Black / Gold trim",
-        brand: "Titan Eye+",
-        foundLocation: "Executive lounge - 14F",
-        foundDate: "29 May, 11:30",
-        foundRoom: "—",
-        description: "Black acetate frame with gold trim. Includes hard case.",
-        hvi: false,
-      },
-      rows: [
-        { label: "Room number", icon: Building2, lost: "1208", found: "Unknown", matched: false },
-        { label: "Stay dates", icon: Calendar, lost: "28-31 May", found: "Found 29 May", matched: true },
-        { label: "Item category", icon: Tag, lost: "Eyewear", found: "Eyewear", matched: true },
-        { label: "Location", icon: MapPin, lost: "Pool deck", found: "Executive lounge", matched: false },
-        { label: "Color", icon: Palette, lost: "Gold / Brown", found: "Black / Gold trim", matched: false },
-        { label: "Brand", icon: Tag, lost: "Ray-Ban", found: "Titan Eye+", matched: false },
-      ],
-    },
-    {
-      score: 41,
-      foundItem: {
-        id: "FI-9842",
-        name: "Sports sunglasses",
-        category: "Eyewear",
-        value: 3400,
-        color: "Black / Red",
-        brand: "Oakley",
-        foundLocation: "Gym - reception",
-        foundDate: "27 May, 07:10",
-        foundRoom: "—",
-        description: "Wraparound sports sunglasses, found on weights bench.",
-        hvi: false,
-      },
-      rows: [
-        { label: "Room number", icon: Building2, lost: "1208", found: "Unknown", matched: false },
-        { label: "Stay dates", icon: Calendar, lost: "28-31 May", found: "Found 27 May", matched: false },
-        { label: "Item category", icon: Tag, lost: "Eyewear", found: "Eyewear", matched: true },
-        { label: "Location", icon: MapPin, lost: "Pool deck", found: "Gym", matched: false },
-        { label: "Color", icon: Palette, lost: "Gold / Brown", found: "Black / Red", matched: false },
-        { label: "Brand", icon: Tag, lost: "Ray-Ban", found: "Oakley", matched: false },
-      ],
-    },
-  ],
-  "LR-2817": [
-    {
-      score: 88,
-      foundItem: {
-        id: "FI-9930",
-        name: "Silver charm bracelet",
-        category: "Jewellery",
-        value: 18900,
-        color: "Silver",
-        brand: "Tanishq",
-        foundLocation: "Spa - women's changing room",
-        foundDate: "01 Jun, 14:20",
-        foundRoom: "Near 0742",
-        description: "Delicate silver chain with charms (star, heart, elephant). Hallmark visible.",
-        hvi: true,
-      },
-      rows: [
-        { label: "Room number", icon: Building2, lost: "0742", found: "Near 0742", matched: true },
-        { label: "Stay dates", icon: Calendar, lost: "30 May-01 Jun", found: "Found 01 Jun", matched: true },
-        { label: "Item category", icon: Tag, lost: "Jewellery", found: "Jewellery", matched: true },
-        { label: "Location", icon: MapPin, lost: "Spa changing room", found: "Spa changing room", matched: true },
-        { label: "Color", icon: Palette, lost: "Silver", found: "Silver", matched: true },
-        { label: "Brand", icon: Tag, lost: "Tanishq", found: "Tanishq", matched: true },
-      ],
-    },
-    {
-      score: 67,
-      foundItem: {
-        id: "FI-9925",
-        name: "Silver chain bracelet",
-        category: "Jewellery",
-        value: 6200,
-        color: "Silver",
-        brand: "Unmarked",
-        foundLocation: "Guest room 0738 - housekeeping",
-        foundDate: "01 Jun, 11:15",
-        foundRoom: "0738",
-        description: "Plain silver chain bracelet, no charms attached. Clasp slightly bent.",
-        hvi: false,
-      },
-      rows: [
-        { label: "Room number", icon: Building2, lost: "0742", found: "0738", matched: false },
-        { label: "Stay dates", icon: Calendar, lost: "30 May-01 Jun", found: "Found 01 Jun", matched: true },
-        { label: "Item category", icon: Tag, lost: "Jewellery", found: "Jewellery", matched: true },
-        { label: "Location", icon: MapPin, lost: "Spa / Room bath", found: "Guest room", matched: true },
-        { label: "Color", icon: Palette, lost: "Silver", found: "Silver", matched: true },
-        { label: "Brand", icon: Tag, lost: "Tanishq", found: "Unmarked", matched: false },
-      ],
-    },
-    {
-      score: 49,
-      foundItem: {
-        id: "FI-9912",
-        name: "Gold-plated bangle",
-        category: "Jewellery",
-        value: 9800,
-        color: "Gold",
-        brand: "Malabar Gold",
-        foundLocation: "Lobby - sofa area",
-        foundDate: "30 May, 19:50",
-        foundRoom: "—",
-        description: "Single gold-plated bangle with floral engraving.",
-        hvi: true,
-      },
-      rows: [
-        { label: "Room number", icon: Building2, lost: "0742", found: "Unknown", matched: false },
-        { label: "Stay dates", icon: Calendar, lost: "30 May-01 Jun", found: "Found 30 May", matched: true },
-        { label: "Item category", icon: Tag, lost: "Jewellery", found: "Jewellery", matched: true },
-        { label: "Location", icon: MapPin, lost: "Spa / Room", found: "Lobby", matched: false },
-        { label: "Color", icon: Palette, lost: "Silver", found: "Gold", matched: false },
-        { label: "Brand", icon: Tag, lost: "Tanishq", found: "Malabar Gold", matched: false },
-      ],
-    },
-  ],
-  "LR-2819": [
-    {
-      score: 71,
-      foundItem: {
-        id: "FI-9938",
-        name: "Black bi-fold wallet",
-        category: "Personal",
-        value: 4500,
-        color: "Black",
-        brand: "Hidesign",
-        foundLocation: "Lobby bar - booth 3",
-        foundDate: "02 Jun, 00:45",
-        foundRoom: "—",
-        description: "Black leather bi-fold wallet with visible stitching. Empty card slots, no ID found inside.",
-        hvi: false,
-      },
-      rows: [
-        { label: "Room number", icon: Building2, lost: "1503", found: "Unknown", matched: false },
-        { label: "Stay dates", icon: Calendar, lost: "29 May-02 Jun", found: "Found 02 Jun", matched: true },
-        { label: "Item category", icon: Tag, lost: "Personal", found: "Personal", matched: true },
-        { label: "Location", icon: MapPin, lost: "Lobby bar", found: "Lobby bar", matched: true },
-        { label: "Color", icon: Palette, lost: "Black", found: "Black", matched: true },
-        { label: "Brand", icon: Tag, lost: "Hidesign", found: "Hidesign", matched: true },
-      ],
-    },
-    {
-      score: 52,
-      foundItem: {
-        id: "FI-9933",
-        name: "Brown card-holder",
-        category: "Personal",
-        value: 2100,
-        color: "Brown",
-        brand: "Unmarked",
-        foundLocation: "Executive lounge - 14F",
-        foundDate: "01 Jun, 18:30",
-        foundRoom: "—",
-        description: "Slim brown leather card-holder, two cards inside.",
-        hvi: false,
-      },
-      rows: [
-        { label: "Room number", icon: Building2, lost: "1503", found: "Unknown", matched: false },
-        { label: "Stay dates", icon: Calendar, lost: "29 May-02 Jun", found: "Found 01 Jun", matched: true },
-        { label: "Item category", icon: Tag, lost: "Personal", found: "Personal", matched: true },
-        { label: "Location", icon: MapPin, lost: "Executive lounge", found: "Executive lounge", matched: true },
-        { label: "Color", icon: Palette, lost: "Black", found: "Brown", matched: false },
-        { label: "Brand", icon: Tag, lost: "Hidesign", found: "Unmarked", matched: false },
-      ],
-    },
-    {
-      score: 38,
-      foundItem: {
-        id: "FI-9920",
-        name: "Coin purse",
-        category: "Personal",
-        value: 800,
-        color: "Tan",
-        brand: "Unmarked",
-        foundLocation: "Banquet hall - Diamond",
-        foundDate: "30 May, 22:10",
-        foundRoom: "—",
-        description: "Small tan coin purse, zipper intact, contained loose change.",
-        hvi: false,
-      },
-      rows: [
-        { label: "Room number", icon: Building2, lost: "1503", found: "Unknown", matched: false },
-        { label: "Stay dates", icon: Calendar, lost: "29 May-02 Jun", found: "Found 30 May", matched: true },
-        { label: "Item category", icon: Tag, lost: "Personal", found: "Personal", matched: true },
-        { label: "Location", icon: MapPin, lost: "Lobby bar", found: "Banquet hall", matched: false },
-        { label: "Color", icon: Palette, lost: "Black", found: "Tan", matched: false },
-        { label: "Brand", icon: Tag, lost: "Hidesign", found: "Unmarked", matched: false },
-      ],
-    },
-  ],
-};
-
-const RECENT_CONFIRMED = [
-  {
-    id: "MC-1184",
-    lostId: "LR-2806",
-    foundId: "FI-9874",
-    item: "Apple AirPods Pro",
-    guest: "Priya Krishnan",
-    returnedOn: "31 May, 17:20",
-  },
-  {
-    id: "MC-1183",
-    lostId: "LR-2803",
-    foundId: "FI-9861",
-    item: "Pearl drop earrings",
-    guest: "Meera Nambiar",
-    returnedOn: "30 May, 14:05",
-  },
-  {
-    id: "MC-1182",
-    lostId: "LR-2798",
-    foundId: "FI-9858",
-    item: "Mont Blanc fountain pen",
-    guest: "Vikram Joshi",
-    returnedOn: "29 May, 12:40",
-  },
-  {
-    id: "MC-1181",
-    lostId: "LR-2795",
-    foundId: "FI-9850",
-    item: "Cashmere shawl",
-    guest: "Sunita Reddy",
-    returnedOn: "28 May, 19:15",
-  },
-];
-
 function scoreTone(score: number): { tone: ToneType; label: string; bar: string } {
   if (score >= 80) return { tone: "success", label: "Strong match", bar: "bg-emerald-500" };
   if (score >= 60) return { tone: "warning", label: "Possible match", bar: "bg-amber-500" };
@@ -526,26 +190,31 @@ export default function MatchingTab({ onToast }: { onToast: (m: string) => void 
     return () => { cancelled = true; };
   }, []);
 
-  const live = !!(lostData && lostData.length);
-  const reportsList = live ? lostData! : LOST_REPORTS;
+  const reportsList = lostData ?? [];
 
-  const [pickedReportId, setPickedReportId] = React.useState<string>(LOST_REPORTS[0].id);
+  const [pickedReportId, setPickedReportId] = React.useState<string>("");
+  // Default the selection to the first available report once data loads.
+  React.useEffect(() => {
+    if (!pickedReportId && reportsList.length) {
+      setPickedReportId(reportsList[0].id);
+    }
+  }, [pickedReportId, reportsList]);
   // Fall back to the first available report when the picked id isn't in the list.
   const selectedReportId = reportsList.some((r) => r.id === pickedReportId)
     ? pickedReportId
     : reportsList[0]?.id;
   const setSelectedReportId = setPickedReportId;
 
-  const selected = reportsList.find((r) => r.id === selectedReportId) ?? reportsList[0];
+  const selected = reportsList.find((r) => r.id === selectedReportId);
 
-  // Candidate matches: scored live, or the curated samples when offline.
-  const allCandidates: Candidate[] = live
+  // Candidate matches: scored client-side against claimable found items.
+  const allCandidates: Candidate[] = selected
     ? foundData
         .map((f) => buildCandidate(selected, f))
         .filter((c) => c.score > 0)
         .sort((a, b) => b.score - a.score)
         .slice(0, 6)
-    : CANDIDATES_BY_REPORT[selectedReportId] ?? [];
+    : [];
   const candidates = search.trim()
     ? allCandidates.filter((c) => {
         const q = search.toLowerCase();
@@ -559,7 +228,7 @@ export default function MatchingTab({ onToast }: { onToast: (m: string) => void 
       })
     : allCandidates;
 
-  const recentConfirmed = live ? justConfirmed : RECENT_CONFIRMED;
+  const recentConfirmed = justConfirmed;
 
   // Confirm: claim the found item for the guest and mark the report verified.
   const confirmMatch = (lost: LostReport, f: FoundItem) => {
@@ -656,9 +325,7 @@ export default function MatchingTab({ onToast }: { onToast: (m: string) => void 
           <div className="space-y-2">
             {reportsList.map((r) => {
               const active = r.id === selectedReportId;
-              const count = live
-                ? foundData.filter((f) => buildCandidate(r, f).score > 0).length
-                : CANDIDATES_BY_REPORT[r.id]?.length ?? 0;
+              const count = foundData.filter((f) => buildCandidate(r, f).score > 0).length;
               return (
                 <button
                   key={r.id}
@@ -698,6 +365,14 @@ export default function MatchingTab({ onToast }: { onToast: (m: string) => void 
 
         {/* RIGHT — Selected report + candidates */}
         <div className="space-y-4">
+          {!selected ? (
+            <Card className="p-8 text-center">
+              <Package className="size-10 text-muted-foreground/40 mx-auto mb-2" />
+              <div className="text-sm font-medium text-foreground">No active lost reports</div>
+              <div className="text-xs text-muted-foreground mt-1">New reports will appear here for matching.</div>
+            </Card>
+          ) : (
+          <>
           {/* SELECTED LOST REPORT CARD */}
           <Card className="p-4">
             <div className="flex items-start gap-4">
@@ -977,6 +652,8 @@ export default function MatchingTab({ onToast }: { onToast: (m: string) => void 
               ))}
             </div>
           </Card>
+          </>
+          )}
         </div>
       </div>
 
@@ -1060,7 +737,9 @@ export default function MatchingTab({ onToast }: { onToast: (m: string) => void 
                 </Button>
                 <Button
                   size="sm"
+                  disabled={!selected}
                   onClick={() => {
+                    if (!selected) return;
                     confirmMatch(selected, drawerItem);
                     setDrawerItem(null);
                   }}

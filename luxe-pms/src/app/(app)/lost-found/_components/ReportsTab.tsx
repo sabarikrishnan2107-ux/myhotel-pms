@@ -93,61 +93,6 @@ const REPORT_TILES: ReportTile[] = [
   { id: "audit-log", name: "Audit Log Report", desc: "Full chain-of-custody trail", icon: Archive, tint: "neutral", lastRun: "Today, 06:00" },
 ];
 
-const SAMPLE_BY_REPORT: Record<string, Row[]> = {
-  "daily-found": [
-    { ref: "LF-2026-0612", date: "02 Jun, 09:14", item: "Apple iPhone 15 Pro (Titanium Blue)", category: "Electronics", location: "Room 1208", finder: "Anjali Iyer", guest: "Mr. Rohit Sharma", status: "found", value: 134900, hvi: true },
-    { ref: "LF-2026-0611", date: "02 Jun, 08:42", item: "Gold Bangle (22kt, 12g)", category: "Jewellery", location: "Spa Locker 04", finder: "Priya Krishnan", status: "found", value: 78000, hvi: true },
-    { ref: "LF-2026-0610", date: "02 Jun, 08:10", item: "Ray-Ban Aviator Sunglasses", category: "Accessories", location: "Coral Bar", finder: "Karan Mehta", guest: "Ms. Neha Kapoor", status: "claimed", value: 12500 },
-    { ref: "LF-2026-0609", date: "02 Jun, 07:55", item: "Passport (UK · J. Whitman)", category: "Documents", location: "Lobby Sofa", finder: "Vikram Singh", status: "pending", value: 0 },
-    { ref: "LF-2026-0608", date: "02 Jun, 07:32", item: "Kids Tablet (Samsung Tab A)", category: "Electronics", location: "Pool Deck", finder: "Suresh Kumar", status: "found", value: 18500 },
-    { ref: "LF-2026-0607", date: "02 Jun, 07:05", item: "Cashmere Shawl (Pashmina)", category: "Clothing", location: "Banquet Hall 2", finder: "Meera Joshi", guest: "Mrs. Lata Iyer", status: "returned", value: 22000 },
-    { ref: "LF-2026-0606", date: "02 Jun, 06:48", item: "Diamond Stud Earring (1pc)", category: "Jewellery", location: "Room 0904 Bathroom", finder: "Anjali Iyer", status: "found", value: 65000, hvi: true },
-    { ref: "LF-2026-0605", date: "02 Jun, 06:20", item: "Hermès Leather Belt", category: "Accessories", location: "Gym", finder: "Karan Mehta", status: "found", value: 28000, hvi: true },
-    { ref: "LF-2026-0604", date: "02 Jun, 05:55", item: "Boarding Pass + Aadhaar Card", category: "Documents", location: "Reception Counter", finder: "Priya Krishnan", guest: "Mr. Arjun Reddy", status: "claimed", value: 0 },
-    { ref: "LF-2026-0603", date: "02 Jun, 05:30", item: "Bose QC45 Headphones", category: "Electronics", location: "Room 1502", finder: "Deepa Nair", status: "pending", value: 24990 },
-  ],
-  "pending-claim": [
-    { ref: "LF-2026-0609", date: "02 Jun", item: "Passport (UK · J. Whitman)", category: "Documents", location: "Lobby Sofa", finder: "Vikram Singh", status: "pending", value: 0 },
-    { ref: "LF-2026-0603", date: "02 Jun", item: "Bose QC45 Headphones", category: "Electronics", location: "Room 1502", finder: "Deepa Nair", status: "pending", value: 24990 },
-    { ref: "LF-2026-0597", date: "01 Jun", item: "Cartier Tank Watch", category: "Jewellery", location: "Pool Cabana 3", finder: "Anjali Iyer", status: "pending", value: 285000, hvi: true },
-    { ref: "LF-2026-0591", date: "31 May", item: "MacBook Charger 96W", category: "Electronics", location: "Co-work Lounge", finder: "Karan Mehta", status: "pending", value: 6500 },
-    { ref: "LF-2026-0584", date: "30 May", item: "Pearl Necklace", category: "Jewellery", location: "Room 1107", finder: "Priya Krishnan", status: "pending", value: 95000, hvi: true },
-    { ref: "LF-2026-0580", date: "29 May", item: "Kindle Paperwhite", category: "Electronics", location: "Coral Bar", finder: "Suresh Kumar", status: "pending", value: 14999 },
-    { ref: "LF-2026-0575", date: "28 May", item: "Wedding Ring (Platinum)", category: "Jewellery", location: "Banquet Washroom", finder: "Meera Joshi", status: "pending", value: 145000, hvi: true },
-    { ref: "LF-2026-0571", date: "27 May", item: "Insulin Pen + Pouch", category: "Medical", location: "Room 0802", finder: "Anjali Iyer", status: "pending", value: 3200 },
-    { ref: "LF-2026-0566", date: "26 May", item: "Children's Soft Toy (Elsa)", category: "Toys", location: "Kids Club", finder: "Deepa Nair", status: "pending", value: 1800 },
-    { ref: "LF-2026-0560", date: "25 May", item: "Designer Sunglasses (Prada)", category: "Accessories", location: "Pool Deck", finder: "Karan Mehta", status: "pending", value: 32500, hvi: true },
-  ],
-  "returned": [
-    { ref: "LF-2026-0607", date: "02 Jun", item: "Cashmere Shawl (Pashmina)", category: "Clothing", location: "Banquet Hall 2", finder: "Meera Joshi", guest: "Mrs. Lata Iyer", status: "returned", value: 22000 },
-    { ref: "LF-2026-0604", date: "02 Jun", item: "Boarding Pass + Aadhaar Card", category: "Documents", location: "Reception", finder: "Priya Krishnan", guest: "Mr. Arjun Reddy", status: "returned", value: 0 },
-    { ref: "LF-2026-0598", date: "01 Jun", item: "iPad Air 5", category: "Electronics", location: "Room 0906", finder: "Anjali Iyer", guest: "Ms. Sneha Patel", status: "returned", value: 64900 },
-    { ref: "LF-2026-0593", date: "31 May", item: "Wedding Sherwani Set", category: "Clothing", location: "Banquet Hall 1", finder: "Meera Joshi", guest: "Mr. Aarav Khanna", status: "returned", value: 48000 },
-    { ref: "LF-2026-0588", date: "30 May", item: "Apple Watch Ultra", category: "Electronics", location: "Spa Treatment 02", finder: "Priya Krishnan", guest: "Dr. Kavya Rao", status: "returned", value: 89900 },
-    { ref: "LF-2026-0581", date: "29 May", item: "Leather Wallet + ₹12,000", category: "Accessories", location: "Coral Bar", finder: "Karan Mehta", guest: "Mr. Vijay Malhotra", status: "returned", value: 12000 },
-    { ref: "LF-2026-0578", date: "28 May", item: "Tanishq Gold Chain", category: "Jewellery", location: "Pool Cabana 5", finder: "Anjali Iyer", guest: "Mrs. Pooja Agarwal", status: "returned", value: 88000, hvi: true },
-    { ref: "LF-2026-0572", date: "27 May", item: "Hermès Silk Scarf", category: "Clothing", location: "Lobby", finder: "Deepa Nair", guest: "Ms. Riya Bansal", status: "returned", value: 36000, hvi: true },
-    { ref: "LF-2026-0567", date: "26 May", item: "Sony WH-1000XM5", category: "Electronics", location: "Co-work Lounge", finder: "Karan Mehta", guest: "Mr. Karthik Iyer", status: "returned", value: 29990 },
-    { ref: "LF-2026-0562", date: "25 May", item: "Diamond Pendant", category: "Jewellery", location: "Spa Reception", finder: "Priya Krishnan", guest: "Mrs. Anita Desai", status: "returned", value: 124000, hvi: true },
-  ],
-  "high-value": [
-    { ref: "LF-2026-0597", date: "01 Jun", item: "Cartier Tank Watch", category: "Jewellery", location: "Pool Cabana 3", finder: "Anjali Iyer", status: "pending", value: 285000, hvi: true },
-    { ref: "LF-2026-0612", date: "02 Jun", item: "Apple iPhone 15 Pro", category: "Electronics", location: "Room 1208", finder: "Anjali Iyer", guest: "Mr. Rohit Sharma", status: "found", value: 134900, hvi: true },
-    { ref: "LF-2026-0575", date: "28 May", item: "Wedding Ring (Platinum)", category: "Jewellery", location: "Banquet Washroom", finder: "Meera Joshi", status: "pending", value: 145000, hvi: true },
-    { ref: "LF-2026-0562", date: "25 May", item: "Diamond Pendant", category: "Jewellery", location: "Spa Reception", finder: "Priya Krishnan", guest: "Mrs. Anita Desai", status: "returned", value: 124000, hvi: true },
-    { ref: "LF-2026-0584", date: "30 May", item: "Pearl Necklace", category: "Jewellery", location: "Room 1107", finder: "Priya Krishnan", status: "pending", value: 95000, hvi: true },
-    { ref: "LF-2026-0588", date: "30 May", item: "Apple Watch Ultra", category: "Electronics", location: "Spa Treatment 02", finder: "Priya Krishnan", guest: "Dr. Kavya Rao", status: "returned", value: 89900, hvi: true },
-    { ref: "LF-2026-0578", date: "28 May", item: "Tanishq Gold Chain", category: "Jewellery", location: "Pool Cabana 5", finder: "Anjali Iyer", guest: "Mrs. Pooja Agarwal", status: "returned", value: 88000, hvi: true },
-    { ref: "LF-2026-0611", date: "02 Jun", item: "Gold Bangle (22kt)", category: "Jewellery", location: "Spa Locker 04", finder: "Priya Krishnan", status: "found", value: 78000, hvi: true },
-    { ref: "LF-2026-0606", date: "02 Jun", item: "Diamond Stud Earring", category: "Jewellery", location: "Room 0904", finder: "Anjali Iyer", status: "found", value: 65000, hvi: true },
-    { ref: "LF-2026-0560", date: "25 May", item: "Designer Sunglasses (Prada)", category: "Accessories", location: "Pool Deck", finder: "Karan Mehta", status: "pending", value: 32500, hvi: true },
-  ],
-};
-
-function getSample(reportId: string): Row[] {
-  return SAMPLE_BY_REPORT[reportId] ?? SAMPLE_BY_REPORT["daily-found"];
-}
-
 // Real found-items become report rows; status maps to the report vocabulary.
 const ROW_STATUS: Record<string, Row["status"]> = {
   Returned: "returned",
@@ -183,8 +128,8 @@ function rowsForReport(id: string, rows: Row[]): Row[] {
     default: return rows;
   }
 }
-// Reports backed by other tables (lost reports, audit, police) keep illustrative samples.
-const SAMPLE_ONLY = new Set(["guest-lost", "audit-log", "police-handover"]);
+// Reports backed by other tables (lost reports, audit, police) have no live source yet → render empty.
+const NO_LIVE_SOURCE = new Set(["guest-lost", "audit-log", "police-handover"]);
 
 const TINT_STYLES: Record<ReportTile["tint"], string> = {
   brand: "bg-brand-soft text-brand-soft-foreground",
@@ -247,9 +192,9 @@ export default function ReportsTab({ onToast }: { onToast: (m: string) => void }
   // -------------------- selected report
   const [selectedId, setSelectedId] = React.useState<string>("daily-found");
   const selected = REPORT_TILES.find(t => t.id === selectedId)!;
-  const rows = live && !SAMPLE_ONLY.has(selectedId)
+  const rows: Row[] = live && !NO_LIVE_SOURCE.has(selectedId)
     ? rowsForReport(selectedId, found!.map(foundToRow)).filter((r) => !hviOnly || r.hvi)
-    : getSample(selectedId);
+    : [];
 
   // -------------------- scheduled
   const [schedules, setSchedules] = React.useState<ScheduledReport[]>([
@@ -551,6 +496,17 @@ export default function ReportsTab({ onToast }: { onToast: (m: string) => void }
               </tr>
             </thead>
             <tbody>
+              {rows.length === 0 && (
+                <tr className="border-t border-border">
+                  <td colSpan={8} className="px-4 py-10 text-center">
+                    <div className="flex flex-col items-center gap-1.5 text-muted-foreground">
+                      <FileText className="h-6 w-6 text-subtle-foreground" />
+                      <p className="text-sm font-medium">No data for this report</p>
+                      <p className="text-[11px]">No matching records in the current data source.</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
               {rows.map((r, i) => (
                 <tr
                   key={r.ref}

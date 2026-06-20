@@ -111,187 +111,6 @@ type NGO = {
   unit: string;
 };
 
-const PENDING: Pending[] = [
-  {
-    id: "PND-1041",
-    item: "Black leather wallet",
-    category: "Wallet",
-    daysInStorage: 92,
-    value: 1800,
-    recommended: "Donated",
-    approver: "Anjali Iyer (GM)",
-  },
-  {
-    id: "PND-1042",
-    item: "Indian passport — P. Krishnan",
-    category: "Documents",
-    daysInStorage: 47,
-    value: 0,
-    recommended: "Police handover",
-    approver: "Karan Mehta (FOM)",
-  },
-  {
-    id: "PND-1043",
-    item: "Gold-plated wristwatch",
-    category: "Watch",
-    daysInStorage: 121,
-    value: 24500,
-    recommended: "Auctioned",
-    approver: "Anjali Iyer (GM)",
-    hvi: true,
-  },
-  {
-    id: "PND-1044",
-    item: "Prescription medicines (assorted)",
-    category: "Medicines",
-    daysInStorage: 8,
-    value: 600,
-    recommended: "Destroyed",
-    approver: "Dr. Suresh Pillai (Doctor on call)",
-  },
-  {
-    id: "PND-1045",
-    item: "Children's clothing bag (6 items)",
-    category: "Clothing",
-    daysInStorage: 95,
-    value: 2200,
-    recommended: "Donated",
-    approver: "Karan Mehta (FOM)",
-  },
-  {
-    id: "PND-1046",
-    item: "Apple AirPods Pro (2nd gen)",
-    category: "Electronics",
-    daysInStorage: 90,
-    value: 19900,
-    recommended: "Returned to finder",
-    approver: "Anjali Iyer (GM)",
-    hvi: true,
-  },
-  {
-    id: "PND-1047",
-    item: "Half-eaten birthday cake",
-    category: "Perishable",
-    daysInStorage: 1,
-    value: 0,
-    recommended: "Disposed",
-    approver: "Priya Krishnan (HK Manager)",
-  },
-];
-
-const HISTORY: History[] = [
-  {
-    id: "DSP-2031",
-    date: "28 May 2026",
-    item: "Used cotton bedsheet (Welspun)",
-    type: "Donated",
-    approvedBy: "Anjali Iyer",
-    disposedBy: "Priya Krishnan",
-    witness: "Ramesh Naidu (Security)",
-    reason: "Retention expired",
-    remarks: "Handed to Goonj — 4 sheets bundle",
-  },
-  {
-    id: "DSP-2030",
-    date: "24 May 2026",
-    item: "Broken umbrella",
-    type: "Destroyed",
-    approvedBy: "Karan Mehta",
-    disposedBy: "Suresh Yadav",
-    witness: "Priya Krishnan",
-    reason: "Damaged",
-    remarks: "Beyond repair — scrap dealer",
-  },
-  {
-    id: "DSP-2029",
-    date: "21 May 2026",
-    item: "Voter ID — Mr. Rohit Sharma",
-    type: "Police handover",
-    approvedBy: "Anjali Iyer",
-    disposedBy: "Karan Mehta",
-    witness: "Ramesh Naidu",
-    reason: "Police handover required",
-    remarks: "Worli PS — FIR copy on file",
-  },
-  {
-    id: "DSP-2028",
-    date: "18 May 2026",
-    item: "Samsung Galaxy S22 (unclaimed)",
-    type: "Auctioned",
-    approvedBy: "Anjali Iyer",
-    disposedBy: "Karan Mehta",
-    witness: "Anjali Iyer",
-    reason: "No claim",
-    remarks: "Auctioned ₹18,400 — proceeds to staff welfare",
-  },
-  {
-    id: "DSP-2027",
-    date: "15 May 2026",
-    item: "Half-eaten thali leftovers",
-    type: "Disposed",
-    approvedBy: "Priya Krishnan",
-    disposedBy: "HK Pantry",
-    witness: "Sunita Devi",
-    reason: "Perishable",
-    remarks: "Same-day wet waste bin",
-  },
-  {
-    id: "DSP-2026",
-    date: "12 May 2026",
-    item: "Winter jackets (3 pieces)",
-    type: "Donated",
-    approvedBy: "Anjali Iyer",
-    disposedBy: "Priya Krishnan",
-    witness: "Ramesh Naidu",
-    reason: "Retention expired",
-    remarks: "Goonj — winter drive Mumbai",
-  },
-  {
-    id: "DSP-2025",
-    date: "09 May 2026",
-    item: "Unmarked medicine strips",
-    type: "Destroyed",
-    approvedBy: "Dr. Suresh Pillai",
-    disposedBy: "Priya Krishnan",
-    witness: "Karan Mehta",
-    reason: "Cannot identify owner",
-    remarks: "BMC bio-medical waste pickup",
-  },
-  {
-    id: "DSP-2024",
-    date: "05 May 2026",
-    item: "Sony WH-1000XM4 headphones",
-    type: "Returned to finder",
-    approvedBy: "Anjali Iyer",
-    disposedBy: "Karan Mehta",
-    witness: "Anjali Iyer",
-    reason: "Retention expired",
-    remarks: "Finder: Housekeeper Sunita Devi — policy",
-  },
-  {
-    id: "DSP-2023",
-    date: "02 May 2026",
-    item: "Children's storybooks (12 books)",
-    type: "Donated",
-    approvedBy: "Karan Mehta",
-    disposedBy: "Priya Krishnan",
-    witness: "Ramesh Naidu",
-    reason: "Retention expired",
-    remarks: "Akshara Foundation — Mumbai chapter",
-  },
-  {
-    id: "DSP-2022",
-    date: "29 Apr 2026",
-    item: "Aadhaar card — A. Iyer (lookalike)",
-    type: "Police handover",
-    approvedBy: "Anjali Iyer",
-    disposedBy: "Karan Mehta",
-    witness: "Ramesh Naidu",
-    reason: "Police handover required",
-    remarks: "Worli PS — DD entry #4421",
-  },
-];
-
 const POLICE: Police[] = [
   {
     id: "PH-308",
@@ -365,16 +184,6 @@ const WITNESSES = [
   "Sunita Devi (HK Supervisor)",
 ];
 
-const SEARCH_ITEMS = [
-  "Black leather wallet",
-  "Indian passport — P. Krishnan",
-  "Gold-plated wristwatch",
-  "Children's clothing bag",
-  "Apple AirPods Pro",
-  "Used cotton bedsheets",
-  "Broken umbrella",
-];
-
 // A disposal status maps a found-item to one of the closed states.
 function statusForDisposal(t: DisposalType): string {
   if (t === "Donated") return "Donated";
@@ -421,7 +230,6 @@ export default function DisposalTab({ onToast }: { onToast: (m: string) => void 
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
-  const live = !!(found && found.length);
 
   // modal local state
   const [mItem, setMItem] = React.useState("");
@@ -431,39 +239,28 @@ export default function DisposalTab({ onToast }: { onToast: (m: string) => void 
   const [mWitness, setMWitness] = React.useState(WITNESSES[0]);
   const [mPhoto, setMPhoto] = React.useState<string>("");
 
-  const pending: Pending[] = (live
-    ? found!
-        .filter((i) => (i.daysHeld ?? 0) >= RETENTION_DAYS && !RESOLVED.includes(i.status ?? ""))
-        .map(toPending)
-    : PENDING
-  ).filter((p) => !dismissed.has(p.id));
+  const pending: Pending[] = (found ?? [])
+    .filter((i) => (i.daysHeld ?? 0) >= RETENTION_DAYS && !RESOLVED.includes(i.status ?? ""))
+    .map(toPending)
+    .filter((p) => !dismissed.has(p.id));
 
-  const history: History[] = live
-    ? found!.filter((i) => i.status === "Disposed" || i.status === "Donated").map(toHistory)
-    : HISTORY;
+  const history: History[] = (found ?? [])
+    .filter((i) => i.status === "Disposed" || i.status === "Donated")
+    .map(toHistory);
 
   // Names offered in the "initiate disposal" item picker.
-  const initiateOptions = live
-    ? found!.filter((i) => !RESOLVED.includes(i.status ?? "")).map((i) => i.name)
-    : SEARCH_ITEMS;
+  const initiateOptions = (found ?? [])
+    .filter((i) => !RESOLVED.includes(i.status ?? ""))
+    .map((i) => i.name);
 
   const stats = React.useMemo(() => {
-    if (live) {
-      return {
-        pending: pending.length,
-        disposed: history.filter((h) => h.type === "Disposed" || h.type === "Destroyed").length,
-        donated: history.filter((h) => h.type === "Donated").length,
-        police: history.filter((h) => h.type === "Police handover").length,
-      };
-    }
-    const monthCount = (t: DisposalType) => HISTORY.filter(h => h.type === t && h.date.includes("May 2026")).length;
     return {
       pending: pending.length,
-      disposed: monthCount("Disposed") + monthCount("Destroyed"),
-      donated: monthCount("Donated"),
-      police: monthCount("Police handover"),
+      disposed: history.filter((h) => h.type === "Disposed" || h.type === "Destroyed").length,
+      donated: history.filter((h) => h.type === "Donated").length,
+      police: history.filter((h) => h.type === "Police handover").length,
     };
-  }, [live, pending.length, history]);
+  }, [pending.length, history]);
 
   const filteredHistory = React.useMemo(() => {
     if (filter === "All") return history;
@@ -494,7 +291,7 @@ export default function DisposalTab({ onToast }: { onToast: (m: string) => void 
       onToast("Manager approval is required to proceed");
       return;
     }
-    const target = live ? found!.find((f) => f.name === mItem) : null;
+    const target = found?.find((f) => f.name === mItem) ?? null;
     const done = () => {
       setShowInitiate(false);
       onToast(`Disposal initiated for "${mItem}" (${mType}) — witnessed by ${mWitness.split(" (")[0]}`);
