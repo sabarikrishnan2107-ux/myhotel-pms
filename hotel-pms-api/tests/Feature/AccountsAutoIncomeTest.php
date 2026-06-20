@@ -81,4 +81,19 @@ class AccountsAutoIncomeTest extends TestCase
         // Only today has activity: +50000 income − 20000 expense = +30000 cumulative on the last day.
         $this->assertSame(30000, $cash[29]['balance']);
     }
+
+    public function test_non_iso_account_entry_dates_bucket_into_trends(): void
+    {
+        // "DD Mon" format (current-year), like the seeder/UI write — must still count.
+        AccountEntry::create(['date' => date('j M'), 'type' => 'expense', 'category' => 'Utilities', 'description' => 'power', 'amount' => 7000]);
+        AccountEntry::create(['date' => date('j M'), 'type' => 'income', 'category' => 'Misc', 'description' => 'scrap sale', 'amount' => 3000]);
+
+        $res = $this->getJson('/api/accounts/summary')->assertOk();
+        $monthly = $res->json('monthlyTrend');
+        $this->assertSame(7000, $monthly[5]['expense']);   // current month, non-ISO date counted
+        $this->assertSame(3000, $monthly[5]['income']);
+        // 30-day cash: +3000 income − 7000 expense = −4000 cumulative on the last day
+        $cash = $res->json('cashTrend');
+        $this->assertSame(-4000, $cash[29]['balance']);
+    }
 }

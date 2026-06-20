@@ -435,8 +435,16 @@ class StatsController extends Controller
         $addMonthly($monthAgg(GroupBooking::query(), 'createdAt', 'advance'), 'income');
         $addMonthly($monthAgg(HallBooking::query(), 'date', 'advance'), 'income');
         $addMonthly($monthAgg(BanquetOrder::query(), 'date', 'advance'), 'income');
-        $addMonthly($monthAgg(AccountEntry::where('type', 'income')->whereNotIn('category', $autoNames), 'date', 'amount'), 'income');
-        $addMonthly($monthAgg(AccountEntry::whereIn('type', ['expense', 'refund']), 'date', 'amount'), 'expense');
+
+        // account_entries dates may be non-ISO ("DD Mon"), so normalise in PHP via Carbon.
+        foreach (AccountEntry::where('type', 'income')->whereNotIn('category', $autoNames)->get(['date', 'amount']) as $r) {
+            $key = $this->dateBucket($r->date, 'Y-m');
+            if ($key && isset($months[$key])) $months[$key]['income'] += (int) $r->amount;
+        }
+        foreach (AccountEntry::where('type', 'expense')->get(['date', 'amount']) as $r) {
+            $key = $this->dateBucket($r->date, 'Y-m');
+            if ($key && isset($months[$key])) $months[$key]['expense'] += (int) $r->amount;
+        }
         $monthlyTrend = array_values($months);
 
         // ---- cashTrend: last 30 days, cumulative net cash movement ----
@@ -457,8 +465,16 @@ class StatsController extends Controller
         $addDaily($dayAgg(GroupBooking::query(), 'createdAt', 'advance'), 1);
         $addDaily($dayAgg(HallBooking::query(), 'date', 'advance'), 1);
         $addDaily($dayAgg(BanquetOrder::query(), 'date', 'advance'), 1);
-        $addDaily($dayAgg(AccountEntry::where('type', 'income')->whereNotIn('category', $autoNames), 'date', 'amount'), 1);
-        $addDaily($dayAgg(AccountEntry::whereIn('type', ['expense', 'refund']), 'date', 'amount'), -1);
+
+        // account_entries dates may be non-ISO ("DD Mon"), so normalise in PHP via Carbon.
+        foreach (AccountEntry::where('type', 'income')->whereNotIn('category', $autoNames)->get(['date', 'amount']) as $r) {
+            $key = $this->dateBucket($r->date, 'Y-m-d');
+            if ($key && isset($days[$key])) $days[$key] += (int) $r->amount;
+        }
+        foreach (AccountEntry::where('type', 'expense')->get(['date', 'amount']) as $r) {
+            $key = $this->dateBucket($r->date, 'Y-m-d');
+            if ($key && isset($days[$key])) $days[$key] -= (int) $r->amount;
+        }
 
         $bal = 0; $cashTrend = []; $n = 0;
         foreach ($days as $net) {
@@ -474,6 +490,16 @@ class StatsController extends Controller
             'monthlyTrend' => $monthlyTrend,
             'cashTrend'    => $cashTrend,
         ]);
+    }
+
+    /**
+     * Normalise a raw date string (ISO or "DD Mon") to a bucket key using Carbon.
+     * Returns null if the string is blank or unparseable.
+     */
+    private function dateBucket(?string $raw, string $fmt): ?string
+    {
+        if (!$raw) return null;
+        try { return \Carbon\Carbon::parse($raw)->format($fmt); } catch (\Throwable $e) { return null; }
     }
 
     /**
