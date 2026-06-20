@@ -12,13 +12,12 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { KPICard } from "@/components/ui/kpi-card";
 import { AIInsight } from "@/components/ui/ai-insight";
-import { INCOME_BREAKDOWN, EXPENSE_BREAKDOWN, RECENT_TXN } from "@/lib/mock-data-ext";
 import { money, cn } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
 import { useProperty, hotelName } from "@/lib/use-property";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend, LineChart, Line } from "recharts";
 import {
-  PL_TREND, CASH_FLOW, ACCOUNTS, HDFC_STATEMENT,
+  ACCOUNTS, HDFC_STATEMENT,
   AGING_RECEIVABLES, AGING_PAYABLES, GSTR_RETURNS, INCOME_CATS, EXPENSE_CATS,
   blankLine,
   type EntryType, type ExpenseLine, type Entry,
@@ -87,7 +86,7 @@ function SubToggle<T extends string>({ value, onChange, options }: {
 export default function AccountsPage() {
   const [tab, setTab] = React.useState<TabId>("dashboard");
   const [entries, setEntries] = React.useState<Entry[]>([]);
-  const [summary, setSummary] = React.useState<{ income: { category: string; value: number }[]; expense: { category: string; value: number }[]; recent: { id: number; date: string; desc: string; type: string; amount: number }[] } | null>(null);
+  const [summary, setSummary] = React.useState<{ incomeTotal: number; income: { category: string; value: number }[]; expense: { category: string; value: number }[]; recent: { id: number; date: string; desc: string; type: string; amount: number }[]; monthlyTrend: { month: string; income: number; expense: number }[]; cashTrend: { day: string; balance: number }[] } | null>(null);
   React.useEffect(() => {
     apiGet<Entry[]>("/account-entries")
       .then(rows => setEntries(rows.map(r => ({ ...r, id: String(r.id) })).reverse()))
@@ -100,15 +99,11 @@ export default function AccountsPage() {
   // Colour palette reused for the live category breakdowns (charts need a colour
   // per slice; the API returns only category + value).
   const PIE_COLORS = ["var(--color-brand)", "var(--color-accent)", "var(--color-info)", "var(--color-warning)", "var(--color-status-checkout-pending)", "var(--color-status-inspected)", "var(--color-status-blocked)"];
-  const incomeBreakdown = summary?.income.length
-    ? summary.income.map((r, i) => ({ label: r.category, value: r.value, color: PIE_COLORS[i % PIE_COLORS.length] }))
-    : INCOME_BREAKDOWN;
-  const expenseBreakdown = summary?.expense.length
-    ? summary.expense.map((r, i) => ({ label: r.category, value: r.value, color: PIE_COLORS[i % PIE_COLORS.length] }))
-    : EXPENSE_BREAKDOWN;
-  const recentTxn = summary?.recent.length
-    ? summary.recent.map(r => ({ id: String(r.id), date: r.date, desc: r.desc, type: r.type as "Income" | "Expense" | "Refund", amount: r.amount }))
-    : RECENT_TXN;
+  const incomeBreakdown = (summary?.income ?? []).map((r, i) => ({ label: r.category, value: r.value, color: PIE_COLORS[i % PIE_COLORS.length] }));
+  const expenseBreakdown = (summary?.expense ?? []).map((r, i) => ({ label: r.category, value: r.value, color: PIE_COLORS[i % PIE_COLORS.length] }));
+  const recentTxn = (summary?.recent ?? []).map(r => ({ id: String(r.id), date: r.date, desc: r.desc, type: r.type as "Income" | "Expense" | "Refund", amount: r.amount }));
+  const monthlyTrend = summary?.monthlyTrend ?? [];
+  const cashTrend = summary?.cashTrend ?? [];
   const [showEntry, setShowEntry] = React.useState<EntryType | null>(null);
   const [showExpenseFull, setShowExpenseFull] = React.useState(false);
   const [voucherEntry, setVoucherEntry] = React.useState<Entry | null>(null);
@@ -137,13 +132,9 @@ export default function AccountsPage() {
     setReportsView("downloads");
   };
 
-  // Headline KPIs derive from the real posted entries (fall back to the
-  // illustrative breakdown only before any entry has loaded).
-  const sumByType = (t: EntryType) => entries.filter(e => e.type === t).reduce((s, e) => s + e.amount, 0);
-  const seedIncome = INCOME_BREAKDOWN.reduce((s, i) => s + i.value, 0);
-  const seedExpense = EXPENSE_BREAKDOWN.reduce((s, i) => s + i.value, 0);
-  const income = entries.length ? sumByType("income") : seedIncome;
-  const expense = entries.length ? sumByType("expense") + sumByType("refund") : seedExpense;
+  // Headline KPIs derive from real summary data (zero until loaded).
+  const income = summary?.incomeTotal ?? 0;
+  const expense = summary ? summary.expense.reduce((s, e) => s + e.value, 0) : 0;
   const profit = income - expense;
   const margin = income ? ((profit / income) * 100).toFixed(1) : "0.0";
 
@@ -216,7 +207,7 @@ export default function AccountsPage() {
             <CardContent className="pl-0">
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={PL_TREND} margin={{ top: 8, right: 16, bottom: 0, left: 8 }} barGap={4}>
+                  <BarChart data={monthlyTrend} margin={{ top: 8, right: 16, bottom: 0, left: 8 }} barGap={4}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
                     <XAxis dataKey="month" stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
                     <YAxis stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
@@ -241,7 +232,7 @@ export default function AccountsPage() {
             <CardContent className="pl-0">
               <div className="h-44">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={CASH_FLOW} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
+                  <LineChart data={cashTrend} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
                     <XAxis dataKey="day" stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
                     <YAxis stroke="var(--color-muted-foreground)" fontSize={11} axisLine={false} tickLine={false} />
