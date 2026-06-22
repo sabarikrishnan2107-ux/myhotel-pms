@@ -586,6 +586,81 @@ class StatsController extends Controller
     }
 
     /**
+     * GET /api/accounts/receivables — per-guest receivables aggregated from booking balances.
+     * Source: bookings where balance > 0 AND status != 'cancelled'.
+     * Each booking is aged by (today - checkOut); balance bucketed into current/d1_30/d31_60/d60plus.
+     * Rows are aggregated per guestName and sorted by total desc.
+     */
+    public function receivables()
+    {
+        $today = now()->toDateString();
+
+        $bookings = Booking::where('balance', '>', 0)
+            ->where('status', '!=', 'cancelled')
+            ->get(['guestName', 'balance', 'checkOut']);
+
+        // Group by guestName, accumulate aging buckets
+        $guestMap = [];
+        foreach ($bookings as $b) {
+            $name     = (string) ($b->guestName ?: 'Unknown');
+            $balance  = (int) $b->balance;
+            $checkOut = (string) $b->checkOut;
+
+            // ageDays: max(0, today - checkOut) using lexicographic date comparison
+            $ageDays = $checkOut < $today
+                ? (int) floor((strtotime($today) - strtotime($checkOut)) / 86400)
+                : 0;
+
+            if (!isset($guestMap[$name])) {
+                $guestMap[$name] = [
+                    'guest'     => $name,
+                    'bookings'  => 0,
+                    'current'   => 0,
+                    'd1_30'     => 0,
+                    'd31_60'    => 0,
+                    'd60plus'   => 0,
+                    'total'     => 0,
+                    'oldestDue' => $checkOut,
+                ];
+            }
+
+            $guestMap[$name]['bookings']++;
+            $guestMap[$name]['total'] += $balance;
+
+            if ($ageDays === 0) {
+                $guestMap[$name]['current'] += $balance;
+            } elseif ($ageDays <= 30) {
+                $guestMap[$name]['d1_30'] += $balance;
+            } elseif ($ageDays <= 60) {
+                $guestMap[$name]['d31_60'] += $balance;
+            } else {
+                $guestMap[$name]['d60plus'] += $balance;
+            }
+
+            // oldestDue = min checkOut (lexicographic)
+            if ($checkOut < $guestMap[$name]['oldestDue']) {
+                $guestMap[$name]['oldestDue'] = $checkOut;
+            }
+        }
+
+        // Sort rows by total desc
+        $rows = array_values($guestMap);
+        usort($rows, fn ($a, $b) => $b['total'] <=> $a['total']);
+
+        // Compute totals
+        $totals = [
+            'total'    => array_sum(array_column($rows, 'total')),
+            'current'  => array_sum(array_column($rows, 'current')),
+            'd1_30'    => array_sum(array_column($rows, 'd1_30')),
+            'd31_60'   => array_sum(array_column($rows, 'd31_60')),
+            'd60plus'  => array_sum(array_column($rows, 'd60plus')),
+            'accounts' => count($rows),
+        ];
+
+        return response()->json(['rows' => $rows, 'totals' => $totals]);
+    }
+
+    /**
      * GET /api/revenue/pickup — pickup report from real bookings (by booking date).
      *  • last 14 days of booking activity (rooms / revenue / cancellations),
      *  • per-source totals, and
