@@ -18,7 +18,7 @@ import { useProperty, hotelName } from "@/lib/use-property";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend, LineChart, Line } from "recharts";
 import {
   ACCOUNTS, HDFC_STATEMENT,
-  AGING_RECEIVABLES, AGING_PAYABLES, GSTR_RETURNS, INCOME_CATS, EXPENSE_CATS,
+  AGING_RECEIVABLES, AGING_PAYABLES, INCOME_CATS, EXPENSE_CATS,
   blankLine,
   type EntryType, type ExpenseLine, type Entry,
 } from "./_data";
@@ -87,12 +87,16 @@ export default function AccountsPage() {
   const [tab, setTab] = React.useState<TabId>("dashboard");
   const [entries, setEntries] = React.useState<Entry[]>([]);
   const [summary, setSummary] = React.useState<{ incomeTotal: number; income: { category: string; value: number }[]; expense: { category: string; value: number }[]; recent: { id: number; date: string; desc: string; type: string; amount: number }[]; monthlyTrend: { month: string; income: number; expense: number }[]; cashTrend: { day: string; balance: number }[] } | null>(null);
+  const [vat, setVat] = React.useState<{ taxableIncome: number; outputVat: number; inputVat: number; netVat: number; itcBySource: { category: string; cgst: number; sgst: number; igst: number; total: number }[] } | null>(null);
   React.useEffect(() => {
     apiGet<Entry[]>("/account-entries")
       .then(rows => setEntries(rows.map(r => ({ ...r, id: String(r.id) })).reverse()))
       .catch(() => {});
     apiGet<NonNullable<typeof summary>>("/accounts/summary")
       .then(s => setSummary(s))
+      .catch(() => {});
+    apiGet<NonNullable<typeof vat>>("/accounts/vat")
+      .then(v => setVat(v))
       .catch(() => {});
   }, []);
 
@@ -1034,10 +1038,10 @@ export default function AccountsPage() {
       {tab === "vat" && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <KPICard label="Output VAT (5%)" value={money(income * 0.05)} icon={Receipt} accent="warning" hint="Tax collected on sales" />
-            <KPICard label="Input VAT (recoverable)" value={money(28400)} icon={Receipt} accent="success" hint="Reclaimable from vendor bills" />
-            <KPICard label="Net VAT Payable" value={money(income * 0.05 - 28400)} icon={Wallet} accent="brand" hint="After input VAT offset" />
-            <KPICard label="TDS Deducted" value={money(12400)} icon={FileDown} accent="info" hint="Sec 194H + 194J" />
+            <KPICard label="Output VAT (5%)" value={money(vat?.outputVat ?? 0)} icon={Receipt} accent="warning" hint="Tax collected on sales" />
+            <KPICard label="Input VAT (recoverable)" value={money(vat?.inputVat ?? 0)} icon={Receipt} accent="success" hint="Reclaimable from vendor bills" />
+            <KPICard label="Net VAT Payable" value={money(vat?.netVat ?? 0)} icon={Wallet} accent="brand" hint="After input VAT offset" />
+            <KPICard label="TDS Deducted" value={money(12400)} icon={FileDown} accent="info" hint="Sec 194H + 194J — illustrative" />
           </div>
 
           <AIInsight
@@ -1046,14 +1050,14 @@ export default function AccountsPage() {
             text={
               <>
                 <span className="font-semibold">GSTR-3B</span> for May 2026 is due in <span className="font-semibold text-warning">26 days</span> (20 Jun).
-                Net liability: <span className="font-semibold">{money(income * 0.05 - 28400)}</span> · ITC available: <span className="font-semibold text-success">{money(28400)}</span>.
+                Net liability: <span className="font-semibold">{money(vat?.netVat ?? 0)}</span> · ITC available: <span className="font-semibold text-success">{money(vat?.inputVat ?? 0)}</span>.
                 Annual return <span className="font-semibold">GSTR-9</span> window opens 1 Apr 2027. e-Invoice generation: <span className="font-semibold text-success">enabled</span> (NIC portal).
               </>
             }
             action={{ label: "File GSTR-3B", onClick: () => showToast("GSTR-3B draft saved to NIC portal") }}
           />
 
-          {/* GSTR Returns */}
+          {/* GSTR Returns — no backing model; empty state */}
           <Card className="p-0 overflow-hidden">
             <CardHeader className="bg-surface-elevated">
               <div className="flex items-center justify-between">
@@ -1076,46 +1080,21 @@ export default function AccountsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {GSTR_RETURNS.map(g => (
-                  <tr key={g.id} className="hover:bg-surface-sunken/40">
-                    <td className="px-5 py-3 font-medium">{g.period}</td>
-                    <td className="px-5 py-3"><Badge tone="neutral">{g.form}</Badge></td>
-                    <td className="px-5 py-3 text-muted-foreground tabular">{g.due}</td>
-                    <td className="px-5 py-3 text-right tabular">{money(g.total)}</td>
-                    <td className="px-5 py-3 text-right tabular font-medium text-warning">{money(g.tax)}</td>
-                    <td className="px-5 py-3">
-                      <Badge tone={
-                        g.status === "Filed" ? "success" :
-                        g.status === "Draft" ? "info" :
-                        g.status === "Pending" ? "warning" :
-                        "neutral"
-                      }>
-                        {g.status === "Filed" && <CheckCircle2 className="h-3 w-3" />}
-                        {g.status === "Pending" && <AlertCircle className="h-3 w-3" />}
-                        {g.status}
-                      </Badge>
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      <Button size="sm" variant="ghost" onClick={() => {
-                        if (g.status === "Filed") showToast(`Opening filed return ${g.form}`);
-                        else if (g.status === "Upcoming") showToast(`Reminder set for ${g.form} · ${g.due}`);
-                        else showToast(`${g.form} filed · ARN generated · NIC acknowledgment received`);
-                      }}>
-                        {g.status === "Filed" ? "View" : g.status === "Upcoming" ? "Schedule" : "File now"}
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                <tr>
+                  <td colSpan={7} className="px-5 py-6 text-center text-sm text-muted-foreground">
+                    No filed returns recorded yet.
+                  </td>
+                </tr>
               </tbody>
             </table>
           </Card>
 
-          {/* ITC ledger */}
+          {/* ITC ledger — real data from account_entries */}
           <Card className="p-0 overflow-hidden">
             <CardHeader className="bg-surface-elevated">
               <div className="flex items-center justify-between">
                 <CardTitle>Input Tax Credit (ITC) Ledger</CardTitle>
-                <Badge tone="success">Reconciled with GSTR-2B</Badge>
+                <Badge tone="neutral">From expense entries</Badge>
               </div>
             </CardHeader>
             <table className="w-full text-sm">
@@ -1129,29 +1108,29 @@ export default function AccountsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {[
-                  { label: "Capital goods (Furniture, IT)", c: 4200, s: 4200, i: 0 },
-                  { label: "Input services (Maintenance, IT)", c: 3800, s: 3800, i: 0 },
-                  { label: "Input services (Marketing — inter-state)", c: 0, s: 0, i: 4800 },
-                  { label: "Inputs (Linen, Amenities)", c: 1900, s: 1900, i: 0 },
-                  { label: "Inputs (F&B raw materials)", c: 1900, s: 1900, i: 0 },
-                ].map((r, i) => (
-                  <tr key={i}>
-                    <td className="px-5 py-3">{r.label}</td>
-                    <td className="px-5 py-3 text-right tabular">{r.c > 0 ? money(r.c) : "—"}</td>
-                    <td className="px-5 py-3 text-right tabular">{r.s > 0 ? money(r.s) : "—"}</td>
-                    <td className="px-5 py-3 text-right tabular">{r.i > 0 ? money(r.i) : "—"}</td>
-                    <td className="px-5 py-3 text-right tabular font-medium text-success">{money(r.c + r.s + r.i)}</td>
+                {(vat?.itcBySource ?? []).length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-6 text-center text-sm text-muted-foreground">
+                      No VAT-tagged expenses yet — add CGST/SGST/IGST when recording expenses.
+                    </td>
+                  </tr>
+                ) : (vat?.itcBySource ?? []).map((r) => (
+                  <tr key={r.category}>
+                    <td className="px-5 py-3">{r.category}</td>
+                    <td className="px-5 py-3 text-right tabular">{r.cgst > 0 ? money(r.cgst) : "—"}</td>
+                    <td className="px-5 py-3 text-right tabular">{r.sgst > 0 ? money(r.sgst) : "—"}</td>
+                    <td className="px-5 py-3 text-right tabular">{r.igst > 0 ? money(r.igst) : "—"}</td>
+                    <td className="px-5 py-3 text-right tabular font-medium text-success">{money(r.total)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot className="bg-surface-elevated border-t border-border">
                 <tr>
                   <td className="px-5 py-3 text-right text-xs uppercase tracking-wider font-semibold text-muted-foreground">Total ITC</td>
-                  <td className="px-5 py-3 text-right tabular font-semibold">{money(11800)}</td>
-                  <td className="px-5 py-3 text-right tabular font-semibold">{money(11800)}</td>
-                  <td className="px-5 py-3 text-right tabular font-semibold">{money(4800)}</td>
-                  <td className="px-5 py-3 text-right tabular font-bold text-base text-success">{money(28400)}</td>
+                  <td className="px-5 py-3 text-right tabular font-semibold">{money((vat?.itcBySource ?? []).reduce((s, r) => s + r.cgst, 0))}</td>
+                  <td className="px-5 py-3 text-right tabular font-semibold">{money((vat?.itcBySource ?? []).reduce((s, r) => s + r.sgst, 0))}</td>
+                  <td className="px-5 py-3 text-right tabular font-semibold">{money((vat?.itcBySource ?? []).reduce((s, r) => s + r.igst, 0))}</td>
+                  <td className="px-5 py-3 text-right tabular font-bold text-base text-success">{money(vat?.inputVat ?? 0)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -1179,8 +1158,8 @@ export default function AccountsPage() {
               <tfoot className="bg-surface-elevated border-t border-border">
                 <tr>
                   <td className="px-5 py-3 font-semibold">Total VAT collected</td>
-                  <td className="px-5 py-3 text-right tabular font-semibold">{money(income)}</td>
-                  <td className="px-5 py-3 text-right tabular font-bold text-warning">{money(income * 0.05)}</td>
+                  <td className="px-5 py-3 text-right tabular font-semibold">{money(vat?.taxableIncome ?? income)}</td>
+                  <td className="px-5 py-3 text-right tabular font-bold text-warning">{money(vat?.outputVat ?? 0)}</td>
                 </tr>
               </tfoot>
             </table>
