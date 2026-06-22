@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\OwnerFlashController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\ResourceController;
 use App\Http\Controllers\Api\SettingsController;
+use App\Http\Controllers\Api\SmtpSettingsController;
 use App\Http\Controllers\Api\ShiftController;
 use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\StatsController;
@@ -88,6 +89,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Image uploads (logos, brand assets)
     Route::post('/upload', [UploadController::class, 'store']);
+
+    // SMTP settings — dedicated controller so the password is encrypted at rest
+    // and never returned. Registered before the generic /settings/{key} routes.
+    Route::get('/settings/smtp', [SmtpSettingsController::class, 'show']);
+    Route::put('/settings/smtp', [SmtpSettingsController::class, 'update']);
+    Route::post('/settings/smtp/test', [SmtpSettingsController::class, 'test']);
 
     // Single-row settings sections (JSON by key)
     Route::get('/settings/{key}', [SettingsController::class, 'show']);
