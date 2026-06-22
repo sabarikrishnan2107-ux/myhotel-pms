@@ -493,6 +493,89 @@ class StatsController extends Controller
     }
 
     /**
+     * GET /api/accounts/departmental — real Departmental P&L.
+     * Revenue mapped to departments from the same sources as accountsSummary
+     * (so totals reconcile); costs split by the account_entries.department tag,
+     * with untagged/General expenses + refunds as overhead.
+     */
+    public function departmentalPnl(\Illuminate\Http\Request $request)
+    {
+        $from = $request->query('from');
+        $to   = $request->query('to');
+
+        $sumBetween = function ($query, string $col, string $amountCol) use ($from, $to) {
+            if ($from) $query->where($col, '>=', $from);
+            if ($to)   $query->where($col, '<=', $to);
+            return (int) $query->sum($amountCol);
+        };
+        $applyRange = function ($query, string $col = 'date') use ($from, $to) {
+            if ($from) $query->where($col, '>=', $from);
+            if ($to)   $query->where($col, '<=', $to);
+            return $query;
+        };
+
+        // ---- Revenue by department ----
+        $autoNames = ['Room Revenue', 'Group Bookings', 'Hall Bookings', 'Banquet'];
+        $revenue = [];
+        $pushRev = function (string $category, string $dept, int $amount) use (&$revenue) {
+            if ($amount > 0) $revenue[] = ['category' => $category, 'dept' => $dept, 'amount' => $amount];
+        };
+        $pushRev('Room Revenue', 'Rooms', $sumBetween(FolioPayment::query(), 'date', 'amount'));
+        $pushRev('Group Bookings', 'Rooms', $sumBetween(GroupBooking::query(), 'createdAt', 'advance'));
+        $pushRev('Hall Bookings', 'Banquet', $sumBetween(HallBooking::query(), 'date', 'advance'));
+        $pushRev('Banquet', 'Banquet', $sumBetween(BanquetOrder::query(), 'date', 'advance'));
+
+        $deptForCategory = function (string $cat): string {
+            $c = strtolower($cat);
+            if (str_contains($c, 'f&b') || str_contains($c, 'food') || str_contains($c, 'restaurant')) return 'F&B';
+            if (str_contains($c, 'spa') || str_contains($c, 'wellness')) return 'Spa';
+            return 'Other';
+        };
+        $incomeRows = $applyRange(AccountEntry::query()->where('type', 'income'))
+            ->selectRaw('category, coalesce(sum(amount),0) as v')->groupBy('category')->get();
+        foreach ($incomeRows as $r) {
+            if (in_array($r->category, $autoNames, true)) continue; // superseded by live figures
+            $pushRev($r->category ?: 'Other', $deptForCategory((string) $r->category), (int) $r->v);
+        }
+
+        // ---- Costs ----
+        $deptSet = ['Rooms', 'F&B', 'Banquet', 'Spa', 'Other'];
+        $directCosts = [];
+        $overhead = [];
+        $expRows = $applyRange(AccountEntry::query()->where('type', 'expense'))
+            ->selectRaw('category, department, coalesce(sum(amount),0) as v')
+            ->groupBy('category', 'department')->get();
+        foreach ($expRows as $r) {
+            $amt = (int) $r->v;
+            if ($amt <= 0) continue;
+            if (in_array($r->department, $deptSet, true)) {
+                $directCosts[] = ['category' => $r->category ?: 'Other', 'dept' => $r->department, 'amount' => $amt];
+            } else {
+                $overhead[] = ['category' => $r->category ?: 'Other', 'amount' => $amt];
+            }
+        }
+        $refunds = $sumBetween($applyRange(AccountEntry::query()->where('type', 'refund')), 'date', 'amount');
+        if ($refunds > 0) $overhead[] = ['category' => 'Refunds', 'amount' => $refunds];
+
+        $totalRevenue = array_sum(array_column($revenue, 'amount'));
+        $totalDirect  = array_sum(array_column($directCosts, 'amount'));
+        $totalOverhead = array_sum(array_column($overhead, 'amount'));
+        $grossProfit = $totalRevenue - $totalDirect;
+
+        return response()->json([
+            'departments' => $deptSet,
+            'revenue'     => array_values($revenue),
+            'directCosts' => array_values($directCosts),
+            'overhead'    => array_values($overhead),
+            'totals' => [
+                'revenue' => $totalRevenue, 'directCosts' => $totalDirect,
+                'grossProfit' => $grossProfit, 'overhead' => $totalOverhead,
+                'netProfit' => $grossProfit - $totalOverhead,
+            ],
+        ]);
+    }
+
+    /**
      * Normalise a raw date string (ISO or "DD Mon") to a bucket key using Carbon.
      * Returns null if the string is blank or unparseable.
      */

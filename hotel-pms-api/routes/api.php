@@ -56,6 +56,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Accounts dashboards — income/expense by category + recent txns (real account_entries)
     Route::get('/accounts/summary', [StatsController::class, 'accountsSummary']);
+    Route::get('/accounts/departmental', [StatsController::class, 'departmentalPnl']);
 
     // Owner's Flash Dashboard — period KPIs, 30-day trend, manual/scheduled send
     Route::get('/owner/flash', [OwnerFlashController::class, 'flash']);
