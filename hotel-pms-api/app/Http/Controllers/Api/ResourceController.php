@@ -446,6 +446,7 @@ class ResourceController extends Controller
             'cgst' => 'integer|nullable', 'sgst' => 'integer|nullable', 'igst' => 'integer|nullable',
             'hsnSac' => 'string|max:50|nullable', 'voucherNo' => 'string|max:50|nullable',
             'lines' => 'array|nullable', 'attachment' => 'array|nullable',
+            'department' => 'string|max:50|nullable',
         ],
         'loyalty-tiers' => [
             'level' => 'string|max:50', 'minSpend' => 'integer|min:0', 'minNights' => 'integer|min:0',
