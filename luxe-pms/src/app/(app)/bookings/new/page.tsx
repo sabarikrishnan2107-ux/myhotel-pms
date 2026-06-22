@@ -513,6 +513,8 @@ export default function BookingWizardPage() {
                   price={500}
                   checked={lateCheckout}
                   onChange={setLateCheckout}
+                  disabled={halfDay}
+                  disabledHint="Not available with half-day rate"
                 />
                 <PricedToggleCard
                   label="Half-day rate"
@@ -520,6 +522,8 @@ export default function BookingWizardPage() {
                   pricePct="-50%"
                   checked={halfDay}
                   onChange={setHalfDay}
+                  disabled={lateCheckout}
+                  disabledHint="Not available with late check-out"
                 />
               </div>
             </div>
@@ -1267,7 +1271,7 @@ function ToggleCard({ label, hint }: { label: string; hint: string }) {
 }
 
 function PricedToggleCard({
-  label, hint, price, pricePct, checked, onChange,
+  label, hint, price, pricePct, checked, onChange, disabled, disabledHint,
 }: {
   label: string;
   hint: string;
@@ -1275,22 +1279,27 @@ function PricedToggleCard({
   pricePct?: string;
   checked: boolean;
   onChange: (b: boolean) => void;
+  disabled?: boolean;
+  disabledHint?: string;
 }) {
   return (
     <button
       type="button"
-      onClick={() => onChange(!checked)}
+      disabled={disabled}
+      onClick={() => { if (!disabled) onChange(!checked); }}
       className={cn(
         "p-3 rounded-md border text-left transition-all relative",
-        checked ? "bg-brand-soft border-brand shadow-xs" : "border-border hover:bg-surface-sunken"
+        disabled
+          ? "opacity-50 cursor-not-allowed border-border"
+          : checked ? "bg-brand-soft border-brand shadow-xs" : "border-border hover:bg-surface-sunken"
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">{label}</p>
-          <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{hint}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{disabled && disabledHint ? disabledHint : hint}</p>
         </div>
-        {checked && <CheckCircle2 className="h-4 w-4 text-brand shrink-0" />}
+        {checked && !disabled && <CheckCircle2 className="h-4 w-4 text-brand shrink-0" />}
       </div>
       <div className="mt-2 pt-2 border-t border-border/50">
         <span className={cn(
