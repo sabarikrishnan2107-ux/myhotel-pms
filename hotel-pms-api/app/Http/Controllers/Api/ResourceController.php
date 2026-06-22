@@ -198,11 +198,6 @@ class ResourceController extends Controller
         'group-rooming'  => 'groupCode',
     ];
 
-    /** Fields searched by the global search bar (used by frontend autocomplete). */
-    private const SEARCHABLE = [
-        'vendor-bills' => ['vendor', 'billNo'],
-    ];
-
     /** Resource slugs, for the route constraint. */
     public static function resources(): array
     {
