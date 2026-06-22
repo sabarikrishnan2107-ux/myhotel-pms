@@ -61,4 +61,34 @@ class SmtpSettingsTest extends TestCase
         $this->putJson('/api/settings/smtp', $this->validPayload(['fromEmail' => 'not-an-email', 'encryption' => 'weird']))
             ->assertStatus(422);
     }
+
+    public function test_test_endpoint_returns_ok_when_send_succeeds(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+        $this->auth();
+
+        $this->postJson('/api/settings/smtp/test', $this->validPayload(['to' => 'qa@thepearl.in']))
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('to', 'qa@thepearl.in');
+    }
+
+    public function test_test_endpoint_validates_input(): void
+    {
+        $this->auth();
+        $this->postJson('/api/settings/smtp/test', ['host' => '', 'port' => 99999, 'encryption' => 'tls', 'fromEmail' => 'x'])
+            ->assertStatus(422);
+    }
+
+    public function test_test_endpoint_falls_back_to_stored_password_when_blank(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+        $this->auth();
+        $this->putJson('/api/settings/smtp', $this->validPayload())->assertOk();
+
+        // No password in the test request → uses the stored (encrypted) one; still ok.
+        $this->postJson('/api/settings/smtp/test', $this->validPayload(['password' => '']))
+            ->assertOk()
+            ->assertJsonPath('ok', true);
+    }
 }
