@@ -661,6 +661,87 @@ class StatsController extends Controller
     }
 
     /**
+     * GET /api/accounts/vat — real output + input VAT from account_entries and booking income.
+     * Optional `from`/`to` date filters (ISO format).
+     *
+     * - taxableIncome: same income basis as accountsSummary (FolioPayment + Group/Hall/Banquet
+     *   advances + manual income with auto-cat de-dup).
+     * - outputVat: round(taxableIncome × 0.05).
+     * - inputVat: Σ (cgst + sgst + igst) on expense account_entries.
+     * - netVat: outputVat − inputVat.
+     * - itcBySource: expense rows grouped by category (only where cgst+sgst+igst > 0).
+     */
+    public function vat(\Illuminate\Http\Request $request)
+    {
+        $from = $request->query('from');
+        $to   = $request->query('to');
+
+        // ---- Taxable income (replicates accountsSummary income basis) ----
+        $sumBetween = function ($query, string $col, string $amountCol) use ($from, $to) {
+            if ($from) $query->where($col, '>=', $from);
+            if ($to)   $query->where($col, '<=', $to);
+            return (int) $query->sum($amountCol);
+        };
+
+        $autoNames = ['Room Revenue', 'Group Bookings', 'Hall Bookings', 'Banquet'];
+
+        $autoCats = [
+            ['category' => 'Room Revenue',   'value' => $sumBetween(FolioPayment::query(), 'date', 'amount')],
+            ['category' => 'Group Bookings', 'value' => $sumBetween(GroupBooking::query(), 'createdAt', 'advance')],
+            ['category' => 'Hall Bookings',  'value' => $sumBetween(HallBooking::query(), 'date', 'advance')],
+            ['category' => 'Banquet',        'value' => $sumBetween(BanquetOrder::query(), 'date', 'advance')],
+        ];
+
+        $baseEntry = AccountEntry::query();
+        if ($from) $baseEntry->where('date', '>=', $from);
+        if ($to)   $baseEntry->where('date', '<=', $to);
+
+        $manualIncome = (clone $baseEntry)->where('type', 'income')
+            ->whereNotIn('category', $autoNames)
+            ->selectRaw('category, coalesce(sum(amount),0) as value')
+            ->groupBy('category')->get()
+            ->map(fn ($r) => ['category' => $r->category ?: 'Other', 'value' => (int) $r->value])
+            ->values();
+
+        $income = collect($autoCats)
+            ->filter(fn ($r) => $r['value'] > 0)
+            ->merge($manualIncome);
+
+        $taxableIncome = (int) $income->sum('value');
+        $outputVat     = (int) round($taxableIncome * 0.05);
+
+        // ---- Input VAT: sum cgst/sgst/igst on expense entries ----
+        $expenseQuery = AccountEntry::query()->where('type', 'expense');
+        if ($from) $expenseQuery->where('date', '>=', $from);
+        if ($to)   $expenseQuery->where('date', '<=', $to);
+
+        $expRows = (clone $expenseQuery)
+            ->selectRaw('category, coalesce(sum(cgst),0) as cgst, coalesce(sum(sgst),0) as sgst, coalesce(sum(igst),0) as igst')
+            ->groupBy('category')
+            ->get()
+            ->filter(fn ($r) => ((int) $r->cgst + (int) $r->sgst + (int) $r->igst) > 0)
+            ->map(fn ($r) => [
+                'category' => $r->category ?: 'Other',
+                'cgst'     => (int) $r->cgst,
+                'sgst'     => (int) $r->sgst,
+                'igst'     => (int) $r->igst,
+                'total'    => (int) $r->cgst + (int) $r->sgst + (int) $r->igst,
+            ])
+            ->values();
+
+        $inputVat = (int) $expRows->sum('total');
+        $netVat   = $outputVat - $inputVat;
+
+        return response()->json([
+            'taxableIncome' => $taxableIncome,
+            'outputVat'     => $outputVat,
+            'inputVat'      => $inputVat,
+            'netVat'        => $netVat,
+            'itcBySource'   => $expRows->all(),
+        ]);
+    }
+
+    /**
      * GET /api/revenue/pickup — pickup report from real bookings (by booking date).
      *  • last 14 days of booking activity (rooms / revenue / cancellations),
      *  • per-source totals, and
