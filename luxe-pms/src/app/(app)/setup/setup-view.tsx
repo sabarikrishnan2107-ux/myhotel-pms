@@ -17,6 +17,7 @@ import { cn, money } from "@/lib/utils";
 import { apiGet, apiPut, apiPost, apiUpload, apiDownload, syncList } from "@/lib/api";
 import { PreferencesPanel, SecurityPanel, NotificationChannelsPanel, WebhooksPanel, useSettingsPersistence } from "./personal-panels";
 import { MenuItemsManager } from "./menu-items-manager";
+import { TablesManager } from "./tables-manager";
 import { NAV, GROUP_LABEL } from "@/lib/nav";
 import { applyBranding } from "@/lib/use-branding";
 import { Switch } from "@/components/ui/switch";
@@ -59,6 +60,7 @@ const SECTIONS = [
   { id: "floors",       group: "Inventory" as SectionGroup,               label: "Floors",                   icon: Layers,       hint: "Define each floor",              accent: "info"    as const },
   { id: "room-types",   group: "Inventory" as SectionGroup,               label: "Room Types",               icon: BedDouble,    hint: "Categories · rates · occupancy", accent: "info"    as const },
   { id: "rooms",        group: "Inventory" as SectionGroup,               label: "Rooms",                     icon: BedDouble,    hint: "Assign each room a type",        accent: "info"    as const },
+  { id: "tables",       group: "Inventory" as SectionGroup,               label: "Restaurant Tables",        icon: Utensils,     hint: "POS floor map · seats · zones",  accent: "info"    as const },
   { id: "pricing",      group: "Rates & Packages" as SectionGroup,        label: "Pricing & Rate Plans",     icon: Tag,          hint: "5 rate plans · weekend +20%",    accent: "accent"  as const },
   { id: "seasons",      group: "Rates & Packages" as SectionGroup,        label: "Seasons & Holidays",       icon: Calendar,     hint: "Define peak / off-peak windows", accent: "accent"  as const },
   { id: "food",         group: "Rates & Packages" as SectionGroup,        label: "Food & Hall Packages",     icon: Utensils,     hint: "4 F&B · 6 hall packages",        accent: "accent"  as const },
@@ -850,6 +852,7 @@ export function SetupView() {
                 onMarkComplete={() => setCompleted(c => new Set([...c, "food"]))} />
             )}
             {active === "menu-items" && <MenuItemsManager onToast={showToast} />}
+            {active === "tables" && <TablesManager onToast={showToast} />}
             {active === "agents" && (
               <AgentsManager agents={agents} onChange={next => persistList("agents", agents, next, setAgents)} onToast={showToast}
                 onMarkComplete={() => setCompleted(c => new Set([...c, "agents"]))} />
