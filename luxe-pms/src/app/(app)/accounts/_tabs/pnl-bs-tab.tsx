@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { money, cn } from "@/lib/utils";
 import { useProperty, hotelName } from "@/lib/use-property";
+import { apiGet } from "@/lib/api";
 import {
-  PNL_REVENUE, PNL_DIRECT_COSTS, PNL_INDIRECT_COSTS, BS_ASSETS, BS_LIABILITIES,
+  BS_ASSETS, BS_LIABILITIES,
   type EntryType, type Entry,
 } from "../_data";
 
@@ -23,10 +24,28 @@ function PnlStat({ label, value, tone, big }: { label: string; value: string; to
   );
 }
 
+type DeptRow = { category: string; dept: string; amount: number };
+type DeptPnl = {
+  departments: string[];
+  revenue: DeptRow[];
+  directCosts: DeptRow[];
+  overhead: { category: string; amount: number }[];
+  totals: { revenue: number; directCosts: number; grossProfit: number; overhead: number; netProfit: number };
+};
+
 // ===================== P&L + BALANCE SHEET TAB =====================
 export function PnlBsTab({ entries }: { entries: Entry[] }) {
   const name = hotelName(useProperty());
   const [subtab, setSubtab] = React.useState<"pnl" | "bs">("pnl");
+
+  // Departmental P&L from real endpoint
+  const [dept, setDept] = React.useState<DeptPnl | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<DeptPnl>("/accounts/departmental").then(d => { if (!cancelled) setDept(d); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  const DEPTS = dept?.departments ?? ["Rooms", "F&B", "Banquet", "Spa", "Other"];
 
   // Actual P&L computed from the real day-book entries.
   const sumType = (t: EntryType) => entries.filter(e => e.type === t).reduce((s, e) => s + e.amount, 0);
@@ -42,11 +61,9 @@ export function PnlBsTab({ entries }: { entries: Entry[] }) {
   const incomeRows = byCategory("income");
   const expenseRows = byCategory("expense");
 
-  const totalRevenue = PNL_REVENUE.reduce((t, r) => t + r.rooms + r.fb + r.banquet + r.spa + r.other, 0);
-  const totalDirect = PNL_DIRECT_COSTS.reduce((t, r) => t + r.rooms + r.fb + r.banquet + r.spa + r.other, 0);
-  const grossProfit = totalRevenue - totalDirect;
-  const totalIndirect = PNL_INDIRECT_COSTS.reduce((t, r) => t + r.amount, 0);
-  const netProfit = grossProfit - totalIndirect;
+  const totalRevenue = dept?.totals.revenue ?? 0;
+  const grossProfit = dept?.totals.grossProfit ?? 0;
+  const netProfit = dept?.totals.netProfit ?? 0;
 
   const totalAssets = BS_ASSETS.flatMap(g => g.items).reduce((t, i) => t + i.value, 0);
   const totalLiabEquity = BS_LIABILITIES.flatMap(g => g.items).reduce((t, i) => t + i.value, 0);
@@ -118,80 +135,60 @@ export function PnlBsTab({ entries }: { entries: Entry[] }) {
         <Card className="p-5">
           <div className="text-center mb-4">
             <h3 className="font-display text-xl">Departmental P&amp;L Statement</h3>
-            <p className="text-xs text-muted-foreground">Budgeted departmental view · May 2026 · MYHOTEL — {name}</p>
+            <p className="text-xs text-muted-foreground">Live departmental view · MYHOTEL — {name}</p>
           </div>
+          {dept && dept.revenue.length === 0 && dept.directCosts.length === 0 && dept.overhead.length === 0 && (
+            <p className="text-center text-sm text-muted-foreground py-6">No posted entries yet for a departmental view.</p>
+          )}
           <table className="w-full text-sm">
             <thead className="border-y-2 border-foreground">
               <tr>
                 <th className="text-left py-2 px-2">Particulars</th>
-                <th className="text-right py-2 px-2">Rooms</th>
-                <th className="text-right py-2 px-2">F&amp;B</th>
-                <th className="text-right py-2 px-2">Banquet</th>
-                <th className="text-right py-2 px-2">Spa</th>
-                <th className="text-right py-2 px-2">Other</th>
+                {DEPTS.map(d => <th key={d} className="text-right py-2 px-2">{d}</th>)}
                 <th className="text-right py-2 px-2 font-semibold">Total</th>
               </tr>
             </thead>
             <tbody>
-              <tr><td colSpan={7} className="pt-3 pb-1 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Revenue</td></tr>
-              {PNL_REVENUE.map((r, i) => {
-                const total = r.rooms + r.fb + r.banquet + r.spa + r.other;
-                return (
-                  <tr key={i} className="border-b border-border/40">
-                    <td className="py-1.5 px-2">{r.category}</td>
-                    <td className="py-1.5 px-2 text-right tabular text-muted-foreground">{r.rooms > 0 ? money(r.rooms) : "—"}</td>
-                    <td className="py-1.5 px-2 text-right tabular text-muted-foreground">{r.fb > 0 ? money(r.fb) : "—"}</td>
-                    <td className="py-1.5 px-2 text-right tabular text-muted-foreground">{r.banquet > 0 ? money(r.banquet) : "—"}</td>
-                    <td className="py-1.5 px-2 text-right tabular text-muted-foreground">{r.spa > 0 ? money(r.spa) : "—"}</td>
-                    <td className="py-1.5 px-2 text-right tabular text-muted-foreground">{r.other > 0 ? money(r.other) : "—"}</td>
-                    <td className="py-1.5 px-2 text-right tabular font-medium">{money(total)}</td>
-                  </tr>
-                );
-              })}
+              <tr><td colSpan={DEPTS.length + 2} className="pt-3 pb-1 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Revenue</td></tr>
+              {(dept?.revenue ?? []).map((r, i) => (
+                <tr key={`rev-${i}`} className="border-b border-border/40">
+                  <td className="py-1.5 px-2">{r.category}</td>
+                  {DEPTS.map(d => <td key={d} className="py-1.5 px-2 text-right tabular text-muted-foreground">{r.dept === d ? money(r.amount) : "—"}</td>)}
+                  <td className="py-1.5 px-2 text-right tabular font-medium">{money(r.amount)}</td>
+                </tr>
+              ))}
               <tr className="border-t border-border font-semibold">
                 <td className="py-1.5 px-2">Total Revenue</td>
-                <td colSpan={5} />
+                <td colSpan={DEPTS.length} />
                 <td className="py-1.5 px-2 text-right tabular text-success">{money(totalRevenue)}</td>
               </tr>
 
-              <tr><td colSpan={7} className="pt-3 pb-1 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Direct Costs</td></tr>
-              {PNL_DIRECT_COSTS.map((r, i) => {
-                const total = r.rooms + r.fb + r.banquet + r.spa + r.other;
-                return (
-                  <tr key={i} className="border-b border-border/40">
-                    <td className="py-1.5 px-2">{r.category}</td>
-                    <td className="py-1.5 px-2 text-right tabular text-muted-foreground">{r.rooms > 0 ? money(r.rooms) : "—"}</td>
-                    <td className="py-1.5 px-2 text-right tabular text-muted-foreground">{r.fb > 0 ? money(r.fb) : "—"}</td>
-                    <td className="py-1.5 px-2 text-right tabular text-muted-foreground">{r.banquet > 0 ? money(r.banquet) : "—"}</td>
-                    <td className="py-1.5 px-2 text-right tabular text-muted-foreground">{r.spa > 0 ? money(r.spa) : "—"}</td>
-                    <td className="py-1.5 px-2 text-right tabular text-muted-foreground">{r.other > 0 ? money(r.other) : "—"}</td>
-                    <td className="py-1.5 px-2 text-right tabular">{money(total)}</td>
-                  </tr>
-                );
-              })}
+              <tr><td colSpan={DEPTS.length + 2} className="pt-3 pb-1 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Direct Costs</td></tr>
+              {(dept?.directCosts ?? []).map((r, i) => (
+                <tr key={`dc-${i}`} className="border-b border-border/40">
+                  <td className="py-1.5 px-2">{r.category}</td>
+                  {DEPTS.map(d => <td key={d} className="py-1.5 px-2 text-right tabular text-muted-foreground">{r.dept === d ? money(r.amount) : "—"}</td>)}
+                  <td className="py-1.5 px-2 text-right tabular">{money(r.amount)}</td>
+                </tr>
+              ))}
               <tr className="border-t border-border font-semibold bg-surface-sunken/30">
                 <td className="py-2 px-2">Gross Profit</td>
-                <td colSpan={5} />
+                <td colSpan={DEPTS.length} />
                 <td className="py-2 px-2 text-right tabular text-success text-base">{money(grossProfit)}</td>
               </tr>
 
-              <tr><td colSpan={7} className="pt-3 pb-1 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Indirect Costs (Overhead)</td></tr>
-              {PNL_INDIRECT_COSTS.map((r, i) => (
-                <tr key={i} className="border-b border-border/40">
+              <tr><td colSpan={DEPTS.length + 2} className="pt-3 pb-1 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Overhead</td></tr>
+              {(dept?.overhead ?? []).map((r, i) => (
+                <tr key={`oh-${i}`} className="border-b border-border/40">
                   <td className="py-1.5 px-2">{r.category}</td>
-                  <td colSpan={5} />
+                  <td colSpan={DEPTS.length} />
                   <td className="py-1.5 px-2 text-right tabular">{money(r.amount)}</td>
                 </tr>
               ))}
               <tr className="border-t-2 border-foreground font-bold bg-success-soft/30">
                 <td className="py-2.5 px-2">Net Profit (before tax)</td>
-                <td colSpan={5} />
+                <td colSpan={DEPTS.length} />
                 <td className="py-2.5 px-2 text-right tabular text-success text-lg">{money(netProfit)}</td>
-              </tr>
-              <tr className="text-xs">
-                <td className="px-2 text-muted-foreground">Net margin</td>
-                <td colSpan={5} />
-                <td className="px-2 text-right tabular text-muted-foreground">{((netProfit / totalRevenue) * 100).toFixed(1)}%</td>
               </tr>
             </tbody>
           </table>
