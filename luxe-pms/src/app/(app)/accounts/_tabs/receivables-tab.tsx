@@ -4,95 +4,130 @@ import { Wallet, AlertCircle, CheckCircle2, Users } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { KPICard } from "@/components/ui/kpi-card";
-import { money, cn, formatDate } from "@/lib/utils";
-import { RECEIVABLES } from "../_data";
+import { money, formatDate } from "@/lib/utils";
+import { apiGet } from "@/lib/api";
+
+// ===================== TYPES =====================
+type ReceivableRow = {
+  guest: string;
+  bookings: number;
+  current: number;
+  d1_30: number;
+  d31_60: number;
+  d60plus: number;
+  total: number;
+  oldestDue: string;
+};
+
+type ReceivablesResponse = {
+  rows: ReceivableRow[];
+  totals: {
+    total: number;
+    current: number;
+    d1_30: number;
+    d31_60: number;
+    d60plus: number;
+    accounts: number;
+  };
+};
 
 // ===================== RECEIVABLES AGING TAB =====================
 export function ReceivablesTab({ onToast }: { onToast: (m: string) => void }) {
-  const totalReceivables = RECEIVABLES.reduce((t, r) => t + r.total, 0);
-  const totalCurrent = RECEIVABLES.reduce((t, r) => t + r.current, 0);
-  const total90plus = RECEIVABLES.reduce((t, r) => t + r.b90 + r.b90plus, 0);
+  const [data, setData] = React.useState<ReceivablesResponse | null>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    apiGet<ReceivablesResponse>("/accounts/receivables")
+      .then(setData)
+      .catch(() => onToast("Failed to load receivables"))
+      .finally(() => setLoading(false));
+  }, [onToast]);
+
+  if (loading) {
+    return <div className="py-16 text-center text-muted-foreground text-sm">Loading receivables…</div>;
+  }
+
+  const rows = data?.rows ?? [];
+  const totals = data?.totals ?? { total: 0, current: 0, d1_30: 0, d31_60: 0, d60plus: 0, accounts: 0 };
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <KPICard label="Total receivables" value={money(totalReceivables)} icon={Wallet} accent="brand" />
-        <KPICard label="Current" value={money(totalCurrent)} icon={CheckCircle2} accent="success" />
-        <KPICard label=">90 days" value={money(total90plus)} icon={AlertCircle} accent={total90plus > 0 ? "danger" : "success"} />
-        <KPICard label="Active accounts" value={RECEIVABLES.length} icon={Users} accent="info" />
+        <KPICard label="Total receivables" value={money(totals.total)} icon={Wallet} accent="brand" />
+        <KPICard label="Current" value={money(totals.current)} icon={CheckCircle2} accent="success" />
+        <KPICard label=">60 days" value={money(totals.d60plus)} icon={AlertCircle} accent={totals.d60plus > 0 ? "danger" : "success"} />
+        <KPICard label="Guests" value={totals.accounts} icon={Users} accent="info" />
       </div>
 
       <Card className="p-0 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-surface-elevated border-b border-border">
-            <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-              <th className="px-4 py-3">Agent / Corporate</th>
-              <th className="px-4 py-3 text-right">Current</th>
-              <th className="px-4 py-3 text-right">31–60d</th>
-              <th className="px-4 py-3 text-right">61–90d</th>
-              <th className="px-4 py-3 text-right">90+</th>
-              <th className="px-4 py-3 text-right">Total</th>
-              <th className="px-4 py-3">Credit utilization</th>
-              <th className="px-4 py-3 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {RECEIVABLES.map(r => {
-              const util = Math.round((r.total / r.creditLimit) * 100);
-              return (
-                <tr key={r.id} className="hover:bg-surface-sunken/30">
+        {rows.length === 0 ? (
+          <div className="py-16 text-center text-muted-foreground text-sm">
+            No outstanding receivables
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-surface-elevated border-b border-border">
+              <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+                <th className="px-4 py-3">Guest</th>
+                <th className="px-4 py-3 text-right">Current</th>
+                <th className="px-4 py-3 text-right">1–30d</th>
+                <th className="px-4 py-3 text-right">31–60d</th>
+                <th className="px-4 py-3 text-right">60+</th>
+                <th className="px-4 py-3 text-right">Total</th>
+                <th className="px-4 py-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map(r => (
+                <tr key={r.guest} className="hover:bg-surface-sunken/30">
                   <td className="px-4 py-3">
-                    <p className="font-medium">{r.agent}</p>
-                    <p className="text-[11px] text-muted-foreground">{r.type} · {r.invoices} invoices · last paid {formatDate(r.lastPayment)}</p>
+                    <p className="font-medium">{r.guest}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {r.bookings} booking{r.bookings !== 1 ? "s" : ""} · oldest due {formatDate(r.oldestDue)}
+                    </p>
                   </td>
                   <td className="px-4 py-3 text-right tabular">{r.current > 0 ? money(r.current) : "—"}</td>
-                  <td className="px-4 py-3 text-right tabular">{r.b30 > 0 ? money(r.b30) : "—"}</td>
-                  <td className="px-4 py-3 text-right tabular text-warning">{r.b60 > 0 ? money(r.b60) : "—"}</td>
-                  <td className="px-4 py-3 text-right tabular text-danger">{(r.b90 + r.b90plus) > 0 ? money(r.b90 + r.b90plus) : "—"}</td>
+                  <td className="px-4 py-3 text-right tabular">{r.d1_30 > 0 ? money(r.d1_30) : "—"}</td>
+                  <td className="px-4 py-3 text-right tabular text-warning">{r.d31_60 > 0 ? money(r.d31_60) : "—"}</td>
+                  <td className="px-4 py-3 text-right tabular text-danger">{r.d60plus > 0 ? money(r.d60plus) : "—"}</td>
                   <td className="px-4 py-3 text-right tabular font-semibold">{money(r.total)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-1.5 w-24 bg-surface-sunken rounded-full overflow-hidden">
-                        <div className={cn("h-full", util >= 80 ? "bg-danger" : util >= 50 ? "bg-warning" : "bg-success")} style={{ width: `${Math.min(100, util)}%` }} />
-                      </div>
-                      <p className="text-[11px] tabular text-muted-foreground">{util}%</p>
-                    </div>
-                  </td>
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex gap-1">
                       <Button size="sm" variant="ghost" onClick={() => {
                         const soa = {
-                          accountName: r.agent,
-                          type: r.type,
+                          guest: r.guest,
                           asOf: new Date().toISOString().slice(0, 10),
-                          invoices: r.invoices,
+                          bookings: r.bookings,
                           aging: {
-                            current: r.current, "31-60": r.b30, "61-90": r.b60,
-                            "90+": r.b90 + r.b90plus,
+                            current: r.current,
+                            "1-30": r.d1_30,
+                            "31-60": r.d31_60,
+                            "60+": r.d60plus,
                           },
                           total: r.total,
-                          creditLimit: r.creditLimit,
-                          lastPayment: r.lastPayment,
+                          oldestDue: r.oldestDue,
                         };
                         const blob = new Blob([JSON.stringify(soa, null, 2)], { type: "application/json" });
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement("a");
-                        a.href = url; a.download = `SOA-${r.agent.replace(/\s/g, "_")}-${soa.asOf}.json`; a.click();
+                        a.href = url;
+                        a.download = `SOA-${r.guest.replace(/\s/g, "_")}-${soa.asOf}.json`;
+                        a.click();
                         URL.revokeObjectURL(url);
-                        onToast(`Statement downloaded for ${r.agent}`);
+                        onToast(`Statement downloaded for ${r.guest}`);
                       }}>
                         Statement
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => onToast(`Reminder sent to ${r.agent} · Email + WhatsApp · ${money(r.total)} outstanding`)}>
+                      <Button size="sm" variant="outline" onClick={() => onToast(`Reminder sent to ${r.guest} · ${money(r.total)} outstanding`)}>
                         Remind
                       </Button>
                     </div>
                   </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              ))}
+            </tbody>
+          </table>
+        )}
       </Card>
     </div>
   );
