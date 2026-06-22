@@ -418,6 +418,7 @@ const INITIAL_DATA: Record<SectionId, Field[]> = {
     { kind: "string", label: "Holidays", value: "Republic Day, Holi, Independence Day, Gandhi Jayanti, Diwali, Christmas" },
   ],
   "menu-items": [],
+  "tables": [],
   food: [
     { kind: "number", label: "F&B packages", value: 4 },
     { kind: "number", label: "Hall packages", value: 6 },
@@ -597,7 +598,7 @@ export function SetupView() {
   };
 
   // List of sections that use a custom manager instead of the generic field grid
-  const CUSTOM_SECTIONS = new Set<SectionId>(["preferences", "security", "channels", "webhooks", "floors", "room-types", "rooms", "pricing", "seasons", "food", "agents", "tax", "templates", "roles", "branding", "integrations", "backup"]);
+  const CUSTOM_SECTIONS = new Set<SectionId>(["preferences", "security", "channels", "webhooks", "floors", "room-types", "rooms", "pricing", "seasons", "food", "menu-items", "tables", "agents", "tax", "templates", "roles", "branding", "integrations", "backup"]);
   const isCustom = CUSTOM_SECTIONS.has(active);
 
   const startEdit = () => {
