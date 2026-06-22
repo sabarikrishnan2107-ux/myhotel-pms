@@ -54,6 +54,7 @@ use App\Models\RoomType;
 use App\Models\Season;
 use App\Models\Staff;
 use App\Models\Vendor;
+use App\Models\VendorBill;
 use App\Models\Webhook;
 use App\Models\WebRoom;
 use App\Models\BanquetOrder;
@@ -183,6 +184,7 @@ class ResourceController extends Controller
         'notif-logs'             => NotifLog::class,
         'kitchen-amenities'      => KitchenAmenity::class,
         'room-amenities'         => RoomAmenity::class,
+        'vendor-bills'           => VendorBill::class,
     ];
 
     /** Resources whose index can be scoped by a query param → column. */
@@ -194,6 +196,11 @@ class ResourceController extends Controller
         'housekeeping-tasks' => 'assignee',
         'competitor-rates' => 'competitorId',
         'group-rooming'  => 'groupCode',
+    ];
+
+    /** Fields searched by the global search bar (used by frontend autocomplete). */
+    private const SEARCHABLE = [
+        'vendor-bills' => ['vendor', 'billNo'],
     ];
 
     /** Resource slugs, for the route constraint. */
@@ -859,6 +866,14 @@ class ResourceController extends Controller
             'vendor' => 'string|max:255|nullable', 'condition' => 'string|max:50', 'location' => 'string|max:100',
             'photo' => 'string|nullable', 'remark' => 'string|max:2000|nullable', 'perRoom' => 'integer|min:0|nullable',
         ],
+        'vendor-bills' => [
+            'billNo' => 'string|max:255', 'vendor' => 'string|max:255',
+            'category' => 'string|max:100|nullable', 'billDate' => 'string|max:50',
+            'dueDate' => 'string|max:50', 'taxableValue' => 'integer|min:0',
+            'gst' => 'integer|min:0', 'tdsRate' => 'integer|min:0',
+            'tdsAmount' => 'integer|min:0', 'netPayable' => 'integer|min:0',
+            'paid' => 'integer|min:0', 'status' => 'string|max:50',
+        ],
     ];
 
     /** Fields that must be present (and non-empty) when creating a row. */
@@ -930,6 +945,7 @@ class ResourceController extends Controller
         'notif-logs' => ['to'],
         'kitchen-amenities' => ['name'],
         'room-amenities' => ['name'],
+        'vendor-bills' => ['billNo', 'vendor'],
     ];
 
     private function model(string $resource): string
