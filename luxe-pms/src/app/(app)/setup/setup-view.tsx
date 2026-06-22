@@ -7,7 +7,7 @@ import {
   Mountain, Sun, Trees, Waves, Ruler, Users, Bed, IndianRupee, Layers3,
   Copy, ChevronLeft, ChevronRight, Settings, Palette, Plug, Database,
   Upload, ImageIcon, Mail, Cloud, Lock, RefreshCw, FileText, ShieldCheck,
-  User, Bell, Webhook,
+  User, Bell, Webhook, RotateCcw,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -2645,11 +2645,15 @@ function Field2({ label, children }: { label: string; children: React.ReactNode 
 // ============================================================
 // BRANDING & ASSETS MANAGER
 // ============================================================
+// Canonical brand colors — what the "Reset to default" button restores.
+const DEFAULT_BRAND_COLOR = "#DBB014";
+const DEFAULT_ACCENT_COLOR = "#D7B81D";
+
 function BrandingManager({ onToast, onMarkComplete }: { onToast: (m: string) => void; onMarkComplete: () => void }) {
   const [logoUrl, setLogoUrl] = React.useState("");
   const [faviconUrl, setFaviconUrl] = React.useState("");
-  const [brandColor, setBrandColor] = React.useState("#0a1633");
-  const [accentColor, setAccentColor] = React.useState("#b08855");
+  const [brandColor, setBrandColor] = React.useState(DEFAULT_BRAND_COLOR);
+  const [accentColor, setAccentColor] = React.useState(DEFAULT_ACCENT_COLOR);
   const [letterhead, setLetterhead] = React.useState("THE PEARL MARINA\nMG Road, Bandra West, Mumbai 400050\nGSTIN 27AAACR5055K1Z5 · PAN AAACR5055K");
   const [emailSig, setEmailSig] = React.useState("Reception · The Pearl Marina\nT: +91 22 6770 1234 · concierge@thepearl.in");
   const [invoiceFooter, setInvoiceFooter] = React.useState("Subject to Mumbai jurisdiction. Goods/Services once sold will not be taken back. This is a computer generated invoice.");
@@ -2753,7 +2757,16 @@ function BrandingManager({ onToast, onMarkComplete }: { onToast: (m: string) => 
 
       {/* Brand colors */}
       <Card className="p-4">
-        <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-3 inline-flex items-center gap-1"><Palette className="h-3 w-3" />Brand colors</p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground inline-flex items-center gap-1"><Palette className="h-3 w-3" />Brand colors</p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setBrandColor(DEFAULT_BRAND_COLOR); setAccentColor(DEFAULT_ACCENT_COLOR); onToast("Brand colors reset to default — click Save to keep"); }}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />Reset to default
+          </Button>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label className="text-xs">Primary</Label>
