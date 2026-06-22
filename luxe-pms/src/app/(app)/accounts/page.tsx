@@ -1291,6 +1291,7 @@ function EntryModal({ type, onClose, onSubmit, incomeCats, expenseCats }: {
   const [mode, setMode] = React.useState("UPI");
   const [ref, setRef] = React.useState("");
   const [date, setDate] = React.useState(new Date().toISOString().slice(0, 10));
+  const [department, setDepartment] = React.useState("General");
   const [aiSuggested, setAiSuggested] = React.useState<string | null>(null);
 
   // India-specific expense fields — header level
@@ -1450,6 +1451,15 @@ function EntryModal({ type, onClose, onSubmit, incomeCats, expenseCats }: {
               </Select>
             </div>
           </div>
+
+          {type === "expense" && (
+            <div className="space-y-1.5">
+              <Label>Department</Label>
+              <Select value={department} onChange={e => setDepartment(e.target.value)}>
+                {["General", "Rooms", "F&B", "Banquet", "Spa", "Other"].map(d => <option key={d} value={d}>{d}</option>)}
+              </Select>
+            </div>
+          )}
 
           {/* Indian vendor + GST fields — only for expenses */}
           {type === "expense" && (
@@ -1709,6 +1719,7 @@ function EntryModal({ type, onClose, onSubmit, incomeCats, expenseCats }: {
                   description: computedDesc,
                   amount: type === "expense" ? Math.round(grossTotal) : amount,
                   mode, ref,
+                  department: type === "expense" ? department : undefined,
                   ...(type === "expense" ? {
                     vendor, gstin, hsnSac, cgst, sgst, igst,
                     lines: validLines,

@@ -296,6 +296,7 @@ export type ExpenseLine = {
 export type Entry = {
   id: string; date: string; type: EntryType; category: string;
   description: string; amount: number; mode: string; ref: string;
+  department?: string;
   // India compliance
   vendor?: string;
   gstin?: string;

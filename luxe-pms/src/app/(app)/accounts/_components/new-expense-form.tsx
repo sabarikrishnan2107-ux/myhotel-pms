@@ -8,6 +8,7 @@ import type { Entry } from "../_data";
 
 // Accounts money can be paid from. Local to this form (the only place it's used).
 const PAY_FROM = ["HDFC Operating", "ICICI Savings", "Cash in Hand", "Petty Cash"];
+const DEPARTMENTS = ["General", "Rooms", "F&B", "Banquet", "Spa", "Other"];
 const MODES = ["Cash", "Card", "Bank", "UPI"] as const;
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -37,6 +38,7 @@ export function NewExpenseForm({ expenseCats, onClose, onSubmit }: {
   const [paidFrom, setPaidFrom] = React.useState(PAY_FROM[0]);
   const [note, setNote] = React.useState("");
   const [attachment, setAttachment] = React.useState<{ name: string; dataUrl: string; type: string } | null>(null);
+  const [department, setDepartment] = React.useState("General");
 
   // --- optional VAT / invoice details ---
   const [showVat, setShowVat] = React.useState(false);
@@ -71,6 +73,7 @@ export function NewExpenseForm({ expenseCats, onClose, onSubmit }: {
     if (!valid) return;
     const entry: Omit<Entry, "id"> = {
       date, type: "expense", category,
+      department,
       vendor: payee.trim(),
       description: note.trim() || category,
       amount,
@@ -111,6 +114,11 @@ export function NewExpenseForm({ expenseCats, onClose, onSubmit }: {
             <Field label="Payee"><Input value={payee} onChange={e => setPayee(e.target.value)} placeholder="e.g. DEWA, ABC Linens" className="h-9" /></Field>
             <Field label="Category"><Select value={category} onChange={e => setCategory(e.target.value)} className="h-9">{expenseCats.map(c => <option key={c}>{c}</option>)}</Select></Field>
             <Field label="Amount (₹)"><Input inputMode="decimal" value={amountStr} onChange={e => setAmountStr(e.target.value)} placeholder="0" className="h-9 tabular" /></Field>
+            <Field label="Department">
+              <Select value={department} onChange={e => setDepartment(e.target.value)} className="h-9">
+                {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+              </Select>
+            </Field>
             <Field label="Paid by"><Select value={mode} onChange={e => setMode(e.target.value)} className="h-9">{MODES.map(m => <option key={m}>{m}</option>)}</Select></Field>
             <Field label="Paid from"><Select value={paidFrom} onChange={e => setPaidFrom(e.target.value)} className="h-9">{PAY_FROM.map(a => <option key={a}>{a}</option>)}</Select></Field>
           </div>
