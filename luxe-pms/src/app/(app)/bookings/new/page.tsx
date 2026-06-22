@@ -134,6 +134,8 @@ export default function BookingWizardPage() {
   // F&B add-on packages (per-pax counts × nights)
   const [fbAddons, setFbAddons] = React.useState<Record<string, number>>({}); // { id: count-of-pax-per-day }
   const [paymentPct, setPaymentPct] = React.useState(30);
+  // When set (not null), the advance is a fixed money amount instead of a percentage.
+  const [customAdvance, setCustomAdvance] = React.useState<number | null>(null);
   // "Booked by" — how the booking came in. Stored in the booking's `source`.
   const [source, setSource] = React.useState("Direct Guest");
   const BOOKED_BY = ["Direct Guest", "Travel Agent", "Corporate", "OTA"];
@@ -147,7 +149,8 @@ export default function BookingWizardPage() {
     "Bank Transfer": { label: "Bank reference / UTR no.", placeholder: "e.g. UTR 3219872650" },
     Online: { label: "Gateway transaction ID", placeholder: "e.g. pay_Nv3x82hKd..." },
   };
-  const needsRef = paymentPct > 0 && !!PAY_REF_FIELD[paymentMode];
+  const collectingAdvance = customAdvance !== null ? customAdvance > 0 : paymentPct > 0;
+  const needsRef = collectingAdvance && !!PAY_REF_FIELD[paymentMode];
   const [channels, setChannels] = React.useState<{ email: boolean; whatsapp: boolean; sms: boolean }>({ email: true, whatsapp: true, sms: false });
   const [submitting, setSubmitting] = React.useState(false);
   const [confirmed, setConfirmed] = React.useState<null | {
@@ -241,7 +244,10 @@ export default function BookingWizardPage() {
     fbTotal;
   const tax = (subtotal + extras) * 0.05;
   const total = subtotal + extras + tax;
-  const advance = Math.round((total * paymentPct) / 100);
+  const advance = customAdvance !== null
+    ? Math.min(Math.max(0, Math.round(customAdvance)), total)
+    : Math.round((total * paymentPct) / 100);
+  const advanceLabel = customAdvance !== null ? "custom" : `${paymentPct}%`;
 
   const filteredGuests = guests.filter(g => `${g.name} ${g.phone} ${g.email}`.toLowerCase().includes(search.toLowerCase())).slice(0, 5);
 
@@ -671,22 +677,51 @@ export default function BookingWizardPage() {
           {step === 5 && (
             <div className="space-y-5">
               <div>
-                <Label>Advance payment percentage</Label>
-                <div className="flex gap-2 mt-1.5">
+                <Label>Advance payment</Label>
+                <div className="flex flex-wrap gap-2 mt-1.5">
                   {[0, 30, 50, 100].map(p => (
                     <button
                       key={p}
-                      onClick={() => setPaymentPct(p)}
+                      onClick={() => { setPaymentPct(p); setCustomAdvance(null); }}
                       className={cn(
                         "h-10 px-4 rounded-md border text-sm font-medium transition-colors",
-                        paymentPct === p ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
+                        customAdvance === null && paymentPct === p ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
                       )}
                     >
                       {p === 0 ? "No advance" : p === 100 ? "Full payment" : `${p}%`}
                     </button>
                   ))}
+                  <button
+                    onClick={() => setCustomAdvance(c => (c === null ? 0 : c))}
+                    className={cn(
+                      "h-10 px-4 rounded-md border text-sm font-medium transition-colors",
+                      customAdvance !== null ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
+                    )}
+                  >
+                    Custom amount
+                  </button>
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">Default 30% from settings · Manager approval required for 0%</p>
+                {customAdvance !== null && (
+                  <div className="mt-2.5 flex items-center gap-2 animate-in">
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={total}
+                        value={customAdvance || ""}
+                        onChange={e => setCustomAdvance(Math.max(0, Math.min(total, Math.round(Number(e.target.value)))))}
+                        placeholder="0"
+                        className="h-10 w-44 pl-7 tabular"
+                        autoFocus
+                      />
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      of {money(total)} · {total > 0 ? Math.round((advance / total) * 100) : 0}% advance
+                    </span>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground mt-2">Default 30% from settings · Manager approval required for 0% · or enter a fixed amount</p>
               </div>
 
               <div className="space-y-1.5">
@@ -782,7 +817,7 @@ export default function BookingWizardPage() {
                   ].filter(Boolean).join(" · ") || "No extras"}
                   onEdit={() => setStep(4)}
                 />
-                <ReviewRow label="Payment" value={`${paymentPct === 0 ? "Pay at hotel" : paymentPct === 100 ? `Full · ${paymentMode}` : `${paymentPct}% advance · ${paymentMode}`}${needsRef && paymentRef ? ` · ref ${paymentRef}` : ""}`} sub={`${money(advance)} now · ${money(total - advance)} balance`} onEdit={() => setStep(5)} />
+                <ReviewRow label="Payment" value={`${advance <= 0 ? "Pay at hotel" : advance >= total ? `Full · ${paymentMode}` : `${advanceLabel} advance · ${paymentMode}`}${needsRef && paymentRef ? ` · ref ${paymentRef}` : ""}`} sub={`${money(advance)} now · ${money(total - advance)} balance`} onEdit={() => setStep(5)} />
                 {instructions && (
                   <div className="p-3 border-t border-border">
                     <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Special instructions</p>
@@ -904,9 +939,9 @@ export default function BookingWizardPage() {
             <div className="border-t border-border pt-2 mt-2">
               <Row k={<span className="font-semibold">Total</span>} v={<span className="font-semibold tabular text-base">{money(total)}</span>} />
             </div>
-            {paymentPct > 0 && (
+            {advance > 0 && (
               <>
-                <Row k={`Advance (${paymentPct}%)`} v={<span className="text-brand font-medium">{money(advance)}</span>} />
+                <Row k={`Advance (${advanceLabel})`} v={<span className="text-brand font-medium">{money(advance)}</span>} />
                 <Row k="Balance at checkout" v={money(total - advance)} muted />
               </>
             )}
@@ -973,7 +1008,7 @@ export default function BookingWizardPage() {
                       nights,
                       adults,
                       children,
-                      paymentStatus: paymentPct === 0 ? "unpaid" : paymentPct === 100 ? "paid" : "partial",
+                      paymentStatus: advance <= 0 ? "unpaid" : advance >= total ? "paid" : "partial",
                       ratePlan,
                       total: Math.round(total),
                       advance: Math.round(advance),
@@ -1023,7 +1058,7 @@ export default function BookingWizardPage() {
                     total,
                     advance,
                     balance: total - advance,
-                    paymentMode: paymentPct === 0 ? "Pay at hotel" : paymentMode,
+                    paymentMode: advance <= 0 ? "Pay at hotel" : paymentMode,
                     channels,
                     createdAt: new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }),
                   });
