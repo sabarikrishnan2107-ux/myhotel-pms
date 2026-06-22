@@ -100,15 +100,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/settings/{key}', [SettingsController::class, 'show']);
     Route::put('/settings/{key}', [SettingsController::class, 'update']);
 
-    // Generic branded email — every "email" action across the app posts here so
-    // they all deliver through the one configured mail account (.env MAIL_*).
-    Route::post('/email/send', [EmailController::class, 'send']);
-
-    // Tax-invoice email with a generated PDF attachment (checkout "Email Invoice").
-    Route::post('/email/invoice', [InvoiceMailController::class, 'send']);
-
-    // Hall booking confirmation email (synchronous; uses the configured mail driver)
-    Route::post('/hall-bookings/{id}/send-email', [HallBookingMailController::class, 'send']);
+    // All email-sending routes run through the hotel's configured SMTP when set.
+    Route::middleware(\App\Http\Middleware\ConfigureMailFromSettings::class)->group(function () {
+        Route::post('/email/send', [EmailController::class, 'send']);
+        // Tax-invoice email with a generated PDF attachment (checkout "Email Invoice").
+        Route::post('/email/invoice', [InvoiceMailController::class, 'send']);
+        // Hall booking confirmation email (synchronous; uses the configured mail driver)
+        Route::post('/hall-bookings/{id}/send-email', [HallBookingMailController::class, 'send']);
+    });
 
     // List sections (generic CRUD)
     $resources = implode('|', ResourceController::resources());
