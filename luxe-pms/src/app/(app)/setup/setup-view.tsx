@@ -2945,7 +2945,7 @@ function IntegrationsManager({ onToast, onMarkComplete }: { onToast: (m: string)
           .then(() => onToast(`${configFor.name} connected & saved ✓`))
           .catch(() => onToast("⚠ Save failed — backend offline"));
         setConfigFor(null);
-      }} onTest={() => onToast(`Test successful · ${configFor.name}`)} />}
+      }} onTest={() => onToast(`Test successful · ${configFor.name}`)} onToast={onToast} />}
     </div>
   );
 }
@@ -2954,14 +2954,59 @@ function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
   return <Switch checked={on} onChange={() => onChange()} />;
 }
 
-function IntegrationConfigModal({ integration, onClose, onSave, onTest }: {
-  integration: Integration; onClose: () => void; onSave: () => void; onTest: () => void;
+function IntegrationConfigModal({ integration, onClose, onSave, onTest, onToast }: {
+  integration: Integration; onClose: () => void; onSave: () => void; onTest: () => void; onToast: (m: string) => void;
 }) {
+  const isSmtp = integration.category === "Email";
+
   const [endpoint, setEndpoint] = React.useState("https://api.example.com/v1");
   const [apiKey, setApiKey] = React.useState("");
   const [secret, setSecret] = React.useState("");
   const [showSecret, setShowSecret] = React.useState(false);
   const [syncFreq, setSyncFreq] = React.useState("Real-time");
+
+  // SMTP-specific state (only used when isSmtp).
+  const [smtp, setSmtp] = React.useState({ host: "", port: 587, encryption: "tls", username: "", fromName: "", fromEmail: "", password: "", hasPassword: false });
+  const [showSmtpPw, setShowSmtpPw] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!isSmtp) return;
+    apiGet<typeof smtp & { enabled?: boolean }>("/settings/smtp")
+      .then(v => setSmtp(s => ({ ...s, host: v.host ?? "", port: v.port ?? 587, encryption: v.encryption ?? "tls", username: v.username ?? "", fromName: v.fromName ?? "", fromEmail: v.fromEmail ?? "", password: "", hasPassword: !!v.hasPassword })))
+      .catch(() => {});
+  }, [isSmtp]);
+
+  // Build the request body; omit password when left blank (keep existing server-side).
+  const smtpBody = () => {
+    const b: Record<string, unknown> = { host: smtp.host.trim(), port: Number(smtp.port) || 587, encryption: smtp.encryption, username: smtp.username.trim(), fromName: smtp.fromName.trim(), fromEmail: smtp.fromEmail.trim(), enabled: true };
+    if (smtp.password) b.password = smtp.password;
+    return b;
+  };
+
+  const saveSmtp = async () => {
+    setBusy(true);
+    try {
+      await apiPut("/settings/smtp", smtpBody());
+      onSave();
+    } catch {
+      onToast("⚠ Save failed — backend offline");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const testSmtp = async () => {
+    setBusy(true);
+    try {
+      const r = await apiPost<{ ok: boolean; to?: string; error?: string }>("/settings/smtp/test", smtpBody());
+      onToast(r.ok ? `SMTP test ok — sent to ${r.to}` : `SMTP test failed — ${r.error ?? "check settings"}`);
+    } catch {
+      onToast("⚠ Test failed — backend offline");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   React.useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -2985,44 +3030,97 @@ function IntegrationConfigModal({ integration, onClose, onSave, onTest }: {
         </div>
 
         <div className="px-5 py-4 space-y-3 overflow-y-auto">
-          <div className="space-y-1.5">
-            <Label className="text-xs">API endpoint</Label>
-            <Input value={endpoint} onChange={e => setEndpoint(e.target.value)} className="h-9 font-mono tabular text-xs" />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">API key / Merchant ID</Label>
-            <Input value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="pk_live_…" className="h-9 font-mono tabular text-xs" />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Secret / Webhook signing key</Label>
-            <div className="relative">
-              <Input type={showSecret ? "text" : "password"} value={secret} onChange={e => setSecret(e.target.value)} placeholder="••••••••••••••••" className="h-9 font-mono tabular text-xs pr-9" />
-              <button type="button" onClick={() => setShowSecret(s => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center text-muted-foreground">
-                <Eye className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Sync frequency</Label>
-            <Select value={syncFreq} onChange={e => setSyncFreq(e.target.value)} className="h-9">
-              <option>Real-time (webhook)</option>
-              <option>Every 5 minutes</option>
-              <option>Every 15 minutes</option>
-              <option>Hourly</option>
-              <option>Daily</option>
-            </Select>
-          </div>
-          <div className="rounded-md bg-info-soft/15 border border-info/20 p-2.5 text-[11px] inline-flex items-start gap-2">
-            <ShieldCheck className="h-3.5 w-3.5 text-info shrink-0 mt-0.5" />
-            <span>Credentials are stored encrypted at rest. Webhook signatures are verified before any payload is processed.</span>
-          </div>
+          {isSmtp ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5 col-span-2">
+                  <Label className="text-xs">SMTP host</Label>
+                  <Input value={smtp.host} onChange={e => setSmtp(s => ({ ...s, host: e.target.value }))} placeholder="email-smtp.ap-south-1.amazonaws.com" className="h-9 font-mono tabular text-xs" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Port</Label>
+                  <Input type="number" min={1} max={65535} value={smtp.port} onChange={e => setSmtp(s => ({ ...s, port: Number(e.target.value) || 0 }))} className="h-9 tabular" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Encryption</Label>
+                  <Select value={smtp.encryption} onChange={e => setSmtp(s => ({ ...s, encryption: e.target.value }))} className="h-9">
+                    <option value="tls">TLS</option>
+                    <option value="ssl">SSL</option>
+                    <option value="none">None</option>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">From name</Label>
+                  <Input value={smtp.fromName} onChange={e => setSmtp(s => ({ ...s, fromName: e.target.value }))} placeholder="The Pearl Marina" className="h-9" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">From email</Label>
+                  <Input value={smtp.fromEmail} onChange={e => setSmtp(s => ({ ...s, fromEmail: e.target.value }))} placeholder="hello@thepearl.in" className="h-9 font-mono text-xs" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Username</Label>
+                <Input value={smtp.username} onChange={e => setSmtp(s => ({ ...s, username: e.target.value }))} placeholder="SMTP username / SES access key" className="h-9 font-mono text-xs" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Password</Label>
+                <div className="relative">
+                  <Input type={showSmtpPw ? "text" : "password"} value={smtp.password} onChange={e => setSmtp(s => ({ ...s, password: e.target.value }))} placeholder={smtp.hasPassword ? "•••••••• (unchanged)" : "SMTP password / SES secret"} className="h-9 font-mono text-xs pr-9" />
+                  <button type="button" onClick={() => setShowSmtpPw(s => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center text-muted-foreground">
+                    <Eye className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <p className="text-[10px] text-muted-foreground">Leave blank to keep the saved password.</p>
+              </div>
+              <div className="rounded-md bg-info-soft/15 border border-info/20 p-2.5 text-[11px] inline-flex items-start gap-2">
+                <ShieldCheck className="h-3.5 w-3.5 text-info shrink-0 mt-0.5" />
+                <span>Stored encrypted at rest. The app sends all outgoing email through this mailbox once saved.</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-xs">API endpoint</Label>
+                <Input value={endpoint} onChange={e => setEndpoint(e.target.value)} className="h-9 font-mono tabular text-xs" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">API key / Merchant ID</Label>
+                <Input value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="pk_live_…" className="h-9 font-mono tabular text-xs" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Secret / Webhook signing key</Label>
+                <div className="relative">
+                  <Input type={showSecret ? "text" : "password"} value={secret} onChange={e => setSecret(e.target.value)} placeholder="••••••••••••••••" className="h-9 font-mono tabular text-xs pr-9" />
+                  <button type="button" onClick={() => setShowSecret(s => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center text-muted-foreground">
+                    <Eye className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Sync frequency</Label>
+                <Select value={syncFreq} onChange={e => setSyncFreq(e.target.value)} className="h-9">
+                  <option>Real-time (webhook)</option>
+                  <option>Every 5 minutes</option>
+                  <option>Every 15 minutes</option>
+                  <option>Hourly</option>
+                  <option>Daily</option>
+                </Select>
+              </div>
+              <div className="rounded-md bg-info-soft/15 border border-info/20 p-2.5 text-[11px] inline-flex items-start gap-2">
+                <ShieldCheck className="h-3.5 w-3.5 text-info shrink-0 mt-0.5" />
+                <span>Credentials are stored encrypted at rest. Webhook signatures are verified before any payload is processed.</span>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="flex justify-between gap-2 px-5 py-3 border-t border-border bg-surface-sunken/30">
-          <Button variant="outline" onClick={onTest}><RefreshCw className="h-3.5 w-3.5" />Test connection</Button>
+          <Button variant="outline" disabled={busy} onClick={isSmtp ? testSmtp : onTest}><RefreshCw className="h-3.5 w-3.5" />Test connection</Button>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button onClick={onSave}><Save className="h-3.5 w-3.5" />Save</Button>
+            <Button disabled={busy} onClick={isSmtp ? saveSmtp : onSave}><Save className="h-3.5 w-3.5" />Save</Button>
           </div>
         </div>
       </div>
