@@ -255,11 +255,14 @@ export default function BookingWizardPage() {
   // Selected guest display info (works for existing OR newly-created guest)
   const selectedGuestDisplay = React.useMemo(() => {
     if (newGuest) {
-      return { name: newGuest.name, phone: newGuest.phone, vip: newGuest.vip, photo: newGuest.photo };
+      return { name: newGuest.name, phone: newGuest.phone, vip: newGuest.vip, photo: newGuest.photo, isExisting: false as const };
     }
     if (guest) {
       const g = guests.find(x => x.id === guest);
-      if (g) return { name: g.name, phone: g.phone, vip: g.vip, photo: null as string | null };
+      if (g) return {
+        name: g.name, phone: g.phone, vip: g.vip, photo: null as string | null, isExisting: true as const,
+        email: g.email, nationality: g.nationality, idType: g.idType, idNumber: g.idNumber, lastStay: g.lastStay,
+      };
     }
     return null;
   }, [guest, newGuest, guests]);
@@ -802,16 +805,49 @@ export default function BookingWizardPage() {
           <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Live summary</p>
 
           {selectedGuestDisplay ? (
-            <div className="mt-3 flex items-center gap-2.5">
-              <Avatar name={selectedGuestDisplay.name} size={36} vip={selectedGuestDisplay.vip} />
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <p className="font-medium text-sm truncate">{selectedGuestDisplay.name}</p>
-                  {newGuest && <Badge tone="brand">NEW</Badge>}
+            <>
+              <div className="mt-3 flex items-center gap-2.5">
+                <Avatar name={selectedGuestDisplay.name} size={36} vip={selectedGuestDisplay.vip} />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-medium text-sm truncate">{selectedGuestDisplay.name}</p>
+                    {newGuest && <Badge tone="brand">NEW</Badge>}
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">{selectedGuestDisplay.phone}</p>
                 </div>
-                <p className="text-xs text-muted-foreground truncate">{selectedGuestDisplay.phone}</p>
               </div>
-            </div>
+              {/* Returning-guest history: shown when an existing guest is selected. */}
+              {selectedGuestDisplay.isExisting && (
+                <div className="mt-2.5 rounded-md bg-surface-sunken/40 px-3 py-2 space-y-1 text-xs">
+                  <div className="flex justify-between gap-2">
+                    <span className="text-muted-foreground">Last stay</span>
+                    <span className="font-medium">
+                      {selectedGuestDisplay.lastStay
+                        ? new Date(selectedGuestDisplay.lastStay).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })
+                        : "First-time guest"}
+                    </span>
+                  </div>
+                  {selectedGuestDisplay.email && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-muted-foreground">Email</span>
+                      <span className="font-medium truncate max-w-[60%]">{selectedGuestDisplay.email}</span>
+                    </div>
+                  )}
+                  {selectedGuestDisplay.nationality && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-muted-foreground">Nationality</span>
+                      <span className="font-medium">{selectedGuestDisplay.nationality}</span>
+                    </div>
+                  )}
+                  {(selectedGuestDisplay.idType || selectedGuestDisplay.idNumber) && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-muted-foreground">ID on file</span>
+                      <span className="font-medium truncate max-w-[60%]">{[selectedGuestDisplay.idType, selectedGuestDisplay.idNumber].filter(Boolean).join(" · ")}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           ) : (
             <p className="mt-3 text-sm text-muted-foreground">No guest selected</p>
           )}
