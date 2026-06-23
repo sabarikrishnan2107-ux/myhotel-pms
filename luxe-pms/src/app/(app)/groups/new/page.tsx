@@ -12,17 +12,9 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
+import { computeGroupTotals, type GstSlab } from "@/lib/group-pricing";
 
 interface BlockRow { id: string; type: string; qty: number; rate: number; }
-
-const ROOM_TYPES = [
-  { name: "Queen", base: 450 },
-  { name: "Deluxe", base: 650 },
-  { name: "Suite", base: 1200 },
-  { name: "King", base: 850 },
-  { name: "Family", base: 950 },
-  { name: "Executive", base: 1500 },
-];
 
 const TYPES = ["Wedding", "Conference", "Tour Group", "Sports Team", "Corporate Retreat", "Other"];
 
@@ -89,17 +81,6 @@ function parseRoomingList(text: string, defaultRoomType: string): RoomingGuest[]
   return guests;
 }
 
-const SERVICE_OPTIONS = [
-  { id: "ballroom", label: "Grand Ballroom (banquet)", price: 10000 },
-  { id: "pearlHall", label: "Pearl Hall (full day)", price: 6500 },
-  { id: "breakfast", label: "Group breakfast buffet", price: 75, perPax: true },
-  { id: "lunch", label: "Group lunch buffet", price: 110, perPax: true },
-  { id: "dinner", label: "Group dinner buffet", price: 135, perPax: true },
-  { id: "pickup", label: "Airport pickup (per coach)", price: 350 },
-  { id: "decor", label: "Decoration package", price: 4500 },
-  { id: "av", label: "AV / Stage setup", price: 2200 },
-];
-
 export default function NewGroupPage() {
   const [name, setName] = React.useState("");
   const [type, setType] = React.useState("Wedding");
@@ -117,10 +98,9 @@ export default function NewGroupPage() {
   const [pax, setPax] = React.useState(0);
 
   // Start with one empty room-block row so the structure is visible; the user
-  // fills in the quantity. Rate defaults to the type's base tariff (a helper,
-  // not sample data).
+  // fills in the quantity. Rate is set by suggestRate once room types load.
   const [block, setBlock] = React.useState<BlockRow[]>([
-    { id: "b1", type: "Deluxe", qty: 0, rate: 650 },
+    { id: "b1", type: "Deluxe", qty: 0, rate: 0 },
   ]);
 
   // Live room inventory + bookings, so the block can only reserve rooms that are
@@ -133,6 +113,39 @@ export default function NewGroupPage() {
     apiGet<typeof rooms>("/room-board").then(setRooms).catch(() => {});
     apiGet<typeof allBookings>("/bookings").then(setAllBookings).catch(() => {});
   }, []);
+
+  // Config state — room types, rate plans, agents, service catalog, GST slabs
+  type RoomType = { name: string; baseTariff: number };
+  type RatePlan = { code: string; name: string; discountPct?: number };
+  type AgentRow = { name: string; type?: string };
+  type GroupSvc = { id: number | string; name: string; category: string; price: number; perPax: boolean; gst: number; active: boolean };
+  const [roomTypes, setRoomTypes] = React.useState<RoomType[]>([]);
+  const [ratePlans, setRatePlans] = React.useState<RatePlan[]>([]);
+  const [agents, setAgents] = React.useState<AgentRow[]>([]);
+  const [svcCatalog, setSvcCatalog] = React.useState<GroupSvc[]>([]);
+  const [gstSlabs, setGstSlabs] = React.useState<GstSlab[]>([]);
+  React.useEffect(() => {
+    apiGet<RoomType[]>("/room-types").then(r => Array.isArray(r) && setRoomTypes(r)).catch(() => {});
+    apiGet<RatePlan[]>("/rate-plans").then(r => Array.isArray(r) && setRatePlans(r)).catch(() => {});
+    apiGet<AgentRow[]>("/agents").then(r => Array.isArray(r) && setAgents(r)).catch(() => {});
+    apiGet<GroupSvc[]>("/group-services").then(r => Array.isArray(r) && setSvcCatalog(r.filter(s => s.active))).catch(() => {});
+    apiGet<GstSlab[]>("/gst-slabs").then(r => Array.isArray(r) && setGstSlabs(r)).catch(() => {});
+  }, []);
+
+  const selectedPlan = ratePlans.find(p => p.code === ratePlan || p.name === ratePlan);
+  const planDiscount = Number(selectedPlan?.discountPct) || 0;
+  const suggestRate = React.useCallback((typeName: string) => {
+    const base = roomTypes.find(t => t.name === typeName)?.baseTariff ?? 0;
+    return Math.round(base * (1 - planDiscount / 100));
+  }, [roomTypes, planDiscount]);
+
+  // Track which rows the user has manually edited the rate for
+  const editedRates = React.useRef<Set<string>>(new Set());
+  // Fill unedited room rates once room types / plan load
+  React.useEffect(() => {
+    if (!roomTypes.length) return;
+    setBlock(prev => prev.map(r => editedRates.current.has(r.id) ? r : { ...r, rate: suggestRate(r.type) || r.rate }));
+  }, [roomTypes, suggestRate]);
 
   // Free rooms per type for [arrival, departure): all rooms of the type minus
   // those blocked/out-of-order or held by another active overlapping booking.
@@ -226,22 +239,32 @@ export default function NewGroupPage() {
     if (!arrival || !departure || isNaN(+a) || isNaN(+d)) return 0; // no dates yet → blank summary, not NaN
     return Math.max(1, Math.round((+d - +a) / (1000 * 60 * 60 * 24)));
   })();
-  const roomSubtotal = block.reduce((s, b) => s + b.qty * b.rate * nights, 0);
-  const servicesTotal = services.reduce((s, id) => {
-    const svc = SERVICE_OPTIONS.find(o => o.id === id);
-    if (!svc) return s;
-    return s + (svc.perPax ? svc.price * pax * nights : svc.price);
-  }, 0);
+
+  const selectedSvcLines = services
+    .map(id => svcCatalog.find(s => String(s.id) === id))
+    .filter((s): s is GroupSvc => !!s)
+    .map(s => ({ price: s.price, perPax: s.perPax, gst: s.gst }));
+  const totals = computeGroupTotals(
+    block.map(b => ({ rate: b.rate, qty: b.qty })), nights, selectedSvcLines, pax, gstSlabs,
+  );
+  const roomSubtotal = totals.roomSubtotal;
+  const servicesTotal = totals.servicesSubtotal;
   const subtotal = roomSubtotal + servicesTotal;
-  const tax = subtotal * 0.05;
-  const total = subtotal + tax;
+  const tax = totals.gst;
+  const total = totals.grandTotal;
+
   const advance = paymentTerm === "custom" ? 0 : Math.round((total * Number(paymentTerm)) / 100);
 
   const updateBlock = (id: string, key: keyof BlockRow, value: number | string) => {
-    setBlock(b => b.map(r => r.id === id ? { ...r, [key]: value } : r));
+    setBlock(b => b.map(r => {
+      if (r.id !== id) return r;
+      if (key === "rate") { editedRates.current.add(id); return { ...r, rate: Number(value) || 0 }; }
+      if (key === "type") { const next = { ...r, type: String(value) }; if (!editedRates.current.has(id)) next.rate = suggestRate(String(value)) || r.rate; return next; }
+      return { ...r, [key]: value };
+    }));
   };
   const removeBlock = (id: string) => setBlock(b => b.filter(r => r.id !== id));
-  const addBlock = () => setBlock(b => [...b, { id: `b${Date.now()}`, type: "Deluxe", qty: 0, rate: 650 }]);
+  const addBlock = () => setBlock(b => [...b, { id: `b${Date.now()}`, type: "Deluxe", qty: 0, rate: 0 }]);
 
   const router = useRouter();
   const [saving, setSaving] = React.useState(false);
@@ -256,7 +279,7 @@ export default function NewGroupPage() {
       bookedBy, arrival, departure, nights,
       block: block.map(b => ({ type: b.type, qty: b.qty, rate: b.rate, assigned: 0 })),
       totalRooms, totalPax: pax, ratePlan,
-      services: services.map(id => SERVICE_OPTIONS.find(o => o.id === id)?.label ?? id),
+      services: services.map(id => svcCatalog.find(s => String(s.id) === id)?.name ?? id),
       total: Math.round(total), advance: Math.round(advance), balance: Math.round(total - advance),
       status, notes, createdAt: new Date().toISOString().slice(0, 10),
     })
@@ -335,11 +358,7 @@ export default function NewGroupPage() {
             {bookedBy !== "Direct" && (
               <Field label={bookedBy === "Agent" ? "Choose travel agent" : "Choose corporate account"}>
                 <Select>
-                  {bookedBy === "Agent" ? (
-                    <><option>Pearl Holidays</option><option>ABC Travels</option><option>Skyline Tours</option></>
-                  ) : (
-                    <><option>TechCorp FZ-LLC</option><option>Emirates Bank</option><option>Global Oil Co.</option></>
-                  )}
+                  {agents.length ? agents.map(a => <option key={a.name} value={a.name}>{a.name}</option>) : <option value="">No agents configured</option>}
                 </Select>
               </Field>
             )}
@@ -390,13 +409,9 @@ export default function NewGroupPage() {
                 <div key={row.id} className="grid grid-cols-12 gap-2 items-end p-3 rounded-md border border-border bg-surface-sunken/30">
                   <div className="col-span-12 sm:col-span-4">
                     <Label>Room type</Label>
-                    <Select value={row.type} onChange={e => {
-                      const def = ROOM_TYPES.find(t => t.name === e.target.value);
-                      updateBlock(row.id, "type", e.target.value);
-                      if (def) updateBlock(row.id, "rate", def.base);
-                    }}>
-                      {ROOM_TYPES.map(t => (
-                        <option key={t.name}>
+                    <Select value={row.type} onChange={e => updateBlock(row.id, "type", e.target.value)}>
+                      {roomTypes.map(t => (
+                        <option key={t.name} value={t.name}>
                           {t.name}{datesChosen ? ` — ${availabilityByType[t.name.toLowerCase()] ?? 0} free` : ""}
                         </option>
                       ))}
@@ -446,27 +461,32 @@ export default function NewGroupPage() {
           <Card className="p-6 space-y-4">
             <SectionHead icon={Sparkles} title="Rate Plan & Inclusions" hint="What's included in the room rate" />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {[
-                { v: "EP", t: "Room only" },
-                { v: "CP", t: "Room + Breakfast" },
-                { v: "MAP", t: "Breakfast + 1 meal" },
-                { v: "AP", t: "Full board" },
-                { v: "Custom", t: "Negotiated" },
-                { v: "Non-refundable", t: "Lower rate, no refund" },
-              ].map(p => (
+              {ratePlans.length ? ratePlans.map(p => (
                 <button
-                  key={p.v}
+                  key={p.code}
                   type="button"
-                  onClick={() => setRatePlan(p.v)}
+                  onClick={() => setRatePlan(p.code)}
                   className={cn(
                     "p-3 rounded-md border text-left text-sm transition-colors",
-                    ratePlan === p.v ? "bg-brand-soft border-brand" : "border-border hover:bg-surface-sunken"
+                    ratePlan === p.code ? "bg-brand-soft border-brand" : "border-border hover:bg-surface-sunken"
                   )}
                 >
-                  <span className="font-medium">{p.v}</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">{p.t}</p>
+                  <span className="font-medium">{p.code}</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">{p.name}{p.discountPct ? ` (−${p.discountPct}%)` : ""}</p>
                 </button>
-              ))}
+              )) : (
+                <button
+                  type="button"
+                  onClick={() => setRatePlan("CP")}
+                  className={cn(
+                    "p-3 rounded-md border text-left text-sm transition-colors",
+                    ratePlan === "CP" ? "bg-brand-soft border-brand" : "border-border hover:bg-surface-sunken"
+                  )}
+                >
+                  <span className="font-medium">CP</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">Room + Breakfast</p>
+                </button>
+              )}
             </div>
           </Card>
 
@@ -474,22 +494,23 @@ export default function NewGroupPage() {
           <Card className="p-6 space-y-4">
             <SectionHead icon={Building2} title="Services & Add-ons" hint="Halls, F&B, transfers, decoration — anything extra" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {SERVICE_OPTIONS.map(s => {
-                const on = services.includes(s.id);
+              {svcCatalog.map(svc => {
+                const id = String(svc.id);
+                const on = services.includes(id);
                 return (
                   <button
-                    key={s.id}
+                    key={id}
                     type="button"
-                    onClick={() => setServices(v => on ? v.filter(x => x !== s.id) : [...v, s.id])}
+                    onClick={() => setServices(v => on ? v.filter(x => x !== id) : [...v, id])}
                     className={cn(
                       "p-3 rounded-md border text-left transition-colors flex items-start justify-between gap-2",
                       on ? "bg-brand-soft border-brand" : "border-border hover:bg-surface-sunken"
                     )}
                   >
                     <div>
-                      <p className="text-sm font-medium">{s.label}</p>
+                      <p className="text-sm font-medium">{svc.name}</p>
                       <p className="text-xs text-muted-foreground mt-0.5 tabular">
-                        {money(s.price)}{s.perPax ? " per pax / day" : ""}
+                        {money(svc.price)}{svc.perPax ? "/pax" : ""}
                       </p>
                     </div>
                     {on && <CheckCircle2 className="h-4 w-4 text-brand shrink-0" />}
@@ -620,7 +641,7 @@ export default function NewGroupPage() {
           <div className="border-t border-border pt-3 space-y-2 text-sm">
             <Row k="Room subtotal" v={money(roomSubtotal)} muted />
             <Row k="Services" v={money(servicesTotal)} muted />
-            <Row k="Tax (5%)" v={money(tax)} muted />
+            <Row k="Tax (GST)" v={money(tax)} muted />
             <div className="border-t border-border pt-2 mt-2">
               <Row k={<span className="font-semibold">Total</span>} v={<span className="font-semibold tabular text-base">{money(total)}</span>} />
             </div>
