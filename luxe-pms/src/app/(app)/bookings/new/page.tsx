@@ -16,42 +16,10 @@ import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost, apiPut, sendEmail } from "@/lib/api";
 import { NewGuestForm, type NewGuestData } from "@/components/guests/new-guest-form";
 import type { Guest, Room } from "@/lib/types";
+import { buildNightlyBreakdown, type Season, type Holiday } from "@/lib/room-nightly-pricing";
 
-// Dynamic pricing — weekday / weekend / holiday multipliers (read from Master Setup in production)
-const PRICING_MULTIPLIERS = {
-  weekday: 1.0,   // Mon-Thu
-  weekend: 1.2,   // Fri-Sat (+20%)
-  holiday: 1.3,   // configured holidays (+30%)
-} as const;
-const HOLIDAY_DATES = new Set([
-  "2026-08-15",  // Independence Day
-  "2026-10-02",  // Gandhi Jayanti
-  "2026-11-01",  // Diwali
-  "2026-12-25",  // Christmas
-  "2026-12-26",  // Christmas observed
-  "2027-01-26",  // Republic Day
-]);
-function classifyDay(d: Date): "weekday" | "weekend" | "holiday" {
-  const iso = d.toISOString().slice(0, 10);
-  if (HOLIDAY_DATES.has(iso)) return "holiday";
-  const day = d.getDay();
-  return day === 5 || day === 6 ? "weekend" : "weekday";
-}
-function nightlyBreakdown(checkInISO: string, nights: number, baseRate: number) {
-  const lines: { date: Date; kind: "weekday" | "weekend" | "holiday"; rate: number }[] = [];
-  const counts = { weekday: 0, weekend: 0, holiday: 0 };
-  let total = 0;
-  for (let i = 0; i < nights; i++) {
-    const d = new Date(checkInISO);
-    d.setDate(d.getDate() + i);
-    const kind = classifyDay(d);
-    const rate = Math.round(baseRate * PRICING_MULTIPLIERS[kind]);
-    counts[kind] += 1;
-    total += rate;
-    lines.push({ date: d, kind, rate });
-  }
-  return { counts, total, lines, avgRate: nights ? Math.round(total / nights) : 0 };
-}
+// Weekend uplift has no Setup field (Seasons/Holidays do) — kept as a fixed default.
+const WEEKEND_MULTIPLIER = 1.2;
 
 // Rate plan + F&B catalogs are MASTER DATA — loaded live from Configuration →
 // Rate Plans (/rate-plans) and Food & Hall Packages (/fb-packages). No hardcoded
@@ -105,12 +73,22 @@ export default function BookingWizardPage() {
   // Master rate plans + F&B packages from Configuration (single source of truth).
   const [ratePlans, setRatePlans] = React.useState<RatePlanOpt[]>([]);
   const [fbPackages, setFbPackages] = React.useState<FbPkgOpt[]>([]);
+  const [seasons, setSeasons] = React.useState<Season[]>([]);
+  const [holidays, setHolidays] = React.useState<Holiday[]>([]);
   React.useEffect(() => {
     apiGet<{ name: string; baseTariff: number }[]>("/room-types").then(setRoomTypes).catch(() => {});
     apiGet<Guest[]>("/guests").then(rows => { if (rows.length) setGuests(rows); }).catch(() => {});
     apiGet<Room[]>("/room-board").then(rows => { if (rows.length) setRooms(rows); }).catch(() => {});
     apiGet<ApiRatePlan[]>("/rate-plans").then(rows => setRatePlans(rows.map(mapRatePlan))).catch(() => {});
     apiGet<ApiFbPackage[]>("/fb-packages").then(rows => setFbPackages(rows.map(mapFbPackage))).catch(() => {});
+  }, []);
+  React.useEffect(() => {
+    apiGet<Array<Season & { active?: boolean }>>("/seasons")
+      .then(r => Array.isArray(r) && setSeasons(r.filter(s => s.active !== false).map(s => ({ from: s.from, to: s.to, multiplier: Number(s.multiplier) || 1 }))))
+      .catch(() => {});
+    apiGet<Array<{ date: string; surchargePct?: number }>>("/holidays")
+      .then(r => Array.isArray(r) && setHolidays(r.map(h => ({ date: h.date, surchargePct: Number(h.surchargePct) || 0 }))))
+      .catch(() => {});
   }, []);
   const [ratePlan, setRatePlan] = React.useState("");
   // Default the selected rate plan + room type to the first configured one once loaded.
@@ -226,7 +204,10 @@ export default function BookingWizardPage() {
   const rate = roomTypes.find(t => t.name === roomType)?.baseTariff
     ?? (roomType === "Suite" ? 1200 : roomType === "King" ? 850 : roomType === "Deluxe" ? 650 : 450);
   // Dynamic per-night rate breakdown by day type
-  const breakdown = React.useMemo(() => nightlyBreakdown(checkIn, nights, rate), [checkIn, nights, rate]);
+  const breakdown = React.useMemo(
+    () => buildNightlyBreakdown(checkIn, nights, rate, seasons, holidays, WEEKEND_MULTIPLIER),
+    [checkIn, nights, rate, seasons, holidays],
+  );
   const subtotal = halfDay ? Math.round(rate * 0.5) : breakdown.total;
 
   // Each F&B add-on package: price × pax-per-day × nights
