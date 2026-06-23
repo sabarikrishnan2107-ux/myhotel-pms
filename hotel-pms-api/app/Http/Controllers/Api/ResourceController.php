@@ -254,7 +254,7 @@ class ResourceController extends Controller
         'hall-packages' => [
             'name' => 'string|max:255', 'capacity' => 'integer|min:0', 'hourly' => 'integer|min:0',
             'halfDay' => 'integer|min:0', 'fullDay' => 'integer|min:0', 'setupFee' => 'integer|min:0',
-            'gst' => 'integer|min:0|max:100', 'active' => 'boolean',
+            'gst' => 'integer|min:0|max:100', 'extraPaxFee' => 'integer|min:0', 'active' => 'boolean',
         ],
         'agents' => [
             'type' => 'string|max:50', 'name' => 'string|max:255', 'contact' => 'string|max:255|nullable',
