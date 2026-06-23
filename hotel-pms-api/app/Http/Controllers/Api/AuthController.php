@@ -96,6 +96,9 @@ class AuthController extends Controller
             }
         }
 
+        // Provision a blank property row + default roles for this tenant on first login.
+        \App\Support\TenantProvisioner::ensure((int) $user->company_id);
+
         // Apply the configurable session timeout as a per-token expiry.
         $sessionMin = (int) ($security['sessionMin'] ?? 0);
         $expiresAt = $sessionMin > 0 ? now()->addMinutes($sessionMin) : null;
