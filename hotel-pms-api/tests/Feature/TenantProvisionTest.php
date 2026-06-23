@@ -27,4 +27,13 @@ class TenantProvisionTest extends TestCase
         $this->assertSame(1, PropertySetting::withoutGlobalScope('company')->where('company_id', 701)->count());
         $this->assertSame(count($roles), Role::withoutGlobalScope('company')->where('company_id', 701)->count());
     }
+
+    public function test_roles_seed_even_when_property_already_exists(): void {
+        // simulate a company that already has a property row but no roles (the bug scenario)
+        $p = new \App\Models\PropertySetting();
+        $p->company_id = 808;
+        $p->save();
+        \App\Support\TenantProvisioner::ensure(808);
+        $this->assertSame(8, \App\Models\Role::withoutGlobalScope('company')->where('company_id', 808)->count(), 'roles must seed independently of the property block');
+    }
 }

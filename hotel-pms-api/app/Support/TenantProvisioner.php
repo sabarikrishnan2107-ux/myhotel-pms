@@ -29,15 +29,16 @@ class TenantProvisioner {
 
     public static function ensure(int $companyId): void {
         try {
-            $hasProperty = PropertySetting::withoutGlobalScope('company')->where('company_id', $companyId)->exists();
-            if (!$hasProperty) {
+            if (!PropertySetting::withoutGlobalScope('company')->where('company_id', $companyId)->exists()) {
                 $p = new PropertySetting();
                 $p->company_id = $companyId;
-                $p->property_name = '';
                 $p->save();
             }
-            $hasRoles = Role::withoutGlobalScope('company')->where('company_id', $companyId)->exists();
-            if (!$hasRoles) {
+        } catch (\Throwable $e) {
+            Log::warning("TenantProvisioner property failed for company {$companyId}: " . $e->getMessage());
+        }
+        try {
+            if (!Role::withoutGlobalScope('company')->where('company_id', $companyId)->exists()) {
                 foreach (self::ROLE_DEFAULTS as $name => $pages) {
                     $r = new Role();
                     $r->company_id = $companyId;
@@ -47,7 +48,7 @@ class TenantProvisioner {
                 }
             }
         } catch (\Throwable $e) {
-            Log::warning("TenantProvisioner failed for company {$companyId}: " . $e->getMessage());
+            Log::warning("TenantProvisioner roles failed for company {$companyId}: " . $e->getMessage());
         }
     }
 }
