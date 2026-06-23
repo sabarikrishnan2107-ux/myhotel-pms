@@ -111,8 +111,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // List sections (generic CRUD)
     $resources = implode('|', ResourceController::resources());
-    Route::get('/{resource}', [ResourceController::class, 'index'])->where('resource', $resources);
-    Route::post('/{resource}', [ResourceController::class, 'store'])->where('resource', $resources);
-    Route::put('/{resource}/{id}', [ResourceController::class, 'update'])->where('resource', $resources);
-    Route::delete('/{resource}/{id}', [ResourceController::class, 'destroy'])->where('resource', $resources);
+    Route::middleware('company.module')->group(function () use ($resources) {
+        Route::get('/{resource}', [ResourceController::class, 'index'])->where('resource', $resources);
+        Route::post('/{resource}', [ResourceController::class, 'store'])->where('resource', $resources);
+        Route::put('/{resource}/{id}', [ResourceController::class, 'update'])->where('resource', $resources);
+        Route::delete('/{resource}/{id}', [ResourceController::class, 'destroy'])->where('resource', $resources);
+    });
 });
