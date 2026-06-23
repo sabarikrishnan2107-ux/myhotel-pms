@@ -4,16 +4,37 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class MockToLiveTest extends TestCase
 {
     use RefreshDatabase;
 
+    private function makeCompanyId(): int
+    {
+        return DB::table('master_companies')->insertGetId([
+            'name'           => 'Test Hotel',
+            'code'           => 'TST-' . uniqid(),
+            'admin_email'    => 'admin@hotel.com',
+            'admin_password' => 'x',
+            'valid_from'     => '2026-01-01',
+            'valid_to'       => '2026-12-31',
+            'plan'           => 'starter',
+            'max_branches'   => 1,
+            'max_rooms'      => 10,
+            'max_employees'  => 10,
+            'modules'        => json_encode([]),
+            'status'         => 'active',
+            'created_at'     => now(),
+            'updated_at'     => now(),
+        ]);
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
-        $this->actingAs(User::factory()->create(), 'sanctum');
+        $this->actingAs(User::factory()->create(['company_id' => $this->makeCompanyId()]), 'sanctum');
     }
 
     public function test_folio_adjustments_crud_and_filter(): void

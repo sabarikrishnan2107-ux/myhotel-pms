@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -12,9 +13,31 @@ class AuthTest extends TestCase
 {
     use RefreshDatabase;
 
+    /** Insert a minimal active company row and return its id. */
+    private function makeCompany(): int
+    {
+        return DB::table('master_companies')->insertGetId([
+            'name'           => 'Test Hotel',
+            'code'           => 'TST-' . uniqid(),
+            'admin_email'    => 'admin@hotel.com',
+            'admin_password' => 'x',
+            'valid_from'     => '2026-01-01',
+            'valid_to'       => '2026-12-31',
+            'plan'           => 'starter',
+            'max_branches'   => 1,
+            'max_rooms'      => 10,
+            'max_employees'  => 10,
+            'modules'        => json_encode([]),
+            'status'         => 'active',
+            'created_at'     => now(),
+            'updated_at'     => now(),
+        ]);
+    }
+
     public function test_login_with_valid_credentials_returns_a_token(): void
     {
-        User::factory()->create(['email' => 'admin@hotel.com', 'password' => Hash::make('secret123')]);
+        $cid = $this->makeCompany();
+        User::factory()->create(['email' => 'admin@hotel.com', 'password' => Hash::make('secret123'), 'company_id' => $cid]);
 
         $res = $this->postJson('/api/login', ['email' => 'admin@hotel.com', 'password' => 'secret123']);
 
@@ -23,7 +46,8 @@ class AuthTest extends TestCase
 
     public function test_login_with_wrong_password_fails(): void
     {
-        User::factory()->create(['email' => 'admin@hotel.com', 'password' => Hash::make('secret123')]);
+        $cid = $this->makeCompany();
+        User::factory()->create(['email' => 'admin@hotel.com', 'password' => Hash::make('secret123'), 'company_id' => $cid]);
 
         $this->postJson('/api/login', ['email' => 'admin@hotel.com', 'password' => 'nope'])
             ->assertStatus(422);
@@ -31,7 +55,8 @@ class AuthTest extends TestCase
 
     public function test_login_records_an_audit_entry(): void
     {
-        User::factory()->create(['email' => 'admin@hotel.com', 'password' => Hash::make('secret123')]);
+        $cid = $this->makeCompany();
+        User::factory()->create(['email' => 'admin@hotel.com', 'password' => Hash::make('secret123'), 'company_id' => $cid]);
 
         $this->postJson('/api/login', ['email' => 'admin@hotel.com', 'password' => 'secret123'])->assertOk();
 

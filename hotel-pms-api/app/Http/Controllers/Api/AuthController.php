@@ -76,10 +76,16 @@ class AuthController extends Controller
             }
         }
 
+        // Block accounts with no company assigned (misconfigured users).
+        if (($user->company_id ?? null) === null) {
+            return response()->json([
+                'message' => 'No company assigned to this account.',
+                'reason'  => 'no_company',
+            ], 403);
+        }
+
         // Check company licence validity before issuing a token.
-        $company = $user->company_id
-            ? DB::table('master_companies')->where('id', $user->company_id)->first()
-            : null;
+        $company = DB::table('master_companies')->where('id', $user->company_id)->first();
         if ($company) {
             $status = CompanyStatus::derive($company->status ?? 'active', $company->valid_from, $company->valid_to, now());
             if (in_array($status, ['suspended', 'expired', 'pending'], true)) {
@@ -127,9 +133,8 @@ class AuthController extends Controller
             $company = DB::table('master_companies')->where('id', $user->company_id)->first();
         }
 
-        $modules = $company && $company->modules
-            ? (is_array($company->modules) ? $company->modules : json_decode($company->modules, true))
-            : [];
+        $rawModules = ($company->modules ?? null) ?? null;
+        $modules = is_string($rawModules) ? (json_decode($rawModules, true) ?: []) : (array) ($rawModules ?? []);
 
         return [
             'id'                 => $user->id,

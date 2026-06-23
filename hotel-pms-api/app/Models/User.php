@@ -19,6 +19,19 @@ class User extends Authenticatable
     use HasApiTokens, HasFactory, Notifiable;
 
     /**
+     * New staff users automatically inherit the creating user's company_id
+     * so every record is tenant-stamped from the moment it is born.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function ($user) {
+            if (($user->company_id ?? null) === null && \App\Support\Tenant::id() !== null) {
+                $user->company_id = \App\Support\Tenant::id();
+            }
+        });
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>

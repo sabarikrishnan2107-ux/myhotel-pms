@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AppSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -12,9 +13,29 @@ class SecuritySettingsTest extends TestCase
 {
     use RefreshDatabase;
 
+    private function makeCompanyId(): int
+    {
+        return DB::table('master_companies')->insertGetId([
+            'name'           => 'Test Hotel',
+            'code'           => 'TST-' . uniqid(),
+            'admin_email'    => 'admin@hotel.com',
+            'admin_password' => 'x',
+            'valid_from'     => '2026-01-01',
+            'valid_to'       => '2026-12-31',
+            'plan'           => 'starter',
+            'max_branches'   => 1,
+            'max_rooms'      => 10,
+            'max_employees'  => 10,
+            'modules'        => json_encode([]),
+            'status'         => 'active',
+            'created_at'     => now(),
+            'updated_at'     => now(),
+        ]);
+    }
+
     private function makeUser(): void
     {
-        User::factory()->create(['email' => 'admin@hotel.com', 'password' => Hash::make('secret123')]);
+        User::factory()->create(['email' => 'admin@hotel.com', 'password' => Hash::make('secret123'), 'company_id' => $this->makeCompanyId()]);
     }
 
     private function setLockout(int $n): void

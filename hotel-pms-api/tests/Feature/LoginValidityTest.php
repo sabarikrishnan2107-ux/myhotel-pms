@@ -102,11 +102,12 @@ class LoginValidityTest extends TestCase
             ->assertJsonPath('reason', 'suspended');
     }
 
-    public function test_user_without_company_can_login(): void
+    public function test_user_without_company_is_blocked(): void
     {
         User::factory()->create([
-            'email'    => 'nocompany@hotel.com',
-            'password' => Hash::make('Secret@123'),
+            'email'      => 'nocompany@hotel.com',
+            'password'   => Hash::make('Secret@123'),
+            'company_id' => null,
         ]);
 
         $res = $this->postJson('/api/login', [
@@ -114,7 +115,54 @@ class LoginValidityTest extends TestCase
             'password' => 'Secret@123',
         ]);
 
-        $res->assertOk()
-            ->assertJsonPath('user.modules', []);
+        $res->assertStatus(403)
+            ->assertJsonPath('reason', 'no_company');
+    }
+
+    public function test_before_valid_from_company_blocks_login(): void
+    {
+        $cid = $this->makeCompany([
+            'code'       => 'FUT-' . uniqid(),
+            'valid_from' => '2030-01-01',
+            'valid_to'   => '2030-12-31',
+        ]);
+
+        User::create([
+            'name'       => 'Future User',
+            'email'      => 'future@hotel.com',
+            'password'   => Hash::make('Secret@123'),
+            'role'       => 'Admin',
+            'company_id' => $cid,
+        ]);
+
+        $res = $this->postJson('/api/login', [
+            'email'    => 'future@hotel.com',
+            'password' => 'Secret@123',
+        ]);
+
+        $res->assertStatus(403)
+            ->assertJsonPath('reason', 'before_valid_from');
+    }
+
+    public function test_creating_hook_inherits_creator_company(): void
+    {
+        $creator = User::create([
+            'name'       => 'Creator',
+            'email'      => 'creator@hotel.com',
+            'password'   => Hash::make('Secret@123'),
+            'role'       => 'Admin',
+            'company_id' => 77,
+        ]);
+
+        $this->actingAs($creator, 'sanctum');
+
+        $newUser = User::create([
+            'name'     => 'New Staff',
+            'email'    => 'newstaff@hotel.com',
+            'password' => Hash::make('Secret@123'),
+            'role'     => 'Staff',
+        ]);
+
+        $this->assertSame(77, (int) $newUser->company_id);
     }
 }
