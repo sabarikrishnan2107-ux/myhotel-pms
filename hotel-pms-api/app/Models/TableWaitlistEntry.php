@@ -3,9 +3,11 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Concerns\BelongsToCompany;
 
 class TableWaitlistEntry extends Model
 {
+    use BelongsToCompany;
     protected $table = 'table_waitlist_entries';
     protected $guarded = ['id'];
     protected $casts = ['party' => 'integer', 'waitMin' => 'integer', 'notified' => 'boolean'];

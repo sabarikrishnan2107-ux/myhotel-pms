@@ -4,9 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use App\Models\Concerns\BelongsToCompany;
 
 class AuditLog extends Model
 {
+    use BelongsToCompany;
     protected $guarded = ['id'];
 
     /** Record one activity entry. Never throws — auditing must not break the action. */
