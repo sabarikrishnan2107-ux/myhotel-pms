@@ -13,8 +13,9 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
+import { computeHallTotals } from "@/lib/hall-pricing";
 
-type Venue = { id: string; name: string; capacity: number; hourly: number; halfDay: number; fullDay: number };
+type Venue = { id: string; name: string; capacity: number; hourly: number; halfDay: number; fullDay: number; setupFee: number; gst: number; extraPaxFee: number };
 
 const EVENT_TYPES = ["Wedding", "Engagement", "Conference", "Corporate Meeting", "Birthday", "Anniversary", "Product Launch", "Other"];
 
@@ -71,11 +72,13 @@ export default function NewHallBookingPage() {
   const extrasCost = extras.reduce((s, id) => s + (extraServices.find(e => e.id === id)?.price ?? 0), 0);
   const capacityWarning = !!hall && pax > hall.capacity;
   const extraPax = capacityWarning && hall ? pax - hall.capacity : 0;
-  const extraPaxCost = extraPax * 35; // surcharge per extra guest
+  const extraPaxCost = extraPax * (hall?.extraPaxFee ?? 0); // per-hall over-capacity surcharge
+  const setupFee = hall?.setupFee ?? 0;
+  const gstPct = hall?.gst ?? 0;
 
-  const subtotal = hallCost + foodCost + extrasCost + extraPaxCost;
-  const tax = subtotal * 0.05;
-  const total = subtotal + tax;
+  const { subtotal, tax, total } = computeHallTotals({
+    hallCost, setupFee, foodCost, extrasCost, extraPax, extraPaxFee: hall?.extraPaxFee ?? 0, gstPct,
+  });
   const advance = Math.round((total * advancePct) / 100);
 
   const requiredOk = !!(customer && phone && eventDate && startTime && endTime && pax > 0 && pkg);
@@ -224,7 +227,7 @@ export default function NewHallBookingPage() {
               {capacityWarning && (
                 <p className="text-xs text-warning inline-flex items-center gap-1 mt-2">
                   <AlertCircle className="h-3 w-3" />
-                  Selected hall capacity is {hall?.capacity ?? 0} · {extraPax} extra guests incur {money(35)}/pax surcharge
+                  Selected hall capacity is {hall?.capacity ?? 0} · {extraPax} extra guests incur {money(hall?.extraPaxFee ?? 0)}/pax surcharge
                 </p>
               )}
             </Field>
@@ -318,10 +321,11 @@ export default function NewHallBookingPage() {
 
           <div className="border-t border-border pt-3 space-y-2 text-sm">
             <Row k={`Hall (${slotType})`} v={money(hallCost)} muted />
+            {setupFee > 0 && <Row k="Setup fee" v={money(setupFee)} muted />}
             <Row k={`F&B × ${pax} pax`} v={money(foodCost)} muted />
             {extraPaxCost > 0 && <Row k={`Extra pax × ${extraPax}`} v={money(extraPaxCost)} muted warn />}
             {extrasCost > 0 && <Row k={`Extras (${extras.length})`} v={money(extrasCost)} muted />}
-            <Row k="Tax (5%)" v={money(tax)} muted />
+            <Row k={`GST (${gstPct}%)`} v={money(tax)} muted />
             <div className="border-t border-border pt-2 mt-2">
               <Row k={<span className="font-semibold">Total</span>} v={<span className="font-semibold tabular text-base">{money(total)}</span>} />
             </div>

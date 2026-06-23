@@ -252,7 +252,7 @@ const HOLIDAYS_SEED: Holiday[] = [
 
 // ============ F&B + HALL PACKAGES ============
 type FBPackage = { id: string; name: string; type: "Breakfast" | "Lunch" | "Dinner" | "High Tea" | "Buffet"; pax: number; price: number; gst: number; active: boolean };
-type HallPackage = { id: string; name: string; capacity: number; hourly: number; halfDay: number; fullDay: number; setupFee: number; gst: number; active: boolean };
+type HallPackage = { id: string; name: string; capacity: number; hourly: number; halfDay: number; fullDay: number; setupFee: number; gst: number; extraPaxFee: number; active: boolean };
 type BanquetPkg = { id: string; name: string; desc: string; pricePerPax: number; veg: boolean; active: boolean };
 type ExtraSvc = { id: string; label: string; price: number; active: boolean };
 const FB_PACKAGES_SEED: FBPackage[] = [
@@ -262,12 +262,12 @@ const FB_PACKAGES_SEED: FBPackage[] = [
   { id: "fb4", name: "High Tea Platter",     type: "High Tea",  pax: 1, price: 650, gst: 5, active: true },
 ];
 const HALL_PACKAGES_SEED: HallPackage[] = [
-  { id: "hp1", name: "Banquet A · Wedding", capacity: 300, hourly: 8500, halfDay: 38000, fullDay: 72000, setupFee: 5000, gst: 18, active: true },
-  { id: "hp2", name: "Banquet B · Corporate", capacity: 150, hourly: 5500, halfDay: 25000, fullDay: 45000, setupFee: 3500, gst: 18, active: true },
-  { id: "hp3", name: "Garden Pavilion", capacity: 200, hourly: 7000, halfDay: 30000, fullDay: 55000, setupFee: 4000, gst: 18, active: true },
-  { id: "hp4", name: "Crystal Hall · Gala", capacity: 500, hourly: 12000, halfDay: 55000, fullDay: 110000, setupFee: 8000, gst: 18, active: true },
-  { id: "hp5", name: "Conference Room 1", capacity: 40, hourly: 1500, halfDay: 6000, fullDay: 11000, setupFee: 800, gst: 18, active: true },
-  { id: "hp6", name: "Conference Room 2", capacity: 25, hourly: 1000, halfDay: 4000, fullDay: 7500, setupFee: 500, gst: 18, active: true },
+  { id: "hp1", name: "Banquet A · Wedding", capacity: 300, hourly: 8500, halfDay: 38000, fullDay: 72000, setupFee: 5000, gst: 18, extraPaxFee: 0, active: true },
+  { id: "hp2", name: "Banquet B · Corporate", capacity: 150, hourly: 5500, halfDay: 25000, fullDay: 45000, setupFee: 3500, gst: 18, extraPaxFee: 0, active: true },
+  { id: "hp3", name: "Garden Pavilion", capacity: 200, hourly: 7000, halfDay: 30000, fullDay: 55000, setupFee: 4000, gst: 18, extraPaxFee: 0, active: true },
+  { id: "hp4", name: "Crystal Hall · Gala", capacity: 500, hourly: 12000, halfDay: 55000, fullDay: 110000, setupFee: 8000, gst: 18, extraPaxFee: 0, active: true },
+  { id: "hp5", name: "Conference Room 1", capacity: 40, hourly: 1500, halfDay: 6000, fullDay: 11000, setupFee: 800, gst: 18, extraPaxFee: 0, active: true },
+  { id: "hp6", name: "Conference Room 2", capacity: 25, hourly: 1000, halfDay: 4000, fullDay: 7500, setupFee: 500, gst: 18, extraPaxFee: 0, active: true },
 ];
 
 // ============ AGENTS & CORPORATES ============
@@ -2047,7 +2047,7 @@ function FoodHallManager({ fb, halls, banquet, extras, onFbChange, onHallsChange
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Hall / venue packages</p>
-          <Button size="sm" onClick={() => { onHallsChange([...halls, { id: `hp${tempSeq()}`, name: "New hall", capacity: 100, hourly: 2500, halfDay: 10000, fullDay: 18000, setupFee: 1500, gst: 18, active: true }]); onToast("Hall package added"); }}><Plus className="h-3.5 w-3.5" />Add</Button>
+          <Button size="sm" onClick={() => { onHallsChange([...halls, { id: `hp${tempSeq()}`, name: "New hall", capacity: 100, hourly: 2500, halfDay: 10000, fullDay: 18000, setupFee: 1500, gst: 18, extraPaxFee: 0, active: true }]); onToast("Hall package added"); }}><Plus className="h-3.5 w-3.5" />Add</Button>
         </div>
         <div className="rounded-md border border-border overflow-hidden overflow-x-auto">
           <table className="w-full text-sm">
@@ -2060,6 +2060,7 @@ function FoodHallManager({ fb, halls, banquet, extras, onFbChange, onHallsChange
                 <th className="px-3 py-2 font-semibold text-right">Full day</th>
                 <th className="px-3 py-2 font-semibold text-right">Setup</th>
                 <th className="px-3 py-2 font-semibold text-right">GST</th>
+                <th className="px-3 py-2 font-semibold text-right">Extra/pax</th>
                 <th className="px-3 py-2 font-semibold text-right">Action</th>
               </tr>
             </thead>
@@ -2073,6 +2074,7 @@ function FoodHallManager({ fb, halls, banquet, extras, onFbChange, onHallsChange
                   <td className="px-3 py-2 text-right"><Input type="number" value={h.fullDay} onChange={e => updHall(h.id, { fullDay: Number(e.target.value) })} className="h-8 w-24 tabular text-right" /></td>
                   <td className="px-3 py-2 text-right"><Input type="number" value={h.setupFee} onChange={e => updHall(h.id, { setupFee: Number(e.target.value) })} className="h-8 w-20 tabular text-right" /></td>
                   <td className="px-3 py-2 text-right"><div className="inline-flex items-center gap-1"><Input type="number" value={h.gst} onChange={e => updHall(h.id, { gst: Number(e.target.value) })} className="h-8 w-14 tabular text-right" /><span className="text-xs text-muted-foreground">%</span></div></td>
+                  <td className="px-3 py-2 text-right"><div className="inline-flex items-center gap-1"><span className="text-xs text-muted-foreground">₹</span><Input type="number" value={h.extraPaxFee} onChange={e => updHall(h.id, { extraPaxFee: Number(e.target.value) })} className="h-8 w-16 tabular text-right" /></div></td>
                   <td className="px-3 py-2 text-right"><button type="button" onClick={() => { onHallsChange(halls.filter(x => x.id !== h.id)); onToast("Hall removed"); }} className="h-7 w-7 rounded-md border border-border hover:bg-danger hover:text-white hover:border-danger inline-flex items-center justify-center text-muted-foreground"><Trash2 className="h-3.5 w-3.5" /></button></td>
                 </tr>
               ))}
