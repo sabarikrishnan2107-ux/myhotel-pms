@@ -84,6 +84,7 @@ class DatabaseSeeder extends Seeder
             NotificationContentSeeder::class,
             KitchenAmenitySeeder::class,
             RoomAmenitySeeder::class,
+            GroupServiceSeeder::class,
         ]);
     }
 }

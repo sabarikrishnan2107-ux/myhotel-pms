@@ -90,6 +90,7 @@ use App\Models\NotifTemplate;
 use App\Models\NotifLog;
 use App\Models\KitchenAmenity;
 use App\Models\RoomAmenity;
+use App\Models\GroupService;
 use Illuminate\Http\Request;
 
 /**
@@ -185,6 +186,7 @@ class ResourceController extends Controller
         'kitchen-amenities'      => KitchenAmenity::class,
         'room-amenities'         => RoomAmenity::class,
         'vendor-bills'           => VendorBill::class,
+        'group-services'         => GroupService::class,
     ];
 
     /** Resources whose index can be scoped by a query param → column. */
@@ -869,6 +871,11 @@ class ResourceController extends Controller
             'tdsAmount' => 'integer|min:0', 'netPayable' => 'integer|min:0',
             'paid' => 'integer|min:0', 'status' => 'string|max:50',
         ],
+        'group-services' => [
+            'name' => 'string|max:255', 'category' => 'string|max:50|nullable',
+            'price' => 'integer|min:0', 'perPax' => 'boolean',
+            'gst' => 'integer|min:0|max:100', 'active' => 'boolean',
+        ],
     ];
 
     /** Fields that must be present (and non-empty) when creating a row. */
@@ -941,6 +948,7 @@ class ResourceController extends Controller
         'kitchen-amenities' => ['name'],
         'room-amenities' => ['name'],
         'vendor-bills' => ['billNo', 'vendor'],
+        'group-services' => ['name'],
     ];
 
     private function model(string $resource): string
@@ -1053,6 +1061,7 @@ class ResourceController extends Controller
         'app-users' => 'Users', 'hall-bookings' => 'Halls', 'group-bookings' => 'Groups',
         'rate-plans' => 'Rate Plans', 'gst-slabs' => 'GST', 'payment-methods' => 'Payment Methods',
         'notification-templates' => 'Notifications',
+        'group-services' => 'Group Services',
     ];
 
     private function moduleLabel(string $resource): string
