@@ -2,8 +2,8 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV, GROUP_LABEL, type NavItem } from "@/lib/nav";
-import { getRole, rolesFor, canAccessPage, type Role } from "@/lib/auth";
+import { NAV, GROUP_LABEL, moduleAllowed, type NavItem } from "@/lib/nav";
+import { getRole, rolesFor, canAccessPage, getModules, type Role } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
 import { Logo } from "@/components/logo";
@@ -21,11 +21,13 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const [expanded, setExpanded] = React.useState(false);
 
-  // Role is read client-side after mount to avoid SSR/localStorage mismatch.
+  // Role + modules are read client-side after mount to avoid SSR/localStorage mismatch.
   const [role, setRoleState] = React.useState<Role>("manager");
+  const [modules, setModules] = React.useState<string[]>([]);
   React.useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- role only exists client-side
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- role/modules only exist client-side
     setRoleState(getRole());
+    setModules(getModules());
   }, [pathname]);
 
   const grouped = React.useMemo(() => {
@@ -95,7 +97,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
 
           <nav className="flex-1 overflow-y-auto py-4">
             {(["operations", "billing", "people", "erp", "system", "demo"] as const).map((group) => {
-              const items = (grouped[group] ?? []).filter(item => rolesFor(item).includes(role) && canAccessPage(item.href));
+              const items = (grouped[group] ?? []).filter(item => rolesFor(item).includes(role) && canAccessPage(item.href) && moduleAllowed(item, modules));
               if (items.length === 0) return null;
               return (
               <div key={group} className="px-2 mb-4">

@@ -33,6 +33,17 @@ function handleUnauthorized(res: Response) {
 // ---- Auth ----
 // Returns { twoFactorRequired: true } when the account has 2FA on and no code
 // was supplied; otherwise stores the token and returns the user.
+/** Error thrown by `login()` when the server returns a structured error response. */
+export class LoginError extends Error {
+  /** Present on HTTP 403: "expired" | "suspended" | "before_valid_from" */
+  reason?: string;
+  constructor(message: string, reason?: string) {
+    super(message);
+    this.name = "LoginError";
+    this.reason = reason;
+  }
+}
+
 export async function login(
   email: string,
   password: string,
@@ -45,7 +56,7 @@ export async function login(
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body?.message || "Login failed");
+    throw new LoginError(body?.message || "Login failed", res.status === 403 ? body?.reason : undefined);
   }
   const data = await res.json();
   if (data.two_factor_required) return { twoFactorRequired: true };

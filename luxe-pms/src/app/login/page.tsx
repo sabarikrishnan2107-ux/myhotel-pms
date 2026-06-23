@@ -6,7 +6,7 @@ import {
   ArrowRight, ShieldCheck, Eye, EyeOff, AlertCircle,
   Mail, Lock, BarChart3, Users, User,
 } from "lucide-react";
-import { login, getToken, apiGet } from "@/lib/api";
+import { login, LoginError, getToken, apiGet } from "@/lib/api";
 import { Logo } from "@/components/logo";
 import { setRole, getRole, isRole, canAccess, ROLE_HOME, type Role } from "@/lib/auth";
 
@@ -22,6 +22,13 @@ async function resolveLanding(role: Role): Promise<string> {
   } catch { /* backend offline — fall back to role home */ }
   return ROLE_HOME[role];
 }
+
+/** Human-readable messages for 403 licence-block reasons returned by the backend. */
+const LICENCE_MSG: Record<string, string> = {
+  expired: "Your licence has expired. Please contact your provider to renew.",
+  suspended: "Your account has been suspended. Please contact your provider.",
+  before_valid_from: "Your licence is not active yet. Please contact your provider.",
+};
 
 // All demo roles share the one demo account for the API token; the selected
 // access level is a client-side overlay that decides nav + landing page.
@@ -70,7 +77,11 @@ export default function LoginPage() {
       setRole(r);
       router.replace(await resolveLanding(r));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      if (err instanceof LoginError && err.reason) {
+        setError(LICENCE_MSG[err.reason] ?? "Access is blocked.");
+      } else {
+        setError(err instanceof Error ? err.message : "Login failed");
+      }
       setLoading(false);
     }
   }, [router]);
@@ -103,7 +114,11 @@ export default function LoginPage() {
       setRole(role); // chosen access level decides nav + landing page
       router.replace(await resolveLanding(role));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      if (err instanceof LoginError && err.reason) {
+        setError(LICENCE_MSG[err.reason] ?? "Access is blocked.");
+      } else {
+        setError(err instanceof Error ? err.message : "Login failed");
+      }
       setLoading(false);
     }
   };

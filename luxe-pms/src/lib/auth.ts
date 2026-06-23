@@ -50,10 +50,11 @@ export function rolesFor(item: { roles?: Role[] }): Role[] {
 // of allowed sidebar hrefs. Absent → treat as all (keeps existing sessions working).
 const PAGES_KEY = "pms_pages";
 const ROLE_NAME_KEY = "pms_role_name";
+const MODULES_KEY = "pms_modules";
 
-type SessionUser = { role?: string; pages?: string[] | "*" };
+type SessionUser = { role?: string; pages?: string[] | "*"; modules?: string[] };
 
-/** Persist the role name + allowed pages from a login / me response. */
+/** Persist the role name + allowed pages + licensed modules from a login / me response. */
 export function setSessionUser(user: SessionUser | undefined) {
   if (typeof window === "undefined" || !user) return;
   if (user.role) window.localStorage.setItem(ROLE_NAME_KEY, user.role);
@@ -63,11 +64,25 @@ export function setSessionUser(user: SessionUser | undefined) {
   } else if (Array.isArray(pages)) {
     window.localStorage.setItem(PAGES_KEY, JSON.stringify(pages));
   }
+  // Persist licensed modules (empty array = all modules allowed, for backward compat).
+  window.localStorage.setItem(MODULES_KEY, JSON.stringify(user.modules ?? []));
 }
 export function clearSessionUser() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(PAGES_KEY);
   window.localStorage.removeItem(ROLE_NAME_KEY);
+  window.localStorage.removeItem(MODULES_KEY);
+}
+
+/** Licensed module keys for the current session.
+ *  Empty array means "no restriction" (default/legacy users see everything). */
+export function getModules(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(MODULES_KEY);
+    const parsed = JSON.parse(raw || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
 }
 export function getRoleName(): string {
   if (typeof window === "undefined") return "Admin";
