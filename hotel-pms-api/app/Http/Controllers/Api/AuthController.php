@@ -7,8 +7,10 @@ use App\Models\AppSetting;
 use App\Models\AuditLog;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\CompanyStatus;
 use App\Support\Totp;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
@@ -74,6 +76,20 @@ class AuthController extends Controller
             }
         }
 
+        // Check company licence validity before issuing a token.
+        $company = $user->company_id
+            ? DB::table('master_companies')->where('id', $user->company_id)->first()
+            : null;
+        if ($company) {
+            $status = CompanyStatus::derive($company->status ?? 'active', $company->valid_from, $company->valid_to, now());
+            if (in_array($status, ['suspended', 'expired', 'pending'], true)) {
+                return response()->json([
+                    'message' => 'Account access is blocked.',
+                    'reason'  => $status === 'pending' ? 'before_valid_from' : $status,
+                ], 403);
+            }
+        }
+
         // Apply the configurable session timeout as a per-token expiry.
         $sessionMin = (int) ($security['sessionMin'] ?? 0);
         $expiresAt = $sessionMin > 0 ? now()->addMinutes($sessionMin) : null;
@@ -87,15 +103,17 @@ class AuthController extends Controller
 
         return response()->json([
             'token' => $token,
-            'user'  => $this->userPayload($user),
+            'user'  => $this->userPayload($user, $company),
         ]);
     }
 
     /**
      * Shape the authenticated user for the client, including their role and the
      * set of page keys that role may access (Admin / '*' = all pages).
+     * Optionally accepts a pre-fetched $company object (from login flow) to avoid
+     * a second DB query; if null the company is resolved from the user's company_id.
      */
-    private function userPayload(User $user): array
+    private function userPayload(User $user, ?object $company = null): array
     {
         $role = $user->role ?: 'Admin';
         $allowed = ['*'];
@@ -104,16 +122,33 @@ class AuthController extends Controller
             $allowed = is_array($r?->permissions) ? array_values($r->permissions) : [];
         }
 
+        // Resolve company if not pre-supplied (e.g. from /me refresh).
+        if ($company === null && $user->company_id) {
+            $company = DB::table('master_companies')->where('id', $user->company_id)->first();
+        }
+
+        $modules = $company && $company->modules
+            ? (is_array($company->modules) ? $company->modules : json_decode($company->modules, true))
+            : [];
+
         return [
-            'id' => $user->id, 'name' => $user->name, 'email' => $user->email,
-            'role' => $role, 'department' => $user->department,
-            'pages' => $allowed,
+            'id'                 => $user->id,
+            'name'               => $user->name,
+            'email'              => $user->email,
+            'role'               => $role,
+            'department'         => $user->department,
+            'pages'              => $allowed,
             'two_factor_enabled' => (bool) $user->two_factor_enabled,
+            'company'            => $company
+                ? ['id' => $company->id, 'name' => $company->name, 'code' => $company->code]
+                : null,
+            'modules'            => $modules,
         ];
     }
 
     /**
-     * GET /api/me — the authenticated user.
+     * GET /api/me — the authenticated user (company + modules included so page
+     * refreshes keep module access without a separate round-trip).
      */
     public function me(Request $request)
     {
