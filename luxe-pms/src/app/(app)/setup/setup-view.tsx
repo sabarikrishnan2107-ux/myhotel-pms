@@ -20,6 +20,7 @@ import { MenuItemsManager } from "./menu-items-manager";
 import { GroupServicesManager } from "./group-services-manager";
 import { MealPlansManager } from "./meal-plans-manager";
 import { PricingRulesManager } from "./pricing-rules-manager";
+import { RateRestrictionsManager } from "./rate-restrictions-manager";
 import { TablesManager } from "./tables-manager";
 import { NAV, GROUP_LABEL } from "@/lib/nav";
 import { applyBranding } from "@/lib/use-branding";
@@ -71,6 +72,7 @@ const SECTIONS = [
   { id: "group-services", group: "Rates & Packages" as SectionGroup,     label: "Group Services",           icon: Utensils,     hint: "Halls · meals · decor · transfers for groups", accent: "accent" as const },
   { id: "meal-plans", group: "Rates & Packages" as SectionGroup,         label: "Meal Plans",               icon: Utensils,     hint: "EP/CP/MAP/AP · per-pax-per-day", accent: "accent" as const },
   { id: "pricing-rules", group: "Rates & Packages" as SectionGroup,      label: "Pricing Rules",            icon: Tag,          hint: "Dynamic rate adjustments · triggers", accent: "accent" as const },
+  { id: "rate-restrictions", group: "Rates & Packages" as SectionGroup,  label: "Rate Restrictions",        icon: Calendar,     hint: "Min-stay · CTA/CTD · stop-sell", accent: "accent" as const },
   { id: "agents",       group: "Partners & Compliance" as SectionGroup,   label: "Agents & Corporates",      icon: Briefcase,    hint: "6 accounts with credit",         accent: "warning" as const },
   { id: "tax",          group: "Partners & Compliance" as SectionGroup,   label: "Tax & Payment Methods",    icon: Receipt,      hint: "GST 18% · 6 payment methods",    accent: "warning" as const },
   { id: "integrations", group: "Partners & Compliance" as SectionGroup,   label: "Integrations",             icon: Plug,         hint: "OTAs · WhatsApp · POS · accounting", accent: "warning" as const },
@@ -427,6 +429,7 @@ const INITIAL_DATA: Record<SectionId, Field[]> = {
   "group-services": [],
   "meal-plans": [],
   "pricing-rules": [],
+  "rate-restrictions": [],
   "tables": [],
   food: [
     { kind: "number", label: "F&B packages", value: 4 },
@@ -607,7 +610,7 @@ export function SetupView() {
   };
 
   // List of sections that use a custom manager instead of the generic field grid
-  const CUSTOM_SECTIONS = new Set<SectionId>(["preferences", "security", "channels", "webhooks", "floors", "room-types", "rooms", "pricing", "seasons", "food", "menu-items", "group-services", "meal-plans", "pricing-rules", "tables", "agents", "tax", "templates", "roles", "branding", "integrations", "backup"]);
+  const CUSTOM_SECTIONS = new Set<SectionId>(["preferences", "security", "channels", "webhooks", "floors", "room-types", "rooms", "pricing", "seasons", "food", "menu-items", "group-services", "meal-plans", "pricing-rules", "rate-restrictions", "tables", "agents", "tax", "templates", "roles", "branding", "integrations", "backup"]);
   const isCustom = CUSTOM_SECTIONS.has(active);
 
   const startEdit = () => {
@@ -865,6 +868,7 @@ export function SetupView() {
             {active === "group-services" && <GroupServicesManager onToast={showToast} />}
             {active === "meal-plans" && <MealPlansManager onToast={showToast} />}
             {active === "pricing-rules" && <PricingRulesManager onToast={showToast} />}
+            {active === "rate-restrictions" && <RateRestrictionsManager onToast={showToast} />}
             {active === "tables" && <TablesManager onToast={showToast} />}
             {active === "agents" && (
               <AgentsManager agents={agents} onChange={next => persistList("agents", agents, next, setAgents)} onToast={showToast}
