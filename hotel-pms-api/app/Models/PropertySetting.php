@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToCompany;
 use Illuminate\Database\Eloquent\Model;
 
 class PropertySetting extends Model
 {
+    use BelongsToCompany;
+
     /**
-     * Property & Branch configuration — a single-row settings table (id = 1).
+     * Property & Branch configuration — per-company settings row.
      */
     protected $guarded = ['id'];
 

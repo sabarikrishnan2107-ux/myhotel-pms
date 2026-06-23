@@ -14,7 +14,7 @@ class PropertyController extends Controller
      */
     public function show()
     {
-        return response()->json(PropertySetting::firstOrCreate(['id' => 1]));
+        return response()->json(PropertySetting::firstOrCreate([]));
     }
 
     /**
@@ -52,7 +52,7 @@ class PropertyController extends Controller
             }
         }
 
-        $settings = PropertySetting::firstOrCreate(['id' => 1]);
+        $settings = PropertySetting::firstOrCreate([]);
         $settings->update($data);
 
         return response()->json($settings);

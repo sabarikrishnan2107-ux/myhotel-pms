@@ -124,7 +124,7 @@ class AuthController extends Controller
         $role = $user->role ?: 'Admin';
         $allowed = ['*'];
         if (strcasecmp($role, 'Admin') !== 0 && strcasecmp($role, 'Owner') !== 0) {
-            $r = Role::whereRaw('LOWER(name) = ?', [mb_strtolower($role)])->first();
+            $r = Role::where('company_id', $user->company_id)->whereRaw('LOWER(name) = ?', [mb_strtolower($role)])->first();
             $allowed = is_array($r?->permissions) ? array_values($r->permissions) : [];
         }
 
