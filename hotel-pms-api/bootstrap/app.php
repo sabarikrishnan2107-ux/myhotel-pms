@@ -14,7 +14,8 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
-            'company.module' => \App\Http\Middleware\EnsureCompanyModule::class,
+            'company.module'   => \App\Http\Middleware\EnsureCompanyModule::class,
+            'company.active'   => \App\Http\Middleware\EnsureCompanyActive::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

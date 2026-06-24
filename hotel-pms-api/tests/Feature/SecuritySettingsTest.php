@@ -33,20 +33,23 @@ class SecuritySettingsTest extends TestCase
         ]);
     }
 
-    private function makeUser(): void
+    /** Creates a user for 'admin@hotel.com' and returns their company_id. */
+    private function makeUser(): int
     {
-        User::factory()->create(['email' => 'admin@hotel.com', 'password' => Hash::make('secret123'), 'company_id' => $this->makeCompanyId()]);
+        $cid = $this->makeCompanyId();
+        User::factory()->create(['email' => 'admin@hotel.com', 'password' => Hash::make('secret123'), 'company_id' => $cid]);
+        return $cid;
     }
 
-    private function setLockout(int $n): void
+    private function setLockout(int $n, int $companyId): void
     {
-        AppSetting::create(['key' => 'security', 'value' => ['lockoutAfter' => $n]]);
+        AppSetting::create(['company_id' => $companyId, 'key' => 'security', 'value' => ['lockoutAfter' => $n]]);
     }
 
     public function test_account_locks_out_after_configured_failed_attempts(): void
     {
-        $this->makeUser();
-        $this->setLockout(3);
+        $cid = $this->makeUser();
+        $this->setLockout(3, $cid);
 
         // Three wrong-password attempts are each rejected as bad credentials.
         for ($i = 0; $i < 3; $i++) {
@@ -65,8 +68,8 @@ class SecuritySettingsTest extends TestCase
 
     public function test_successful_login_clears_the_failed_attempt_counter(): void
     {
-        $this->makeUser();
-        $this->setLockout(3);
+        $cid = $this->makeUser();
+        $this->setLockout(3, $cid);
 
         // Two failures, then a success — counter resets.
         $this->postJson('/api/login', ['email' => 'admin@hotel.com', 'password' => 'wrong'])->assertStatus(422);
@@ -82,7 +85,7 @@ class SecuritySettingsTest extends TestCase
 
     public function test_no_lockout_when_setting_is_absent(): void
     {
-        $this->makeUser();
+        $cid = $this->makeUser();
         // No 'security' setting → lockout disabled → many failures never block.
         for ($i = 0; $i < 8; $i++) {
             $this->postJson('/api/login', ['email' => 'admin@hotel.com', 'password' => 'wrong'])->assertStatus(422);
@@ -135,8 +138,8 @@ class SecuritySettingsTest extends TestCase
 
     public function test_login_sets_token_expiry_from_session_timeout(): void
     {
-        $this->makeUser();
-        AppSetting::create(['key' => 'security', 'value' => ['sessionMin' => 30]]);
+        $cid = $this->makeUser();
+        AppSetting::create(['company_id' => $cid, 'key' => 'security', 'value' => ['sessionMin' => 30]]);
 
         $this->postJson('/api/login', ['email' => 'admin@hotel.com', 'password' => 'secret123'])->assertOk();
 

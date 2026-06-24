@@ -28,8 +28,15 @@ class AuthController extends Controller
             'code'     => ['sometimes', 'nullable', 'string'],
         ]);
 
+        // Resolve the user first so we can scope the security policy to their company.
+        $user = User::where('email', $data['email'])->first();
+
         // Enforce the configurable "lockout after N failed attempts" security setting.
-        $security = AppSetting::where('key', 'security')->first()?->value ?? [];
+        // Read the policy row scoped to the user's company (bypass the global tenant scope
+        // because the request is unauthenticated at this point).
+        $security = $user
+            ? (AppSetting::withoutGlobalScope('company')->where('company_id', $user->company_id)->where('key', 'security')->first()?->value ?? [])
+            : [];
         $maxAttempts = (int) ($security['lockoutAfter'] ?? 0);
         $throttleKey = 'login:' . strtolower($data['email']) . '|' . $request->ip();
 
@@ -39,15 +46,14 @@ class AuthController extends Controller
                 'module' => 'Auth', 'action' => 'Login blocked', 'entity' => $data['email'],
                 'after' => 'Account locked', 'severity' => 'critical',
                 'ip' => $request->ip(), 'device' => $request->userAgent(),
+                'company_id' => $user?->company_id,
             ]);
             throw ValidationException::withMessages([
                 'email' => ["Too many failed attempts. Try again in {$seconds} second(s)."],
             ]);
         }
 
-        $user = User::where('email', $data['email'])->first();
-
-        if (! $user || ! Hash::check($data['password'], $user->password)) {
+        if (!$user || !Hash::check($data['password'], $user->password)) {
             if ($maxAttempts > 0) {
                 RateLimiter::hit($throttleKey, 900); // 15-minute lockout window
             }
@@ -55,6 +61,7 @@ class AuthController extends Controller
                 'module' => 'Auth', 'action' => 'Login failed', 'entity' => $data['email'],
                 'after' => 'Invalid credentials', 'severity' => 'warning',
                 'ip' => $request->ip(), 'device' => $request->userAgent(),
+                'company_id' => $user?->company_id,
             ]);
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],

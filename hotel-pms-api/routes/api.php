@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Route;
 Route::post('/login', [AuthController::class, 'login']);
 
 // ---- Protected: everything else requires a valid Sanctum token ----
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'company.active'])->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
