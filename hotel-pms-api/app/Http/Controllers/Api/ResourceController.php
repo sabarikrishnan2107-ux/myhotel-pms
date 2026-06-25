@@ -239,6 +239,7 @@ class ResourceController extends Controller
             'code' => 'string|max:50', 'name' => 'string|max:255', 'inclBreakfast' => 'boolean',
             'inclLunch' => 'boolean', 'inclDinner' => 'boolean', 'discountPct' => 'integer|min:0|max:100',
             'refundable' => 'boolean', 'active' => 'boolean',
+            'breakfastPrice' => 'integer|min:0', 'lunchPrice' => 'integer|min:0', 'dinnerPrice' => 'integer|min:0',
         ],
         'seasons' => [
             'name' => 'string|max:255', 'from' => 'string|max:50', 'to' => 'string|max:50',
