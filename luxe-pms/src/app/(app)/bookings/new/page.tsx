@@ -91,12 +91,14 @@ export default function BookingWizardPage() {
       .catch(() => {});
   }, []);
   const [ratePlan, setRatePlan] = React.useState("");
-  // Default the selected rate plan + room type to the first configured one once loaded.
+  // Do NOT auto-select a room type / rate plan — the guest must choose them, so
+  // the Live Summary stays empty (no pricing) until a real selection is made.
+  // Only clear a stale selection that is no longer in the loaded list.
   React.useEffect(() => {
-    if (ratePlans.length && !ratePlans.some(p => p.v === ratePlan)) setRatePlan(ratePlans[0].v);
+    if (ratePlan && ratePlans.length && !ratePlans.some(p => p.v === ratePlan)) setRatePlan("");
   }, [ratePlans, ratePlan]);
   React.useEffect(() => {
-    if (roomTypes.length && !roomTypes.some(t => t.name === roomType)) setRoomType(roomTypes[0].name);
+    if (roomType && roomTypes.length && !roomTypes.some(t => t.name === roomType)) setRoomType("");
   }, [roomTypes, roomType]);
   const [breakfast, setBreakfast] = React.useState(true);
   const [extraBed, setExtraBed] = React.useState(false);
@@ -234,6 +236,9 @@ export default function BookingWizardPage() {
 
   const canNext = () => {
     if (step === 1) return guest !== null || newGuest !== null;
+    // Step 3 (Pax & Type) and Step 4 (Rate Plan) require an explicit selection.
+    if (step === 3) return roomType !== "";
+    if (step === 4) return ratePlan !== "";
     // Step 5 (Payment): a non-cash advance must capture a reference number.
     if (step === 5) return !needsRef || paymentRef.trim() !== "";
     return true;
@@ -877,10 +882,12 @@ export default function BookingWizardPage() {
             <Row k="Check-out" v={new Date(checkOut).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />
             <Row k="Nights" v={`${nights}`} />
             <Row k="Pax" v={`${adults}A${children ? ` + ${children}C` : ""}`} />
-            <Row k="Room type" v={roomType} />
-            <Row k="Rate plan" v={ratePlan} />
+            <Row k="Room type" v={roomType || "—"} />
+            <Row k="Rate plan" v={ratePlan || "—"} />
           </dl>
 
+          {roomType ? (
+          <>
           <div className="border-t border-border my-4" />
 
           <dl className="space-y-2 text-sm">
@@ -927,6 +934,12 @@ export default function BookingWizardPage() {
               </>
             )}
           </dl>
+          </>
+          ) : (
+            <div className="mt-4 border-t border-border pt-4">
+              <p className="text-sm text-muted-foreground">Select a room type to see pricing.</p>
+            </div>
+          )}
 
           <div className="mt-5 flex gap-2">
             <Button variant="outline" disabled={step === 1} onClick={() => setStep(s => s - 1)} className="flex-1">
