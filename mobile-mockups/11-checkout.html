@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>MYHOTEL · Check-out</title>
+<style>
+  :root{
+    --navy:#0F172A; --navy-2:#1E2A47; --gold:#D4A64A; --gold-2:#B5862B;
+    --green:#22C55E; --warn:#F59E0B; --blue:#5B8DEF; --violet:#8B5CF6; --rose:#F43F6E;
+    --bg:#F4F6FA; --surface:#FFFFFF; --border:#EDF1F6; --line:#F1F4F8;
+    --ink:#16203A; --ink-2:#64708A; --faint:#9AA6BC;
+    --chip:#EAEEF4; --gold-soft:#F7E9C6; --track:#EDF1F6;
+    --green-soft:#E2F7EC; --rose-soft:#FCE7EE; --blue-soft:#E9EFFD; --warn-soft:#FDEEDD;
+    --sh:0 6px 22px rgba(20,32,58,.06); --sh-card:0 10px 30px rgba(20,32,58,.05);
+  }
+  .phone.dark{
+    --bg:#0B1220; --surface:#141F38; --border:#22304C; --line:#1C2942;
+    --ink:#ECF1FA; --ink-2:#9DAAC2; --faint:#67768F;
+    --chip:#1C2942; --gold-soft:#3A3014; --track:#243352;
+    --green-soft:#13301F; --rose-soft:#3A1320; --blue-soft:#152138; --warn-soft:#33260F;
+    --sh:0 6px 22px rgba(0,0,0,.35); --sh-card:0 12px 34px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{font-family:-apple-system,"SF Pro Display","SF Pro Text",system-ui,"Segoe UI",sans-serif;
+    color:var(--ink);background:#0c1320;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;-webkit-font-smoothing:antialiased;}
+  .phone{position:relative;width:393px;max-width:100%;height:852px;max-height:96vh;border-radius:42px;overflow:hidden;
+    background:var(--bg);box-shadow:0 50px 120px rgba(0,0,0,.55);display:flex;flex-direction:column;}
+
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:15px 28px 2px;font-size:15px;font-weight:600;color:var(--ink);}
+  .statusbar .r{display:flex;gap:6px;align-items:center;}
+
+  .bar{display:flex;align-items:center;gap:12px;padding:8px 18px 10px;}
+  .ib{width:40px;height:40px;border-radius:50%;background:var(--surface);box-shadow:var(--sh);display:flex;align-items:center;justify-content:center;color:var(--ink);flex:none;cursor:pointer;}
+  .bar .ti{flex:1;} .bar .ti h1{font-size:19px;font-weight:600;margin:0;letter-spacing:-.02em;} .bar .ti p{font-size:12px;color:var(--ink-2);margin:2px 0 0;}
+  .theme .sun{display:none;} .phone.dark .theme .moon{display:none;} .phone.dark .theme .sun{display:block;}
+
+  .scroll{flex:1;overflow-y:auto;padding:6px 18px 12px;}
+  .scroll::-webkit-scrollbar{display:none;}
+
+  .gsum{position:relative;border-radius:22px;overflow:hidden;color:#EEF2F8;padding:16px;background:linear-gradient(120deg,var(--navy),var(--navy-2));box-shadow:0 14px 34px rgba(15,23,42,.22);}
+  .gsum .row{display:flex;align-items:center;gap:12px;}
+  .gsum .av{width:48px;height:48px;border-radius:50%;flex:none;background:linear-gradient(150deg,#F0D283,var(--gold));color:#3a2a06;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:17px;}
+  .gsum .n{font-size:17px;font-weight:600;} .gsum .sub{font-size:11.5px;color:#A9B6CE;margin-top:2px;}
+  .gsum .bal{display:flex;justify-content:space-between;align-items:flex-end;margin-top:14px;padding-top:13px;border-top:1px solid rgba(255,255,255,.12);}
+  .gsum .bal .k{font-size:11.5px;color:#9FB0C9;} .gsum .bal .v{font-size:27px;font-weight:600;letter-spacing:-.025em;margin-top:2px;}
+  .gsum .bal .paid{text-align:right;font-size:11.5px;color:#9FB0C9;} .gsum .bal .paid b{display:block;color:#7EE6AC;font-size:14px;font-weight:600;margin-top:3px;}
+
+  .card{background:var(--surface);border-radius:20px;box-shadow:var(--sh-card);padding:16px;margin-top:14px;}
+  .ch{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px;}
+  .ch h3{font-size:15.5px;font-weight:600;margin:0;}
+  .ch a{font-size:12.5px;font-weight:600;color:var(--gold-2);text-decoration:none;}
+
+  /* payment methods */
+  .pm{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+  .pmb{border:1.5px solid var(--border);border-radius:13px;padding:11px 4px;text-align:center;cursor:pointer;background:var(--bg);}
+  .pmb svg{width:20px;height:20px;color:var(--ink-2);} .pmb .l{font-size:11px;color:var(--ink-2);margin-top:5px;}
+  .pmb.on{border-color:var(--gold);background:var(--gold-soft);} .pmb.on svg,.pmb.on .l{color:var(--gold-2);}
+  .amt{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--border);border-radius:13px;padding:0 14px;height:50px;margin-top:12px;}
+  .amt .cur{font-size:17px;color:var(--faint);} .amt input{flex:1;border:0;background:none;outline:none;font-family:inherit;font-size:19px;font-weight:600;color:var(--ink);}
+
+  /* checklist */
+  .ck{display:flex;align-items:center;gap:12px;padding:11px 0;} .ck:not(:last-child){border-bottom:1px solid var(--line);}
+  .ck .box{width:24px;height:24px;border-radius:8px;border:2px solid var(--border);flex:none;display:flex;align-items:center;justify-content:center;color:#fff;}
+  .ck .box.on{background:var(--green);border-color:var(--green);}
+  .ck .t{flex:1;font-size:14px;font-weight:500;} .ck .s{font-size:11px;color:var(--faint);}
+
+  /* invoice */
+  .inv{display:flex;align-items:center;gap:12px;}
+  .inv .ic{width:42px;height:42px;border-radius:12px;background:var(--green-soft);color:var(--green);display:flex;align-items:center;justify-content:center;flex:none;}
+  .inv .m{flex:1;} .inv .m .t{font-size:14px;font-weight:600;} .inv .m .s{font-size:11px;color:var(--faint);margin-top:2px;}
+  .invbtns{display:flex;gap:8px;margin-top:13px;}
+  .invbtns button{flex:1;border:1px solid var(--border);background:var(--bg);color:var(--ink);border-radius:11px;height:42px;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;}
+
+  .foot{padding:12px 18px calc(16px + env(safe-area-inset-bottom));background:var(--surface);border-top:1px solid var(--border);}
+  .cta{width:100%;height:54px;border:0;border-radius:15px;background:linear-gradient(135deg,#E6BE63,var(--gold-2));color:#fff;font-family:inherit;font-size:16px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;box-shadow:0 12px 28px rgba(212,166,74,.36);}
+</style>
+</head>
+<body>
+  <div class="phone">
+    <div class="statusbar">
+      <span>9:41</span>
+      <span class="r"><svg width="18" height="12" viewBox="0 0 24 16" fill="currentColor"><rect x="0" y="10" width="3.5" height="6" rx="1"/><rect x="6" y="7" width="3.5" height="9" rx="1"/><rect x="12" y="3.5" width="3.5" height="12.5" rx="1"/><rect x="18" y="0" width="3.5" height="16" rx="1"/></svg>
+      <svg width="17" height="13" viewBox="0 0 24 18" fill="currentColor"><path d="M12 4C7.5 4 3.7 6.4 1.5 9.2L12 19 22.5 9.2C20.3 6.4 16.5 4 12 4Z"/></svg>
+      <svg width="27" height="14" viewBox="0 0 28 14" fill="none"><rect x="1" y="1" width="23" height="12" rx="3.5" stroke="currentColor"/><rect x="3" y="3" width="19" height="8" rx="2" fill="currentColor"/><rect x="25.5" y="5" width="2" height="4" rx="1" fill="currentColor"/></svg></span>
+    </div>
+
+    <div class="bar">
+      <div class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="19"><path d="m15 18-6-6 6-6"/></svg></div>
+      <div class="ti"><h1>Check-out</h1><p>David Müller · #BK100254</p></div>
+      <div class="ib theme" onclick="this.closest('.phone').classList.toggle('dark')">
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg>
+      </div>
+    </div>
+
+    <div class="scroll">
+      <div class="gsum">
+        <div class="row"><div class="av">DM</div><div style="flex:1"><div class="n">David Müller</div><div class="sub">Deluxe 504 · 14–16 Jun · 2 nights</div></div></div>
+        <div class="bal"><div><div class="k">Balance to settle</div><div class="v">₹4,200</div></div><div class="paid">Folio total<b>₹24,200</b></div></div>
+      </div>
+
+      <!-- settle -->
+      <div class="card">
+        <div class="ch"><h3>Settle balance</h3><a href="#">Split</a></div>
+        <div class="pm">
+          <div class="pmb on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg><div class="l">Card</div></div>
+          <div class="pmb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 7h6M12 17h.01"/></svg><div class="l">UPI</div></div>
+          <div class="pmb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10h18M5 6l7-3 7 3M5 10v8M19 10v8M3 21h18"/></svg><div class="l">Cash</div></div>
+          <div class="pmb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10h18M5 6l7-3 7 3M6 10v8M18 10v8M3 21h18"/></svg><div class="l">Bank</div></div>
+        </div>
+        <div class="amt"><span class="cur">₹</span><input value="4,200" /></div>
+      </div>
+
+      <!-- departure checklist -->
+      <div class="card">
+        <div class="ch"><h3>Departure checklist</h3></div>
+        <div class="ck"><span class="box on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" width="13"><path d="M5 12l5 5L20 6"/></svg></span><span class="t">Mini-bar checked</span><span class="s">No items</span></div>
+        <div class="ck"><span class="box on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" width="13"><path d="M5 12l5 5L20 6"/></svg></span><span class="t">Room key returned</span><span class="s">2 cards</span></div>
+        <div class="ck"><span class="box on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" width="13"><path d="M5 12l5 5L20 6"/></svg></span><span class="t">No damages reported</span></div>
+        <div class="ck"><span class="box"></span><span class="t">Feedback collected</span><span class="s">Optional</span></div>
+      </div>
+
+      <!-- invoice -->
+      <div class="card">
+        <div class="ch"><h3>Tax invoice (e-Invoice)</h3></div>
+        <div class="inv">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="19"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m9 15 2 2 4-4"/></svg></span>
+          <div class="m"><div class="t">IRN generated</div><div class="s">GSTIN 27AAACR5055K1Z5 · CGST+SGST</div></div>
+        </div>
+        <div class="invbtns">
+          <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Download</button>
+          <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg> Email</button>
+          <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3M21 21v.01M17 21h.01M21 17h.01"/></svg> QR</button>
+        </div>
+      </div>
+      <div style="height:6px"></div>
+    </div>
+
+    <div class="foot">
+      <button class="cta">Settle ₹4,200 &amp; Check-out <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" width="18"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></button>
+    </div>
+  </div>
+</body>
+</html>

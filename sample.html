@@ -1,242 +1,453 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Room Rack — Front Desk Board (concept)</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MYHOTEL · Sign in (design sample)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,ital,wght@9..144,0,500;9..144,0,600;9..144,1,500;9..144,1,600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <style>
-  :root{
-    --bg:#0a0f1e; --surface:#101a2e; --surface-2:#0c1322; --sunken:#0c1322; --elev:#16223a;
-    --border:#1e2a44; --text:#e7eef8; --muted:#8ea4c2; --subtle:#5d7290;
-    --brand:#e6a92b; --brand-soft:#3a2e12;
-    --green:#34d399; --green-soft:#0f2a20;
-    --amber:#f0a93b; --amber-soft:#2c2210;
-    --blue:#5b9bff; --blue-soft:#11213f;
-    --red:#f56b6b; --red-soft:#2a1518;
-    --slate:#7286a6; --slate-soft:#1a2336;
-    --violet:#a78bfa;
+  /* ============================================================
+     MYHOTEL — login design sample
+     Luxury resort backdrop · golden bokeh · navy/gold glass card
+     ============================================================ */
+  :root {
+    --surface:rgba(8,18,35,.92);
+    --surface-solid:#0B1A30;
+    --sunken:rgba(5,13,26,.85);
+    --fg:#F4F1EA; --muted:#C2CBDA; --subtle:#8C99AE;
+    --border:rgba(220,225,235,.18); --border-strong:rgba(220,225,235,.32);
+    --gold:#E6B84B; --gold-deep:#C38A1E;
+    --ring:rgba(230,184,75,.40);
+    --overlay-1:rgba(4,12,26,.55); --overlay-2:rgba(4,12,26,.82);
   }
-  *{box-sizing:border-box}
-  body{margin:0;background:
-      radial-gradient(1200px 500px at 80% -10%, #14223f55, transparent),
-      var(--bg);color:var(--text);
-    font-family:"Segoe UI",system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.45}
-  .wrap{max-width:1340px;margin:0 auto;padding:26px}
+  [data-theme="light"] {
+    --surface:rgba(255,255,255,.82);
+    --surface-solid:#FFFFFF;
+    --sunken:rgba(243,239,232,.85);
+    --fg:#1F2937; --muted:#4B5563; --subtle:#8A93A3;
+    --border:rgba(31,41,55,.12); --border-strong:rgba(31,41,55,.20);
+    --gold:#A9760F; --gold-deep:#8A5E0A;
+    --ring:rgba(195,138,30,.30);
+    --overlay-1:rgba(250,248,244,.35); --overlay-2:rgba(250,248,244,.55);
+  }
 
-  /* ---------- Summary strip ---------- */
-  .top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;
-    background:linear-gradient(135deg,#13203a,#0e1830);border:1px solid var(--border);
-    border-radius:16px;padding:16px 20px}
-  .top h1{font-size:20px;font-weight:600;letter-spacing:-.02em;margin:0}
-  .top .sub{color:var(--muted);font-size:12px;margin-top:2px}
-  .occ{display:flex;align-items:center;gap:12px;margin-left:auto}
-  .occ .num{font-size:26px;font-weight:700;line-height:1}
-  .occ .bar{width:160px;height:8px;border-radius:6px;background:var(--sunken);overflow:hidden}
-  .occ .bar>span{display:block;height:100%;width:17%;
-    background:linear-gradient(90deg,var(--brand),var(--amber));border-radius:6px}
-  .occ small{color:var(--muted);font-size:11px}
+  * { box-sizing:border-box; }
+  html, body { height:100%; margin:0; }
+  body {
+    font-family:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    color:var(--fg); overflow:hidden; background:#04101F;
+    -webkit-font-smoothing:antialiased;
+  }
+  .display { font-family:"Fraunces",Georgia,serif; }
 
-  /* ---------- Filter chips ---------- */
-  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 18px}
-  .chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);
-    background:var(--surface);border-radius:10px;padding:7px 12px;font-size:12px;cursor:pointer;color:var(--muted);transition:.15s}
-  .chip:hover{border-color:var(--brand)}
-  .chip.active{background:var(--elev);color:var(--text);border-color:#2c3c5e}
-  .chip b{color:var(--text);font-size:13px}
-  .chip .d{width:8px;height:8px;border-radius:3px}
+  /* ---- resort backdrop (slow cinematic zoom) ---- */
+  .bg {
+    position:fixed; inset:0; z-index:0;
+    background:#04101F url("https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?q=80&w=2400&auto=format&fit=crop") center/cover no-repeat;
+    animation:kenburns 26s ease-in-out infinite alternate;
+  }
+  @keyframes kenburns {
+    from { transform:scale(1) translate(0,0); }
+    to   { transform:scale(1.12) translate(-1.5%, -1.5%); }
+  }
+  .bg::after {
+    content:""; position:absolute; inset:0;
+    background:
+      linear-gradient(100deg, var(--overlay-2) 0%, var(--overlay-1) 42%, transparent 70%),
+      linear-gradient(0deg, var(--overlay-2), transparent 55%);
+  }
+  #bokeh { position:fixed; inset:0; z-index:1; pointer-events:none; }
 
-  /* ---------- Board grid ---------- */
-  .board{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-  @media(min-width:560px){.board{grid-template-columns:repeat(3,1fr)}}
-  @media(min-width:820px){.board{grid-template-columns:repeat(4,1fr)}}
-  @media(min-width:1100px){.board{grid-template-columns:repeat(5,1fr)}}
-  @media(min-width:1340px){.board{grid-template-columns:repeat(6,1fr)}}
+  .shell { position:relative; z-index:2; height:100svh; display:flex; flex-direction:column; }
 
-  .tile{position:relative;background:var(--surface);border:1px solid var(--border);
-    border-radius:14px;padding:13px 14px 12px;overflow:hidden;transition:.16s;cursor:pointer}
-  .tile::before{content:"";position:absolute;inset:0 0 auto 0;height:3px}
-  .tile:hover{transform:translateY(-3px);border-color:#2c3c5e;box-shadow:0 12px 30px rgba(0,0,0,.4)}
-  .tile.available::before{background:var(--green)}
-  .tile.occupied::before{background:var(--amber)}
-  .tile.dirty::before{background:var(--red)}
-  .tile.blocked::before{background:var(--slate)}
-  .tile.reserved::before{background:var(--blue)}
+  /* ---- top bar ---- */
+  .bar { display:flex; align-items:center; justify-content:space-between; padding:26px 44px; }
+  .logo { display:flex; align-items:center; gap:12px; }
+  .logo .mark {
+    height:44px; width:44px; border-radius:12px;
+    background:linear-gradient(135deg,#E6B84B,#C38A1E);
+    display:grid; place-items:center; color:#07142A;
+    box-shadow:0 10px 26px -8px rgba(195,138,30,.6);
+  }
+  .logo .name { font-size:18px; font-weight:800; letter-spacing:.06em; color:#F4F1EA; }
+  .logo .name span { color:#E6B84B; font-weight:600; }
+  .logo .tag { font-size:9.5px; letter-spacing:.28em; color:#B9C2D2; text-transform:uppercase; margin-top:1px; }
 
-  .th{display:flex;align-items:flex-start;justify-content:space-between;gap:6px}
-  .rno{font-size:19px;font-weight:700;line-height:1;letter-spacing:-.01em}
-  .vip{color:var(--brand);font-size:13px;margin-left:4px}
-  .floor{font-size:10px;color:var(--subtle);border:1px solid var(--border);border-radius:6px;padding:1px 6px}
-  .rtype{font-size:11px;color:var(--muted);margin-top:5px}
+  .tools { display:flex; gap:10px; }
+  .icobtn {
+    height:38px; width:38px; border-radius:10px; cursor:pointer;
+    border:1px solid var(--border); background:var(--surface); backdrop-filter:blur(12px);
+    color:var(--fg); display:grid; place-items:center; transition:.15s;
+  }
+  .icobtn:hover { border-color:var(--border-strong); }
 
-  .badge{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;border-radius:999px;padding:3px 9px;margin-top:11px}
-  .badge .d{width:7px;height:7px;border-radius:50%}
-  .badge.available{background:var(--green-soft);color:var(--green)}
-  .badge.occupied{background:var(--amber-soft);color:var(--amber)}
-  .badge.dirty{background:var(--red-soft);color:var(--red)}
-  .badge.blocked{background:var(--slate-soft);color:#a9b8d2}
-  .badge.reserved{background:var(--blue-soft);color:var(--blue)}
+  /* ---- main split ---- */
+  .main {
+    flex:1; display:grid; grid-template-columns:1.1fr .9fr; align-items:center;
+    gap:40px; padding:0 56px 44px; max-width:1340px; margin:0 auto; width:100%;
+    perspective:1500px;
+  }
+  @media (max-width:980px) {
+    .main { grid-template-columns:1fr; padding:0 22px 28px; }
+    .hero { display:none; }
+  }
 
-  .ctx{margin-top:11px;border-top:1px solid var(--border);padding-top:9px;min-height:38px}
-  .ctx .g{font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px}
-  .ctx .av{width:22px;height:22px;border-radius:50%;background:var(--elev);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--brand);flex:0 0 auto}
-  .ctx .meta{font-size:11px;color:var(--muted);margin-top:3px}
-  .ctx .rate{font-size:15px;font-weight:700}
-  .ctx .rate small{font-size:11px;color:var(--muted);font-weight:500}
+  /* ---- hero ---- */
+  .eyebrow {
+    display:inline-flex; align-items:center; gap:9px; margin-bottom:26px;
+    border:1px solid var(--border); background:rgba(10,22,42,.4); backdrop-filter:blur(10px);
+    border-radius:999px; padding:7px 15px;
+    font-size:11px; letter-spacing:.16em; text-transform:uppercase; font-weight:600; color:#E6B84B;
+  }
+  .eyebrow .dot {
+    height:7px; width:7px; border-radius:50%; background:#43d17f;
+    box-shadow:0 0 0 4px rgba(67,209,127,.18); animation:pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 50% { opacity:.4; transform:scale(.8); } }
 
-  /* hover action bar */
-  .acts{display:flex;gap:6px;margin-top:10px;max-height:0;opacity:0;overflow:hidden;
-    transition:max-height .18s ease,opacity .18s ease}
-  .tile:hover .acts{max-height:48px;opacity:1}
-  .a{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;height:32px;
-    border:1px solid var(--border);background:var(--surface-2);color:var(--text);border-radius:9px;font-size:12px;cursor:pointer}
-  .a:hover{border-color:var(--brand);background:var(--elev)}
-  .a.primary{background:var(--brand);color:#1a1206;border-color:var(--brand);font-weight:600}
-  .a.go{background:var(--green-soft);color:var(--green);border-color:transparent}
-  .a.icon{flex:0 0 32px}
+  .hero h1 {
+    font-size:60px; line-height:1.04; margin:0 0 22px; font-weight:500;
+    letter-spacing:-.02em; max-width:14ch; color:#F8F5EF;
+    text-shadow:0 2px 30px rgba(0,0,0,.4);
+  }
+  .hero h1 em { font-style:italic; color:#E6B84B; }
+  .hero p { font-size:16px; line-height:1.65; color:#D5DCE8; margin:0; max-width:42ch; text-shadow:0 1px 12px rgba(0,0,0,.4); }
 
-  .hint{color:var(--subtle);font-size:11px;text-align:center;margin-top:22px}
-  .tag{display:inline-block;font-size:10px;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:1px 7px;margin-left:8px;vertical-align:middle}
+  .stats { display:flex; margin-top:42px; }
+  .stat { padding-right:34px; margin-right:34px; border-right:1px solid var(--border); }
+  .stat:last-child { border:none; }
+  .stat .v { font-size:30px; font-weight:800; letter-spacing:-.02em; color:#F8F5EF; }
+  .stat .v b { color:#E6B84B; }
+  .stat .k { font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:#A9B4C6; margin-top:4px; }
+
+  /* ---- card (glass + 3D) ---- */
+  .cardwrap { width:100%; max-width:440px; justify-self:end; animation:riseIn .75s cubic-bezier(.2,.7,.3,1) both; }
+  @keyframes riseIn { from { opacity:0; transform:translateY(26px); } to { opacity:1; transform:none; } }
+
+  .card {
+    position:relative;
+    border:1px solid var(--border-strong); background:var(--surface);
+    backdrop-filter:blur(26px) saturate(150%); -webkit-backdrop-filter:blur(26px) saturate(150%);
+    border-radius:26px; padding:34px 34px 30px; width:100%;
+    box-shadow:0 1px 0 rgba(255,255,255,.12) inset, 0 50px 100px -40px rgba(0,0,0,.85);
+    transform-style:preserve-3d; transition:transform .25s cubic-bezier(.2,.65,.3,1);
+    will-change:transform;
+  }
+  /* staggered fade-in of card contents (opacity only — keeps the 3D translateZ intact) */
+  .card > * { animation:fadeUp .55s ease both; }
+  @keyframes fadeUp { from { opacity:0; } to { opacity:1; } }
+  .card > *:nth-child(1) { animation-delay:.12s; }
+  .card > *:nth-child(2) { animation-delay:.18s; }
+  .card > *:nth-child(3) { animation-delay:.24s; }
+  .card > form > * { animation:fadeUp .55s ease both; }
+  .card > form > *:nth-child(1) { animation-delay:.28s; }
+  .card > form > *:nth-child(2) { animation-delay:.34s; }
+  .card > form > *:nth-child(3) { animation-delay:.40s; }
+  .card > form > *:nth-child(4) { animation-delay:.46s; }
+  .card > form > *:nth-child(5) { animation-delay:.52s; }
+  .card > form > *:nth-child(6) { animation-delay:.58s; }
+  /* gold gradient hairline frame */
+  .card::before {
+    content:""; position:absolute; inset:0; border-radius:26px; padding:1px; pointer-events:none;
+    background:linear-gradient(140deg, rgba(230,184,75,.7), rgba(230,184,75,0) 38%, rgba(230,184,75,0) 70%, rgba(230,184,75,.35));
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor; mask-composite:exclude;
+  }
+  .card > * { transform:translateZ(26px); }
+  .card h2 { transform:translateZ(46px); }
+  .card .tabs { transform:translateZ(40px); }
+  .card .btn { transform:translateZ(52px); }
+
+  /* property crest header */
+  .crest { display:flex; align-items:center; gap:12px; margin-bottom:22px; }
+  .crest .badge {
+    height:46px; width:46px; border-radius:13px; flex:0 0 auto;
+    background:linear-gradient(150deg, rgba(230,184,75,.22), rgba(230,184,75,.06));
+    border:1px solid rgba(230,184,75,.4); display:grid; place-items:center;
+    color:var(--gold); font-family:"Fraunces",serif; font-weight:600; font-size:18px;
+  }
+  .crest .meta { line-height:1.3; }
+  .crest .meta .p { font-size:14px; font-weight:700; color:var(--fg); }
+  .crest .meta .s { display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--muted); }
+  .crest .meta .s .live { height:6px; width:6px; border-radius:50%; background:#43d17f; box-shadow:0 0 0 3px rgba(67,209,127,.2); }
+
+  .card h2 { font-size:26px; font-weight:700; margin:0 0 5px; letter-spacing:-.02em; color:var(--fg); }
+  .card .sub { color:var(--muted); font-size:13.5px; margin:0 0 24px; }
+  .card .sub b { color:var(--fg); font-weight:600; }
+
+  .tabs-label { font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--subtle); font-weight:600; margin-bottom:9px; }
+  .tabs {
+    display:grid; grid-template-columns:repeat(3,1fr); gap:4px; padding:4px;
+    border:1px solid var(--border); border-radius:13px; background:var(--sunken); margin-bottom:22px;
+  }
+  .tab {
+    display:flex; align-items:center; justify-content:center; gap:7px;
+    height:40px; border-radius:9px; cursor:pointer; border:none; background:transparent;
+    color:var(--muted); font-family:inherit; font-size:13px; font-weight:600; transition:.18s;
+  }
+  .tab:hover { color:var(--fg); }
+  .tab.active {
+    background:linear-gradient(135deg,#F0CB67,#C38A1E); color:#07142A;
+    box-shadow:0 8px 20px -8px rgba(195,138,30,.6), inset 0 1px 0 rgba(255,255,255,.4);
+  }
+
+  .field { margin-bottom:16px; }
+  .field label { display:block; font-size:13px; font-weight:600; margin-bottom:8px; color:var(--fg); }
+  .field .row { display:flex; justify-content:space-between; align-items:center; }
+  .field .row a { font-size:12.5px; color:var(--gold); text-decoration:none; font-weight:600; }
+  .field .row a:hover { text-decoration:underline; }
+
+  .control { position:relative; }
+  .control .ico { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--subtle); pointer-events:none; display:grid; }
+  input[type=email],input[type=password],input[type=text] {
+    width:100%; height:52px; border-radius:14px;
+    border:1px solid var(--border); background:var(--sunken); color:var(--fg);
+    padding:0 44px; font-size:14.5px; font-family:inherit; outline:none;
+    box-shadow:inset 0 1px 2px rgba(0,0,0,.18);
+    transition:border-color .15s, box-shadow .15s, background .15s;
+  }
+  input::placeholder { color:var(--subtle); }
+  .control:focus-within .ico { color:var(--gold); }
+  input:focus { border-color:var(--gold); box-shadow:inset 0 1px 2px rgba(0,0,0,.18), 0 0 0 4px var(--ring); }
+
+  .reveal {
+    position:absolute; right:9px; top:50%; transform:translateY(-50%);
+    height:34px; width:34px; border:none; background:transparent; cursor:pointer;
+    color:var(--muted); border-radius:9px; display:grid; place-items:center;
+  }
+  .reveal:hover { background:var(--border); }
+
+  .opts { display:flex; align-items:center; margin:18px 0 24px; font-size:13px; }
+  .opts label { display:flex; align-items:center; gap:9px; color:var(--muted); cursor:pointer; }
+  .opts input { accent-color:var(--gold); height:16px; width:16px; }
+
+  .btn {
+    position:relative; overflow:hidden;
+    width:100%; height:52px; border:none; border-radius:14px; cursor:pointer;
+    font-family:inherit; font-size:15px; font-weight:700;
+    display:inline-flex; align-items:center; justify-content:center; gap:9px;
+    background:linear-gradient(135deg,#F0CB67,#C38A1E); color:#07142A;
+    box-shadow:0 16px 34px -12px rgba(195,138,30,.7); transition:transform .12s, box-shadow .15s;
+  }
+  .btn:hover { transform:translateY(-1px); box-shadow:0 20px 40px -12px rgba(195,138,30,.8); }
+  .btn .arr { transition:transform .15s; }
+  .btn:hover .arr { transform:translateX(3px); }
+  /* sheen sweep */
+  .btn::after {
+    content:""; position:absolute; top:0; left:-60%; width:45%; height:100%;
+    background:linear-gradient(100deg, transparent, rgba(255,255,255,.5), transparent);
+    transform:skewX(-18deg); animation:sheen 4.5s ease-in-out infinite;
+  }
+  @keyframes sheen { 0%,18% { left:-60%; } 38%,100% { left:160%; } }
+
+  .demo { text-align:center; font-size:11.5px; color:var(--muted); margin:16px 0 0; }
+  .demo code { font-family:ui-monospace,Menlo,monospace; color:var(--fg); background:var(--sunken); padding:2px 7px; border-radius:6px; }
+
+  /* enterprise trust footer */
+  .trust {
+    display:flex; align-items:center; justify-content:center; gap:14px;
+    margin-top:22px; padding-top:18px; border-top:1px solid var(--border);
+    font-size:10.5px; letter-spacing:.04em; color:var(--subtle); flex-wrap:wrap;
+  }
+  .trust .t { display:inline-flex; align-items:center; gap:6px; }
+  .trust .t svg { opacity:.8; }
+  .trust .sep { width:3px; height:3px; border-radius:50%; background:currentColor; opacity:.5; }
+
+  .flag {
+    position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:6;
+    background:#E6B84B; color:#07142A; font-size:10.5px; font-weight:800;
+    letter-spacing:.12em; text-transform:uppercase; padding:5px 14px; border-radius:999px;
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
+  <div class="bg"></div>
+  <canvas id="bokeh"></canvas>
+  <div class="flag">Design sample · not wired</div>
 
-  <!-- summary -->
-  <div class="top">
-    <div>
-      <h1>Room Rack <span class="tag">concept · Front Desk Board</span></h1>
-      <div class="sub">HYDER SPARK · 12 rooms · live status</div>
-    </div>
-    <div class="occ">
-      <div>
-        <div class="num">17%</div>
-        <small>occupancy</small>
-      </div>
-      <div>
-        <div class="bar"><span></span></div>
-        <small>2 of 12 sold · ₹5.09L revenue</small>
+  <div class="shell">
+    <div class="bar">
+      <div class="logo">
+        <span class="mark">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.8H20l-4.9 3.6 1.9 5.8L12 14.6 7 18.2l1.9-5.8L4 8.8h6.1z"/></svg>
+        </span>
+        <div>
+          <div class="name">MY<span>HOTEL</span></div>
+          <div class="tag">Hospitality OS</div>
+        </div>
       </div>
     </div>
+
+    <div class="main">
+      <!-- hero -->
+      <section class="hero">
+        <div class="eyebrow"><span class="dot"></span> Now serving · The Pearl Marina</div>
+        <h1 class="display">Run your property like a <em>flagship resort</em>.</h1>
+        <p>Reservations, front desk, housekeeping and payments — orchestrated in real time, so every guest feels like the only guest.</p>
+        <div class="stats">
+          <div class="stat"><div class="v">&lt; <b>30</b>s</div><div class="k">Check-in</div></div>
+          <div class="stat"><div class="v"><b>24</b>/7</div><div class="k">Night audit</div></div>
+          <div class="stat"><div class="v"><b>12</b>+</div><div class="k">Properties</div></div>
+        </div>
+      </section>
+
+      <!-- card -->
+      <div class="cardwrap">
+      <section class="card">
+        <div class="crest">
+          <div class="badge">PM</div>
+          <div class="meta">
+            <div class="p">The Pearl Marina</div>
+            <div class="s"><span class="live"></span> Front desk · online</div>
+          </div>
+        </div>
+        <h2 id="greet">Welcome back</h2>
+        <p class="sub">Sign in to continue to <b>The Pearl Marina</b>.</p>
+
+        <div class="tabs-label">Access level</div>
+        <div class="tabs" id="tabs">
+          <button class="tab active" data-role="manager">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="13" y="7" width="3" height="10"/></svg>
+            Manager
+          </button>
+          <button class="tab" data-role="staff">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 3.5a3 3 0 0 1 0 9M21 20a6 6 0 0 0-5-5.9"/></svg>
+            Staff
+          </button>
+          <button class="tab" data-role="guest">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/></svg>
+            Guest
+          </button>
+        </div>
+
+        <form onsubmit="return false">
+          <div class="field">
+            <label for="email">Email or username</label>
+            <div class="control">
+              <span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></span>
+              <input id="email" type="email" value="admin@hotel.com" autocomplete="email" />
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="row">
+              <label for="password">Password</label>
+              <a href="#">Forgot password?</a>
+            </div>
+            <div class="control">
+              <span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/></svg></span>
+              <input id="password" type="password" placeholder="••••••••••" autocomplete="current-password" />
+              <button class="reveal" type="button" id="revealBtn" aria-label="Show password">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="opts">
+            <label><input type="checkbox" checked /> Remember this device</label>
+          </div>
+
+          <button class="btn" type="submit">
+            Sign in
+            <svg class="arr" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+
+          <p class="demo">Demo — <code>admin@hotel.com</code> / <code>password123</code></p>
+
+          <div class="trust">
+            <span class="t">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Encrypted at rest
+            </span>
+            <span class="sep"></span>
+            <span class="t">SOC 2</span>
+            <span class="sep"></span>
+            <span class="t">ISO 27001 ready</span>
+          </div>
+        </form>
+      </section>
+      </div>
+    </div>
   </div>
 
-  <!-- filter chips with live counts -->
-  <div class="chips">
-    <span class="chip active"><b>12</b> All rooms</span>
-    <span class="chip"><span class="d" style="background:var(--green)"></span><b>7</b> Available</span>
-    <span class="chip"><span class="d" style="background:var(--amber)"></span><b>2</b> Occupied</span>
-    <span class="chip"><span class="d" style="background:var(--blue)"></span><b>1</b> Reserved</span>
-    <span class="chip"><span class="d" style="background:var(--red)"></span><b>1</b> Dirty</span>
-    <span class="chip"><span class="d" style="background:var(--slate)"></span><b>1</b> Blocked</span>
-  </div>
+<script>
+  // time-aware concierge greeting
+  (function () {
+    const h = new Date().getHours();
+    const g = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+    document.getElementById('greet').textContent = g;
+  })();
 
-  <!-- board -->
-  <div class="board">
+  const pw = document.getElementById('password');
+  document.getElementById('revealBtn').addEventListener('click', () => {
+    pw.type = pw.type === 'password' ? 'text' : 'password';
+  });
 
-    <!-- Available (Presidential, VIP) -->
-    <div class="tile available">
-      <div class="th"><div><span class="rno">PH1</span><span class="vip">♛</span></div><span class="floor">F6</span></div>
-      <div class="rtype">Presidential</div>
-      <span class="badge available"><span class="d" style="background:var(--green)"></span>Available</span>
-      <div class="ctx"><div class="rate">₹65,000<small> /night</small></div><div class="meta">Ready to sell</div></div>
-      <div class="acts"><span class="a primary">🔑 Book</span><span class="a icon">→</span><span class="a icon">⋯</span></div>
-    </div>
+  document.getElementById('tabs').addEventListener('click', e => {
+    const t = e.target.closest('.tab'); if (!t) return;
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+  });
 
-    <!-- Occupied with guest + checkout -->
-    <div class="tile occupied">
-      <div class="th"><div><span class="rno">401</span><span class="vip">♛</span></div><span class="floor">F4</span></div>
-      <div class="rtype">Suite</div>
-      <span class="badge occupied"><span class="d" style="background:var(--amber)"></span>In-house</span>
-      <div class="ctx"><div class="g"><span class="av">RK</span>Rajesh Kumar</div><div class="meta">Out tomorrow 11:00 · bal ₹0</div></div>
-      <div class="acts"><span class="a go">⇲ Check-out</span><span class="a icon">⋯</span></div>
-    </div>
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    <!-- Reserved -->
-    <div class="tile reserved">
-      <div class="th"><span class="rno">301</span><span class="floor">F3</span></div>
-      <div class="rtype">King</div>
-      <span class="badge reserved"><span class="d" style="background:var(--blue)"></span>Reserved</span>
-      <div class="ctx"><div class="g"><span class="av">AK</span>Aisha Khan</div><div class="meta">Arrives today · OTA: Booking.com</div></div>
-      <div class="acts"><span class="a primary">→ Check-in</span><span class="a icon">⋯</span></div>
-    </div>
+  // ---------- golden light bokeh (warm hotel ambiance) ----------
+  const cv = document.getElementById('bokeh'), ctx = cv.getContext('2d');
+  let W, H, dpr, motes = [];
+  function size() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const n = Math.min(46, Math.floor(W / 30));
+    motes = Array.from({ length: n }, () => spawn(true));
+  }
+  function spawn(init) {
+    return {
+      x: Math.random() * W,
+      y: init ? Math.random() * H : H + 20,
+      r: Math.random() * 26 + 6,
+      sp: Math.random() * 0.5 + 0.15,
+      drift: (Math.random() - 0.5) * 0.3,
+      a: Math.random() * 0.35 + 0.08,
+      ph: Math.random() * Math.PI * 2
+    };
+  }
+  function frame(t) {
+    ctx.clearRect(0, 0, W, H);
+    for (const m of motes) {
+      if (!reduce) { m.y -= m.sp; m.x += m.drift; }
+      if (m.y + m.r < 0) Object.assign(m, spawn(false));
+      const tw = 0.6 + 0.4 * Math.sin(t * 0.001 + m.ph);
+      const g = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, m.r);
+      g.addColorStop(0, 'rgba(245,220,150,' + (m.a * tw) + ')');
+      g.addColorStop(0.4, 'rgba(230,184,75,' + (m.a * tw * 0.5) + ')');
+      g.addColorStop(1, 'rgba(230,184,75,0)');
+      ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, 7); ctx.fillStyle = g; ctx.fill();
+    }
+    requestAnimationFrame(frame);
+  }
+  window.addEventListener('resize', size);
+  size();
+  frame(0);
 
-    <!-- Available -->
-    <div class="tile available">
-      <div class="th"><span class="rno">501</span><span class="floor">F5</span></div>
-      <div class="rtype">Executive</div>
-      <span class="badge available"><span class="d" style="background:var(--green)"></span>Available</span>
-      <div class="ctx"><div class="rate">₹22,000<small> /night</small></div><div class="meta">Ready to sell</div></div>
-      <div class="acts"><span class="a primary">🔑 Book</span><span class="a icon">→</span><span class="a icon">⋯</span></div>
-    </div>
-
-    <!-- Dirty -->
-    <div class="tile dirty">
-      <div class="th"><span class="rno">202</span><span class="floor">F2</span></div>
-      <div class="rtype">Deluxe</div>
-      <span class="badge dirty"><span class="d" style="background:var(--red)"></span>Dirty</span>
-      <div class="ctx"><div class="g">Departed</div><div class="meta">Awaiting housekeeping</div></div>
-      <div class="acts"><span class="a go">✦ Mark clean</span><span class="a icon">⋯</span></div>
-    </div>
-
-    <!-- Blocked + unblock -->
-    <div class="tile blocked">
-      <div class="th"><span class="rno">305</span><span class="floor">F3</span></div>
-      <div class="rtype">Deluxe</div>
-      <span class="badge blocked"><span class="d" style="background:var(--slate)"></span>Blocked</span>
-      <div class="ctx"><div class="g">Out of sale</div><div class="meta">Reason · Maintenance</div></div>
-      <div class="acts"><span class="a go">🔓 Unblock</span><span class="a icon">🔧</span></div>
-    </div>
-
-    <!-- Available -->
-    <div class="tile available">
-      <div class="th"><span class="rno">402</span><span class="floor">F4</span></div>
-      <div class="rtype">Suite</div>
-      <span class="badge available"><span class="d" style="background:var(--green)"></span>Available</span>
-      <div class="ctx"><div class="rate">₹18,000<small> /night</small></div><div class="meta">Ready to sell</div></div>
-      <div class="acts"><span class="a primary">🔑 Book</span><span class="a icon">→</span><span class="a icon">⋯</span></div>
-    </div>
-
-    <!-- Occupied -->
-    <div class="tile occupied">
-      <div class="th"><span class="rno">102</span><span class="floor">F1</span></div>
-      <div class="rtype">Queen</div>
-      <span class="badge occupied"><span class="d" style="background:var(--amber)"></span>In-house</span>
-      <div class="ctx"><div class="g"><span class="av">PS</span>Priya Sharma</div><div class="meta">Out today · bal ₹9,100</div></div>
-      <div class="acts"><span class="a go">⇲ Check-out</span><span class="a icon">⋯</span></div>
-    </div>
-
-    <!-- Available rooms to fill the grid -->
-    <div class="tile available">
-      <div class="th"><span class="rno">201</span><span class="floor">F2</span></div>
-      <div class="rtype">Deluxe</div>
-      <span class="badge available"><span class="d" style="background:var(--green)"></span>Available</span>
-      <div class="ctx"><div class="rate">₹18,000<small> /night</small></div><div class="meta">Ready to sell</div></div>
-      <div class="acts"><span class="a primary">🔑 Book</span><span class="a icon">→</span><span class="a icon">⋯</span></div>
-    </div>
-    <div class="tile available">
-      <div class="th"><span class="rno">103</span><span class="floor">F1</span></div>
-      <div class="rtype">Queen</div>
-      <span class="badge available"><span class="d" style="background:var(--green)"></span>Available</span>
-      <div class="ctx"><div class="rate">₹13,000<small> /night</small></div><div class="meta">Ready to sell</div></div>
-      <div class="acts"><span class="a primary">🔑 Book</span><span class="a icon">→</span><span class="a icon">⋯</span></div>
-    </div>
-    <div class="tile available">
-      <div class="th"><span class="rno">101</span><span class="floor">F1</span></div>
-      <div class="rtype">Queen</div>
-      <span class="badge available"><span class="d" style="background:var(--green)"></span>Available</span>
-      <div class="ctx"><div class="rate">₹13,000<small> /night</small></div><div class="meta">Ready to sell</div></div>
-      <div class="acts"><span class="a primary">🔑 Book</span><span class="a icon">→</span><span class="a icon">⋯</span></div>
-    </div>
-    <div class="tile available">
-      <div class="th"><span class="rno">203</span><span class="floor">F2</span></div>
-      <div class="rtype">Deluxe</div>
-      <span class="badge available"><span class="d" style="background:var(--green)"></span>Available</span>
-      <div class="ctx"><div class="rate">₹18,000<small> /night</small></div><div class="meta">Ready to sell</div></div>
-      <div class="acts"><span class="a primary">🔑 Book</span><span class="a icon">→</span><span class="a icon">⋯</span></div>
-    </div>
-
-  </div>
-
-  <p class="hint">Hover a tile to reveal its quick actions · status accent on top · live counts above filter the board</p>
-</div>
+  // ---------- card 3D parallax tilt ----------
+  const card = document.querySelector('.card');
+  let tx = 0, ty = 0, cur = { rx: 0, ry: 0 };
+  window.addEventListener('pointermove', e => {
+    tx = (e.clientX / window.innerWidth - 0.5) * 2;
+    ty = (e.clientY / window.innerHeight - 0.5) * 2;
+  });
+  function tiltLoop() {
+    cur.ry += ((tx * 6) - cur.ry) * 0.08;
+    cur.rx += ((-ty * 5) - cur.rx) * 0.08;
+    card.style.transform = 'rotateX(' + cur.rx.toFixed(2) + 'deg) rotateY(' + cur.ry.toFixed(2) + 'deg)';
+    requestAnimationFrame(tiltLoop);
+  }
+  if (!reduce) tiltLoop();
+</script>
 </body>
 </html>

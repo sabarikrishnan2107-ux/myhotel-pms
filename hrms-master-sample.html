@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MYHOTEL HRMS · Company Master (design sample)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,ital,wght@9..144,0,500;9..144,0,600;9..144,1,500;9..144,1,600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  /* ============================================================
+     MYHOTEL HRMS — Company Master design sample
+     Super-admin tenant onboarding: company + login + validity
+     Navy/gold luxury glass language (matches login sample)
+     ============================================================ */
+  :root {
+    --bg-1:#04101F; --bg-2:#071a33;
+    --surface:rgba(8,18,35,.86);
+    --surface-2:rgba(12,26,48,.72);
+    --sunken:rgba(5,13,26,.7);
+    --fg:#F4F1EA; --muted:#C2CBDA; --subtle:#8C99AE;
+    --border:rgba(220,225,235,.14); --border-strong:rgba(220,225,235,.26);
+    --gold:#E6B84B; --gold-deep:#C38A1E;
+    --ring:rgba(230,184,75,.40);
+    --green:#54D08A; --green-bg:rgba(84,208,138,.14);
+    --amber:#E6B84B; --amber-bg:rgba(230,184,75,.14);
+    --red:#F2769B;   --red-bg:rgba(242,118,155,.14);
+    --blue:#7CB8F5;  --blue-bg:rgba(124,184,245,.14);
+    --shadow:0 24px 60px rgba(2,8,20,.55);
+  }
+  [data-theme="light"] {
+    --bg-1:#EEF1F6; --bg-2:#E3E8F0;
+    --surface:rgba(255,255,255,.9);
+    --surface-2:rgba(255,255,255,.78);
+    --sunken:rgba(243,239,232,.7);
+    --fg:#1F2937; --muted:#4B5563; --subtle:#7A8496;
+    --border:rgba(31,41,55,.10); --border-strong:rgba(31,41,55,.18);
+    --gold:#A9760F; --gold-deep:#8A5E0A;
+    --ring:rgba(195,138,30,.30);
+    --green:#1E9E5A; --green-bg:rgba(30,158,90,.12);
+    --amber:#B5860B; --amber-bg:rgba(181,134,11,.14);
+    --red:#C8456E;   --red-bg:rgba(200,69,110,.12);
+    --blue:#2B6CB0;  --blue-bg:rgba(43,108,176,.12);
+    --shadow:0 18px 44px rgba(31,41,55,.16);
+  }
+
+  * { box-sizing:border-box; }
+  html, body { height:100%; margin:0; }
+  body {
+    font-family:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    color:var(--fg); -webkit-font-smoothing:antialiased;
+    background:
+      radial-gradient(1200px 700px at 85% -10%, rgba(230,184,75,.12), transparent 60%),
+      radial-gradient(900px 600px at -5% 110%, rgba(124,184,245,.10), transparent 55%),
+      linear-gradient(160deg, var(--bg-1), var(--bg-2));
+    background-attachment:fixed;
+  }
+  .display { font-family:"Fraunces",Georgia,serif; }
+
+  .app { display:grid; grid-template-columns:248px 1fr; min-height:100vh; }
+
+  /* ---------------- sidebar ---------------- */
+  .side {
+    border-right:1px solid var(--border);
+    background:var(--surface);
+    backdrop-filter:blur(14px);
+    padding:22px 16px; display:flex; flex-direction:column; gap:6px;
+    position:sticky; top:0; height:100vh;
+  }
+  .brand { display:flex; align-items:center; gap:11px; padding:4px 8px 18px; }
+  .brand .mark {
+    width:38px; height:38px; border-radius:11px; display:grid; place-items:center;
+    background:linear-gradient(150deg, var(--gold), var(--gold-deep));
+    color:#1a1205; font-weight:800; font-size:18px; box-shadow:0 8px 20px rgba(230,184,75,.3);
+  }
+  .brand b { font-size:15px; letter-spacing:.3px; }
+  .brand small { display:block; color:var(--subtle); font-size:11px; letter-spacing:.14em; text-transform:uppercase; }
+
+  .nav-label { color:var(--subtle); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; padding:14px 10px 6px; }
+  .nav a {
+    display:flex; align-items:center; gap:11px; padding:10px 11px; border-radius:10px;
+    color:var(--muted); text-decoration:none; font-size:13.5px; font-weight:500;
+    border:1px solid transparent;
+  }
+  .nav a svg { width:17px; height:17px; opacity:.8; }
+  .nav a:hover { background:var(--surface-2); color:var(--fg); }
+  .nav a.active {
+    background:linear-gradient(120deg, rgba(230,184,75,.18), rgba(230,184,75,.05));
+    color:var(--fg); border-color:var(--border-strong);
+  }
+  .nav a.active svg { opacity:1; color:var(--gold); }
+
+  .side-foot { margin-top:auto; border-top:1px solid var(--border); padding-top:14px; }
+  .who { display:flex; align-items:center; gap:10px; padding:6px 4px; }
+  .who .av { width:34px; height:34px; border-radius:50%; background:linear-gradient(150deg,#3a597f,#1d2f47); display:grid; place-items:center; font-size:13px; font-weight:700; color:#dfe8f5; }
+  .who b { font-size:13px; }
+  .who small { color:var(--subtle); font-size:11px; }
+
+  /* ---------------- main ---------------- */
+  .main { padding:22px 28px 40px; }
+  .topbar { display:flex; align-items:center; gap:16px; margin-bottom:22px; }
+  .crumbs { color:var(--subtle); font-size:12px; }
+  .crumbs b { color:var(--muted); font-weight:600; }
+  .search {
+    margin-left:auto; display:flex; align-items:center; gap:9px; min-width:300px;
+    background:var(--sunken); border:1px solid var(--border); border-radius:11px; padding:9px 13px;
+  }
+  .search input { background:none; border:none; outline:none; color:var(--fg); font-size:13px; width:100%; }
+  .search svg { width:16px; height:16px; color:var(--subtle); }
+  .icon-btn {
+    width:40px; height:40px; border-radius:11px; display:grid; place-items:center;
+    background:var(--sunken); border:1px solid var(--border); color:var(--muted); cursor:pointer;
+  }
+  .icon-btn:hover { color:var(--fg); border-color:var(--border-strong); }
+
+  .head { display:flex; align-items:flex-end; gap:18px; margin-bottom:20px; }
+  .head h1 { margin:0; font-size:27px; font-weight:600; letter-spacing:.2px; }
+  .head p { margin:5px 0 0; color:var(--subtle); font-size:13px; }
+  .btn {
+    border:1px solid var(--border-strong); background:var(--surface-2); color:var(--fg);
+    border-radius:11px; padding:11px 16px; font-size:13.5px; font-weight:600; cursor:pointer;
+    display:inline-flex; align-items:center; gap:8px; font-family:inherit;
+  }
+  .btn:hover { border-color:var(--gold); }
+  .btn svg { width:16px; height:16px; }
+  .btn.primary {
+    background:linear-gradient(140deg, var(--gold), var(--gold-deep)); color:#1a1205;
+    border:none; box-shadow:0 10px 24px rgba(230,184,75,.28);
+  }
+  .btn.primary:hover { filter:brightness(1.05); }
+
+  /* ---- stat cards ---- */
+  .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px; }
+  .stat {
+    background:var(--surface); border:1px solid var(--border); border-radius:16px;
+    padding:16px 18px; box-shadow:var(--shadow);
+  }
+  .stat .lab { color:var(--subtle); font-size:11.5px; letter-spacing:.04em; text-transform:uppercase; display:flex; align-items:center; gap:8px; }
+  .stat .lab .dot { width:8px; height:8px; border-radius:50%; }
+  .stat .val { font-size:30px; font-weight:700; margin-top:8px; letter-spacing:.5px; }
+  .stat .sub { color:var(--subtle); font-size:12px; margin-top:2px; }
+
+  /* ---- table ---- */
+  .panel { background:var(--surface); border:1px solid var(--border); border-radius:18px; box-shadow:var(--shadow); overflow:hidden; }
+  .panel-head { display:flex; align-items:center; gap:12px; padding:16px 20px; border-bottom:1px solid var(--border); }
+  .panel-head h3 { margin:0; font-size:15px; font-weight:600; }
+  .chips { display:flex; gap:7px; margin-left:8px; }
+  .chip { font-size:12px; padding:6px 12px; border-radius:999px; border:1px solid var(--border); color:var(--muted); cursor:pointer; }
+  .chip.on { background:var(--surface-2); color:var(--fg); border-color:var(--border-strong); }
+
+  table { width:100%; border-collapse:collapse; }
+  thead th {
+    text-align:left; font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--subtle); font-weight:600; padding:13px 20px; border-bottom:1px solid var(--border);
+  }
+  tbody td { padding:15px 20px; border-bottom:1px solid var(--border); font-size:13.5px; vertical-align:middle; }
+  tbody tr:last-child td { border-bottom:none; }
+  tbody tr:hover { background:var(--surface-2); }
+
+  .co { display:flex; align-items:center; gap:12px; }
+  .co .logo { width:40px; height:40px; border-radius:11px; display:grid; place-items:center; font-weight:800; font-size:15px; color:#fff; }
+  .co b { font-size:14px; display:block; }
+  .co small { color:var(--subtle); font-size:12px; }
+
+  .cred { font-size:13px; }
+  .cred .u { color:var(--fg); }
+  .cred small { color:var(--subtle); display:block; font-size:11.5px; margin-top:2px; }
+
+  .valid small { color:var(--subtle); font-size:12px; }
+  .bar { height:5px; border-radius:99px; background:rgba(255,255,255,.08); margin-top:7px; overflow:hidden; width:130px; }
+  [data-theme="light"] .bar { background:rgba(31,41,55,.1); }
+  .bar i { display:block; height:100%; border-radius:99px; }
+
+  .badge { font-size:11.5px; font-weight:600; padding:5px 11px; border-radius:999px; display:inline-flex; align-items:center; gap:6px; }
+  .badge .d { width:6px; height:6px; border-radius:50%; }
+  .b-green { background:var(--green-bg); color:var(--green); } .b-green .d { background:var(--green); }
+  .b-amber { background:var(--amber-bg); color:var(--amber); } .b-amber .d { background:var(--amber); }
+  .b-red   { background:var(--red-bg);   color:var(--red);   } .b-red .d   { background:var(--red); }
+  .b-blue  { background:var(--blue-bg);  color:var(--blue);  } .b-blue .d  { background:var(--blue); }
+
+  .plan-tag { font-size:12px; color:var(--muted); }
+  .plan-tag b { color:var(--fg); font-weight:600; }
+
+  .row-act { display:flex; gap:6px; }
+  .row-act button {
+    width:32px; height:32px; border-radius:9px; border:1px solid var(--border); background:transparent;
+    color:var(--muted); cursor:pointer; display:grid; place-items:center;
+  }
+  .row-act button:hover { color:var(--fg); border-color:var(--border-strong); }
+  .row-act svg { width:15px; height:15px; }
+
+  /* ---------------- slide-over form ---------------- */
+  .scrim {
+    position:fixed; inset:0; background:rgba(3,9,20,.55); backdrop-filter:blur(3px);
+    opacity:0; pointer-events:none; transition:opacity .25s; z-index:40;
+  }
+  .drawer {
+    position:fixed; top:0; right:0; height:100vh; width:520px; max-width:94vw; z-index:50;
+    background:var(--surface); border-left:1px solid var(--border-strong);
+    box-shadow:-30px 0 80px rgba(2,8,20,.5); transform:translateX(100%); transition:transform .3s cubic-bezier(.4,0,.2,1);
+    display:flex; flex-direction:column;
+  }
+  body.open .scrim { opacity:1; pointer-events:auto; }
+  body.open .drawer { transform:translateX(0); }
+  .drawer-head { padding:22px 26px 16px; border-bottom:1px solid var(--border); }
+  .drawer-head h2 { margin:0; font-size:21px; font-weight:600; }
+  .drawer-head p { margin:5px 0 0; color:var(--subtle); font-size:13px; }
+  .drawer-body { padding:8px 26px 26px; overflow-y:auto; flex:1; }
+  .drawer-foot { padding:16px 26px; border-top:1px solid var(--border); display:flex; gap:10px; justify-content:flex-end; background:var(--surface-2); }
+
+  .sec-title { font-size:11px; letter-spacing:.13em; text-transform:uppercase; color:var(--gold); font-weight:700; margin:24px 0 12px; display:flex; align-items:center; gap:9px; }
+  .sec-title::after { content:""; flex:1; height:1px; background:var(--border); }
+
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .field { margin-bottom:14px; }
+  .field.col2 { grid-column:span 2; }
+  .field label { display:block; font-size:12.5px; color:var(--muted); margin-bottom:7px; font-weight:500; }
+  .field label .req { color:var(--red); }
+  .field input, .field select {
+    width:100%; background:var(--sunken); border:1px solid var(--border); border-radius:10px;
+    padding:11px 13px; color:var(--fg); font-size:13.5px; font-family:inherit; outline:none;
+  }
+  .field input:focus, .field select:focus { border-color:var(--gold); box-shadow:0 0 0 3px var(--ring); }
+  .field .hint { font-size:11.5px; color:var(--subtle); margin-top:6px; }
+
+  .logo-pick { display:flex; align-items:center; gap:14px; }
+  .logo-pick .ph { width:54px; height:54px; border-radius:13px; display:grid; place-items:center; font-weight:800; font-size:18px; color:#fff; background:linear-gradient(150deg,#3a597f,#1d2f47); }
+
+  .modtoggles { display:flex; flex-wrap:wrap; gap:8px; }
+  .modtoggles label {
+    display:inline-flex; align-items:center; gap:8px; font-size:12.5px; color:var(--muted);
+    padding:8px 12px; border:1px solid var(--border); border-radius:999px; cursor:pointer; user-select:none;
+  }
+  .modtoggles input { accent-color:var(--gold); }
+  .modtoggles label:has(input:checked) { border-color:var(--gold); color:var(--fg); background:var(--amber-bg); }
+
+  @media (max-width:980px){ .app{grid-template-columns:1fr;} .side{display:none;} .stats{grid-template-columns:repeat(2,1fr);} }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="side">
+    <div class="brand">
+      <div class="mark">M</div>
+      <div><b>MYHOTEL</b><small>HRMS Master</small></div>
+    </div>
+
+    <div class="nav-label">Master Panel</div>
+    <nav class="nav">
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Dashboard</a>
+      <a href="#" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18M5 21V7l7-4 7 4v14"/><path d="M9 9h0M9 13h0M9 17h0M15 9h0M15 13h0M15 17h0"/></svg>Companies</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l3 6 6 .9-4.5 4.3 1 6.3L12 16.8 6.5 19.5l1-6.3L3 8.9 9 8z"/></svg>Plans &amp; Pricing</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg>Modules</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>Admin Users</a>
+    </nav>
+
+    <div class="nav-label">System</div>
+    <nav class="nav">
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg>Audit Log</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1L14.5 2h-5l-.3 2.6a7 7 0 0 0-1.7 1l-2.4-1-2 3.4L3.1 11a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.3 2.6h5l.3-2.6a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6c.1-.3.1-.7.1-1z"/></svg>Settings</a>
+    </nav>
+
+    <div class="side-foot">
+      <div class="who">
+        <div class="av">SA</div>
+        <div><b>Super Admin</b><small>akilgroup.com</small></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ================= MAIN ================= -->
+  <main class="main">
+    <div class="topbar">
+      <div class="crumbs">Master Panel&nbsp; / &nbsp;<b>Companies</b></div>
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>
+        <input placeholder="Search company, code or admin…" />
+      </div>
+      <button class="icon-btn" id="themeBtn" title="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+      </button>
+      <button class="icon-btn" title="Notifications">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+      </button>
+    </div>
+
+    <div class="head">
+      <div>
+        <h1 class="display">Company Master</h1>
+        <p>Onboard client companies, issue login credentials and set licence validity.</p>
+      </div>
+      <button class="btn primary" style="margin-left:auto" onclick="document.body.classList.add('open')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+        New Company
+      </button>
+    </div>
+
+    <!-- stats -->
+    <div class="stats">
+      <div class="stat"><div class="lab"><span class="dot" style="background:var(--blue)"></span>Total Companies</div><div class="val">24</div><div class="sub">across 3 plans</div></div>
+      <div class="stat"><div class="lab"><span class="dot" style="background:var(--green)"></span>Active</div><div class="val">19</div><div class="sub">licence in force</div></div>
+      <div class="stat"><div class="lab"><span class="dot" style="background:var(--amber)"></span>Expiring ≤ 30 days</div><div class="val">3</div><div class="sub">renewal due soon</div></div>
+      <div class="stat"><div class="lab"><span class="dot" style="background:var(--red)"></span>Expired / Suspended</div><div class="val">2</div><div class="sub">login blocked</div></div>
+    </div>
+
+    <!-- table panel -->
+    <div class="panel">
+      <div class="panel-head">
+        <h3>All Companies</h3>
+        <div class="chips">
+          <span class="chip on">All</span>
+          <span class="chip">Active</span>
+          <span class="chip">Expiring</span>
+          <span class="chip">Expired</span>
+        </div>
+        <button class="btn" style="margin-left:auto; padding:8px 13px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          Export
+        </button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Company</th>
+            <th>Admin Login</th>
+            <th>Validity</th>
+            <th>Plan / Users</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- row 1 -->
+          <tr>
+            <td><div class="co"><div class="logo" style="background:linear-gradient(150deg,#C38A1E,#8a5e0a)">GP</div><div><b>Grand Palace Resorts</b><small>GPR-001</small></div></div></td>
+            <td><div class="cred"><span class="u">admin@grandpalace.com</span><small>2 admin users</small></div></td>
+            <td><div class="valid">01 Jan 2026 → 31 Dec 2026<br><small>318 days left</small><div class="bar"><i style="width:13%;background:var(--green)"></i></div></div></td>
+            <td><div class="plan-tag"><b>Enterprise</b><br>48 / 100 users</div></td>
+            <td><span class="badge b-green"><span class="d"></span>Active</span></td>
+            <td><div class="row-act">
+              <button title="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+              <button title="More"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></button>
+            </div></td>
+          </tr>
+          <!-- row 2 -->
+          <tr>
+            <td><div class="co"><div class="logo" style="background:linear-gradient(150deg,#3a7f6d,#1d4737)">SB</div><div><b>Seabreeze Hotels</b><small>SBH-014</small></div></div></td>
+            <td><div class="cred"><span class="u">it@seabreeze.in</span><small>1 admin user</small></div></td>
+            <td><div class="valid">15 Mar 2026 → 14 Jul 2026<br><small>22 days left</small><div class="bar"><i style="width:82%;background:var(--amber)"></i></div></div></td>
+            <td><div class="plan-tag"><b>Professional</b><br>26 / 40 users</div></td>
+            <td><span class="badge b-amber"><span class="d"></span>Expiring</span></td>
+            <td><div class="row-act">
+              <button title="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+              <button title="More"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></button>
+            </div></td>
+          </tr>
+          <!-- row 3 -->
+          <tr>
+            <td><div class="co"><div class="logo" style="background:linear-gradient(150deg,#5a4a8f,#33285c)">UM</div><div><b>Urban Mews Suites</b><small>UMS-031</small></div></div></td>
+            <td><div class="cred"><span class="u">owner@urbanmews.com</span><small>1 admin user</small></div></td>
+            <td><div class="valid">01 Apr 2026 → 30 Sep 2026<br><small>100 days left</small><div class="bar"><i style="width:45%;background:var(--green)"></i></div></div></td>
+            <td><div class="plan-tag"><b>Professional</b><br>12 / 40 users</div></td>
+            <td><span class="badge b-green"><span class="d"></span>Active</span></td>
+            <td><div class="row-act">
+              <button title="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+              <button title="More"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></button>
+            </div></td>
+          </tr>
+          <!-- row 4 -->
+          <tr>
+            <td><div class="co"><div class="logo" style="background:linear-gradient(150deg,#8f3a3a,#5c2828)">RC</div><div><b>Riverside Comfort Inn</b><small>RCI-009</small></div></div></td>
+            <td><div class="cred"><span class="u">admin@riverside.co</span><small>login blocked</small></div></td>
+            <td><div class="valid">01 Jun 2025 → 31 May 2026<br><small>expired 22 days ago</small><div class="bar"><i style="width:100%;background:var(--red)"></i></div></div></td>
+            <td><div class="plan-tag"><b>Starter</b><br>8 / 15 users</div></td>
+            <td><span class="badge b-red"><span class="d"></span>Expired</span></td>
+            <td><div class="row-act">
+              <button title="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+              <button title="More"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></button>
+            </div></td>
+          </tr>
+          <!-- row 5 -->
+          <tr>
+            <td><div class="co"><div class="logo" style="background:linear-gradient(150deg,#2b6cb0,#1c4570)">LV</div><div><b>Lakeview Boutique</b><small>LVB-022</small></div></div></td>
+            <td><div class="cred"><span class="u">gm@lakeview.com</span><small>2 admin users</small></div></td>
+            <td><div class="valid">10 Feb 2026 → 09 Feb 2027<br><small>232 days left</small><div class="bar"><i style="width:36%;background:var(--green)"></i></div></div></td>
+            <td><div class="plan-tag"><b>Enterprise</b><br>61 / 150 users</div></td>
+            <td><span class="badge b-green"><span class="d"></span>Active</span></td>
+            <td><div class="row-act">
+              <button title="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+              <button title="More"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></button>
+            </div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- ================= CREATE-COMPANY DRAWER ================= -->
+<div class="scrim" onclick="document.body.classList.remove('open')"></div>
+<aside class="drawer">
+  <div class="drawer-head">
+    <h2 class="display">New Company</h2>
+    <p>Create a tenant, set its admin login and licence validity window.</p>
+  </div>
+
+  <div class="drawer-body">
+    <!-- identity -->
+    <div class="sec-title">Company Identity</div>
+    <div class="field">
+      <div class="logo-pick">
+        <div class="ph">+</div>
+        <div>
+          <label style="margin-bottom:4px">Company Logo</label>
+          <div class="hint">PNG / SVG, square, up to 1 MB</div>
+        </div>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="field col2"><label>Company Name <span class="req">*</span></label><input placeholder="e.g. Grand Palace Resorts" /></div>
+      <div class="field"><label>Short Code <span class="req">*</span></label><input placeholder="GPR-001" /></div>
+      <div class="field"><label>GST / Tax No.</label><input placeholder="29ABCDE1234F1Z5" /></div>
+      <div class="field"><label>Contact Email</label><input placeholder="info@company.com" /></div>
+      <div class="field"><label>Contact Phone</label><input placeholder="+91 98765 43210" /></div>
+      <div class="field col2"><label>Address</label><input placeholder="Street, City, State, PIN" /></div>
+    </div>
+
+    <!-- admin login -->
+    <div class="sec-title">Admin Login Credentials</div>
+    <div class="grid2">
+      <div class="field col2"><label>Admin Username / Email <span class="req">*</span></label><input placeholder="admin@company.com" /></div>
+      <div class="field"><label>Password <span class="req">*</span></label><input type="password" value="••••••••••" /></div>
+      <div class="field"><label>Confirm Password <span class="req">*</span></label><input type="password" value="••••••••••" /></div>
+      <div class="field col2"><label style="display:flex;align-items:center;gap:9px;cursor:pointer"><input type="checkbox" checked style="width:auto;accent-color:var(--gold)" /> Force password change on first login &amp; email credentials to admin</label></div>
+    </div>
+
+    <!-- validity & plan -->
+    <div class="sec-title">Validity &amp; Plan</div>
+    <div class="grid2">
+      <div class="field"><label>Valid From <span class="req">*</span></label><input type="date" value="2026-06-22" /></div>
+      <div class="field"><label>Valid To <span class="req">*</span></label><input type="date" value="2027-06-21" /></div>
+      <div class="field"><label>Subscription Plan</label><select><option>Starter</option><option selected>Professional</option><option>Enterprise</option></select></div>
+      <div class="field"><label>Max Users</label><input type="number" value="40" /></div>
+      <div class="field col2"><label>Max Branches / Properties</label><input type="number" value="3" /></div>
+      <div class="field col2">
+        <label>Enabled Modules</label>
+        <div class="modtoggles">
+          <label><input type="checkbox" checked> Front Office</label>
+          <label><input type="checkbox" checked> Housekeeping</label>
+          <label><input type="checkbox" checked> Accounts</label>
+          <label><input type="checkbox" checked> HRMS</label>
+          <label><input type="checkbox"> POS</label>
+          <label><input type="checkbox"> Banquets</label>
+          <label><input type="checkbox"> Channel Mgr</label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer-foot">
+    <button class="btn" onclick="document.body.classList.remove('open')">Cancel</button>
+    <button class="btn primary">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6 9 17l-5-5"/></svg>
+      Create Company
+    </button>
+  </div>
+</aside>
+
+<script>
+  // theme toggle
+  document.getElementById('themeBtn').addEventListener('click', function () {
+    var h = document.documentElement;
+    h.setAttribute('data-theme', h.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
+  // chip filter (visual only)
+  document.querySelectorAll('.chip').forEach(function (c) {
+    c.addEventListener('click', function () {
+      document.querySelectorAll('.chip').forEach(function (x) { x.classList.remove('on'); });
+      c.classList.add('on');
+    });
+  });
+  // esc closes drawer
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') document.body.classList.remove('open'); });
+</script>
+</body>
+</html>

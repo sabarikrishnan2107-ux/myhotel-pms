@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>MYHOTEL · Guest Requests</title>
+<style>
+  :root{
+    --navy:#0F172A; --navy-2:#1E2A47; --gold:#D4A64A; --gold-2:#B5862B;
+    --green:#22C55E; --warn:#F59E0B; --blue:#5B8DEF; --violet:#8B5CF6; --rose:#F43F6E; --teal:#14B8A6;
+    --bg:#F4F6FA; --surface:#FFFFFF; --border:#EDF1F6; --line:#F1F4F8;
+    --ink:#16203A; --ink-2:#64708A; --faint:#9AA6BC;
+    --chip:#EAEEF4; --gold-soft:#F7E9C6; --track:#EDF1F6;
+    --green-soft:#E2F7EC; --rose-soft:#FCE7EE; --blue-soft:#E9EFFD; --warn-soft:#FDEEDD; --violet-soft:#F0EAFC; --teal-soft:#DEF6F3;
+    --sh:0 6px 22px rgba(20,32,58,.06); --sh-card:0 10px 30px rgba(20,32,58,.05);
+  }
+  .phone.dark{
+    --bg:#0B1220; --surface:#141F38; --border:#22304C; --line:#1C2942;
+    --ink:#ECF1FA; --ink-2:#9DAAC2; --faint:#67768F;
+    --chip:#1C2942; --gold-soft:#3A3014; --track:#243352;
+    --green-soft:#13301F; --rose-soft:#3A1320; --blue-soft:#152138; --warn-soft:#33260F; --violet-soft:#241A3D; --teal-soft:#0F2E2A;
+    --sh:0 6px 22px rgba(0,0,0,.35); --sh-card:0 12px 34px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{font-family:-apple-system,"SF Pro Display","SF Pro Text",system-ui,"Segoe UI",sans-serif;
+    color:var(--ink);background:#0c1320;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;-webkit-font-smoothing:antialiased;}
+  .phone{position:relative;width:393px;max-width:100%;height:852px;max-height:96vh;border-radius:42px;overflow:hidden;
+    background:var(--bg);box-shadow:0 50px 120px rgba(0,0,0,.55);display:flex;flex-direction:column;}
+
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:15px 28px 2px;font-size:15px;font-weight:600;color:var(--ink);}
+  .statusbar .r{display:flex;gap:6px;align-items:center;}
+
+  .bar{display:flex;align-items:center;gap:12px;padding:8px 18px 8px;}
+  .ib{width:40px;height:40px;border-radius:50%;background:var(--surface);box-shadow:var(--sh);display:flex;align-items:center;justify-content:center;color:var(--ink);flex:none;cursor:pointer;}
+  .bar .ti{flex:1;} .bar .ti h1{font-size:19px;font-weight:600;margin:0;letter-spacing:-.02em;} .bar .ti p{font-size:12px;color:var(--ink-2);margin:2px 0 0;}
+  .theme .sun{display:none;} .phone.dark .theme .moon{display:none;} .phone.dark .theme .sun{display:block;}
+
+  .stats{display:flex;gap:9px;padding:6px 18px 2px;overflow-x:auto;}
+  .stats::-webkit-scrollbar{display:none;}
+  .sc{flex:none;min-width:84px;border-radius:15px;padding:11px 13px;border:1px solid var(--border);background:var(--surface);box-shadow:var(--sh);}
+  .sc .v{font-size:22px;font-weight:600;letter-spacing:-.02em;} .sc .k{font-size:11px;color:var(--ink-2);margin-top:1px;}
+  .sc .v.rose{color:var(--rose);} .sc .v.blue{color:var(--blue);} .sc .v.green{color:var(--green);}
+
+  .filters{display:flex;gap:8px;padding:14px 18px 4px;overflow-x:auto;}
+  .filters::-webkit-scrollbar{display:none;}
+  .fl{flex:none;border:1px solid var(--border);background:var(--surface);color:var(--ink-2);font-size:12.5px;font-weight:500;padding:8px 14px;border-radius:999px;cursor:pointer;}
+  .fl.on{background:var(--navy);color:#fff;border-color:var(--navy);}
+
+  .scroll{flex:1;overflow-y:auto;padding:12px 18px 14px;}
+  .scroll::-webkit-scrollbar{display:none;}
+
+  .rq{display:flex;gap:13px;background:var(--surface);border-radius:18px;padding:14px;box-shadow:var(--sh-card);margin-bottom:11px;}
+  .rq .ic{width:44px;height:44px;border-radius:13px;display:flex;align-items:center;justify-content:center;flex:none;}
+  .ic.blue{background:var(--blue-soft);color:var(--blue);} .ic.gold{background:var(--gold-soft);color:var(--gold-2);} .ic.violet{background:var(--violet-soft);color:var(--violet);} .ic.teal{background:var(--teal-soft);color:var(--teal);} .ic.rose{background:var(--rose-soft);color:var(--rose);}
+  .rq .m{flex:1;min-width:0;}
+  .rq .m .t{font-size:14.5px;font-weight:600;display:flex;align-items:center;gap:6px;}
+  .vip{font-size:8px;font-weight:600;color:#fff;background:linear-gradient(135deg,var(--gold),var(--gold-2));padding:2px 5px;border-radius:4px;}
+  .rq .m .s{font-size:12px;color:var(--ink-2);margin-top:3px;}
+  .rq .m .row2{display:flex;align-items:center;gap:9px;margin-top:9px;}
+  .stbadge{font-size:9.5px;font-weight:600;padding:4px 9px;border-radius:7px;}
+  .stbadge.new{background:var(--rose-soft);color:var(--rose);} .stbadge.prog{background:var(--blue-soft);color:var(--blue);} .stbadge.done{background:var(--green-soft);color:var(--green);}
+  .rq .m .row2 .tm{font-size:11px;color:var(--faint);}
+  .rq .m .act{margin-left:auto;border:0;border-radius:9px;padding:7px 12px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;background:linear-gradient(135deg,var(--gold),var(--gold-2));color:#fff;}
+  .rq .m .act.ghost{background:var(--chip);color:var(--ink-2);}
+
+  .tabs{display:flex;justify-content:space-around;align-items:flex-end;padding:11px 16px 24px;background:var(--surface);box-shadow:0 -6px 24px rgba(20,32,58,.06);}
+  .tab{display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--faint);font-size:11px;font-weight:500;flex:1;position:relative;padding-top:4px;}
+  .tab svg{width:23px;height:23px;}
+  .tab.on{color:var(--gold-2);} .tab.on::after{content:"";position:absolute;bottom:-7px;width:22px;height:3px;border-radius:3px;background:var(--gold);}
+  .tab.fab{flex:none;margin-top:-36px;}
+  .tab.fab .fb{width:64px;height:64px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 14px 28px rgba(15,23,42,.4);border:5px solid var(--bg);}
+  .tab.fab .fb svg{width:26px;height:26px;}
+</style>
+</head>
+<body>
+  <div class="phone">
+    <div class="statusbar">
+      <span>9:41</span>
+      <span class="r"><svg width="18" height="12" viewBox="0 0 24 16" fill="currentColor"><rect x="0" y="10" width="3.5" height="6" rx="1"/><rect x="6" y="7" width="3.5" height="9" rx="1"/><rect x="12" y="3.5" width="3.5" height="12.5" rx="1"/><rect x="18" y="0" width="3.5" height="16" rx="1"/></svg>
+      <svg width="17" height="13" viewBox="0 0 24 18" fill="currentColor"><path d="M12 4C7.5 4 3.7 6.4 1.5 9.2L12 19 22.5 9.2C20.3 6.4 16.5 4 12 4Z"/></svg>
+      <svg width="27" height="14" viewBox="0 0 28 14" fill="none"><rect x="1" y="1" width="23" height="12" rx="3.5" stroke="currentColor"/><rect x="3" y="3" width="19" height="8" rx="2" fill="currentColor"/><rect x="25.5" y="5" width="2" height="4" rx="1" fill="currentColor"/></svg></span>
+    </div>
+
+    <div class="bar">
+      <div class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="19"><path d="m15 18-6-6 6-6"/></svg></div>
+      <div class="ti"><h1>Guest Requests</h1><p>7 active · avg response 6 min</p></div>
+      <div class="ib theme" onclick="this.closest('.phone').classList.toggle('dark')">
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="sc"><div class="v rose">3</div><div class="k">New</div></div>
+      <div class="sc"><div class="v blue">4</div><div class="k">In progress</div></div>
+      <div class="sc"><div class="v green">19</div><div class="k">Done today</div></div>
+    </div>
+
+    <div class="filters">
+      <div class="fl on" onclick="rFilter(this,'all')">All</div>
+      <div class="fl" onclick="rFilter(this,'new')">New</div>
+      <div class="fl" onclick="rFilter(this,'prog')">In progress</div>
+      <div class="fl" onclick="rFilter(this,'done')">Done</div>
+    </div>
+
+    <div class="scroll" id="list">
+      <div class="rq" data-st="new"><span class="ic teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 8h16M6 8v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8M9 8V6a3 3 0 0 1 6 0v2"/></svg></span>
+        <div class="m"><div class="t">Extra pillows &amp; towels</div><div class="s">Room 1204 · Mr. Khan</div>
+          <div class="row2"><span class="stbadge new">New</span><span class="tm">9:32 AM · 2 min ago</span><button class="act">Assign</button></div>
+        </div>
+      </div>
+
+      <div class="rq" data-st="prog"><span class="ic blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M5 11l4-7 4 7M3 11h18M7 11v8M17 4l4 7v8"/></svg></span>
+        <div class="m"><div class="t">Airport taxi · 6:00 AM</div><div class="s">Room 802 · Aarav Sharma</div>
+          <div class="row2"><span class="stbadge prog">In progress</span><span class="tm">Bell desk · ETA confirmed</span><button class="act">Done</button></div>
+        </div>
+      </div>
+
+      <div class="rq" data-st="new"><span class="ic gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 3h16M5 3v9a4 4 0 0 0 8 0V3M9 21h6M12 16v5"/></svg></span>
+        <div class="m"><div class="t">Restaurant reservation · 8 PM <span class="vip">VIP</span></div><div class="s">Room 901 · Anjali Rao · table for 2</div>
+          <div class="row2"><span class="stbadge new">New</span><span class="tm">9:18 AM</span><button class="act">Assign</button></div>
+        </div>
+      </div>
+
+      <div class="rq" data-st="prog"><span class="ic violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 8h16M6 8v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8M9 8V6a3 3 0 0 1 6 0v2"/></svg></span>
+        <div class="m"><div class="t">Extra blanket</div><div class="s">Room 707 · Hiro Kato</div>
+          <div class="row2"><span class="stbadge prog">In progress</span><span class="tm">Maria L. · on the way</span><button class="act">Done</button></div>
+        </div>
+      </div>
+
+      <div class="rq" data-st="done"><span class="ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg></span>
+        <div class="m"><div class="t">Late checkout · till 2 PM</div><div class="s">Room 504 · approved by Mgr</div>
+          <div class="row2"><span class="stbadge done">Done</span><span class="tm">8:50 AM · 12 min</span><button class="act ghost">View</button></div>
+        </div>
+      </div>
+      <div style="height:6px"></div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</div>
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Calendar</div>
+      <div class="tab fab"><div class="fb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg></div></div>
+      <div class="tab on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Tasks</div>
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>Profile</div>
+    </div>
+  </div>
+  <script>
+    function rFilter(btn, f){
+      const p = btn.closest('.phone');
+      p.querySelectorAll('.filters .fl').forEach(x => x.classList.remove('on'));
+      btn.classList.add('on');
+      p.querySelectorAll('.rq').forEach(r => { r.style.display = (f === 'all' || r.dataset.st === f) ? '' : 'none'; });
+    }
+  </script>
+</body>
+</html>

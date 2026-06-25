@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>MYHOTEL · Profile</title>
+<style>
+  :root{
+    --navy:#0F172A; --navy-2:#1E2A47; --gold:#D4A64A; --gold-2:#B5862B;
+    --green:#22C55E; --warn:#F59E0B; --blue:#5B8DEF; --violet:#8B5CF6; --rose:#F43F6E;
+    --bg:#F4F6FA; --surface:#FFFFFF; --border:#EDF1F6; --line:#F1F4F8;
+    --ink:#16203A; --ink-2:#64708A; --faint:#9AA6BC;
+    --chip:#EAEEF4; --gold-soft:#F7E9C6; --track:#EDF1F6;
+    --green-soft:#E2F7EC; --rose-soft:#FCE7EE; --blue-soft:#E9EFFD; --warn-soft:#FDEEDD; --violet-soft:#F0EAFC;
+    --sh:0 6px 22px rgba(20,32,58,.06); --sh-card:0 10px 30px rgba(20,32,58,.05);
+  }
+  .phone.dark{
+    --bg:#0B1220; --surface:#141F38; --border:#22304C; --line:#1C2942;
+    --ink:#ECF1FA; --ink-2:#9DAAC2; --faint:#67768F;
+    --chip:#1C2942; --gold-soft:#3A3014; --track:#243352;
+    --green-soft:#13301F; --rose-soft:#3A1320; --blue-soft:#152138; --warn-soft:#33260F; --violet-soft:#241A3D;
+    --sh:0 6px 22px rgba(0,0,0,.35); --sh-card:0 12px 34px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{font-family:-apple-system,"SF Pro Display","SF Pro Text",system-ui,"Segoe UI",sans-serif;
+    color:var(--ink);background:#0c1320;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;-webkit-font-smoothing:antialiased;}
+  .phone{position:relative;width:393px;max-width:100%;height:852px;max-height:96vh;border-radius:42px;overflow:hidden;
+    background:var(--bg);box-shadow:0 50px 120px rgba(0,0,0,.55);display:flex;flex-direction:column;}
+
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:15px 28px 2px;font-size:15px;font-weight:600;color:var(--ink);}
+  .statusbar .r{display:flex;gap:6px;align-items:center;}
+
+  .bar{display:flex;align-items:center;justify-content:space-between;padding:8px 20px 6px;}
+  .bar h1{font-size:21px;font-weight:600;margin:0;letter-spacing:-.02em;}
+  .ib{width:40px;height:40px;border-radius:50%;background:var(--surface);box-shadow:var(--sh);display:flex;align-items:center;justify-content:center;color:var(--ink);cursor:pointer;}
+  .theme .sun{display:none;} .phone.dark .theme .moon{display:none;} .phone.dark .theme .sun{display:block;}
+
+  .scroll{flex:1;overflow-y:auto;padding:8px 18px 14px;}
+  .scroll::-webkit-scrollbar{display:none;}
+
+  /* profile header */
+  .pcard{position:relative;border-radius:24px;overflow:hidden;color:#EEF2F8;padding:20px 18px;background:radial-gradient(120% 100% at 100% 0,#26375d,var(--navy) 60%);box-shadow:0 14px 34px rgba(15,23,42,.24);}
+  .pcard .glow{position:absolute;right:-30px;top:-30px;width:140px;height:140px;border-radius:50%;background:radial-gradient(circle,rgba(212,166,74,.4),transparent 70%);}
+  .pcard .top{display:flex;align-items:center;gap:14px;position:relative;}
+  .pcard .av{width:64px;height:64px;border-radius:20px;flex:none;background:linear-gradient(150deg,#F0D283,var(--gold));color:#3a2a06;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:24px;}
+  .pcard .n{font-size:20px;font-weight:600;display:flex;align-items:center;gap:8px;}
+  .role{font-size:9.5px;font-weight:600;letter-spacing:.06em;color:#3a2a06;background:linear-gradient(135deg,#F0D283,var(--gold));padding:3px 8px;border-radius:6px;}
+  .pcard .em{font-size:12.5px;color:#A9B6CE;margin-top:4px;}
+  .pcard .ho{font-size:12px;color:#A9B6CE;margin-top:2px;display:flex;align-items:center;gap:6px;}
+  .pstats{display:flex;margin-top:16px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:14px;overflow:hidden;position:relative;}
+  .pstats .c{flex:1;text-align:center;padding:10px 4px;position:relative;}
+  .pstats .c + .c::before{content:"";position:absolute;left:0;top:22%;height:56%;width:1px;background:rgba(255,255,255,.14);}
+  .pstats .c .v{font-size:17px;font-weight:600;} .pstats .c .k{font-size:10px;color:#9FB0C9;margin-top:2px;}
+
+  /* settings groups */
+  .glbl{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin:20px 4px 9px;}
+  .group{background:var(--surface);border-radius:18px;box-shadow:var(--sh-card);overflow:hidden;}
+  .item{display:flex;align-items:center;gap:13px;padding:14px;cursor:pointer;}
+  .item:not(:last-child){border-bottom:1px solid var(--line);}
+  .item .ic{width:36px;height:36px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex:none;}
+  .ic.blue{background:var(--blue-soft);color:var(--blue);} .ic.gold{background:var(--gold-soft);color:var(--gold-2);} .ic.green{background:var(--green-soft);color:var(--green);} .ic.violet{background:var(--violet-soft);color:var(--violet);} .ic.rose{background:var(--rose-soft);color:var(--rose);} .ic.warn{background:var(--warn-soft);color:var(--warn);}
+  .item .t{flex:1;font-size:14.5px;font-weight:500;}
+  .item .val{font-size:12.5px;color:var(--faint);}
+  .item .chev{color:var(--faint);}
+  .sw{width:44px;height:26px;border-radius:999px;background:var(--track);position:relative;flex:none;transition:.2s;cursor:pointer;}
+  .sw.on{background:var(--green);} .sw i{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.25);} .sw.on i{left:21px;}
+
+  .logout{width:100%;margin-top:18px;height:52px;border:0;border-radius:15px;background:var(--rose-soft);color:var(--rose);font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;}
+  .ver{text-align:center;font-size:11px;color:var(--faint);margin-top:14px;}
+
+  /* bottom nav */
+  .tabs{display:flex;justify-content:space-around;align-items:flex-end;padding:11px 16px 24px;background:var(--surface);box-shadow:0 -6px 24px rgba(20,32,58,.06);}
+  .tab{display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--faint);font-size:11px;font-weight:500;flex:1;position:relative;padding-top:4px;}
+  .tab svg{width:23px;height:23px;}
+  .tab.on{color:var(--gold-2);} .tab.on::after{content:"";position:absolute;bottom:-7px;width:22px;height:3px;border-radius:3px;background:var(--gold);}
+  .tab.fab{flex:none;margin-top:-36px;}
+  .tab.fab .fb{width:64px;height:64px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 14px 28px rgba(15,23,42,.4);border:5px solid var(--bg);}
+  .tab.fab .fb svg{width:26px;height:26px;}
+</style>
+</head>
+<body>
+  <div class="phone">
+    <div class="statusbar">
+      <span>9:41</span>
+      <span class="r"><svg width="18" height="12" viewBox="0 0 24 16" fill="currentColor"><rect x="0" y="10" width="3.5" height="6" rx="1"/><rect x="6" y="7" width="3.5" height="9" rx="1"/><rect x="12" y="3.5" width="3.5" height="12.5" rx="1"/><rect x="18" y="0" width="3.5" height="16" rx="1"/></svg>
+      <svg width="17" height="13" viewBox="0 0 24 18" fill="currentColor"><path d="M12 4C7.5 4 3.7 6.4 1.5 9.2L12 19 22.5 9.2C20.3 6.4 16.5 4 12 4Z"/></svg>
+      <svg width="27" height="14" viewBox="0 0 28 14" fill="none"><rect x="1" y="1" width="23" height="12" rx="3.5" stroke="currentColor"/><rect x="3" y="3" width="19" height="8" rx="2" fill="currentColor"/><rect x="25.5" y="5" width="2" height="4" rx="1" fill="currentColor"/></svg></span>
+    </div>
+
+    <div class="bar">
+      <h1>Profile</h1>
+      <div class="ib theme" onclick="this.closest('.phone').classList.toggle('dark')">
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg>
+      </div>
+    </div>
+
+    <div class="scroll">
+      <!-- profile header -->
+      <div class="pcard">
+        <div class="glow"></div>
+        <div class="top">
+          <div class="av">S</div>
+          <div style="flex:1">
+            <div class="n">Sabari Krish <span class="role">MANAGER</span></div>
+            <div class="em">sabari@hyderspark.com</div>
+            <div class="ho"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12"><path d="M3 21V7l9-4 9 4v14"/><path d="M9 21v-6h6v6"/></svg> The Hyder Spark · Front Office</div>
+          </div>
+          <svg viewBox="0 0 24 24" fill="none" stroke="#A9B6CE" stroke-width="2" width="18"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        </div>
+        <div class="pstats">
+          <div class="c"><div class="v">On duty</div><div class="k">9 AM – 6 PM</div></div>
+          <div class="c"><div class="v">28</div><div class="k">Tasks done</div></div>
+          <div class="c"><div class="v">4.8★</div><div class="k">Rating</div></div>
+        </div>
+      </div>
+
+      <!-- account -->
+      <div class="glbl">Account</div>
+      <div class="group">
+        <div class="item"><span class="ic blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg></span><span class="t">Edit profile</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><path d="m9 18 6-6-6-6"/></svg></div>
+        <div class="item"><span class="ic gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><span class="t">Change password</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><path d="m9 18 6-6-6-6"/></svg></div>
+        <div class="item"><span class="ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><path d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg></span><span class="t">Two-factor auth</span><span class="val">On</span></div>
+      </div>
+
+      <!-- preferences -->
+      <div class="glbl">Preferences</div>
+      <div class="group">
+        <div class="item" onclick="this.closest('.phone').classList.toggle('dark');this.querySelector('.sw').classList.toggle('on')"><span class="ic violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></span><span class="t">Dark mode</span><div class="sw"><i></i></div></div>
+        <div class="item"><span class="ic blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 3 2.5 15 0 18M12 3c-2.5 3-2.5 15 0 18"/></svg></span><span class="t">Language</span><span class="val">English ›</span></div>
+        <div class="item"><span class="ic warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span><span class="t">Notifications</span><div class="sw on"><i></i></div></div>
+      </div>
+
+      <!-- work + support -->
+      <div class="glbl">Work</div>
+      <div class="group">
+        <div class="item"><span class="ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span class="t">My shift &amp; attendance</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><path d="m9 18 6-6-6-6"/></svg></div>
+        <div class="item"><span class="ic violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/></svg></span><span class="t">My performance</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><path d="m9 18 6-6-6-6"/></svg></div>
+        <div class="item"><span class="ic blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 4 1.5c0 1.5-2 2-2 3M12 17h.01"/></svg></span><span class="t">Help &amp; support</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><path d="m9 18 6-6-6-6"/></svg></div>
+      </div>
+
+      <button class="logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></svg> Log out</button>
+      <div class="ver">MYHOTEL Staff · v1.0.0</div>
+      <div style="height:6px"></div>
+    </div>
+
+    <!-- bottom nav -->
+    <div class="tabs">
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</div>
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Calendar</div>
+      <div class="tab fab"><div class="fb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg></div></div>
+      <div class="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Tasks</div>
+      <div class="tab on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>Profile</div>
+    </div>
+  </div>
+</body>
+</html>
