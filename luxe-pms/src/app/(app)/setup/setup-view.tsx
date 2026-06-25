@@ -126,6 +126,8 @@ type RoomType = {
   baseTariff: number;
   maxAdults: number;
   maxChildren: number;
+  extraAdultRate?: number;
+  extraChildRate?: number;
   sizeSqft?: number;
   description?: string;
   amenities: string[];
@@ -1751,7 +1753,7 @@ function RoomTypesManager({ roomTypes, rooms, onChange, onToast, onMarkComplete 
 }) {
   const upd = (id: string, patch: Partial<RoomType>) => onChange(roomTypes.map(t => t.id === id ? { ...t, ...patch } : t));
   const add = () => {
-    onChange([...roomTypes, { id: `rt${tempSeq()}`, name: "New Type", code: "", baseTariff: 5000, maxAdults: 2, maxChildren: 1, sizeSqft: 300, description: "", amenities: [], active: true }]);
+    onChange([...roomTypes, { id: `rt${tempSeq()}`, name: "New Type", code: "", baseTariff: 5000, maxAdults: 2, maxChildren: 1, extraAdultRate: 0, extraChildRate: 0, sizeSqft: 300, description: "", amenities: [], active: true }]);
     onToast("Room type added");
   };
   const del = (id: string) => {
@@ -1784,6 +1786,8 @@ function RoomTypesManager({ roomTypes, rooms, onChange, onToast, onMarkComplete 
               <th className="px-3 py-2 font-semibold text-right">Base rate</th>
               <th className="px-3 py-2 font-semibold text-right">Max adults</th>
               <th className="px-3 py-2 font-semibold text-right">Max children</th>
+              <th className="px-3 py-2 font-semibold text-right">Extra adult (₹/night)</th>
+              <th className="px-3 py-2 font-semibold text-right">Extra child (₹/night)</th>
               <th className="px-3 py-2 font-semibold text-right">Rooms</th>
               <th className="px-3 py-2 font-semibold">Active</th>
               <th className="px-3 py-2 font-semibold text-right">Action</th>
@@ -1802,6 +1806,18 @@ function RoomTypesManager({ roomTypes, rooms, onChange, onToast, onMarkComplete 
                 </td>
                 <td className="px-3 py-2 text-right"><Input type="number" value={t.maxAdults} onChange={e => upd(t.id, { maxAdults: Math.max(1, Number(e.target.value) || 1) })} className="h-8 w-16 tabular text-right" /></td>
                 <td className="px-3 py-2 text-right"><Input type="number" value={t.maxChildren} onChange={e => upd(t.id, { maxChildren: Math.max(0, Number(e.target.value) || 0) })} className="h-8 w-16 tabular text-right" /></td>
+                <td className="px-3 py-2 text-right">
+                  <div className="inline-flex items-center gap-1">
+                    <span className="text-xs text-muted-foreground">₹</span>
+                    <Input type="number" value={t.extraAdultRate ?? 0} onChange={e => upd(t.id, { extraAdultRate: Math.max(0, Number(e.target.value)) })} className="h-8 w-24 tabular text-right" />
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <div className="inline-flex items-center gap-1">
+                    <span className="text-xs text-muted-foreground">₹</span>
+                    <Input type="number" value={t.extraChildRate ?? 0} onChange={e => upd(t.id, { extraChildRate: Math.max(0, Number(e.target.value)) })} className="h-8 w-24 tabular text-right" />
+                  </div>
+                </td>
                 <td className="px-3 py-2 text-right tabular text-muted-foreground">{roomsOfType(t.name)}</td>
                 <td className="px-3 py-2 text-center"><input type="checkbox" checked={t.active} onChange={e => upd(t.id, { active: e.target.checked })} className="h-4 w-4" /></td>
                 <td className="px-3 py-2 text-right">
