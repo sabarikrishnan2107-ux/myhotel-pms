@@ -220,6 +220,7 @@ class ResourceController extends Controller
             'name' => 'string|max:100', 'code' => 'string|max:20|nullable', 'baseTariff' => 'integer|min:0',
             'maxAdults' => 'integer|min:1', 'maxChildren' => 'integer|min:0', 'sizeSqft' => 'integer|min:0|nullable',
             'description' => 'string|max:500|nullable', 'amenities' => 'array', 'active' => 'boolean',
+            'extraAdultRate' => 'integer|min:0', 'extraChildRate' => 'integer|min:0',
         ],
         'rooms' => [
             'number' => 'string|max:50', 'category' => 'string|max:50', 'floor' => 'integer',
