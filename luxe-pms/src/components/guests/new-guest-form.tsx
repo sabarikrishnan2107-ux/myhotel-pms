@@ -2,6 +2,8 @@
 import * as React from "react";
 import { User, IdCard, Briefcase, Sparkles, ChevronLeft, Save, Camera, Pen, Smartphone, CheckCircle2 } from "lucide-react";
 import { Input, Label, Select } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
 import { Button } from "@/components/ui/button";
 import { PhotoCapture } from "./photo-capture";
 import { SignaturePad } from "./signature-pad";
@@ -31,7 +33,7 @@ export interface NewGuestData {
 }
 
 const EMPTY: NewGuestData = {
-  name: "", phone: "+91 ", email: "", address: "", nationality: "India",
+  name: "", phone: "", email: "", address: "", nationality: "India",
   dob: "", gender: "Male",
   idType: "Aadhaar", idNumber: "",
   idFront: null, idBack: null, photo: null, signature: null,
@@ -89,22 +91,7 @@ function ageFromIso(iso: string): number | null {
 // Shared "invalid field" styling so DOB / phone / email all flag errors the same way.
 const DANGER_INPUT = "border-danger focus-visible:border-danger focus-visible:ring-danger/30";
 
-const PHONE_MIN_DIGITS = 8;   // E.164: shortest realistic number including country code
-const PHONE_MAX_DIGITS = 15;  // E.164 maximum
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/** Count of actual digits in a phone string (ignores +, spaces, hyphens, parens). */
-function phoneDigitCount(s: string): number {
-  return (s.match(/\d/g) ?? []).length;
-}
-
-/** Valid if it's a plausible international number: only +, digits and separators, with 8–15 digits. */
-function isPhoneValid(s: string): boolean {
-  const t = s.trim();
-  if (!/^\+?[\d\s()-]+$/.test(t)) return false;
-  const n = phoneDigitCount(t);
-  return n >= PHONE_MIN_DIGITS && n <= PHONE_MAX_DIGITS;
-}
 
 /** Email is optional — empty counts as valid; a non-empty value must look like an address. */
 function isEmailValid(s: string): boolean {
@@ -196,10 +183,10 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
   const dobAge = ageFromIso(data.dob);
   const dobValid = data.dob === "" || (dobAge !== null && dobAge >= MIN_GUEST_AGE && dobAge <= MAX_GUEST_AGE);
 
-  const phoneValid = isPhoneValid(data.phone);
+  const phoneValid = isValidPhone(data.phone);
   const emailValid = isEmailValid(data.email);
   // Field-level errors only surface after the guest has left that field, so a
-  // pristine form (incl. the default "+91 " prefix) isn't littered with red.
+  // pristine form isn't littered with red.
   const [touched, setTouched] = React.useState<{ phone?: boolean; email?: boolean }>({});
   const markTouched = (k: "phone" | "email") => setTouched(t => ({ ...t, [k]: true }));
 
@@ -240,18 +227,14 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
             <Input value={data.name} onChange={e => update("name", e.target.value)} placeholder="Mr. John Doe" autoFocus />
           </Field>
           <Field label="Phone *">
-            <Input
+            <PhoneInput
               value={data.phone}
-              onChange={e => update("phone", e.target.value)}
+              onChange={v => update("phone", v)}
               onBlur={() => markTouched("phone")}
-              placeholder="+971 50 123 4567"
-              type="tel"
-              inputMode="tel"
-              aria-invalid={touched.phone && !phoneValid}
-              className={touched.phone && !phoneValid ? DANGER_INPUT : ""}
+              invalid={touched.phone && !phoneValid}
             />
             {touched.phone && !phoneValid && (
-              <p className="text-[11px] text-danger mt-1">Enter a valid phone number with country code (8–15 digits)</p>
+              <p className="text-[11px] text-danger mt-1">Pick a country and enter a valid phone number</p>
             )}
           </Field>
           <Field label="Email">
