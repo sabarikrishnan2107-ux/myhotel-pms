@@ -1750,7 +1750,7 @@ function RoomTypesManager({ roomTypes, rooms, onChange, onToast, onMarkComplete 
 }) {
   const upd = (id: string, patch: Partial<RoomType>) => onChange(roomTypes.map(t => t.id === id ? { ...t, ...patch } : t));
   const add = () => {
-    onChange([...roomTypes, { id: `rt${tempSeq()}`, name: "New Type", code: "", baseTariff: 5000, maxAdults: 2, maxChildren: 1, extraAdultRate: 0, extraChildRate: 0, sizeSqft: 300, description: "", amenities: [], active: true }]);
+    onChange([...roomTypes, { id: `rt${tempSeq()}`, name: "New Type", code: "", baseTariff: 5000, maxAdults: 2, maxChildren: 1, sizeSqft: 300, description: "", amenities: [], active: true }]);
     onToast("Room type added");
   };
   const del = (id: string) => {
@@ -1771,7 +1771,7 @@ function RoomTypesManager({ roomTypes, rooms, onChange, onToast, onMarkComplete 
         <SummaryStat icon={IndianRupee} label="Highest rate" value={money(Math.max(...roomTypes.map(t => t.baseTariff), 0))} />
       </div>
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">Base rate covers the included adults/children; bookings charge the extra per-night rate for each guest beyond that. Each room&apos;s physical max is set when you add the room.</p>
+        <p className="text-xs text-muted-foreground">Define each category once — its base rate flows to Rooms, bookings and check-in. Per-room occupancy and the extra-bed rate are set when you add the room.</p>
         <Button size="sm" onClick={add}><Plus className="h-3.5 w-3.5" />Add type</Button>
       </div>
       <div className="rounded-md border border-border overflow-hidden">
@@ -1781,10 +1781,6 @@ function RoomTypesManager({ roomTypes, rooms, onChange, onToast, onMarkComplete 
               <th className="px-3 py-2 font-semibold">Type name</th>
               <th className="px-3 py-2 font-semibold">Code</th>
               <th className="px-3 py-2 font-semibold text-right">Base rate</th>
-              <th className="px-3 py-2 font-semibold text-right">Incl. adults</th>
-              <th className="px-3 py-2 font-semibold text-right">Incl. children</th>
-              <th className="px-3 py-2 font-semibold text-right">Extra adult (₹/night)</th>
-              <th className="px-3 py-2 font-semibold text-right">Extra child (₹/night)</th>
               <th className="px-3 py-2 font-semibold text-right">Rooms</th>
               <th className="px-3 py-2 font-semibold">Active</th>
               <th className="px-3 py-2 font-semibold text-right">Action</th>
@@ -1799,20 +1795,6 @@ function RoomTypesManager({ roomTypes, rooms, onChange, onToast, onMarkComplete 
                   <div className="inline-flex items-center gap-1">
                     <span className="text-xs text-muted-foreground">₹</span>
                     <Input type="number" value={t.baseTariff} onChange={e => upd(t.id, { baseTariff: Number(e.target.value) })} className="h-8 w-24 tabular text-right" />
-                  </div>
-                </td>
-                <td className="px-3 py-2 text-right"><Input type="number" value={t.maxAdults} onChange={e => upd(t.id, { maxAdults: Math.max(1, Number(e.target.value) || 1) })} className="h-8 w-16 tabular text-right" /></td>
-                <td className="px-3 py-2 text-right"><Input type="number" value={t.maxChildren} onChange={e => upd(t.id, { maxChildren: Math.max(0, Number(e.target.value) || 0) })} className="h-8 w-16 tabular text-right" /></td>
-                <td className="px-3 py-2 text-right">
-                  <div className="inline-flex items-center gap-1">
-                    <span className="text-xs text-muted-foreground">₹</span>
-                    <Input type="number" value={t.extraAdultRate ?? 0} onChange={e => upd(t.id, { extraAdultRate: Math.max(0, Number(e.target.value)) })} className="h-8 w-24 tabular text-right" />
-                  </div>
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <div className="inline-flex items-center gap-1">
-                    <span className="text-xs text-muted-foreground">₹</span>
-                    <Input type="number" value={t.extraChildRate ?? 0} onChange={e => upd(t.id, { extraChildRate: Math.max(0, Number(e.target.value)) })} className="h-8 w-24 tabular text-right" />
                   </div>
                 </td>
                 <td className="px-3 py-2 text-right tabular text-muted-foreground">{roomsOfType(t.name)}</td>
