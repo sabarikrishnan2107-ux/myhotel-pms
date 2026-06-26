@@ -81,6 +81,10 @@ class VerificationController extends Controller
         $booking->uploaded_at = now();
         $booking->save();
 
+        // Mirror the documents onto the guest record (matched by name) so the
+        // guest profile / KYC in the web app reflects what was captured.
+        $this->syncToGuest($booking);
+
         AuditLog::record([
             'user'   => $booking->uploaded_by,
             'module' => 'Front Desk',
@@ -221,5 +225,27 @@ class VerificationController extends Controller
     private function publicUrl(string $name): string
     {
         return rtrim(config('app.url'), '/') . '/uploads/' . $name;
+    }
+
+    /**
+     * Copy a booking's captured documents onto its guest record (matched by
+     * name) so the guest profile / KYC reflects what was captured on the
+     * tablet. Best-effort: silently does nothing if no guest matches.
+     */
+    private function syncToGuest(Booking $booking): void
+    {
+        $name = trim((string) $booking->guestName);
+        if ($name === '') {
+            return;
+        }
+        $guest = \App\Models\Guest::where('name', $name)->orderByDesc('id')->first();
+        if (!$guest) {
+            return;
+        }
+        if (!empty($booking->guest_photo)) $guest->photo = $booking->guest_photo;
+        if (!empty($booking->id_front)) $guest->idFront = $booking->id_front;
+        if (!empty($booking->id_back)) $guest->idBack = $booking->id_back;
+        if (!empty($booking->signature)) $guest->signature = $booking->signature;
+        $guest->save();
     }
 }
