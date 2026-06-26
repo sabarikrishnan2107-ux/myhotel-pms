@@ -66,7 +66,7 @@ export default function BookingWizardPage() {
   const [children, setChildren] = React.useState(0);
   const [roomType, setRoomType] = React.useState("");
   // Managed room types (name → base rate) from Configuration → Room Types.
-  const [roomTypes, setRoomTypes] = React.useState<{ name: string; baseTariff: number }[]>([]);
+  const [roomTypes, setRoomTypes] = React.useState<{ name: string; baseTariff: number; maxAdults?: number; maxChildren?: number; extraAdultRate?: number; extraChildRate?: number }[]>([]);
   // Real guests + rooms from Postgres (seeded with mock as an offline fallback).
   const [guests, setGuests] = React.useState<Guest[]>([]);
   const [rooms, setRooms] = React.useState<Room[]>([]);
@@ -76,7 +76,7 @@ export default function BookingWizardPage() {
   const [seasons, setSeasons] = React.useState<Season[]>([]);
   const [holidays, setHolidays] = React.useState<Holiday[]>([]);
   React.useEffect(() => {
-    apiGet<{ name: string; baseTariff: number }[]>("/room-types").then(setRoomTypes).catch(() => {});
+    apiGet<{ name: string; baseTariff: number; maxAdults?: number; maxChildren?: number; extraAdultRate?: number; extraChildRate?: number }[]>("/room-types").then(setRoomTypes).catch(() => {});
     apiGet<Guest[]>("/guests").then(rows => { if (rows.length) setGuests(rows); }).catch(() => {});
     apiGet<Room[]>("/room-board").then(rows => { if (rows.length) setRooms(rows); }).catch(() => {});
     apiGet<ApiRatePlan[]>("/rate-plans").then(rows => setRatePlans(rows.map(mapRatePlan))).catch(() => {});
@@ -229,8 +229,22 @@ export default function BookingWizardPage() {
     (airportTransfer ? 175 : 0) +
     earlyFee + lateFee +
     fbTotal;
-  const tax = (subtotal + extras) * 0.05;
-  const total = subtotal + extras + tax;
+
+  // Extra-person charge: guests beyond the chosen Room Type's included
+  // max-adults / max-children are billed at the type's per-night extra rate.
+  // Within the included occupancy → ₹0. Infinity max until a type is chosen,
+  // and rates default to 0, so this is a no-op unless configured + exceeded.
+  const selType = roomTypes.find(t => t.name === roomType);
+  const maxAdultsInc = selType?.maxAdults ?? Infinity;
+  const maxChildrenInc = selType?.maxChildren ?? Infinity;
+  const extraAdultRate = selType?.extraAdultRate ?? 0;
+  const extraChildRate = selType?.extraChildRate ?? 0;
+  const extraAdults = Math.max(0, adults - maxAdultsInc);
+  const extraChildren = Math.max(0, children - maxChildrenInc);
+  const extraGuestCharge = (extraAdults * extraAdultRate + extraChildren * extraChildRate) * nights;
+
+  const tax = (subtotal + extras + extraGuestCharge) * 0.05;
+  const total = subtotal + extras + extraGuestCharge + tax;
   const advance = customAdvance !== null
     ? Math.min(Math.max(0, Math.round(customAdvance)), total)
     : Math.round((total * paymentPct) / 100);
@@ -591,6 +605,16 @@ export default function BookingWizardPage() {
                 <Stepper label="Adults" value={adults} onChange={setAdults} min={1} max={6} />
                 <Stepper label="Children" value={children} onChange={setChildren} min={0} max={4} />
               </div>
+              {selType && (extraAdults > 0 || extraChildren > 0) && (
+                <div className="-mt-2 space-y-1">
+                  {extraAdults > 0 && (
+                    <p className="text-xs text-muted-foreground">+{extraAdults} adult{extraAdults > 1 ? "s" : ""} beyond {maxAdultsInc} included · ₹{extraAdultRate.toLocaleString("en-IN")}/night each</p>
+                  )}
+                  {extraChildren > 0 && (
+                    <p className="text-xs text-muted-foreground">+{extraChildren} child{extraChildren > 1 ? "ren" : ""} beyond {maxChildrenInc} included · ₹{extraChildRate.toLocaleString("en-IN")}/night each</p>
+                  )}
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label>Room type</Label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -985,6 +1009,20 @@ export default function BookingWizardPage() {
             )}
             {rateBreakdownOpen && halfDay && (
               <p className="ml-2 pl-2 border-l-2 border-border text-[11px] text-muted-foreground animate-in">Half-day rate · 50% of {money(rate)} base</p>
+            )}
+            {extraGuestCharge > 0 && (
+              <Row
+                k={
+                  <span className="inline-flex flex-col leading-tight">
+                    <span>Extra guests</span>
+                    <span className="text-[10px] text-subtle-foreground">
+                      {[extraAdults ? `+${extraAdults}A` : "", extraChildren ? `+${extraChildren}C` : ""].filter(Boolean).join(" ")} beyond included
+                    </span>
+                  </span>
+                }
+                v={money(extraGuestCharge)}
+                muted
+              />
             )}
             {extras > 0 && <Row k="Extras" v={money(extras)} muted />}
             <Row k="Tax (5%)" v={money(tax)} muted />

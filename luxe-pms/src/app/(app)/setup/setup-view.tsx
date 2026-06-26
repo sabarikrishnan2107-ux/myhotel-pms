@@ -1771,7 +1771,7 @@ function RoomTypesManager({ roomTypes, rooms, onChange, onToast, onMarkComplete 
         <SummaryStat icon={IndianRupee} label="Highest rate" value={money(Math.max(...roomTypes.map(t => t.baseTariff), 0))} />
       </div>
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">Define each category once — its base rate &amp; occupancy flow to Rooms, bookings and check-in.</p>
+        <p className="text-xs text-muted-foreground">Base rate covers the included adults/children; bookings charge the extra per-night rate for each guest beyond that. Each room&apos;s physical max is set when you add the room.</p>
         <Button size="sm" onClick={add}><Plus className="h-3.5 w-3.5" />Add type</Button>
       </div>
       <div className="rounded-md border border-border overflow-hidden">
@@ -1781,8 +1781,8 @@ function RoomTypesManager({ roomTypes, rooms, onChange, onToast, onMarkComplete 
               <th className="px-3 py-2 font-semibold">Type name</th>
               <th className="px-3 py-2 font-semibold">Code</th>
               <th className="px-3 py-2 font-semibold text-right">Base rate</th>
-              <th className="px-3 py-2 font-semibold text-right">Max adults</th>
-              <th className="px-3 py-2 font-semibold text-right">Max children</th>
+              <th className="px-3 py-2 font-semibold text-right">Incl. adults</th>
+              <th className="px-3 py-2 font-semibold text-right">Incl. children</th>
               <th className="px-3 py-2 font-semibold text-right">Extra adult (₹/night)</th>
               <th className="px-3 py-2 font-semibold text-right">Extra child (₹/night)</th>
               <th className="px-3 py-2 font-semibold text-right">Rooms</th>
