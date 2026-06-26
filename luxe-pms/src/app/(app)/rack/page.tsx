@@ -434,7 +434,7 @@ function RoomListView({ rooms, onOpenGuest, onAction }: { rooms: Room[]; onOpenG
                         </Link>
                       )}
                       {bookingNo ? (
-                        <Link href={`/folio/${bookingNo}`} onClick={(e) => e.stopPropagation()} className="h-7 px-2 rounded-md text-[11px] font-medium border border-border hover:bg-surface-sunken inline-flex items-center gap-1">
+                        <Link href={`/folio/${bookingNo}?from=rack`} onClick={(e) => e.stopPropagation()} className="h-7 px-2 rounded-md text-[11px] font-medium border border-border hover:bg-surface-sunken inline-flex items-center gap-1">
                           <Receipt className="h-3 w-3" />Folio
                         </Link>
                       ) : null}
@@ -528,11 +528,11 @@ function RoomCard({ room, onOpenGuest, onAction }: { room: Room; onOpenGuest: (r
                 <ActionGroup label="Front desk">
                   <ActionBtn icon={LogIn} label="Check-in" href={isReserved && bookingNo ? `/checkin?book=${bookingNo}` : undefined} emphasized={isReserved} disabled={!isReserved} />
                   <ActionBtn icon={LogOut} label="Checkout" href={isOccupied && bookingNo ? `/checkout/${bookingNo}` : undefined} emphasized={isOccupied} disabled={!isOccupied} />
-                  <ActionBtn icon={Receipt} label="Folio" href={bookingNo ? `/folio/${bookingNo}` : undefined} />
+                  <ActionBtn icon={Receipt} label="Folio" href={bookingNo ? `/folio/${bookingNo}?from=rack` : undefined} />
                 </ActionGroup>
                 <ActionGroup label="Stay">
                   <ActionBtn icon={CalendarPlus} label="Extend" onClick={() => onAction("extend", room)} />
-                  <ActionBtn icon={CalendarMinus} label="Reduce" onClick={() => onAction("reduce", room)} />
+                  <ActionBtn icon={CalendarMinus} label="Reduce" onClick={() => onAction("reduce", room)} disabled={(room.nights ?? 1) <= 1} />
                   <ActionBtn icon={ArrowLeftRight} label="Change" onClick={() => onAction("change", room)} />
                 </ActionGroup>
                 <ActionGroup label="Money & service">
@@ -714,6 +714,15 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
   const orderTotal = orderSubtotal + orderTax;
   const orderItemCount = Object.values(orderCart).reduce((t, n) => t + n, 0);
 
+  // Reduce: a stay must keep at least 1 night, so cap how many can be removed.
+  // reduceCut is the effective nights removed (0 for a 1-night stay → can't reduce);
+  // reduceLess is the bill reduction; reduceRefundDue is the already-paid portion
+  // owed back to the guest (when the reduction exceeds the outstanding balance).
+  const maxReduce = Math.max(0, (room.nights ?? 1) - 1);
+  const reduceCut = Math.min(Math.max(1, reduceNights), maxReduce);
+  const reduceLess = room.rate * reduceCut;
+  const reduceRefundDue = Math.max(0, reduceLess - (room.balance ?? 0));
+
   // Persist each action to the backend, then let the caller refresh the live board.
   // Stay/money actions need the room's real booking link (present on occupied rooms).
   const handle = async () => {
@@ -738,16 +747,24 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
         }
         onDone(`Room ${room.number} extended by ${extraNights} night${extraNights === 1 ? "" : "s"}`);
       } else if (kind === "reduce") {
-        const less = room.rate * reduceNights;
-        if (room.bookingId) {
+        if (reduceCut > 0 && room.bookingId) {
           await apiPut(`/bookings/${room.bookingId}`, {
-            checkOut: shiftDate(room.checkOut, -reduceNights),
-            nights: Math.max(1, (room.nights ?? 1) - reduceNights),
-            total: Math.max(0, (room.total ?? 0) - less),
-            balance: Math.max(0, (room.balance ?? 0) - less),
+            checkOut: shiftDate(room.checkOut, -reduceCut),
+            nights: Math.max(1, (room.nights ?? 1) - reduceCut),
+            total: Math.max(0, (room.total ?? 0) - reduceLess),
+            // Outstanding drops by the reversal; goes negative when the guest had
+            // already paid for the removed nights (= a credit/refund owed).
+            balance: (room.balance ?? 0) - reduceLess,
+          });
+          // Mirror the Extend flow: post a folio line so the folio reconciles
+          // with the new total (a negative "reversal" instead of a charge).
+          await apiPost("/folio-charges", {
+            bookingNo: room.bookingNo, date: today,
+            description: `Room charge reversal · reduced ${reduceCut} night${reduceCut === 1 ? "" : "s"}`,
+            type: "Room", qty: -reduceCut, rate: room.rate, tax: 0, amount: -reduceLess, paidBy: "Guest",
           });
         }
-        onDone(`Room ${room.number} stay reduced by ${reduceNights} night${reduceNights === 1 ? "" : "s"}`);
+        onDone(`Room ${room.number} stay reduced by ${reduceCut} night${reduceCut === 1 ? "" : "s"}${reduceRefundDue > 0 ? ` · refund due ${money(reduceRefundDue)}` : ""}`);
       } else if (kind === "change") {
         const issues = roomIssues.size > 0 ? ` (${[...roomIssues].slice(0, 2).join(", ")}${roomIssues.size > 2 ? `, +${roomIssues.size - 2}` : ""})` : "";
         if (room.bookingId) {
@@ -820,16 +837,28 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
               </>
             )}
             {kind === "reduce" && (
-              <>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Reduce by nights</Label>
-                  <Input type="number" min={1} value={reduceNights} onChange={e => setReduceNights(Math.max(1, Number(e.target.value)))} className="h-10 tabular text-base" />
-                </div>
+              maxReduce < 1 ? (
                 <div className="rounded-md bg-warning-soft border border-warning/30 p-3 text-xs">
-                  <p className="font-semibold text-warning inline-flex items-center gap-1"><AlertTriangle className="h-3 w-3" />Early checkout</p>
-                  <p className="text-muted-foreground mt-0.5">Cancellation policy may apply. Refund: {money(room.rate * reduceNights)}</p>
+                  <p className="font-semibold text-warning inline-flex items-center gap-1"><AlertTriangle className="h-3 w-3" />Single-night stay</p>
+                  <p className="text-muted-foreground mt-0.5">A 1-night stay can&apos;t be reduced — use Checkout instead.</p>
                 </div>
-              </>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Reduce by nights</Label>
+                    <Input type="number" min={1} max={maxReduce} value={reduceNights} onChange={e => setReduceNights(Math.min(maxReduce, Math.max(1, Number(e.target.value))))} className="h-10 tabular text-base" />
+                    <p className="text-[11px] text-muted-foreground">Max {maxReduce} night{maxReduce === 1 ? "" : "s"} — at least 1 night must remain.</p>
+                  </div>
+                  <div className="rounded-md bg-warning-soft border border-warning/30 p-3 text-xs space-y-1">
+                    <p className="font-semibold text-warning inline-flex items-center gap-1"><AlertTriangle className="h-3 w-3" />Early checkout</p>
+                    <p className="text-muted-foreground">Cancellation policy may apply.</p>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Bill reduction</span><span className="font-medium tabular">{money(reduceLess)}</span></div>
+                    {reduceRefundDue > 0 && (
+                      <div className="flex justify-between"><span className="text-muted-foreground">Refund due (already paid)</span><span className="font-medium tabular text-warning">{money(reduceRefundDue)}</span></div>
+                    )}
+                  </div>
+                </>
+              )
             )}
             {kind === "change" && (
               <>
@@ -1085,7 +1114,7 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
             </p>
             <div className="flex gap-2">
               <Button variant="ghost" size="sm" onClick={onClose} disabled={submitting}>Cancel</Button>
-              <Button onClick={handle} variant={kind === "block" ? "danger" : "success"} disabled={submitting || (kind === "order" && orderItemCount === 0)}>
+              <Button onClick={handle} variant={kind === "block" ? "danger" : "success"} disabled={submitting || (kind === "order" && orderItemCount === 0) || (kind === "reduce" && reduceCut < 1)}>
                 <CheckCircle2 className="h-4 w-4" />
                 {submitting ? "Saving…" : kind === "order" ? (orderTab === "laundry" ? "Send to laundry" : orderTab === "other" ? "Send to concierge" : "Send to kitchen") : kind === "unblock" ? "Release room" : "Confirm"}
               </Button>
