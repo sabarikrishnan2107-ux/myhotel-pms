@@ -82,7 +82,6 @@ export function composePhone(country: CountryCode, national: string): string {
 
 /** As-you-type national formatting for a given country (no country prefix). */
 export function formatNationalAsYouType(country: CountryCode, national: string): string {
-  const typer = new AsYouType(country);
-  typer.input(national.replace(/[^\d]/g, ""));
-  return typer.getNumber()?.formatNational() ?? national;
+  const digits = (national ?? "").replace(/[^\d]/g, "");
+  return new AsYouType(country).input(digits);
 }
