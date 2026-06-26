@@ -240,6 +240,10 @@ export default function BookingWizardPage() {
   // for document capture. Returns the new booking id + reference for the form
   // to poll; the final Confirm step updates this same booking.
   const requestMobileSync = async (g: NewGuestData): Promise<{ bookingId: number; reference: string } | null> => {
+    // Guard: one booking per wizard — re-syncing reuses the same draft booking.
+    if (syncBooking) {
+      return { bookingId: syncBooking.id, reference: syncBooking.bookingNo };
+    }
     const seed = (g.name || "X").length * 137 + roomType.length * 53 + nights * 7;
     const bookingNo = `BK${100400 + (seed % 9000)}`;
     try {
@@ -259,7 +263,9 @@ export default function BookingWizardPage() {
         total: Math.round(total),
         advance: Math.round(advance),
         balance: Math.round(total - advance),
-        status: "confirmed",
+        // Held as a draft so it shows on the tablet for capture but NOT as a
+        // confirmed arrival. The final "Confirm booking" promotes it.
+        status: "pending",
         vip: g.vip ?? false,
       });
       if (!created?.id) return null;
