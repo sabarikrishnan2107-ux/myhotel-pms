@@ -236,6 +236,13 @@ export default function BookingWizardPage() {
     : Math.round((total * paymentPct) / 100);
   const advanceLabel = customAdvance !== null ? "custom" : `${paymentPct}%`;
 
+  // The Live Summary starts empty and reveals each section only once it's
+  // relevant. Dates appear from the Dates step (2), pax from the Pax & Type
+  // step (3); a chosen room type / rate plan also implies the guest has reached
+  // those steps, so the rows stay visible even after navigating back.
+  const showDates = step >= 2 || !!roomType || !!ratePlan;
+  const showPax = step >= 3 || !!roomType || !!ratePlan;
+
   const filteredGuests = guests.filter(g => `${g.name} ${g.phone} ${g.email}`.toLowerCase().includes(search.toLowerCase())).slice(0, 5);
 
   // "Sync to mobile app" — create the booking now so it appears on the tablet
@@ -934,13 +941,13 @@ export default function BookingWizardPage() {
             <p className="mt-3 text-sm text-muted-foreground">No guest selected</p>
           )}
 
-          <dl className="mt-5 space-y-2.5 text-sm">
-            <Row k="Check-in" v={new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />
-            <Row k="Check-out" v={new Date(checkOut).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />
-            <Row k="Nights" v={`${nights}`} />
-            <Row k="Pax" v={`${adults}A${children ? ` + ${children}C` : ""}`} />
-            <Row k="Room type" v={roomType || "—"} />
-            <Row k="Rate plan" v={ratePlan || "—"} />
+          <dl className="mt-5 space-y-2.5 text-sm empty:mt-0">
+            {showDates && <Row k="Check-in" v={new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />}
+            {showDates && <Row k="Check-out" v={new Date(checkOut).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />}
+            {showDates && <Row k="Nights" v={`${nights}`} />}
+            {showPax && <Row k="Pax" v={`${adults}A${children ? ` + ${children}C` : ""}`} />}
+            {!!roomType && <Row k="Room type" v={roomType} />}
+            {!!ratePlan && <Row k="Rate plan" v={ratePlan} />}
           </dl>
 
           {roomType ? (
@@ -992,11 +999,11 @@ export default function BookingWizardPage() {
             )}
           </dl>
           </>
-          ) : (
+          ) : showPax ? (
             <div className="mt-4 border-t border-border pt-4">
               <p className="text-sm text-muted-foreground">Select a room type to see pricing.</p>
             </div>
-          )}
+          ) : null}
 
           <div className="mt-5 flex gap-2">
             <Button variant="outline" disabled={step === 1} onClick={() => setStep(s => s - 1)} className="flex-1">

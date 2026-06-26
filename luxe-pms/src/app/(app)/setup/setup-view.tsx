@@ -18,7 +18,6 @@ import { apiGet, apiPut, apiPost, apiUpload, apiDownload, syncList } from "@/lib
 import { PreferencesPanel, SecurityPanel, NotificationChannelsPanel, WebhooksPanel, useSettingsPersistence } from "./personal-panels";
 import { MenuItemsManager } from "./menu-items-manager";
 import { GroupServicesManager } from "./group-services-manager";
-import { MealPlansManager } from "./meal-plans-manager";
 import { PricingRulesManager } from "./pricing-rules-manager";
 import { RateRestrictionsManager } from "./rate-restrictions-manager";
 import { TablesManager } from "./tables-manager";
@@ -70,7 +69,6 @@ const SECTIONS = [
   { id: "food",         group: "Rates & Packages" as SectionGroup,        label: "Food & Hall Packages",     icon: Utensils,     hint: "4 F&B · 6 hall packages",        accent: "accent"  as const },
   { id: "menu-items",  group: "Rates & Packages" as SectionGroup,        label: "Menu Items",               icon: Utensils,     hint: "Dish catalog · price · photo · POS", accent: "accent"  as const },
   { id: "group-services", group: "Rates & Packages" as SectionGroup,     label: "Group Services",           icon: Utensils,     hint: "Halls · meals · decor · transfers for groups", accent: "accent" as const },
-  { id: "meal-plans", group: "Rates & Packages" as SectionGroup,         label: "Meal Plans",               icon: Utensils,     hint: "EP/CP/MAP/AP · per-pax-per-day", accent: "accent" as const },
   { id: "pricing-rules", group: "Rates & Packages" as SectionGroup,      label: "Pricing Rules",            icon: Tag,          hint: "Dynamic rate adjustments · triggers", accent: "accent" as const },
   { id: "rate-restrictions", group: "Rates & Packages" as SectionGroup,  label: "Rate Restrictions",        icon: Calendar,     hint: "Min-stay · CTA/CTD · stop-sell", accent: "accent" as const },
   { id: "agents",       group: "Partners & Compliance" as SectionGroup,   label: "Agents & Corporates",      icon: Briefcase,    hint: "6 accounts with credit",         accent: "warning" as const },
@@ -231,6 +229,7 @@ type RatePlan = {
   id: string; code: string; name: string;
   inclBreakfast: boolean; inclLunch: boolean; inclDinner: boolean;
   discountPct: number; refundable: boolean; active: boolean;
+  breakfastPrice?: number; lunchPrice?: number; dinnerPrice?: number;
 };
 const RATE_PLANS_SEED: RatePlan[] = [
   { id: "rp1", code: "EP", name: "European Plan — Room only", inclBreakfast: false, inclLunch: false, inclDinner: false, discountPct: 0, refundable: true, active: true },
@@ -429,7 +428,6 @@ const INITIAL_DATA: Record<SectionId, Field[]> = {
   ],
   "menu-items": [],
   "group-services": [],
-  "meal-plans": [],
   "pricing-rules": [],
   "rate-restrictions": [],
   "tables": [],
@@ -612,7 +610,7 @@ export function SetupView() {
   };
 
   // List of sections that use a custom manager instead of the generic field grid
-  const CUSTOM_SECTIONS = new Set<SectionId>(["preferences", "security", "channels", "webhooks", "floors", "room-types", "rooms", "pricing", "seasons", "food", "menu-items", "group-services", "meal-plans", "pricing-rules", "rate-restrictions", "tables", "agents", "tax", "templates", "roles", "branding", "integrations", "backup"]);
+  const CUSTOM_SECTIONS = new Set<SectionId>(["preferences", "security", "channels", "webhooks", "floors", "room-types", "rooms", "pricing", "seasons", "food", "menu-items", "group-services", "pricing-rules", "rate-restrictions", "tables", "agents", "tax", "templates", "roles", "branding", "integrations", "backup"]);
   const isCustom = CUSTOM_SECTIONS.has(active);
 
   const startEdit = () => {
@@ -868,7 +866,6 @@ export function SetupView() {
             )}
             {active === "menu-items" && <MenuItemsManager onToast={showToast} />}
             {active === "group-services" && <GroupServicesManager onToast={showToast} />}
-            {active === "meal-plans" && <MealPlansManager onToast={showToast} />}
             {active === "pricing-rules" && <PricingRulesManager onToast={showToast} />}
             {active === "rate-restrictions" && <RateRestrictionsManager onToast={showToast} />}
             {active === "tables" && <TablesManager onToast={showToast} />}
@@ -1882,9 +1879,9 @@ function RatePlansManager({ plans, onChange, onToast, onMarkComplete }: {
                 <td className="px-3 py-2">
                   <Input value={p.name} onChange={e => upd(p.id, { name: e.target.value })} className="h-8" />
                 </td>
-                <td className="px-3 py-2 text-center"><input type="checkbox" checked={p.inclBreakfast} onChange={e => upd(p.id, { inclBreakfast: e.target.checked })} className="h-4 w-4" /></td>
-                <td className="px-3 py-2 text-center"><input type="checkbox" checked={p.inclLunch} onChange={e => upd(p.id, { inclLunch: e.target.checked })} className="h-4 w-4" /></td>
-                <td className="px-3 py-2 text-center"><input type="checkbox" checked={p.inclDinner} onChange={e => upd(p.id, { inclDinner: e.target.checked })} className="h-4 w-4" /></td>
+                <td className="px-3 py-2 text-center"><div className="flex flex-col items-center gap-1"><input type="checkbox" checked={p.inclBreakfast} onChange={e => upd(p.id, { inclBreakfast: e.target.checked })} className="h-4 w-4" /><Input type="number" min={0} value={p.breakfastPrice ?? 0} disabled={!p.inclBreakfast} onChange={e => upd(p.id, { breakfastPrice: Math.max(0, Number(e.target.value)) })} className="h-7 w-16 tabular text-right text-xs" placeholder="₹" /></div></td>
+                <td className="px-3 py-2 text-center"><div className="flex flex-col items-center gap-1"><input type="checkbox" checked={p.inclLunch} onChange={e => upd(p.id, { inclLunch: e.target.checked })} className="h-4 w-4" /><Input type="number" min={0} value={p.lunchPrice ?? 0} disabled={!p.inclLunch} onChange={e => upd(p.id, { lunchPrice: Math.max(0, Number(e.target.value)) })} className="h-7 w-16 tabular text-right text-xs" placeholder="₹" /></div></td>
+                <td className="px-3 py-2 text-center"><div className="flex flex-col items-center gap-1"><input type="checkbox" checked={p.inclDinner} onChange={e => upd(p.id, { inclDinner: e.target.checked })} className="h-4 w-4" /><Input type="number" min={0} value={p.dinnerPrice ?? 0} disabled={!p.inclDinner} onChange={e => upd(p.id, { dinnerPrice: Math.max(0, Number(e.target.value)) })} className="h-7 w-16 tabular text-right text-xs" placeholder="₹" /></div></td>
                 <td className="px-3 py-2 text-right">
                   <div className="inline-flex items-center gap-1">
                     <Input type="number" value={p.discountPct} onChange={e => upd(p.id, { discountPct: Number(e.target.value) })} className="h-8 w-16 tabular text-right" />

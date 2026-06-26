@@ -31,7 +31,7 @@ export interface NewGuestData {
 
 const EMPTY: NewGuestData = {
   name: "", phone: "+91 ", email: "", address: "", nationality: "India",
-  dob: "", gender: "Prefer not to say",
+  dob: "", gender: "Male",
   idType: "Aadhaar", idNumber: "",
   idFront: null, idBack: null, photo: null, signature: null,
   company: "", gst: "", vip: false, remarks: "",
@@ -83,6 +83,32 @@ function ageFromIso(iso: string): number | null {
   const m = now.getMonth() - d.getMonth();
   if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
   return age;
+}
+
+// Shared "invalid field" styling so DOB / phone / email all flag errors the same way.
+const DANGER_INPUT = "border-danger focus-visible:border-danger focus-visible:ring-danger/30";
+
+const PHONE_MIN_DIGITS = 8;   // E.164: shortest realistic number including country code
+const PHONE_MAX_DIGITS = 15;  // E.164 maximum
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Count of actual digits in a phone string (ignores +, spaces, hyphens, parens). */
+function phoneDigitCount(s: string): number {
+  return (s.match(/\d/g) ?? []).length;
+}
+
+/** Valid if it's a plausible international number: only +, digits and separators, with 8–15 digits. */
+function isPhoneValid(s: string): boolean {
+  const t = s.trim();
+  if (!/^\+?[\d\s()-]+$/.test(t)) return false;
+  const n = phoneDigitCount(t);
+  return n >= PHONE_MIN_DIGITS && n <= PHONE_MAX_DIGITS;
+}
+
+/** Email is optional — empty counts as valid; a non-empty value must look like an address. */
+function isEmailValid(s: string): boolean {
+  const t = s.trim();
+  return t === "" || EMAIL_RE.test(t);
 }
 
 export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
@@ -157,11 +183,22 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
   const dobAge = ageFromIso(data.dob);
   const dobValid = data.dob === "" || (dobAge !== null && dobAge >= MIN_GUEST_AGE && dobAge <= MAX_GUEST_AGE);
 
-  // Required to save: name + phone (and a valid DOB if one was entered).
-  // ID number / ID scans / face photo are optional here — they can be captured
-  // later at check-in. This keeps the form usable so a guest's basic details
-  // (name, phone, email, ID) always save instead of being dropped.
-  const requiredOk = !!(data.name && data.phone) && dobValid;
+  const phoneValid = isPhoneValid(data.phone);
+  const emailValid = isEmailValid(data.email);
+  // Field-level errors only surface after the guest has left that field, so a
+  // pristine form (incl. the default "+91 " prefix) isn't littered with red.
+  const [touched, setTouched] = React.useState<{ phone?: boolean; email?: boolean }>({});
+  const markTouched = (k: "phone" | "email") => setTouched(t => ({ ...t, [k]: true }));
+
+  // Required to save: a name plus a valid phone, a valid email if one was typed,
+  // and a valid DOB if one was entered. ID number / scans / face photo stay
+  // optional — they can be captured at check-in — so basic details always save.
+  const requiredOk = !!data.name && phoneValid && emailValid && dobValid;
+  const issues: string[] = [];
+  if (!data.name) issues.push("name");
+  if (!phoneValid) issues.push("valid phone");
+  if (!emailValid) issues.push("valid email");
+  if (!dobValid) issues.push("valid date of birth");
   const completionPct = (() => {
     const fields: (keyof NewGuestData)[] = ["name", "phone", "email", "address", "nationality", "idType", "idNumber", "idFront", "idBack", "photo", "signature"];
     const filled = fields.filter(f => !!data[f]).length;
@@ -190,10 +227,34 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
             <Input value={data.name} onChange={e => update("name", e.target.value)} placeholder="Mr. John Doe" autoFocus />
           </Field>
           <Field label="Phone *">
-            <Input value={data.phone} onChange={e => update("phone", e.target.value)} placeholder="+971 50 123 4567" type="tel" />
+            <Input
+              value={data.phone}
+              onChange={e => update("phone", e.target.value)}
+              onBlur={() => markTouched("phone")}
+              placeholder="+971 50 123 4567"
+              type="tel"
+              inputMode="tel"
+              aria-invalid={touched.phone && !phoneValid}
+              className={touched.phone && !phoneValid ? DANGER_INPUT : ""}
+            />
+            {touched.phone && !phoneValid && (
+              <p className="text-[11px] text-danger mt-1">Enter a valid phone number with country code (8–15 digits)</p>
+            )}
           </Field>
           <Field label="Email">
-            <Input value={data.email} onChange={e => update("email", e.target.value)} placeholder="guest@example.com" type="email" />
+            <Input
+              value={data.email}
+              onChange={e => update("email", e.target.value)}
+              onBlur={() => markTouched("email")}
+              placeholder="guest@example.com"
+              type="email"
+              inputMode="email"
+              aria-invalid={touched.email && !emailValid}
+              className={touched.email && !emailValid ? DANGER_INPUT : ""}
+            />
+            {touched.email && !emailValid && (
+              <p className="text-[11px] text-danger mt-1">Enter a valid email address (e.g. guest@example.com)</p>
+            )}
           </Field>
           <Field label="Date of birth">
             <Input
@@ -203,7 +264,7 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
               min={minDob}
               max={maxDob}
               aria-invalid={!dobValid}
-              className={!dobValid ? "border-danger focus-visible:border-danger focus-visible:ring-danger/30" : ""}
+              className={!dobValid ? DANGER_INPUT : ""}
             />
             {data.dob && dobAge !== null && dobValid && (
               <p className="text-[11px] text-muted-foreground mt-1 tabular">
@@ -227,7 +288,7 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
           </Field>
           <Field label="Gender">
             <Select value={data.gender} onChange={e => update("gender", e.target.value)}>
-              <option>Male</option><option>Female</option><option>Prefer not to say</option>
+              <option>Male</option><option>Female</option>
             </Select>
           </Field>
           <Field label="Address" className="md:col-span-2">
@@ -429,7 +490,7 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
         <div className="text-xs text-muted-foreground">
           {requiredOk
             ? "Ready to save · ID & photo can be captured at check-in"
-            : "Required: name · phone"}
+            : `Needs: ${issues.join(" · ")}`}
         </div>
         <div className="flex gap-2">
           <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
