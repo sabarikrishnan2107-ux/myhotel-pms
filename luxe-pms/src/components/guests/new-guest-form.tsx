@@ -1,11 +1,12 @@
 "use client";
 import * as React from "react";
-import { User, IdCard, Briefcase, Sparkles, ChevronLeft, Save, Camera, Pen } from "lucide-react";
+import { User, IdCard, Briefcase, Sparkles, ChevronLeft, Save, Camera, Pen, Smartphone, Loader2, CheckCircle2, X } from "lucide-react";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PhotoCapture } from "./photo-capture";
 import { SignaturePad } from "./signature-pad";
 import { DocumentUpload } from "./document-upload";
+import { apiGet } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export interface NewGuestData {
@@ -41,7 +42,27 @@ const NATIONALITIES = ["India", "USA", "UK", "Japan", "UAE", "Singapore", "Austr
 interface Props {
   onCancel: () => void;
   onSave: (data: NewGuestData) => void;
+  /**
+   * When provided, shows a "Sync to mobile app" button in the Captures section.
+   * `onRequest` creates the booking on the server (so the tablet can see it) and
+   * returns its id + reference; the form then polls that booking until the app
+   * uploads the documents, and fills the capture slots from the result.
+   */
+  mobileSync?: {
+    onRequest: (data: NewGuestData) => Promise<{ bookingId: number; reference: string } | null>;
+  };
 }
+
+/** Shape returned by GET /bookings/{id} (the fields this form needs). */
+type SyncedBooking = {
+  verification_status?: string;
+  documents?: {
+    guest_photo?: string | null;
+    id_front?: string | null;
+    id_back?: string | null;
+    signature?: string | null;
+  };
+};
 
 /** ISO date (YYYY-MM-DD) of today minus N years — used to cap the DOB picker so the guest is at least N years old. */
 function isoDateNYearsAgo(years: number) {
@@ -64,10 +85,71 @@ function ageFromIso(iso: string): number | null {
   return age;
 }
 
-export function NewGuestForm({ onCancel, onSave }: Props) {
+export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
   const [data, setData] = React.useState<NewGuestData>(EMPTY);
   const update = <K extends keyof NewGuestData>(k: K, v: NewGuestData[K]) =>
     setData(prev => ({ ...prev, [k]: v }));
+
+  // --- Mobile capture sync ------------------------------------------------
+  const [syncState, setSyncState] = React.useState<"idle" | "creating" | "waiting" | "done" | "error">("idle");
+  const [syncRef, setSyncRef] = React.useState<string | null>(null);
+  const [syncBookingId, setSyncBookingId] = React.useState<number | null>(null);
+  const [syncErr, setSyncErr] = React.useState<string | null>(null);
+
+  const startSync = async () => {
+    if (!mobileSync) return;
+    if (!data.name || !data.phone) {
+      setSyncErr("Enter the guest's name and phone first.");
+      setSyncState("error");
+      return;
+    }
+    setSyncErr(null);
+    setSyncState("creating");
+    const res = await mobileSync.onRequest(data);
+    if (!res) {
+      setSyncErr("Couldn't create the booking. Check your connection and try again.");
+      setSyncState("error");
+      return;
+    }
+    setSyncBookingId(res.bookingId);
+    setSyncRef(res.reference);
+    setSyncState("waiting");
+  };
+
+  const cancelSync = () => {
+    setSyncState("idle");
+    setSyncBookingId(null);
+    setSyncRef(null);
+    setSyncErr(null);
+  };
+
+  // While waiting, poll the booking until the app uploads the documents.
+  React.useEffect(() => {
+    if (syncState !== "waiting" || !syncBookingId) return;
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const b = await apiGet<SyncedBooking>(`/bookings/${syncBookingId}`);
+        if (stopped) return;
+        if (b?.verification_status === "synced" && b.documents) {
+          const d = b.documents;
+          setData(prev => ({
+            ...prev,
+            photo: d.guest_photo ?? prev.photo,
+            idFront: d.id_front ?? prev.idFront,
+            idBack: d.id_back ?? prev.idBack,
+            signature: d.signature ?? prev.signature,
+          }));
+          setSyncState("done");
+        }
+      } catch {
+        /* keep polling — transient network error */
+      }
+    };
+    poll();
+    const timer = setInterval(poll, 3000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [syncState, syncBookingId]);
 
   // DOB constraints — guest must be 18+ and not absurdly old
   const maxDob = React.useMemo(() => isoDateNYearsAgo(MIN_GUEST_AGE), []);
@@ -156,6 +238,67 @@ export function NewGuestForm({ onCancel, onSave }: Props) {
 
       {/* Identification + Photo + Signature */}
       <Section icon={IdCard} title="Identification & Captures" optional>
+        {mobileSync && (
+          <div className="rounded-md border border-border bg-surface-sunken/40 p-3">
+            {syncState === "idle" || syncState === "error" ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5">
+                  <span className="h-7 w-7 rounded-md bg-brand-soft text-brand-soft-foreground flex items-center justify-center shrink-0">
+                    <Smartphone className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium">Capture on the mobile app</p>
+                    <p className="text-xs text-muted-foreground">Send this booking to the tablet — staff capture the face photo, ID & signature there, and they flow back into this form.</p>
+                    {syncErr && <p className="text-[11px] text-danger mt-1">{syncErr}</p>}
+                  </div>
+                </div>
+                <Button type="button" variant="outline" onClick={startSync}>
+                  <Smartphone className="h-4 w-4" />Sync to mobile app
+                </Button>
+              </div>
+            ) : syncState === "creating" ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />Sending booking to the tablet…
+              </div>
+            ) : syncState === "waiting" ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5">
+                  <Loader2 className="h-5 w-5 animate-spin text-brand shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium">Waiting for tablet capture…</p>
+                    <p className="text-xs text-muted-foreground">
+                      Open booking <span className="font-medium text-foreground">{syncRef}</span> in the Hotel Client app and capture the guest&apos;s photo, ID front/back &amp; signature. They&apos;ll appear here automatically.
+                    </p>
+                  </div>
+                </div>
+                <Button type="button" variant="ghost" onClick={cancelSync}>
+                  <X className="h-4 w-4" />Stop waiting
+                </Button>
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-5 w-5 text-success" />
+                  <span className="font-medium">Captured from tablet</span>
+                  {syncRef && <span className="text-muted-foreground">· booking {syncRef}</span>}
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+                  {([["Face photo", data.photo], ["ID Front", data.idFront], ["ID Back", data.idBack], ["Signature", data.signature]] as [string, string | null][]).map(([label, src]) => (
+                    <div key={label} className="rounded-md border border-border bg-surface overflow-hidden">
+                      <div className="aspect-[4/3] bg-surface-sunken flex items-center justify-center">
+                        {src
+                          ? <img src={src} alt={label} className="h-full w-full object-contain" />
+                          : <span className="text-[11px] text-muted-foreground">—</span>}
+                      </div>
+                      <p className="text-[11px] text-center py-1 text-muted-foreground">{label}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-2">These were captured on the tablet and will be saved with the guest. You can still override them manually below.</p>
+              </div>
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* ID details */}
           <div className="space-y-3">

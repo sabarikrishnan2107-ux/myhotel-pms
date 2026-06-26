@@ -131,6 +131,10 @@ export default function BookingWizardPage() {
   const needsRef = collectingAdvance && !!PAY_REF_FIELD[paymentMode];
   const [channels, setChannels] = React.useState<{ email: boolean; whatsapp: boolean; sms: boolean }>({ email: true, whatsapp: true, sms: false });
   const [submitting, setSubmitting] = React.useState(false);
+  // Booking created early via "Sync to mobile app" so the tablet can capture
+  // documents. When set, the final Confirm UPDATES this booking instead of
+  // creating a duplicate.
+  const [syncBooking, setSyncBooking] = React.useState<{ id: number; bookingNo: string } | null>(null);
   const [confirmed, setConfirmed] = React.useState<null | {
     bookingNo: string;
     guestName: string;
@@ -231,6 +235,40 @@ export default function BookingWizardPage() {
   const advanceLabel = customAdvance !== null ? "custom" : `${paymentPct}%`;
 
   const filteredGuests = guests.filter(g => `${g.name} ${g.phone} ${g.email}`.toLowerCase().includes(search.toLowerCase())).slice(0, 5);
+
+  // "Sync to mobile app" — create the booking now so it appears on the tablet
+  // for document capture. Returns the new booking id + reference for the form
+  // to poll; the final Confirm step updates this same booking.
+  const requestMobileSync = async (g: NewGuestData): Promise<{ bookingId: number; reference: string } | null> => {
+    const seed = (g.name || "X").length * 137 + roomType.length * 53 + nights * 7;
+    const bookingNo = `BK${100400 + (seed % 9000)}`;
+    try {
+      const created = await apiPost<{ id: number }>("/bookings", {
+        bookingNo,
+        guestName: g.name,
+        roomNumber: "Unassigned",
+        roomType,
+        source,
+        checkIn,
+        checkOut,
+        nights,
+        adults,
+        children,
+        paymentStatus: advance <= 0 ? "unpaid" : advance >= total ? "paid" : "partial",
+        ratePlan,
+        total: Math.round(total),
+        advance: Math.round(advance),
+        balance: Math.round(total - advance),
+        status: "confirmed",
+        vip: g.vip ?? false,
+      });
+      if (!created?.id) return null;
+      setSyncBooking({ id: created.id, bookingNo });
+      return { bookingId: created.id, reference: bookingNo };
+    } catch {
+      return null;
+    }
+  };
 
   const canNext = () => {
     if (step === 1) return guest !== null || newGuest !== null;
@@ -433,6 +471,7 @@ export default function BookingWizardPage() {
                   setGuest(null);
                   setStep1Mode("search");
                 }}
+                mobileSync={{ onRequest: requestMobileSync }}
               />
             </div>
           )}
@@ -945,7 +984,8 @@ export default function BookingWizardPage() {
                   setSubmitting(true);
                   // Deterministic-ish booking number (no Date.now() to avoid hydration drift if rendered server-side)
                   const seed = (selectedGuestDisplay?.name ?? "X").length * 137 + roomType.length * 53 + nights * 7;
-                  const bookingNo = `BK${100400 + (seed % 9000)}`;
+                  // Reuse the reference from the early "Sync to mobile" booking if one exists.
+                  const bookingNo = syncBooking?.bookingNo ?? `BK${100400 + (seed % 9000)}`;
                   // Persist the booking (and the guest, if a brand-new one was entered).
                   // NOTE: don't gate on step1Mode here — saving the new-guest form flips
                   // the mode back to "search", so checking it dropped every new profile.
@@ -978,7 +1018,7 @@ export default function BookingWizardPage() {
                         await apiPut(`/guests/${createdGuest.id}`, captures).catch(() => {});
                       }
                     }
-                    await apiPost("/bookings", {
+                    const bookingPayload = {
                       bookingNo,
                       guestName: selectedGuestDisplay!.name,
                       roomNumber: "Unassigned",   // specific room assigned at check-in
@@ -996,7 +1036,14 @@ export default function BookingWizardPage() {
                       balance: Math.round(total - advance),
                       status: "confirmed",     // reservation; room assigned at check-in
                       vip: false,
-                    });
+                    };
+                    // If this booking was already created via "Sync to mobile app",
+                    // update it (keeping the captured documents) instead of duplicating.
+                    if (syncBooking) {
+                      await apiPut(`/bookings/${syncBooking.id}`, bookingPayload);
+                    } else {
+                      await apiPost("/bookings", bookingPayload);
+                    }
                   } catch {
                     /* show the confirmation anyway; the booking just didn't persist */
                   }

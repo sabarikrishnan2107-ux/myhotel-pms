@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\ShiftController;
 use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\StatsController;
 use App\Http\Controllers\Api\UploadController;
+use App\Http\Controllers\Api\VerificationController;
 use Illuminate\Support\Facades\Route;
 
 // ---- Public: authentication ----
@@ -89,6 +90,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Image uploads (logos, brand assets)
     Route::post('/upload', [UploadController::class, 'store']);
+
+    // Hotel Client mobile app — check-in verification capture.
+    // Declared before the generic /{resource} routes so they take precedence.
+    Route::get('/bookings/mobile', [VerificationController::class, 'mobile']);
+    Route::get('/bookings/{id}', [VerificationController::class, 'show'])->whereNumber('id');
+    Route::post('/bookings/{id}/verification', [VerificationController::class, 'store'])->whereNumber('id');
 
     // SMTP settings — dedicated controller so the password is encrypted at rest
     // and never returned. Registered before the generic /settings/{key} routes.
