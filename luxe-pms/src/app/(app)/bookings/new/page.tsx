@@ -270,6 +270,18 @@ export default function BookingWizardPage() {
       });
       if (!created?.id) return null;
       setSyncBooking({ id: created.id, bookingNo });
+      // Push any documents already captured/uploaded in this web form onto the
+      // booking so they show in the mobile app too (reception can replace the
+      // rest on the tablet). Fire-and-forget — sync shouldn't block on it.
+      if (g.photo || g.idFront || g.idBack || g.signature) {
+        apiPost(`/bookings/${created.id}/verification`, {
+          guest_photo: g.photo ?? "",
+          id_front: g.idFront ?? "",
+          id_back: g.idBack ?? "",
+          signature: g.signature ?? "",
+          uploaded_by: "Front Desk (web)",
+        }).catch(() => {});
+      }
       return { bookingId: created.id, reference: bookingNo };
     } catch {
       return null;

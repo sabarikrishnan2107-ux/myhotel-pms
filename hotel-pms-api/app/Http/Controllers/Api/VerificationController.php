@@ -43,11 +43,13 @@ class VerificationController extends Controller
     /** POST /api/bookings/{id}/verification */
     public function store(Request $request, string $id)
     {
+        // Each document may arrive as a multipart file (mobile app), a base64
+        // data URI (web form captures), raw SVG markup (signature), or an
+        // already-stored https URL (left untouched). So no file/image rules.
         $data = $request->validate([
-            'guest_photo'         => ['nullable', 'file', 'image', 'max:8192'],
-            'id_front'            => ['nullable', 'file', 'image', 'max:8192'],
-            'id_back'             => ['nullable', 'file', 'image', 'max:8192'],
-            // Signature arrives as raw SVG markup (string) or, optionally, an image file.
+            'guest_photo'         => ['nullable'],
+            'id_front'            => ['nullable'],
+            'id_back'             => ['nullable'],
             'signature'           => ['nullable'],
             'verification_status' => ['nullable', 'string'],
             'uploaded_by'         => ['nullable', 'string'],
@@ -57,19 +59,22 @@ class VerificationController extends Controller
         $booking = Booking::findOrFail($id);
         $this->ensureUploadsDir();
 
-        foreach (['guest_photo', 'id_front', 'id_back'] as $field) {
-            if ($request->hasFile($field)) {
-                $booking->{$field} = $this->storeImage($request->file($field), $booking->id, $field);
+        foreach (['guest_photo', 'id_front', 'id_back', 'signature'] as $field) {
+            $stored = $this->ingest($request, $field, $booking->id);
+            if ($stored !== null) {
+                $booking->{$field} = $stored;
             }
         }
 
-        if ($request->hasFile('signature')) {
-            $booking->signature = $this->storeImage($request->file('signature'), $booking->id, 'signature');
-        } elseif (!empty($data['signature'])) {
-            $booking->signature = $this->storeSignatureSvg((string) $data['signature'], $booking->id);
+        // Completeness drives the status so a partial push (e.g. ID uploaded in
+        // the web form) shows as in-progress until the rest is captured.
+        $present = 0;
+        foreach (['guest_photo', 'id_front', 'id_back', 'signature'] as $field) {
+            if (!empty($booking->{$field})) {
+                $present++;
+            }
         }
-
-        $booking->verification_status = 'synced';
+        $booking->verification_status = $present >= 4 ? 'synced' : ($present > 0 ? 'in_progress' : 'not_started');
         $booking->uploaded_by = $data['uploaded_by']
             ?? optional($request->user())->name
             ?? 'Front Desk';
@@ -81,7 +86,7 @@ class VerificationController extends Controller
             'module' => 'Front Desk',
             'action' => 'Guest verification captured',
             'entity' => $booking->bookingNo ?: ('Booking #' . $booking->id),
-            'after'  => 'Documents uploaded',
+            'after'  => $booking->verification_status === 'synced' ? 'Documents complete' : 'Documents updated',
             'ip'     => $request->ip(),
             'device' => $request->userAgent(),
         ]);
@@ -89,7 +94,7 @@ class VerificationController extends Controller
         return response()->json([
             'ok'                  => true,
             'booking_id'          => (string) $booking->id,
-            'verification_status' => 'synced',
+            'verification_status' => $booking->verification_status,
             'uploaded_at'         => optional($booking->uploaded_at)->toIso8601String(),
             'booking'             => $this->mapBooking($booking->fresh()),
         ]);
@@ -144,12 +149,65 @@ class VerificationController extends Controller
         return $this->publicUrl($name);
     }
 
-    private function storeSignatureSvg(string $svg, int $bookingId): string
+    /**
+     * Resolve one document field to a stored URL, accepting any of:
+     * multipart file, base64 data URI, raw SVG markup, or an existing URL.
+     * Returns null when the field is absent (so the existing value is kept).
+     */
+    private function ingest(Request $request, string $field, int $bookingId): ?string
     {
-        $name = "verif_{$bookingId}_signature_" . uniqid('', true) . '.svg';
-        file_put_contents(public_path('uploads/' . $name), $svg);
+        if ($request->hasFile($field)) {
+            return $this->storeImage($request->file($field), $bookingId, $field);
+        }
+
+        $val = $request->input($field);
+        if (!is_string($val) || $val === '') {
+            return null;
+        }
+
+        // base64 data URI (e.g. data:image/jpeg;base64,....) from the web form
+        if (preg_match('#^data:([\w/+.\-]+);base64,(.*)$#s', $val, $m)) {
+            if (strlen($m[2]) > 15_000_000) { // ~11 MB binary guard
+                return null;
+            }
+            $bin = base64_decode($m[2], true);
+            if ($bin === false) {
+                return null;
+            }
+            return $this->storeRaw($bin, $bookingId, $field, $this->extFromMime($m[1]));
+        }
+
+        // raw SVG markup (mobile signature pad)
+        if (str_contains($val, '<svg')) {
+            return $this->storeRaw($val, $bookingId, $field, 'svg');
+        }
+
+        // already a stored URL — keep as-is
+        if (preg_match('#^https?://#i', $val)) {
+            return $val;
+        }
+
+        return null;
+    }
+
+    private function storeRaw(string $contents, int $bookingId, string $field, string $ext): string
+    {
+        $name = "verif_{$bookingId}_{$field}_" . uniqid('', true) . ".{$ext}";
+        file_put_contents(public_path('uploads/' . $name), $contents);
 
         return $this->publicUrl($name);
+    }
+
+    private function extFromMime(string $mime): string
+    {
+        return match (strtolower($mime)) {
+            'image/jpeg', 'image/jpg' => 'jpg',
+            'image/png'               => 'png',
+            'image/webp'              => 'webp',
+            'image/svg+xml'           => 'svg',
+            'application/pdf'         => 'pdf',
+            default                   => 'bin',
+        };
     }
 
     private function ensureUploadsDir(): void
