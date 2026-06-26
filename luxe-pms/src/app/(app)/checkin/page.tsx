@@ -21,6 +21,8 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
 import { PhotoCapture } from "@/components/guests/photo-capture";
 import { SignaturePad } from "@/components/guests/signature-pad";
+import { MobileSyncDialog } from "@/components/guests/mobile-sync-dialog";
+import { buildWalkInSyncBooking } from "@/lib/walkin-sync";
 import { useGuests, useRooms } from "@/lib/use-directory";
 import type { Reservation, PaymentStatus, BookingSource, Guest } from "@/lib/types";
 import { cn, money, formatTime } from "@/lib/utils";
@@ -1715,6 +1717,22 @@ function WalkInModal({
   // ----- receipt preview -----
   const [showReceipt, setShowReceipt] = React.useState(false);
 
+  // ----- mobile capture sync -----
+  type SyncedBooking = {
+    verification_status?: string;
+    documents?: {
+      guest_photo?: string | null;
+      id_front?: string | null;
+      id_back?: string | null;
+      signature?: string | null;
+    };
+  };
+  const [syncState, setSyncState] = React.useState<"idle" | "creating" | "waiting" | "done" | "error">("idle");
+  const [syncBooking, setSyncBooking] = React.useState<{ id: number; bookingNo: string } | null>(null);
+  const [syncDocs, setSyncDocs] = React.useState<SyncedBooking["documents"]>(undefined);
+  const [syncErr, setSyncErr] = React.useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = React.useState(false);
+
   // ----- pricing -----
   const roomSubtotal = (room?.rate ?? 0) * nights;
   const earlyFee = earlyCheckIn ? 500 : 0;     // ₹500 flat
@@ -1787,6 +1805,89 @@ function WalkInModal({
     onStart(reservation);
   };
 
+  // "Sync to mobile app" — create the walk-in as a draft booking now so it shows
+  // on the tablet for document capture, then poll until the app uploads them.
+  const requestWalkInSync = async () => {
+    // Already running/finished — just re-open the status dialog.
+    if (syncState === "creating" || syncState === "waiting" || syncState === "done") {
+      setDialogOpen(true);
+      return;
+    }
+    if (!name.trim() || phone.trim().length < 5) {
+      setSyncErr("Enter the guest's name and phone first.");
+      return;
+    }
+    if (!room) {
+      setSyncErr("Pick an available room first.");
+      return;
+    }
+    setSyncErr(null);
+    setSyncDocs(undefined);
+    setDialogOpen(true);
+    setSyncState("creating");
+    const ci = new Date(checkInDate + "T12:00:00");
+    const co = new Date(ci);
+    co.setDate(co.getDate() + nights);
+    co.setHours(11, 0, 0, 0);
+    const payload = buildWalkInSyncBooking({
+      bookingNo,
+      guestName: name.trim(),
+      roomNumber: room.number,
+      roomType: room.type,
+      checkIn: ci.toISOString(),
+      checkOut: co.toISOString(),
+      nights,
+      adults,
+      children,
+      ratePlan: ratePlanCode,
+      total: grandTotal,
+      advance: pay.amount,
+    });
+    try {
+      const created = await apiPost<{ id: number }>("/bookings", payload);
+      if (!created?.id) {
+        setSyncErr("Couldn't create the booking. Check your connection and try again.");
+        setSyncState("error");
+        return;
+      }
+      setSyncBooking({ id: created.id, bookingNo });
+      setSyncState("waiting");
+    } catch {
+      setSyncErr("Couldn't create the booking. Check your connection and try again.");
+      setSyncState("error");
+    }
+  };
+
+  const cancelSync = () => {
+    setSyncState("idle");
+    setSyncBooking(null);
+    setSyncDocs(undefined);
+    setSyncErr(null);
+    setDialogOpen(false);
+  };
+
+  // While waiting, poll the booking until the tablet uploads the documents.
+  React.useEffect(() => {
+    if (syncState !== "waiting" || !syncBooking) return;
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const b = await apiGet<SyncedBooking>(`/bookings/${syncBooking.id}`);
+        if (stopped) return;
+        setSyncDocs(b?.documents);
+        if (b?.verification_status === "synced" && b.documents) {
+          setSyncState("done");
+          setDialogOpen(true);
+        }
+      } catch {
+        /* keep polling — transient network error */
+      }
+    };
+    poll();
+    const timer = setInterval(poll, 3000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [syncState, syncBooking]);
+
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" onClick={onClose} />
@@ -1830,6 +1931,51 @@ function WalkInModal({
                     </Select>
                   </div>
                 </div>
+
+                {/* Capture on the mobile app */}
+                {syncState !== "done" ? (
+                  <div className="mt-3 rounded-md border border-border bg-surface-sunken/40 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        <span className="h-7 w-7 rounded-md bg-brand-soft text-brand-soft-foreground flex items-center justify-center shrink-0">
+                          <Smartphone className="h-4 w-4" />
+                        </span>
+                        <div>
+                          <p className="text-sm font-medium">Capture on the mobile app</p>
+                          <p className="text-xs text-muted-foreground">Send this walk-in to the tablet — staff capture the face photo, ID &amp; signature there.</p>
+                          {syncErr && <p className="text-[11px] text-danger mt-1">{syncErr}</p>}
+                        </div>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" onClick={requestWalkInSync}>
+                        <Smartphone className="h-4 w-4" />
+                        {syncState === "creating" || syncState === "waiting" ? "View sync status" : "Sync to mobile app"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-md border border-success/40 bg-success-soft/30 p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle2 className="h-5 w-5 text-success" />
+                        <span className="font-medium">Captured from tablet</span>
+                        {syncBooking && <span className="text-muted-foreground">· booking {syncBooking.bookingNo}</span>}
+                      </div>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setDialogOpen(true)}>View</Button>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+                      {([["Face photo", syncDocs?.guest_photo], ["ID Front", syncDocs?.id_front], ["ID Back", syncDocs?.id_back], ["Signature", syncDocs?.signature]] as [string, string | null | undefined][]).map(([label, src]) => (
+                        <div key={label} className="rounded-md border border-border bg-surface overflow-hidden">
+                          <div className="aspect-[4/3] bg-surface-sunken flex items-center justify-center">
+                            {src
+                              ? <img src={src} alt={label} className="h-full w-full object-contain" />
+                              : <span className="text-[11px] text-muted-foreground">—</span>}
+                          </div>
+                          <p className="text-[11px] text-center py-1 text-muted-foreground">{label}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </WalkInSection>
 
               {/* Stay */}
@@ -2189,6 +2335,18 @@ function WalkInModal({
           </div>
         </Card>
       </div>
+
+      {dialogOpen && syncState !== "idle" && (
+        <MobileSyncDialog
+          state={syncState}
+          reference={syncBooking?.bookingNo ?? null}
+          docs={syncDocs}
+          errorMessage={syncErr}
+          onCancel={cancelSync}
+          onHide={() => setDialogOpen(false)}
+          onDone={() => setDialogOpen(false)}
+        />
+      )}
 
       {showReceipt && (
         <AdvanceReceiptModal
