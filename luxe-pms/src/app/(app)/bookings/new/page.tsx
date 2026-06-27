@@ -105,6 +105,7 @@ export default function BookingWizardPage() {
   }, [roomTypes, roomType]);
   const [breakfast, setBreakfast] = React.useState(false);
   const [extraBed, setExtraBed] = React.useState(false);
+  const [extraBedForExtra, setExtraBedForExtra] = React.useState(false);   // opt-in: charge the extra bed for adults beyond the room max
   const [airportTransfer, setAirportTransfer] = React.useState(false);
   const [lateCheckout, setLateCheckout] = React.useState(false);
   // Step-2 stay options
@@ -164,14 +165,16 @@ export default function BookingWizardPage() {
   const urlCheckout = searchParams.get("checkout");
   const resumeNo = searchParams.get("resume");
 
-  // Default to today → today + 3 nights (local time), unless the URL overrides it.
+  // Check-in defaults to today (local time); check-out starts EMPTY so it is
+  // deliberately entered for every stay. URL drag-prefill / draft-resume still
+  // populate check-out when present — only the cold default is blank.
   const isoDay = (offset = 0) => {
     const d = new Date();
     d.setDate(d.getDate() + offset);
     return d.toLocaleDateString("en-CA");
   };
   const [checkIn, setCheckIn] = React.useState(urlCheckin ?? isoDay(0));
-  const [checkOut, setCheckOut] = React.useState(urlCheckout ?? isoDay(3));
+  const [checkOut, setCheckOut] = React.useState(urlCheckout ?? "");
 
   // If the URL specified a room, find it and pre-select its type + the room itself
   React.useEffect(() => {
@@ -231,14 +234,17 @@ export default function BookingWizardPage() {
   const minCheckout = addDays(checkIn, 1); // checkout must be at least 1 day after check-in
   const todayISO = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD local — blocks past dates
 
-  // Auto-push checkout forward if check-in moves past it
+  // Auto-push checkout forward if check-in moves past it — but only when a
+  // checkout is already set. An empty checkout stays empty (never silently filled).
   const handleCheckInChange = (val: string) => {
     setCheckIn(val);
-    if (checkOut <= val) {
+    if (checkOut && checkOut <= val) {
       setCheckOut(addDays(val, Math.max(1, nights)));
     }
   };
   const handleCheckOutChange = (val: string) => {
+    // Clearing the field is allowed (empty = "not chosen yet").
+    if (!val) { setCheckOut(""); return; }
     // Guard: never allow checkout on/before check-in
     if (val <= checkIn) {
       setCheckOut(addDays(checkIn, 1));
@@ -247,7 +253,12 @@ export default function BookingWizardPage() {
     }
   };
 
-  const nights = Math.max(1, Math.round((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86400000));
+  // A valid checkout is non-empty and strictly after check-in. Until then,
+  // `nights` is 0 so pricing/breakdown/totals resolve to 0 instead of NaN.
+  const hasCheckout = !!checkOut && checkOut > checkIn;
+  const nights = hasCheckout
+    ? Math.max(1, Math.round((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86400000))
+    : 0;
 
   // Per-night base rate comes from the managed Room Type; falls back to a
   // sensible default only if the type list hasn't loaded.
@@ -282,12 +293,15 @@ export default function BookingWizardPage() {
     nights,
   });
 
+  // The extra-bed charge for adults beyond the room max applies ONLY when the
+  // "Extra bed" toggle (shown on Pax & Type) is enabled — opt-in, not automatic.
+  const extraBedCharge = (extraOcc.extraAdults > 0 && extraBedForExtra) ? extraOcc.total : 0;
   const extras =
     (breakfast ? 95 * adults * nights : 0) +
     (extraBed ? 900 * nights : 0) +
     (airportTransfer ? 175 : 0) +
     earlyFee + lateFee +
-    extraOcc.total +
+    extraBedCharge +
     fbTotal;
 
   const tax = (subtotal + extras) * 0.05;
@@ -368,6 +382,8 @@ export default function BookingWizardPage() {
 
   const canNext = () => {
     if (step === 1) return guest !== null || newGuest !== null;
+    // Step 2 (Dates) requires a check-out date to be chosen.
+    if (step === 2) return hasCheckout;
     // Step 3 (Pax & Type) and Step 4 (Rate Plan) require an explicit selection.
     if (step === 3) return roomType !== "";
     if (step === 4) return ratePlan !== "";
@@ -590,39 +606,48 @@ export default function BookingWizardPage() {
                   <p className="text-[11px] text-muted-foreground">Must be after check-in · auto-adjusts if you change dates</p>
                 </div>
               </div>
-              <div className="rounded-md bg-brand-soft text-brand-soft-foreground p-4 flex items-center gap-3">
-                <Calendar className="h-5 w-5" />
-                <div className="text-sm">
-                  <span className="font-semibold">{nights} {nights === 1 ? "night" : "nights"}</span> · {new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })} → {new Date(checkOut).toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })}
+              {!hasCheckout ? (
+                <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground flex items-center gap-3">
+                  <Calendar className="h-5 w-5 shrink-0" />
+                  Pick a check-out date to see nights &amp; pricing.
                 </div>
-              </div>
+              ) : (
+                <>
+                  <div className="rounded-md bg-brand-soft text-brand-soft-foreground p-4 flex items-center gap-3">
+                    <Calendar className="h-5 w-5" />
+                    <div className="text-sm">
+                      <span className="font-semibold">{nights} {nights === 1 ? "night" : "nights"}</span> · {new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })} → {new Date(checkOut).toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })}
+                    </div>
+                  </div>
 
-              {/* Day-type breakdown — weekday vs weekend vs holiday */}
-              <div className="rounded-md border border-border p-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-muted-foreground uppercase tracking-wider">Rate by day type</span>
-                  <span className="text-muted-foreground">{breakdown.counts.weekday}W · {breakdown.counts.weekend}WE · {breakdown.counts.holiday}H</span>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {breakdown.lines.map((ln, i) => {
-                    const tone = ln.kind === "holiday" ? "bg-warning-soft text-warning border-warning/30"
-                              : ln.kind === "weekend" ? "bg-accent-soft text-accent border-accent/30"
-                              : "bg-success-soft text-success border-success/30";
-                    return (
-                      <span key={i} className={cn("inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-medium", tone)}>
-                        <span className="font-semibold tabular">{ln.date.toLocaleDateString(undefined, { day: "2-digit", month: "short" })}</span>
-                        <span className="opacity-70">·</span>
-                        <span className="tabular">{money(ln.rate)}</span>
-                      </span>
-                    );
-                  })}
-                </div>
-                <p className="text-[10px] text-muted-foreground mt-2 flex items-center gap-3">
-                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" />Weekday</span>
-                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-accent" />Weekend +20%</span>
-                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" />Holiday +30%</span>
-                </p>
-              </div>
+                  {/* Day-type breakdown — weekday vs weekend vs holiday */}
+                  <div className="rounded-md border border-border p-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-muted-foreground uppercase tracking-wider">Rate by day type</span>
+                      <span className="text-muted-foreground">{breakdown.counts.weekday}W · {breakdown.counts.weekend}WE · {breakdown.counts.holiday}H</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {breakdown.lines.map((ln, i) => {
+                        const tone = ln.kind === "holiday" ? "bg-warning-soft text-warning border-warning/30"
+                                  : ln.kind === "weekend" ? "bg-accent-soft text-accent border-accent/30"
+                                  : "bg-success-soft text-success border-success/30";
+                        return (
+                          <span key={i} className={cn("inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-medium", tone)}>
+                            <span className="font-semibold tabular">{ln.date.toLocaleDateString(undefined, { day: "2-digit", month: "short" })}</span>
+                            <span className="opacity-70">·</span>
+                            <span className="tabular">{money(ln.rate)}</span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-2 flex items-center gap-3">
+                      <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" />Weekday</span>
+                      <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-accent" />Weekend +20%</span>
+                      <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" />Holiday +30%</span>
+                    </p>
+                  </div>
+                </>
+              )}
 
               {/* Early / Late / Half-day options */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-sm">
@@ -678,6 +703,14 @@ export default function BookingWizardPage() {
                   ))}
                 </div>
               </div>
+              {extraOcc.extraAdults > 0 && (
+                <ToggleRow
+                  label={`Extra bed for ${extraOcc.extraAdults} extra adult${extraOcc.extraAdults > 1 ? "s" : ""}`}
+                  hint={`Beyond the room's ${selectedType?.maxAdults ?? 0}-adult limit · ${money(selectedType?.extraAdultRate ?? 0)}/night each → ${money(extraOcc.total)}`}
+                  checked={extraBedForExtra}
+                  onChange={setExtraBedForExtra}
+                />
+              )}
             </div>
           )}
 
@@ -1013,14 +1046,14 @@ export default function BookingWizardPage() {
 
           <dl className="mt-5 space-y-2.5 text-sm empty:mt-0">
             {showDates && <Row k="Check-in" v={new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />}
-            {showDates && <Row k="Check-out" v={new Date(checkOut).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />}
-            {showDates && <Row k="Nights" v={`${nights}`} />}
+            {showDates && hasCheckout && <Row k="Check-out" v={new Date(checkOut).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />}
+            {showDates && hasCheckout && <Row k="Nights" v={`${nights}`} />}
             {showPax && <Row k="Pax" v={`${adults}A${children ? ` + ${children}C` : ""}`} />}
             {!!roomType && <Row k="Room type" v={roomType} />}
             {!!ratePlan && <Row k="Rate plan" v={ratePlan} />}
           </dl>
 
-          {roomType ? (
+          {roomType && hasCheckout ? (
           <>
           <div className="border-t border-border my-4" />
 
@@ -1056,8 +1089,8 @@ export default function BookingWizardPage() {
             {rateBreakdownOpen && halfDay && (
               <p className="ml-2 pl-2 border-l-2 border-border text-[11px] text-muted-foreground animate-in">Half-day rate · 50% of {money(rate)} base</p>
             )}
-            {extraOcc.total > 0 && (
-              <Row k={`Extra adult × ${extraOcc.extraAdults} (beyond max ${selectedType?.maxAdults ?? 0}A)`} v={money(extraOcc.total)} muted />
+            {extraBedCharge > 0 && (
+              <Row k={`Extra bed · ${extraOcc.extraAdults} extra adult${extraOcc.extraAdults > 1 ? "s" : ""}`} v={money(extraBedCharge)} muted />
             )}
             {earlyFee > 0 && <Row k="Early check-in" v={money(earlyFee)} muted />}
             {lateFee > 0 && <Row k="Late check-out" v={money(lateFee)} muted />}
