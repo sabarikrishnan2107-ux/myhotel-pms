@@ -47,6 +47,8 @@ const NATIONALITIES = ["India", "USA", "UK", "Japan", "UAE", "Singapore", "Austr
 interface Props {
   onCancel: () => void;
   onSave: (data: NewGuestData) => void;
+  /** When provided, seeds the form (used to resume an incomplete draft booking). */
+  initialData?: Partial<NewGuestData>;
   /**
    * When provided, shows a "Sync to mobile app" button in the Captures section.
    * `onRequest` creates the booking on the server (so the tablet can see it) and
@@ -97,8 +99,8 @@ function ageFromIso(iso: string): number | null {
 // Shared "invalid field" styling so DOB / phone / email all flag errors the same way.
 const DANGER_INPUT = "border-danger focus-visible:border-danger focus-visible:ring-danger/30";
 
-export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
-  const [data, setData] = React.useState<NewGuestData>(EMPTY);
+export function NewGuestForm({ onCancel, onSave, mobileSync, initialData }: Props) {
+  const [data, setData] = React.useState<NewGuestData>({ ...EMPTY, ...initialData });
   const update = <K extends keyof NewGuestData>(k: K, v: NewGuestData[K]) =>
     setData(prev => ({ ...prev, [k]: v }));
 

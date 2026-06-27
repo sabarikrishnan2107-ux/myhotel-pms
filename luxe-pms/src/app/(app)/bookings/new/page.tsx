@@ -186,8 +186,12 @@ export default function BookingWizardPage() {
     if (!resumeNo) return;
     let cancelled = false;
     (async () => {
-      const rows = await apiGet<Array<{ id: number; bookingNo: string; status?: string; checkIn?: string; checkOut?: string; roomType?: string; ratePlan?: string; adults?: number; children?: number; source?: string; guestName?: string }>>("/bookings").catch(() => []);
-      const b = rows.find(r => r.bookingNo === resumeNo && (r.status ?? "") === "pending");
+      const rows = await apiGet<Array<{ id: number; bookingNo: string; status?: string; checkIn?: string; checkOut?: string; roomType?: string; ratePlan?: string; adults?: number; children?: number; source?: string; guestName?: string; draftData?: unknown }>>("/bookings").catch(() => []);
+      // A seed-derived bookingNo can repeat across sync sessions, so several
+      // pending rows may share it. Prefer the one that actually saved draftData,
+      // else the most recently created (highest id) — never just the first stale match.
+      const matches = rows.filter(r => r.bookingNo === resumeNo && (r.status ?? "") === "pending");
+      const b = matches.find(r => r.draftData) ?? [...matches].sort((a, z) => z.id - a.id)[0];
       if (cancelled || !b) return;   // already completed / not a draft → start fresh
       if (b.checkIn) setCheckIn(b.checkIn.slice(0, 10));
       if (b.checkOut) setCheckOut(b.checkOut.slice(0, 10));
@@ -325,18 +329,18 @@ export default function BookingWizardPage() {
       });
       if (!created?.id) return null;
       setSyncBooking({ id: created.id, bookingNo });
-      // Push any documents already captured/uploaded in this web form onto the
-      // booking so they show in the mobile app too (reception can replace the
-      // rest on the tablet). Fire-and-forget — sync shouldn't block on it.
-      if (g.photo || g.idFront || g.idBack || g.signature) {
-        apiPost(`/bookings/${created.id}/verification`, {
-          guest_photo: g.photo ?? "",
-          id_front: g.idFront ?? "",
-          id_back: g.idBack ?? "",
-          signature: g.signature ?? "",
-          uploaded_by: "Front Desk (web)",
-        }).catch(() => {});
-      }
+      // Seed the booking with the selected ID type (so the tablet frames the
+      // capture to that exact card) plus any documents already captured in this
+      // web form. Fire-and-forget — sync shouldn't block on it.
+      apiPost(`/bookings/${created.id}/verification`, {
+        guest_photo: g.photo ?? "",
+        id_front: g.idFront ?? "",
+        id_back: g.idBack ?? "",
+        signature: g.signature ?? "",
+        id_type: g.idType,
+        id_number: g.idNumber,
+        uploaded_by: "Front Desk (web)",
+      }).catch(() => {});
       return { bookingId: created.id, reference: bookingNo };
     } catch {
       return null;

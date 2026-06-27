@@ -37,6 +37,16 @@ import { isValidEmail } from "@/lib/email";
 // Money collected at the check-in payment step (amount in ₹, plus mode/reference).
 type CheckInPayment = { amount: number; mode: string; reference: string };
 
+// Pre-fill payload for resuming an incomplete (synced-but-unsubmitted) walk-in draft.
+type WalkInResume = {
+  bookingId: number;
+  bookingNo: string;
+  name?: string; phone?: string; email?: string; nationality?: string;
+  checkInDate?: string; nights?: number; adults?: number; children?: number;
+  roomNumber?: string; ratePlan?: string;
+  docs?: { guest_photo?: string | null; id_front?: string | null; id_back?: string | null; signature?: string | null };
+};
+
 // Mark a booking checked-in in Postgres (looked up by its bookingNo) and, when a
 // payment was collected at the desk, record it on the folio and roll the
 // booking's advance / balance / paymentStatus forward — same flow checkout uses,
@@ -174,6 +184,7 @@ export default function CheckinPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const bookParam = searchParams.get("book");
+  const resumeParam = searchParams.get("resume");
   const [q, setQ] = React.useState("");
   const [view, setView] = React.useState<"cards" | "list">("cards");
   const [selected, setSelected] = React.useState<Reservation | null>(null);
@@ -181,6 +192,7 @@ export default function CheckinPage() {
   const [completedIds, setCompletedIds] = React.useState<Set<string>>(new Set());
   const [toast, setToast] = React.useState<string | null>(null);
   const [walkInOpen, setWalkInOpen] = React.useState(false);
+  const [walkInInitial, setWalkInInitial] = React.useState<WalkInResume | null>(null);
   // Reservations created from express walk-in — force KYC capture in the check-in modal
   const [expressWalkInIds, setExpressWalkInIds] = React.useState<Set<string>>(new Set());
 
@@ -227,6 +239,37 @@ export default function CheckinPage() {
     })();
     return () => { cancelled = true; };
   }, [bookParam, router, arrivals]);
+
+  // "Complete" on an incomplete WALK-IN (WK…) draft in the bookings list → reopen
+  // the walk-in form pre-filled from its draftData + stay columns + captured docs,
+  // reusing the same WK record (no duplicate). BK… drafts resume in /bookings/new.
+  React.useEffect(() => {
+    if (!resumeParam || !resumeParam.startsWith("WK")) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await apiGet<Array<{ id: number; bookingNo: string; status?: string; checkIn?: string; nights?: number; adults?: number; children?: number; roomNumber?: string; ratePlan?: string; guestName?: string; draftData?: unknown }>>("/bookings");
+        const matches = rows.filter(r => r.bookingNo === resumeParam && (r.status ?? "") === "pending");
+        const b = matches.find(r => r.draftData) ?? [...matches].sort((a, z) => z.id - a.id)[0];
+        if (cancelled || !b) return;
+        const full = await apiGet<{ draftData?: { name?: string; phone?: string; email?: string; nationality?: string }; documents?: WalkInResume["docs"] }>(`/bookings/${b.id}`).catch(() => null);
+        if (cancelled) return;
+        const dd = full?.draftData ?? {};
+        setWalkInInitial({
+          bookingId: b.id, bookingNo: b.bookingNo,
+          name: dd.name ?? b.guestName ?? "", phone: dd.phone ?? "", email: dd.email ?? "", nationality: dd.nationality ?? "India",
+          checkInDate: (b.checkIn ?? "").slice(0, 10) || undefined,
+          nights: b.nights, adults: b.adults, children: b.children,
+          roomNumber: b.roomNumber && b.roomNumber !== "Unassigned" ? b.roomNumber : undefined,
+          ratePlan: b.ratePlan,
+          docs: full?.documents ?? undefined,
+        });
+        setWalkInOpen(true);
+        router.replace("/checkin");   // clear the query so it doesn't re-open on close
+      } catch { /* offline — nothing to open */ }
+    })();
+    return () => { cancelled = true; };
+  }, [resumeParam, router]);
 
   // Resolve a Guest record (from GUESTS or synthesized) for the selected reservation
   const selectedGuest: Guest | null = React.useMemo(() => {
@@ -290,11 +333,13 @@ export default function CheckinPage() {
   if (walkInOpen) {
     return (
       <WalkInModal
-        onClose={() => setWalkInOpen(false)}
+        initialData={walkInInitial}
+        onClose={() => { setWalkInOpen(false); setWalkInInitial(null); }}
         onStart={(reservation) => {
           setExpressWalkInIds(s => new Set([...s, reservation.id]));
           setCheckingIn(reservation);
           setWalkInOpen(false);
+          setWalkInInitial(null);
         }}
       />
     );
@@ -848,19 +893,18 @@ function CheckinProcessModal({
       return;
     }
     setSyncBookingId(bookingId);
-    // Push anything already captured here so the tablet shows it too (staff can
-    // replace the rest). Fire-and-forget — the sync shouldn't block on it.
-    if (idFrontFile || idBackFile || facePhoto || signature || collectedIdNumber) {
-      apiPost(`/bookings/${bookingId}/verification`, {
-        guest_photo: facePhoto ?? "",
-        id_front: idFrontFile ?? "",
-        id_back: idBackFile ?? "",
-        signature: signature ?? "",
-        id_type: collectedIdType,
-        id_number: collectedIdNumber,
-        uploaded_by: "Reception (web)",
-      }).catch(() => {});
-    }
+    // Seed the booking with the selected ID type (so the tablet frames the
+    // capture to that exact card) plus anything already captured here. Fire-and
+    // -forget — the sync shouldn't block on it.
+    apiPost(`/bookings/${bookingId}/verification`, {
+      guest_photo: facePhoto ?? "",
+      id_front: idFrontFile ?? "",
+      id_back: idBackFile ?? "",
+      signature: signature ?? "",
+      id_type: collectedIdType,
+      id_number: collectedIdNumber,
+      uploaded_by: "Reception (web)",
+    }).catch(() => {});
     setSyncState("waiting");
   };
 
@@ -1833,28 +1877,29 @@ type AdvancePayment = {
 };
 
 function WalkInModal({
-  onClose, onStart,
+  onClose, onStart, initialData,
 }: {
   onClose: () => void;
   onStart: (r: Reservation) => void;
+  initialData?: WalkInResume | null;
 }) {
-  // ----- guest basics -----
-  const [name, setName] = React.useState("");
-  const [phone, setPhone] = React.useState("");
-  const [email, setEmail] = React.useState("");
-  const [nationality, setNationality] = React.useState("India");
+  // ----- guest basics (seeded from a resumed draft when present) -----
+  const [name, setName] = React.useState(initialData?.name ?? "");
+  const [phone, setPhone] = React.useState(initialData?.phone ?? "");
+  const [email, setEmail] = React.useState(initialData?.email ?? "");
+  const [nationality, setNationality] = React.useState(initialData?.nationality ?? "India");
 
   // ----- stay -----
   const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local TZ — blocks past dates
-  const [checkInDate, setCheckInDate] = React.useState(today);
-  const [nights, setNights] = React.useState(1);
-  const [adults, setAdults] = React.useState(1);
-  const [children, setChildren] = React.useState(0);
+  const [checkInDate, setCheckInDate] = React.useState(initialData?.checkInDate ?? today);
+  const [nights, setNights] = React.useState(initialData?.nights ?? 1);
+  const [adults, setAdults] = React.useState(initialData?.adults ?? 1);
+  const [children, setChildren] = React.useState(initialData?.children ?? 0);
 
   // ----- room -----
   const rooms = useRooms();
   const availableRooms = React.useMemo(() => rooms.filter(r => r.status === "available"), [rooms]);
-  const [roomNumber, setRoomNumber] = React.useState(availableRooms[0]?.number ?? "");
+  const [roomNumber, setRoomNumber] = React.useState(initialData?.roomNumber ?? availableRooms[0]?.number ?? "");
   const room = availableRooms.find(r => r.number === roomNumber);
 
   // ----- stay add-ons -----
@@ -1867,7 +1912,7 @@ function WalkInModal({
   const setFb = (id: string, n: number) => setFbAddons(a => ({ ...a, [id]: Math.max(0, n) }));
 
   // ----- rate plan (drives F&B inclusions) -----
-  const [ratePlanCode, setRatePlanCode] = React.useState<RatePlanCode>("EP");
+  const [ratePlanCode, setRatePlanCode] = React.useState<RatePlanCode>((initialData?.ratePlan as RatePlanCode) ?? "EP");
   const ratePlan = RATE_PLANS.find(r => r.code === ratePlanCode)!;
 
   // Applying a rate plan: each included meal = 1 per pax (adults+children) per night
@@ -1915,9 +1960,9 @@ function WalkInModal({
       signature?: string | null;
     };
   };
-  const [syncState, setSyncState] = React.useState<"idle" | "creating" | "waiting" | "done" | "error">("idle");
-  const [syncBooking, setSyncBooking] = React.useState<{ id: number; bookingNo: string } | null>(null);
-  const [syncDocs, setSyncDocs] = React.useState<SyncedBooking["documents"]>(undefined);
+  const [syncState, setSyncState] = React.useState<"idle" | "creating" | "waiting" | "done" | "error">(initialData?.docs ? "done" : "idle");
+  const [syncBooking, setSyncBooking] = React.useState<{ id: number; bookingNo: string } | null>(initialData ? { id: initialData.bookingId, bookingNo: initialData.bookingNo } : null);
+  const [syncDocs, setSyncDocs] = React.useState<SyncedBooking["documents"]>(initialData?.docs ?? undefined);
   const [syncErr, setSyncErr] = React.useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = React.useState(false);
 
@@ -1960,7 +2005,7 @@ function WalkInModal({
 
   // ----- generated booking number -----
   const seed = name.length + phone.length + nights + (room?.rate ?? 0);
-  const bookingNo = `WK${100000 + (seed % 9000)}`;
+  const bookingNo = syncBooking?.bookingNo ?? `WK${100000 + (seed % 9000)}`;
   const receiptNo = `ADV-2026-${bookingNo.slice(2)}`;
 
   const start = () => {
@@ -2019,6 +2064,7 @@ function WalkInModal({
     const payload = buildWalkInSyncBooking({
       bookingNo,
       guestName: name.trim(),
+      phone, email, nationality,   // saved as draftData so an abandoned walk-in resumes fully
       roomNumber: room.number,
       roomType: room.type,
       checkIn: ci.toISOString(),
