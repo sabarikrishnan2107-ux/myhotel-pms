@@ -34,6 +34,7 @@ import { isValidPhone } from "@/lib/phone";
 import { EmailInput } from "@/components/ui/email-input";
 import { isValidEmail } from "@/lib/email";
 import { buildNightlyBreakdown, type Season, type Holiday } from "@/lib/room-nightly-pricing";
+import { extraOccupancyCharge } from "@/lib/booking-pricing";
 
 // Weekend uplift has no Setup field (Seasons/Holidays do) — kept as a fixed default.
 const WEEKEND_MULTIPLIER = 1.2;
@@ -1960,11 +1961,30 @@ function WalkInModal({
       .catch(() => {});
   }, []);
 
+  // Room-type occupancy limits + extra-adult rates (for the auto extra-person charge).
+  const [roomTypeDefs, setRoomTypeDefs] = React.useState<Array<{ name: string; maxAdults?: number; extraAdultRate?: number }>>([]);
+  React.useEffect(() => {
+    apiGet<Array<{ name: string; maxAdults?: number; extraAdultRate?: number }>>("/room-types")
+      .then(r => Array.isArray(r) && setRoomTypeDefs(r))
+      .catch(() => {});
+  }, []);
+
   // ----- room -----
   const rooms = useRooms();
   const availableRooms = React.useMemo(() => rooms.filter(r => r.status === "available"), [rooms]);
   const [roomNumber, setRoomNumber] = React.useState(initialData?.roomNumber ?? availableRooms[0]?.number ?? "");
   const room = availableRooms.find(r => r.number === roomNumber);
+
+  // Auto extra-person charge for ADULTS beyond the room type's max (children never charged) — matches booking.
+  const selectedType = roomTypeDefs.find(t => t.name === room?.type);
+  const extraOcc = extraOccupancyCharge({
+    adults, children,
+    maxAdults: selectedType?.maxAdults ?? Infinity,
+    maxChildren: Infinity,
+    extraAdultRate: selectedType?.extraAdultRate ?? 0,
+    extraChildRate: 0,
+    nights,
+  });
 
   // ----- per-day room price breakdown (seasonal / weekend / holiday) -----
   // Drives roomSubtotal so the walk-in matches booking's nightly pricing.
@@ -2055,7 +2075,7 @@ function WalkInModal({
   const lateFee = lateCheckOut ? 500 : 0;      // ₹500 flat
   const fbTotal = WALKIN_FB.reduce((t, p) => t + p.price * (fbAddons[p.id] ?? 0) * nights, 0);
   const ratePlanSupplement = ratePlan.surchargePerNight * nights * (adults + children);
-  const extras = earlyFee + lateFee + fbTotal + ratePlanSupplement;
+  const extras = earlyFee + lateFee + fbTotal + ratePlanSupplement + extraOcc.total;
   const subtotal = roomSubtotal + extras;
   const tax = Math.round(subtotal * 0.05);
   const grandTotal = subtotal + tax;
@@ -2909,6 +2929,12 @@ function WalkInModal({
                 <span className="text-muted-foreground">Room · {nights}N {breakdown.avgRate > 0 ? `· avg ${money(breakdown.avgRate)}/night` : ""}</span>
                 <span className="font-medium tabular">{money(roomSubtotal)}</span>
               </div>
+              {extraOcc.total > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Extra adult × {extraOcc.extraAdults} (beyond {selectedType?.maxAdults ?? 0}A)</span>
+                  <span className="tabular">{money(extraOcc.total)}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground inline-flex items-center gap-1.5">
                   <span className="px-1 py-0 rounded bg-brand-soft text-brand-soft-foreground text-[9px] font-bold">{ratePlan.code}</span>
