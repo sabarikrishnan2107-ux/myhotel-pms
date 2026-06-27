@@ -33,6 +33,10 @@ import { PhoneInput } from "@/components/ui/phone-input";
 import { isValidPhone } from "@/lib/phone";
 import { EmailInput } from "@/components/ui/email-input";
 import { isValidEmail } from "@/lib/email";
+import { buildNightlyBreakdown, type Season, type Holiday } from "@/lib/room-nightly-pricing";
+
+// Weekend uplift has no Setup field (Seasons/Holidays do) — kept as a fixed default.
+const WEEKEND_MULTIPLIER = 1.2;
 
 // Money collected at the check-in payment step (amount in ₹, plus mode/reference).
 type CheckInPayment = { amount: number; mode: string; reference: string };
@@ -1902,16 +1906,57 @@ function WalkInModal({
 
   // ----- stay -----
   const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local TZ — blocks past dates
+  // ISO date helper (UTC-safe day math, matches the booking wizard).
+  const addDays = (iso: string, days: number) => {
+    const d = new Date(iso);
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
   const [checkInDate, setCheckInDate] = React.useState(initialData?.checkInDate ?? today);
-  const [nights, setNights] = React.useState(initialData?.nights ?? 1);
+  // Check-out is the source of truth for nights now; seed it from the resumed
+  // draft's nights (default 1) so a resume still lands on the right range.
+  const [checkOutDate, setCheckOutDate] = React.useState(
+    addDays(initialData?.checkInDate ?? today, Math.max(1, initialData?.nights ?? 1)),
+  );
+  // Nights derived from the date range (>= 1), like booking's "Stay duration".
+  const nights = Math.max(1, Math.round((new Date(checkOutDate).getTime() - new Date(checkInDate).getTime()) / 86400000));
+  const minCheckout = addDays(checkInDate, 1); // checkout must be at least 1 day after check-in
+  // Auto-push checkout forward if check-in moves on/past it.
+  const handleCheckInChange = (val: string) => {
+    setCheckInDate(val);
+    if (checkOutDate <= val) setCheckOutDate(addDays(val, Math.max(1, nights)));
+  };
+  const handleCheckOutChange = (val: string) => {
+    if (val <= checkInDate) setCheckOutDate(addDays(checkInDate, 1));
+    else setCheckOutDate(val);
+  };
   const [adults, setAdults] = React.useState(initialData?.adults ?? 1);
   const [children, setChildren] = React.useState(initialData?.children ?? 0);
+
+  // ----- seasonal / holiday per-day pricing (configured in Setup) -----
+  const [seasons, setSeasons] = React.useState<Season[]>([]);
+  const [holidays, setHolidays] = React.useState<Holiday[]>([]);
+  React.useEffect(() => {
+    apiGet<Array<Season & { active?: boolean }>>("/seasons")
+      .then(r => Array.isArray(r) && setSeasons(r.filter(s => s.active !== false).map(s => ({ from: s.from, to: s.to, multiplier: Number(s.multiplier) || 1 }))))
+      .catch(() => {});
+    apiGet<Array<{ date: string; surchargePct?: number }>>("/holidays")
+      .then(r => Array.isArray(r) && setHolidays(r.map(h => ({ date: h.date, surchargePct: Number(h.surchargePct) || 0 }))))
+      .catch(() => {});
+  }, []);
 
   // ----- room -----
   const rooms = useRooms();
   const availableRooms = React.useMemo(() => rooms.filter(r => r.status === "available"), [rooms]);
   const [roomNumber, setRoomNumber] = React.useState(initialData?.roomNumber ?? availableRooms[0]?.number ?? "");
   const room = availableRooms.find(r => r.number === roomNumber);
+
+  // ----- per-day room price breakdown (seasonal / weekend / holiday) -----
+  // Drives roomSubtotal so the walk-in matches booking's nightly pricing.
+  const breakdown = React.useMemo(
+    () => buildNightlyBreakdown(checkInDate, nights, room?.rate ?? 0, seasons, holidays, WEEKEND_MULTIPLIER),
+    [checkInDate, nights, room?.rate, seasons, holidays],
+  );
 
   // ----- stay add-ons -----
   const [earlyCheckIn, setEarlyCheckIn] = React.useState(false);
@@ -1989,7 +2034,8 @@ function WalkInModal({
   ];
 
   // ----- pricing -----
-  const roomSubtotal = (room?.rate ?? 0) * nights;
+  // Per-day seasonal/weekend/holiday total (was a flat rate × nights).
+  const roomSubtotal = breakdown.total;
   const earlyFee = earlyCheckIn ? 500 : 0;     // ₹500 flat
   const lateFee = lateCheckOut ? 500 : 0;      // ₹500 flat
   const extraBedFee = extraBed ? 900 * nights : 0;
@@ -2344,9 +2390,47 @@ function WalkInModal({
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs">Check-in</Label>
-                    <Input type="date" value={checkInDate} min={today} onChange={e => setCheckInDate(e.target.value)} className="h-10 tabular" />
+                    <Input type="date" value={checkInDate} min={today} onChange={e => handleCheckInChange(e.target.value)} className="h-10 tabular" />
                   </div>
-                  <NumStepper label="Nights" value={nights} onChange={setNights} min={1} />
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Check-out</Label>
+                    <Input type="date" value={checkOutDate} min={minCheckout > today ? minCheckout : today} onChange={e => handleCheckOutChange(e.target.value)} className="h-10 tabular" />
+                    <p className="text-[11px] text-muted-foreground">Must be after check-in · auto-adjusts if you change dates</p>
+                  </div>
+                </div>
+
+                <div className="rounded-md bg-brand-soft text-brand-soft-foreground p-4 flex items-center gap-3">
+                  <Calendar className="h-5 w-5" />
+                  <div className="text-sm">
+                    <span className="font-semibold">{nights} {nights === 1 ? "night" : "nights"}</span> · {new Date(checkInDate).toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })} → {new Date(checkOutDate).toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })}
+                  </div>
+                </div>
+
+                {/* Day-type breakdown — weekday vs weekend vs holiday */}
+                <div className="rounded-md border border-border p-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-muted-foreground uppercase tracking-wider">Rate by day type</span>
+                    <span className="text-muted-foreground">{breakdown.counts.weekday}W · {breakdown.counts.weekend}WE · {breakdown.counts.holiday}H</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {breakdown.lines.map((ln, i) => {
+                      const tone = ln.kind === "holiday" ? "bg-warning-soft text-warning border-warning/30"
+                                : ln.kind === "weekend" ? "bg-accent-soft text-accent border-accent/30"
+                                : "bg-success-soft text-success border-success/30";
+                      return (
+                        <span key={i} className={cn("inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-medium", tone)}>
+                          <span className="font-semibold tabular">{ln.date.toLocaleDateString(undefined, { day: "2-digit", month: "short" })}</span>
+                          <span className="opacity-70">·</span>
+                          <span className="tabular">{money(ln.rate)}</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-2 flex items-center gap-3">
+                    <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" />Weekday</span>
+                    <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-accent" />Weekend +20%</span>
+                    <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" />Holiday +30%</span>
+                  </p>
                 </div>
               </div>
             )}
@@ -2774,7 +2858,7 @@ function WalkInModal({
 
             <dl className="space-y-1.5 text-xs">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">{nights} × {money(room?.rate ?? 0)}/night</span>
+                <span className="text-muted-foreground">Room · {nights}N {breakdown.avgRate > 0 ? `· avg ${money(breakdown.avgRate)}/night` : ""}</span>
                 <span className="font-medium tabular">{money(roomSubtotal)}</span>
               </div>
               <div className="flex justify-between">
