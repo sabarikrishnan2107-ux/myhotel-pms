@@ -1059,7 +1059,12 @@ export default function BookingWizardPage() {
             {extraOcc.total > 0 && (
               <Row k={`Extra adult × ${extraOcc.extraAdults} (beyond max ${selectedType?.maxAdults ?? 0}A)`} v={money(extraOcc.total)} muted />
             )}
-            {extras - extraOcc.total > 0 && <Row k="Extras" v={money(extras - extraOcc.total)} muted />}
+            {earlyFee > 0 && <Row k="Early check-in" v={money(earlyFee)} muted />}
+            {lateFee > 0 && <Row k="Late check-out" v={money(lateFee)} muted />}
+            {breakfast && <Row k={`Breakfast × ${adults}`} v={money(95 * adults * nights)} muted />}
+            {extraBed && <Row k="Extra bed" v={money(900 * nights)} muted />}
+            {airportTransfer && <Row k="Airport transfer" v={money(175)} muted />}
+            {fbTotal > 0 && <Row k="Meals / F&B add-ons" v={money(fbTotal)} muted />}
             <Row k="Tax (5%)" v={money(tax)} muted />
             <div className="border-t border-border pt-2 mt-2">
               <Row k={<span className="font-semibold">Total</span>} v={<span className="font-semibold tabular text-base">{money(total)}</span>} />
