@@ -3,9 +3,11 @@ import {
   getCountryCallingCode,
   isValidPhoneNumber,
   parsePhoneNumberFromString,
+  getExampleNumber,
   AsYouType,
   type CountryCode,
 } from "libphonenumber-js";
+import examples from "libphonenumber-js/examples.mobile.json";
 
 export type { CountryCode };
 
@@ -84,4 +86,22 @@ export function composePhone(country: CountryCode, national: string): string {
 export function formatNationalAsYouType(country: CountryCode, national: string): string {
   const digits = (national ?? "").replace(/[^\d]/g, "");
   return new AsYouType(country).input(digits);
+}
+
+const exampleCache = new Map<CountryCode, { placeholder: string; maxDigits: number }>();
+
+/**
+ * A representative mobile number for a country: a formatted national-format
+ * `placeholder` (e.g. India → "98765 43210") and `maxDigits`, the number of
+ * national digits a valid number has (India → 10), used to cap typing.
+ */
+export function phoneExample(country: CountryCode): { placeholder: string; maxDigits: number } {
+  const cached = exampleCache.get(country);
+  if (cached) return cached;
+  const ex = getExampleNumber(country, examples);
+  const result = ex
+    ? { placeholder: formatNationalAsYouType(country, ex.nationalNumber), maxDigits: ex.nationalNumber.length }
+    : { placeholder: "Phone number", maxDigits: 15 };
+  exampleCache.set(country, result);
+  return result;
 }

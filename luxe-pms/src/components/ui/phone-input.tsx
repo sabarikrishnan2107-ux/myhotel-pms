@@ -7,6 +7,7 @@ import {
   parsePhone,
   composePhone,
   formatNationalAsYouType,
+  phoneExample,
   type CountryCode,
 } from "@/lib/phone";
 
@@ -80,9 +81,15 @@ export function PhoneInput({
   };
 
   const onNationalChange = (raw: string) => {
-    const formatted = country
-      ? formatNationalAsYouType(country, raw)
-      : raw.replace(/[^\d\s()-]/g, "");
+    if (!country) {
+      const cleaned = raw.replace(/[^\d\s()-]/g, "");
+      setNational(cleaned);
+      emit(country, cleaned);
+      return;
+    }
+    // Cap typed digits to the country's number length (India → 10).
+    const digits = raw.replace(/[^\d]/g, "").slice(0, phoneExample(country).maxDigits);
+    const formatted = formatNationalAsYouType(country, digits);
     setNational(formatted);
     emit(country, formatted);
   };
@@ -146,7 +153,7 @@ export function PhoneInput({
         value={national}
         onChange={e => onNationalChange(e.target.value)}
         onBlur={onBlur}
-        placeholder={country ? (placeholder ?? "Phone number") : "Select country first"}
+        placeholder={country ? (placeholder ?? phoneExample(country).placeholder) : "Select country first"}
         aria-invalid={invalid}
         className={cn(
           "flex-1 min-w-0 rounded-r-md border border-border bg-surface px-3 py-2 text-sm tabular outline-hidden",

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { COUNTRIES, isValidPhone, formatPhone, parsePhone, composePhone, flagFor } from "@/lib/phone";
+import { COUNTRIES, isValidPhone, formatPhone, parsePhone, composePhone, flagFor, phoneExample } from "@/lib/phone";
 
 describe("COUNTRIES", () => {
   it("includes India with +91, a name and a flag", () => {
@@ -55,5 +55,25 @@ describe("formatPhone / parsePhone / composePhone", () => {
     expect(formatPhone("hello")).toBe("hello");
     expect(parsePhone("not a phone").nationalNumber).toBe("");
     expect(composePhone("IN", "")).toBe("");
+  });
+});
+
+describe("India is exactly 10 digits", () => {
+  it("accepts 10, rejects 9 and 11", () => {
+    expect(isValidPhone("+91 98765 43210")).toBe(true);
+    expect(isValidPhone("+91 9876 54321")).toBe(false);   // 9
+    expect(isValidPhone("+91 98765 432101")).toBe(false); // 11
+  });
+});
+
+describe("phoneExample", () => {
+  it("reports 10 max digits for India with a national-format placeholder", () => {
+    const ex = phoneExample("IN");
+    expect(ex.maxDigits).toBe(10);
+    expect(ex.placeholder.replace(/\D/g, "")).toHaveLength(10);
+  });
+  it("reports the right length for other countries", () => {
+    expect(phoneExample("US").maxDigits).toBe(10);
+    expect(phoneExample("AE").maxDigits).toBe(9);
   });
 });
