@@ -114,7 +114,6 @@ export function PhoneInput({
         type="button"
         disabled={disabled}
         onClick={() => setOpen(o => !o)}
-        aria-invalid={invalid}
         className={cn(
           "flex items-center gap-1.5 rounded-l-md border border-r-0 border-border bg-surface-sunken px-2.5 text-sm shrink-0",
           "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 outline-hidden",
@@ -125,7 +124,7 @@ export function PhoneInput({
       >
         {selected ? (
           <>
-            <span className="text-base leading-none">{selected.flag}</span>
+            <span className="inline-flex h-5 min-w-[1.75rem] items-center justify-center rounded bg-surface px-1 text-[10px] font-semibold text-muted-foreground">{selected.code}</span>
             <span className="tabular text-muted-foreground">{selected.dialCode}</span>
           </>
         ) : (
@@ -187,7 +186,7 @@ export function PhoneInput({
                     c.code === country && "bg-surface-sunken",
                   )}
                 >
-                  <span className="text-base leading-none">{c.flag}</span>
+                  <span className="inline-flex h-5 min-w-[1.75rem] items-center justify-center rounded bg-surface-sunken px-1 text-[10px] font-semibold text-muted-foreground">{c.code}</span>
                   <span className="flex-1 truncate">{c.name}</span>
                   <span className="tabular text-muted-foreground">{c.dialCode}</span>
                   {c.code === country && <Check className="h-3.5 w-3.5 text-brand" />}

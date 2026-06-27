@@ -10,6 +10,8 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
@@ -1502,7 +1504,7 @@ function NewAmcModal({ onClose, onSave }: {
     return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
   }, [onClose]);
 
-  const valid = name.trim() !== "";
+  const valid = name.trim() !== "" && (phone === "" || isValidPhone(phone));
   const save = () => {
     const FREQ_DAYS: Record<Frequency, number> = { daily: 1, weekly: 7, monthly: 30, quarterly: 90 };
     const end = new Date(TODAY); end.setFullYear(end.getFullYear() + 1);
@@ -1561,7 +1563,7 @@ function NewAmcModal({ onClose, onSave }: {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Phone</Label>
-                <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 …" className="h-9" />
+                <PhoneInput value={phone} onChange={v => setPhone(v)} size="sm" invalid={phone !== "" && !isValidPhone(phone)} />
               </div>
             </div>
             <div className="space-y-1.5">

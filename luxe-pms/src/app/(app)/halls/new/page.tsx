@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Building2, Calendar, Users, UtensilsCrossed, Sparkles,
-  ChevronLeft, Send, Plus, Minus, CheckCircle2, User, Phone, Mail,
+  ChevronLeft, Send, Plus, Minus, CheckCircle2, User, Mail,
   ArrowRight, AlertCircle,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
@@ -81,7 +83,7 @@ export default function NewHallBookingPage() {
   });
   const advance = Math.round((total * advancePct) / 100);
 
-  const requiredOk = !!(customer && phone && eventDate && startTime && endTime && pax > 0 && pkg);
+  const requiredOk = !!(customer && isValidPhone(phone) && eventDate && startTime && endTime && pax > 0 && pkg);
 
   const router = useRouter();
   const [saving, setSaving] = React.useState(false);
@@ -130,10 +132,7 @@ export default function NewHallBookingPage() {
             </Field>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Field label="Phone *">
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-subtle-foreground" />
-                  <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+971 50 123 4567" type="tel" className="pl-9" />
-                </div>
+                <PhoneInput value={phone} onChange={v => setPhone(v)} size="md" invalid={phone !== "" && !isValidPhone(phone)} />
               </Field>
               <Field label="Email">
                 <div className="relative">

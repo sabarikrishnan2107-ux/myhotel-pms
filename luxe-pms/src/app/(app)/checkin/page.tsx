@@ -28,6 +28,8 @@ import type { Reservation, PaymentStatus, BookingSource, Guest } from "@/lib/typ
 import { cn, money, formatTime } from "@/lib/utils";
 import { apiGet, apiPut, apiPost, sendEmail } from "@/lib/api";
 import { useProperty, hotelName } from "@/lib/use-property";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
 
 // Money collected at the check-in payment step (amount in ₹, plus mode/reference).
 type CheckInPayment = { amount: number; mode: string; reference: string };
@@ -1652,7 +1654,7 @@ function WalkInModal({
 }) {
   // ----- guest basics -----
   const [name, setName] = React.useState("");
-  const [phone, setPhone] = React.useState("+91 ");
+  const [phone, setPhone] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [nationality, setNationality] = React.useState("India");
 
@@ -1769,7 +1771,7 @@ function WalkInModal({
     (pay.mode === "UPI" && !!pay.upiVPA && pay.upiVPA.includes("@")) ||
     (pay.mode === "Bank" && !!pay.bankName && !!pay.reference) ||
     (pay.mode === "Online" && !!pay.txnId);
-  const valid = name.trim() !== "" && phone.trim().length >= 5 && roomNumber !== "" && adults >= 1 && nights >= 1 && advanceModeValid;
+  const valid = name.trim() !== "" && isValidPhone(phone) && roomNumber !== "" && adults >= 1 && nights >= 1 && advanceModeValid;
 
   // ----- generated booking number -----
   const seed = name.length + phone.length + nights + (room?.rate ?? 0);
@@ -1813,7 +1815,7 @@ function WalkInModal({
       setDialogOpen(true);
       return;
     }
-    if (!name.trim() || phone.trim().length < 5) {
+    if (!name.trim() || !isValidPhone(phone)) {
       setSyncErr("Enter the guest's name and phone first.");
       return;
     }
@@ -1917,7 +1919,7 @@ function WalkInModal({
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Phone <span className="text-danger">*</span></Label>
-                    <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 9XXXX XXXXX" className="h-10 font-mono tabular" />
+                    <PhoneInput value={phone} onChange={v => setPhone(v)} size="md" invalid={phone !== "" && !isValidPhone(phone)} />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Email <span className="text-muted-foreground font-normal">(optional)</span></Label>

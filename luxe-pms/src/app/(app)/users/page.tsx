@@ -15,6 +15,8 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { USERS } from "@/lib/mock-data-ext";
 import { cn } from "@/lib/utils";
 import { apiGet, apiPost, apiPut, sendEmail } from "@/lib/api";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
 
 // Roles are master data from Configuration → Roles & Permissions (/roles).
 type Role = string;
@@ -426,7 +428,7 @@ function InviteModal({ onClose, onSave, roles }: {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [department, setDepartment] = React.useState("");
-  const [phone, setPhone] = React.useState("+91 ");
+  const [phone, setPhone] = React.useState("");
   const [role, setRole] = React.useState<Role>(roles[0] ?? "");
   const [sendEmail, setSendEmail] = React.useState(true);
   const [sendWhatsApp, setSendWhatsApp] = React.useState(true);
@@ -438,7 +440,7 @@ function InviteModal({ onClose, onSave, roles }: {
     return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
-  const valid = name.trim().length > 1 && /\S+@\S+\.\S+/.test(email) && password.length >= 8 && !!role;
+  const valid = name.trim().length > 1 && /\S+@\S+\.\S+/.test(email) && password.length >= 8 && !!role && isValidPhone(phone);
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -475,7 +477,7 @@ function InviteModal({ onClose, onSave, roles }: {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Phone (for WhatsApp invite)</Label>
-            <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 9XXXX XXXXX" className="h-9 tabular" />
+            <PhoneInput value={phone} onChange={v => setPhone(v)} size="sm" invalid={phone !== "" && !isValidPhone(phone)} />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Role *</Label>
@@ -560,7 +562,7 @@ function EditUserModal({ user, onClose, onSave, roles }: {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Phone</Label>
-            <Input value={form.phone || ""} onChange={e => update("phone", e.target.value)} className="h-9 tabular" />
+            <PhoneInput value={form.phone || ""} onChange={v => update("phone", v)} size="sm" invalid={!!form.phone && !isValidPhone(form.phone)} />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Role</Label>

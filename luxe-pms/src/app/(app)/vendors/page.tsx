@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
 import { VENDORS } from "@/lib/mock-data-ext";
 import { money, cn } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
@@ -250,7 +252,7 @@ function AddVendorModal({ onClose, onSave }: { onClose: () => void; onSave: (v: 
           <div className="space-y-1.5"><label className="text-sm font-medium">Vendor name</label><Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Pearl Textiles" autoFocus /></div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5"><label className="text-sm font-medium">Contact</label><Input value={contact} onChange={e => setContact(e.target.value)} placeholder="Mr. Bansal" /></div>
-            <div className="space-y-1.5"><label className="text-sm font-medium">Phone</label><Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+971 4 …" /></div>
+            <div className="space-y-1.5"><label className="text-sm font-medium">Phone</label><PhoneInput value={phone} onChange={v => setPhone(v)} size="md" invalid={phone !== "" && !isValidPhone(phone)} /></div>
           </div>
           <div className="space-y-1.5"><label className="text-sm font-medium">Payment terms</label>
             <select value={terms} onChange={e => setTerms(e.target.value)} className="w-full h-9 rounded-md border border-border bg-surface px-3 text-sm">
@@ -260,7 +262,7 @@ function AddVendorModal({ onClose, onSave }: { onClose: () => void; onSave: (v: 
         </div>
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-border bg-surface-sunken/30">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button disabled={!name.trim()} onClick={() => onSave({ name: name.trim(), contact, phone, terms, outstanding: 0, lastInvoice: "—" })}>Add vendor</Button>
+          <Button disabled={!name.trim() || !(phone === "" || isValidPhone(phone))} onClick={() => onSave({ name: name.trim(), contact, phone, terms, outstanding: 0, lastInvoice: "—" })}>Add vendor</Button>
         </div>
       </div>
     </div>

@@ -9,6 +9,8 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
 import { Badge } from "@/components/ui/badge";
 import { KPICard } from "@/components/ui/kpi-card";
 import { AGENTS } from "@/lib/mock-data-ext";
@@ -569,7 +571,7 @@ function AddEditAgentModal({ agent, onClose, onSave }: {
   onSave: (a: AgentExt) => void;
 }) {
   const [form, setForm] = React.useState<AgentExt>(agent || {
-    id: "", type: "Agent", name: "", contact: "", phone: "+91 ", email: "",
+    id: "", type: "Agent", name: "", contact: "", phone: "", email: "",
     gst: "", pan: "", credit: 50000, outstanding: 0, commission: 10, bookings: 0,
     paymentTerms: "Net 15", tdsRate: 5,
     country: "India", contractStart: new Date().toISOString().slice(0, 10),
@@ -590,7 +592,7 @@ function AddEditAgentModal({ agent, onClose, onSave }: {
     return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
-  const canSave = form.name.trim().length > 1 && form.phone.trim().length > 4 && form.email.trim().length > 4;
+  const canSave = form.name.trim().length > 1 && isValidPhone(form.phone) && form.email.trim().length > 4;
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -634,7 +636,7 @@ function AddEditAgentModal({ agent, onClose, onSave }: {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Phone *</Label>
-              <Input value={form.phone} onChange={e => update("phone", e.target.value)} placeholder="+91 9XXXX XXXXX" className="h-9 tabular" />
+              <PhoneInput value={form.phone} onChange={v => update("phone", v)} size="sm" invalid={form.phone !== "" && !isValidPhone(form.phone)} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Email *</Label>

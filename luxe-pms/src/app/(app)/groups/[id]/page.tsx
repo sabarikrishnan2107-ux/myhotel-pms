@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { KPICard } from "@/components/ui/kpi-card";
 import { Input, Label, Select } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
 import { GROUP_BOOKINGS, SAMPLE_ROOMING_LIST, GROUP_TIMELINE, type GroupStatus, type GroupBooking } from "@/lib/mock-data-ext";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 
@@ -682,12 +684,12 @@ function AddGuestModal({ onClose, onSave }: { onClose: () => void; onSave: (g: {
             <div className="space-y-1.5"><Label>Room type</Label><Select value={roomType} onChange={e => setRoomType(e.target.value)}>{["Deluxe", "King", "Queen", "Suite", "Family", "Executive"].map(t => <option key={t}>{t}</option>)}</Select></div>
             <div className="space-y-1.5"><Label>Pax</Label><Input type="number" value={pax} onChange={e => setPax(Math.max(1, Number(e.target.value) || 1))} /></div>
           </div>
-          <div className="space-y-1.5"><Label>Phone</Label><Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 …" /></div>
+          <div className="space-y-1.5"><Label>Phone</Label><PhoneInput value={phone} onChange={v => setPhone(v)} size="md" invalid={phone !== "" && !isValidPhone(phone)} /></div>
           <div className="space-y-1.5"><Label>Remarks</Label><Input value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="Preferences, notes…" /></div>
         </div>
         <div className="flex justify-end gap-2 pt-1">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button disabled={!lead.trim()} onClick={() => onSave({ lead: lead.trim(), roomType, pax, phone: phone || undefined, remarks: remarks || undefined })}>
+          <Button disabled={!lead.trim() || !(phone === "" || isValidPhone(phone))} onClick={() => onSave({ lead: lead.trim(), roomType, pax, phone: phone || undefined, remarks: remarks || undefined })}>
             <Plus className="h-3.5 w-3.5" />Add Guest
           </Button>
         </div>

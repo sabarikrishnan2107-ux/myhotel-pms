@@ -10,6 +10,8 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
@@ -560,7 +562,7 @@ function ModifyGroupDialog({ group, onClose, onSave }: {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Phone</Label>
-                <Input value={draft.contactPhone} onChange={e => set("contactPhone", e.target.value)} className="h-9 font-mono tabular" />
+                <PhoneInput value={draft.contactPhone} onChange={v => set("contactPhone", v)} size="sm" invalid={draft.contactPhone !== "" && !isValidPhone(draft.contactPhone)} />
               </div>
             </div>
           </div>

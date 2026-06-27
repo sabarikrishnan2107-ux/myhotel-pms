@@ -14,6 +14,8 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { STAFF } from "@/lib/mock-data-ext";
 import { money, cn } from "@/lib/utils";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
 
 type Staff = typeof STAFF[number];
 
@@ -226,7 +228,7 @@ function AddStaffModal({ onClose, onSave, departments }: {
   const [name, setName] = React.useState("");
   const [role, setRole] = React.useState("Reception");
   const [dept, setDept] = React.useState(departments[0] ?? "Front Office");
-  const [phone, setPhone] = React.useState("+91 ");
+  const [phone, setPhone] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [salary, setSalary] = React.useState(45000);
 
@@ -237,7 +239,7 @@ function AddStaffModal({ onClose, onSave, departments }: {
     return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
-  const valid = name.trim().length > 1 && /\S+@\S+\.\S+/.test(email) && salary > 0;
+  const valid = name.trim().length > 1 && /\S+@\S+\.\S+/.test(email) && salary > 0 && isValidPhone(phone);
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -260,7 +262,7 @@ function AddStaffModal({ onClose, onSave, departments }: {
               </Select>
             </div>
           </div>
-          <div className="space-y-1.5"><Label className="text-xs">Phone *</Label><Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 9XXXX XXXXX" className="h-9 tabular" /></div>
+          <div className="space-y-1.5"><Label className="text-xs">Phone *</Label><PhoneInput value={phone} onChange={v => setPhone(v)} size="sm" invalid={phone !== "" && !isValidPhone(phone)} /></div>
           <div className="space-y-1.5"><Label className="text-xs">Email *</Label><Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="staff@pearlmarina.com" className="h-9" /></div>
           <div className="space-y-1.5"><Label className="text-xs">Monthly salary (₹) *</Label><Input type="number" min={0} value={salary} onChange={e => setSalary(Math.max(0, Number(e.target.value) || 0))} className="h-9 tabular text-lg font-semibold" /></div>
         </div>
