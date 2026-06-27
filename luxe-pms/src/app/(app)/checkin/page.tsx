@@ -1889,6 +1889,17 @@ function WalkInModal({
   const [email, setEmail] = React.useState(initialData?.email ?? "");
   const [nationality, setNationality] = React.useState(initialData?.nationality ?? "India");
 
+  // ----- existing-guest lookup (mirrors the New Booking wizard's step 1) -----
+  // A resumed draft already has its fields loaded → start in "create" (review) mode.
+  const guests = useGuests();
+  const [guestMode, setGuestMode] = React.useState<"search" | "create">(initialData ? "create" : "search");
+  const [guestSearch, setGuestSearch] = React.useState("");
+  const filteredGuests = guests
+    .filter(g => `${g.name} ${g.phone} ${g.email}`.toLowerCase().includes(guestSearch.toLowerCase()))
+    .slice(0, 5);
+  // Loaded an existing guest into the fields → show a subtle review note in create mode.
+  const [loadedFromExisting, setLoadedFromExisting] = React.useState(false);
+
   // ----- stay -----
   const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local TZ — blocks past dates
   const [checkInDate, setCheckInDate] = React.useState(initialData?.checkInDate ?? today);
@@ -2204,27 +2215,125 @@ function WalkInModal({
             {/* STEP 1 — Guest */}
             {step === 1 && (
               <div className="space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Full name <span className="text-danger">*</span></Label>
-                    <Input value={name} onChange={e => setName(e.target.value)} placeholder="Full name as on ID" className="h-10" autoFocus />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Phone <span className="text-danger">*</span></Label>
-                    <PhoneInput value={phone} onChange={v => setPhone(v)} size="md" invalid={phone !== "" && !isValidPhone(phone)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Email <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                    <EmailInput value={email} onChange={setEmail} className="h-10" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs"><Globe className="h-3 w-3 inline mr-1" />Nationality</Label>
-                    <Select value={nationality} onChange={e => setNationality(e.target.value)} className="h-10">
-                      <option>India</option><option>UAE</option><option>USA</option><option>UK</option>
-                      <option>Russia</option><option>Singapore</option><option>Japan</option><option>Other</option>
-                    </Select>
-                  </div>
+                {/* Search Existing | Create New Guest toggle */}
+                <div className="inline-flex rounded-md border border-border bg-surface-sunken p-0.5 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => setGuestMode("search")}
+                    className={cn(
+                      "flex-1 sm:flex-initial h-9 px-4 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2 justify-center",
+                      guestMode === "search" ? "bg-surface text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <Search className="h-3.5 w-3.5" />Search Existing
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setGuestMode("create"); setLoadedFromExisting(false); }}
+                    className={cn(
+                      "flex-1 sm:flex-initial h-9 px-4 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2 justify-center",
+                      guestMode === "create" ? "bg-surface text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <Plus className="h-3.5 w-3.5" />Create New Guest
+                  </button>
                 </div>
+
+                {/* SEARCH MODE — find a returning guest and pre-fill their details */}
+                {guestMode === "search" && (
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Search existing guest</Label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-subtle-foreground" />
+                        <Input
+                          placeholder="Phone, name, email, or ID number…"
+                          value={guestSearch}
+                          onChange={e => setGuestSearch(e.target.value)}
+                          className="pl-9 h-10"
+                          autoFocus
+                        />
+                      </div>
+                    </div>
+
+                    {guestSearch && (
+                      <div className="space-y-2">
+                        {filteredGuests.length === 0 ? (
+                          <div className="rounded-md border border-dashed border-border p-4 text-center">
+                            <p className="text-sm text-muted-foreground mb-2">No matches found for &ldquo;{guestSearch}&rdquo;</p>
+                            <Button size="sm" onClick={() => { setGuestMode("create"); setLoadedFromExisting(false); }}>
+                              <Plus className="h-3.5 w-3.5" />Create new guest
+                            </Button>
+                          </div>
+                        ) : filteredGuests.map(g => (
+                          <button
+                            key={g.id}
+                            type="button"
+                            onClick={() => {
+                              setName(g.name ?? "");
+                              setPhone(g.phone ?? "");
+                              setEmail(g.email ?? "");
+                              setNationality(g.nationality ?? "India");
+                              setLoadedFromExisting(true);
+                              setGuestMode("create");
+                            }}
+                            className="w-full flex items-center gap-3 p-3 rounded-md border border-border text-left transition-colors hover:bg-surface-sunken"
+                          >
+                            <Avatar name={g.name} size={36} vip={g.vip} />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm truncate">
+                                {g.name} {g.vip && <Badge tone="brand" className="ml-1">VIP</Badge>}
+                              </p>
+                              <p className="text-xs text-muted-foreground truncate">{g.phone}{g.nationality ? ` · ${g.nationality}` : ""}</p>
+                            </div>
+                            {g.idNumber && (
+                              <Badge tone="success"><IdCard className="h-3 w-3" />ID on file</Badge>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <p className="text-[11px] text-muted-foreground pt-2 border-t border-border">
+                      First-time visitor? Switch to the{" "}
+                      <button type="button" onClick={() => { setGuestMode("create"); setLoadedFromExisting(false); }} className="text-foreground font-medium hover:underline">Create New Guest</button>{" "}
+                      tab above to enter their details.
+                    </p>
+                  </div>
+                )}
+
+                {/* CREATE MODE — enter / review the guest fields (also used after a prefill) */}
+                {guestMode === "create" && (
+                  <div className="space-y-3">
+                    {loadedFromExisting && (
+                      <div className="rounded-md bg-success-soft/30 border border-success/30 p-2.5 text-xs inline-flex items-center gap-2">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+                        <span>Loaded from an existing guest — review &amp; edit below.</span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Full name <span className="text-danger">*</span></Label>
+                        <Input value={name} onChange={e => setName(e.target.value)} placeholder="Full name as on ID" className="h-10" autoFocus />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Phone <span className="text-danger">*</span></Label>
+                        <PhoneInput value={phone} onChange={v => setPhone(v)} size="md" invalid={phone !== "" && !isValidPhone(phone)} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Email <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                        <EmailInput value={email} onChange={setEmail} className="h-10" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs"><Globe className="h-3 w-3 inline mr-1" />Nationality</Label>
+                        <Select value={nationality} onChange={e => setNationality(e.target.value)} className="h-10">
+                          <option>India</option><option>UAE</option><option>USA</option><option>UK</option>
+                          <option>Russia</option><option>Singapore</option><option>Japan</option><option>Other</option>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
