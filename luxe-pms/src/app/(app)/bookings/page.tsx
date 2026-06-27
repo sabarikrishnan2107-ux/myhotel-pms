@@ -19,13 +19,16 @@ import { apiGet, apiPut, sendEmail } from "@/lib/api";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
 import type { Reservation, PaymentStatus, BookingSource, Guest, Room } from "@/lib/types";
 
-type BookingState = "confirmed" | "checked-in" | "checked-out" | "cancelled" | "no-show";
+type BookingState = "confirmed" | "checked-in" | "checked-out" | "cancelled" | "no-show" | "incomplete";
 
 // Derive a booking lifecycle state from the reservation date + status (mocked)
 function deriveState(r: Reservation, cancelledIds: Set<string>, today: string): BookingState {
   // Prefer the backend lifecycle status; fall back to date-derivation against today.
   const status = (r as { status?: string }).status;
   if (cancelledIds.has(r.id) || status === "cancelled") return "cancelled";
+  // Synced to the tablet for ID/photo capture but the desk check-in was never
+  // submitted. Flag it explicitly so it isn't date-derived into "Checked-in".
+  if (status === "pending") return "incomplete";
   if (status === "checked-in") return "checked-in";
   if (status === "checked-out") return "checked-out";
   if (status === "no-show") return "no-show";
@@ -41,6 +44,7 @@ const STATE_TONE: Record<BookingState, "neutral" | "brand" | "info" | "success" 
   "checked-out": "success",
   "cancelled": "danger",
   "no-show": "warning",
+  "incomplete": "warning",
 };
 const STATE_LABEL: Record<BookingState, string> = {
   "confirmed": "Confirmed",
@@ -48,6 +52,7 @@ const STATE_LABEL: Record<BookingState, string> = {
   "checked-out": "Checked-out",
   "cancelled": "Cancelled",
   "no-show": "No-show",
+  "incomplete": "Incomplete",
 };
 
 type ModifyDraft = Pick<Reservation, "checkIn" | "checkOut" | "roomNumber" | "roomType" | "adults" | "children" | "nights">;
@@ -236,6 +241,7 @@ export default function BookingsPage() {
           <Select value={stateFilter} onChange={e => setStateFilter(e.target.value as "all" | BookingState)} className="h-9 w-auto">
             <option value="all">Any status</option>
             <option value="confirmed">Confirmed</option>
+            <option value="incomplete">Incomplete</option>
             <option value="checked-in">Checked-in</option>
             <option value="checked-out">Checked-out</option>
             <option value="cancelled">Cancelled</option>
@@ -344,6 +350,16 @@ export default function BookingsPage() {
                     <td className="px-4 py-3"><PaymentBadge status={r.paymentStatus} /></td>
                     <td className="px-4 py-3 text-right" data-action-menu>
                       <div className="inline-flex gap-1 items-center">
+                        {state === "incomplete" && (
+                          <Link
+                            href={`/checkin?book=${r.bookingNo}`}
+                            onClick={e => e.stopPropagation()}
+                            className="h-8 px-2.5 rounded-md bg-success text-white hover:opacity-90 inline-flex items-center justify-center gap-1 text-xs font-medium transition-opacity"
+                            title="Finish this synced walk-in check-in"
+                          >
+                            <LogIn className="h-3.5 w-3.5" />Complete
+                          </Link>
+                        )}
                         <button
                           type="button"
                           onClick={e => { e.stopPropagation(); setSelected(r); }}
@@ -391,6 +407,11 @@ export default function BookingsPage() {
                               {state === "confirmed" && (
                                 <Link href={`/checkin?book=${r.bookingNo}`} onClick={() => setActionMenuFor(null)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5">
                                   <LogIn className="h-3.5 w-3.5 text-info" />Check guest in
+                                </Link>
+                              )}
+                              {state === "incomplete" && (
+                                <Link href={`/checkin?book=${r.bookingNo}`} onClick={() => setActionMenuFor(null)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5">
+                                  <LogIn className="h-3.5 w-3.5 text-success" />Complete check-in
                                 </Link>
                               )}
                               <Link href={`/folio/${r.bookingNo}`} onClick={() => setActionMenuFor(null)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5">

@@ -199,15 +199,33 @@ export default function CheckinPage() {
   const guests = useGuests();
   const enriched = React.useMemo(() => arrivals.map(r => enrich(r, guests)), [arrivals, guests]);
 
-  // Auto-open check-in modal when navigated with ?book=BK100245 (e.g. from dashboard)
+  // Auto-open check-in modal when navigated with ?book=BK100245 — from the dashboard,
+  // or "Complete" on an incomplete (synced-but-unsubmitted) walk-in in the bookings list.
   React.useEffect(() => {
     if (!bookParam) return;
     const target = arrivals.find(r => r.bookingNo === bookParam);
     if (target) {
       setCheckingIn(target);
-      // Clear the query string so re-render / close doesn't re-open
-      router.replace("/checkin");
+      router.replace("/checkin");   // clear the query so re-render / close doesn't re-open
+      return;
     }
+    // Not among today's confirmed arrivals — likely a synced "pending" walk-in being
+    // completed. Fetch it by bookingNo (any status) and open the same check-in flow,
+    // carrying the tablet-captured documents so the Identity step can show them.
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await apiGet<(Reservation & { status?: string; id: number | string })[]>("/bookings");
+        const b = rows.find(x => x.bookingNo === bookParam);
+        if (cancelled || !b) return;
+        let documents: Record<string, string | null> | undefined;
+        try { documents = (await apiGet<{ documents?: Record<string, string | null> }>(`/bookings/${b.id}`))?.documents; } catch { /* open without thumbnails */ }
+        if (cancelled) return;
+        setCheckingIn({ ...b, id: String(b.id), documents } as unknown as Reservation);
+        router.replace("/checkin");
+      } catch { /* offline — nothing to open */ }
+    })();
+    return () => { cancelled = true; };
   }, [bookParam, router, arrivals]);
 
   // Resolve a Guest record (from GUESTS or synthesized) for the selected reservation
@@ -265,6 +283,22 @@ export default function CheckinPage() {
   };
   const activeFilters = (source !== "all" ? 1 : 0) + (payment !== "all" ? 1 : 0) +
     (slot !== "all" ? 1 : 0) + (roomType !== "all" ? 1 : 0) + (vipOnly ? 1 : 0);
+
+  // Express Walk-in renders as in-page content (inside the app shell, so the
+  // sidebar + top bar stay visible) instead of a full-screen overlay. onStart
+  // hands the new reservation to the check-in process — same flow as before.
+  if (walkInOpen) {
+    return (
+      <WalkInModal
+        onClose={() => setWalkInOpen(false)}
+        onStart={(reservation) => {
+          setExpressWalkInIds(s => new Set([...s, reservation.id]));
+          setCheckingIn(reservation);
+          setWalkInOpen(false);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
@@ -581,18 +615,6 @@ export default function CheckinPage() {
         />
       )}
 
-      {/* Express Walk-in modal */}
-      {walkInOpen && (
-        <WalkInModal
-          onClose={() => setWalkInOpen(false)}
-          onStart={(reservation) => {
-            setExpressWalkInIds(s => new Set([...s, reservation.id]));
-            setCheckingIn(reservation);
-            setWalkInOpen(false);
-          }}
-        />
-      )}
-
       {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 bg-foreground text-background rounded-lg px-4 py-3 text-sm shadow-2xl animate-in slide-in-from-bottom-2 inline-flex items-center gap-2.5 ring-1 ring-foreground/20">
@@ -764,6 +786,10 @@ function CheckinProcessModal({
   const guests = useGuests();
   const rooms = useRooms();
   const guest = guests.find(g => g.name === reservation.guestName);
+  // Documents captured on the tablet (when completing a synced "pending" walk-in) —
+  // attached to the reservation by the bookings-list "Complete" deep-link.
+  const syncedDocs = (reservation as { documents?: { guest_photo?: string | null; id_front?: string | null; id_back?: string | null; signature?: string | null } }).documents;
+  const syncedHasDocs = !!(syncedDocs && (syncedDocs.guest_photo || syncedDocs.id_front || syncedDocs.id_back || syncedDocs.signature));
   // ID on file? Walk-ins from /bookings/new have KYC captured. Express walk-ins from /checkin do NOT — they capture here.
   // OTA/Website/Phone/Agent/Corporate pre-bookings typically don't capture KYC at booking.
   const idOnFile = forceKycCapture ? false : reservation.source === "Walk-in";
@@ -1027,13 +1053,34 @@ function CheckinProcessModal({
                     <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">ID Number</p>
                     <p className="font-mono tabular mt-1">{guest?.idNumber ?? "—"}</p>
                   </div>
-                  <div className="col-span-2 pt-3 border-t border-border">
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Document on file</p>
-                    <p className="text-xs mt-1 inline-flex items-center gap-1.5 text-success">
-                      <CheckCircle2 className="h-3 w-3" />passport_scan_FRONT.pdf · captured at booking
-                    </p>
-                  </div>
+                  {!syncedHasDocs && (
+                    <div className="col-span-2 pt-3 border-t border-border">
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Document on file</p>
+                      <p className="text-xs mt-1 inline-flex items-center gap-1.5 text-success">
+                        <CheckCircle2 className="h-3 w-3" />passport_scan_FRONT.pdf · captured at booking
+                      </p>
+                    </div>
+                  )}
                 </div>
+                {syncedHasDocs && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 inline-flex items-center gap-1.5">
+                      <Smartphone className="h-3 w-3" />Captured on the tablet
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {([["Face photo", syncedDocs?.guest_photo], ["ID Front", syncedDocs?.id_front], ["ID Back", syncedDocs?.id_back], ["Signature", syncedDocs?.signature]] as [string, string | null | undefined][]).map(([label, src]) => (
+                        <div key={label} className="rounded-md border border-border bg-surface overflow-hidden">
+                          <div className="aspect-[4/3] bg-surface-sunken flex items-center justify-center">
+                            {src
+                              ? <img src={src} alt={label} className="h-full w-full object-contain" />
+                              : <span className="text-[11px] text-muted-foreground">—</span>}
+                          </div>
+                          <p className="text-[11px] text-center py-1 text-muted-foreground">{label}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => setIdVerified(!idVerified)}
@@ -1762,8 +1809,7 @@ function WalkInModal({
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
-    document.body.style.overflow = "hidden";
-    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+    return () => { document.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
   // ----- validation -----
@@ -1895,11 +1941,10 @@ function WalkInModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" onClick={onClose} />
-      <div className="fixed inset-0 z-50 pointer-events-none">
-        <Card className="pointer-events-auto absolute inset-0 w-full h-full max-w-none rounded-none border-0 p-0 animate-in flex flex-col overflow-hidden">
+      <div className="p-4 sm:p-6 lg:p-8">
+        <Card className="p-0 animate-in">
           {/* Header */}
-          <div className="px-5 py-4 bg-brand text-brand-foreground flex items-center gap-3">
+          <div className="px-5 py-4 bg-brand text-brand-foreground flex items-center gap-3 rounded-t-lg">
             <span className="h-10 w-10 rounded-md bg-brand-foreground/15 inline-flex items-center justify-center shrink-0">
               <Zap className="h-5 w-5" />
             </span>
@@ -1910,9 +1955,9 @@ function WalkInModal({
             <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-brand-foreground/15 inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] items-start">
             {/* LEFT — form */}
-            <div className="px-5 py-4 space-y-5 lg:min-h-0 lg:overflow-y-auto">
+            <div className="px-5 py-4 space-y-5">
               {/* Guest basics */}
               <WalkInSection icon={User} label="Guest basics">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2270,8 +2315,8 @@ function WalkInModal({
               </div>
             </div>
 
-            {/* RIGHT — live cost preview */}
-            <div className="bg-surface-elevated/40 border-l border-border px-5 py-4 lg:min-h-0 lg:overflow-y-auto">
+            {/* RIGHT — live cost preview (sticky below the h-16 top bar so total stays in view) */}
+            <div className="bg-surface-elevated/40 border-t lg:border-t-0 lg:border-l border-border px-5 py-4 lg:sticky lg:top-20 lg:self-start">
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Live cost preview</p>
 
               <dl className="space-y-1.5 text-xs">
@@ -2327,7 +2372,7 @@ function WalkInModal({
           </div>
 
           {/* Footer */}
-          <div className="px-5 py-3 border-t border-border bg-surface-elevated flex items-center justify-between flex-wrap gap-2">
+          <div className="px-5 py-3 border-t border-border bg-surface-elevated flex items-center justify-between flex-wrap gap-2 rounded-b-lg">
             <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setShowReceipt(true)} disabled={pay.amount === 0 || !advanceModeValid || !name.trim()}>
