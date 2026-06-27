@@ -6,12 +6,22 @@ import { FileImage, X, CheckCircle2 } from "lucide-react";
 interface Props {
   label: string;
   onChange?: (dataUrl: string | null) => void;
+  /** Pre-fill the slot with an existing document (e.g. captured on the tablet). */
+  value?: string | null;
 }
 
-export function DocumentUpload({ label, onChange }: Props) {
-  const [preview, setPreview] = React.useState<string | null>(null);
+export function DocumentUpload({ label, onChange, value }: Props) {
+  const [preview, setPreview] = React.useState<string | null>(value ?? null);
   const [filename, setFilename] = React.useState<string>("");
   const [isPdf, setIsPdf] = React.useState(false);
+
+  // Reflect a value supplied/changed by the parent (e.g. tablet capture).
+  React.useEffect(() => {
+    if (value) {
+      setPreview(value);
+      setIsPdf(/\.pdf($|\?)|application\/pdf/i.test(value));
+    }
+  }, [value]);
 
   const upload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

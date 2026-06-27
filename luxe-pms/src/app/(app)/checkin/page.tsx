@@ -810,6 +810,99 @@ function CheckinProcessModal({
   const [signature, setSignature] = React.useState<string | null>(null);
   const [kycConsent, setKycConsent] = React.useState(false);
 
+  // ----- mobile capture sync (capture this arrival's KYC on the tablet) -----
+  type SyncedBooking = {
+    verification_status?: string;
+    identity?: { id_type?: string | null; id_number?: string | null };
+    documents?: { guest_photo?: string | null; id_front?: string | null; id_back?: string | null; signature?: string | null };
+  };
+  const [syncState, setSyncState] = React.useState<"idle" | "creating" | "waiting" | "done" | "error">("idle");
+  const [syncBookingId, setSyncBookingId] = React.useState<number | null>(null);
+  const [syncDocs, setSyncDocs] = React.useState<SyncedBooking["documents"]>(undefined);
+  const [syncErr, setSyncErr] = React.useState<string | null>(null);
+  const [syncDialogOpen, setSyncDialogOpen] = React.useState(false);
+
+  // The arrival already exists as a booking — send it to the tablet for capture,
+  // then poll until staff upload the face photo, ID scans and signature.
+  const startSync = async () => {
+    if (syncState === "creating" || syncState === "waiting" || syncState === "done") {
+      setSyncDialogOpen(true);
+      return;
+    }
+    setSyncErr(null);
+    setSyncDocs(undefined);
+    setSyncDialogOpen(true);
+    setSyncState("creating");
+    // Resolve the numeric booking id. reservation.id is the DB id for arrivals;
+    // other entry points carry a synthetic id, so fall back to a bookingNo lookup.
+    let bookingId = Number(reservation.id);
+    if (!bookingId || Number.isNaN(bookingId)) {
+      try {
+        const list = await apiGet<{ id: number; bookingNo: string }[]>("/bookings");
+        bookingId = list.find(b => b.bookingNo === reservation.bookingNo)?.id ?? 0;
+      } catch { /* handled below */ }
+    }
+    if (!bookingId) {
+      setSyncErr("Couldn't find this booking on the server. Try again.");
+      setSyncState("error");
+      return;
+    }
+    setSyncBookingId(bookingId);
+    // Push anything already captured here so the tablet shows it too (staff can
+    // replace the rest). Fire-and-forget — the sync shouldn't block on it.
+    if (idFrontFile || idBackFile || facePhoto || signature || collectedIdNumber) {
+      apiPost(`/bookings/${bookingId}/verification`, {
+        guest_photo: facePhoto ?? "",
+        id_front: idFrontFile ?? "",
+        id_back: idBackFile ?? "",
+        signature: signature ?? "",
+        id_type: collectedIdType,
+        id_number: collectedIdNumber,
+        uploaded_by: "Reception (web)",
+      }).catch(() => {});
+    }
+    setSyncState("waiting");
+  };
+
+  const cancelSync = () => {
+    setSyncState("idle");
+    setSyncBookingId(null);
+    setSyncDocs(undefined);
+    setSyncErr(null);
+    setSyncDialogOpen(false);
+  };
+
+  // While waiting, poll the booking until the tablet uploads the documents, then
+  // drop them straight into the KYC slots below.
+  React.useEffect(() => {
+    if (syncState !== "waiting" || !syncBookingId) return;
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const b = await apiGet<SyncedBooking>(`/bookings/${syncBookingId}`);
+        if (stopped) return;
+        setSyncDocs(b?.documents);
+        const d = b?.documents;
+        // Done as soon as all four documents are present — don't depend on the
+        // backend's verification_status string (which can lag at "in_progress").
+        const allPresent = !!(d?.guest_photo && d?.id_front && d?.id_back && d?.signature);
+        if (d && (allPresent || b?.verification_status === "synced")) {
+          if (d.guest_photo) setFacePhoto(d.guest_photo);
+          if (d.id_front) setIdFrontFile(d.id_front);
+          if (d.id_back) setIdBackFile(d.id_back);
+          if (d.signature) setSignature(d.signature);
+          if (b.identity?.id_type) setCollectedIdType(b.identity.id_type);
+          if (b.identity?.id_number) setCollectedIdNumber(b.identity.id_number);
+          setSyncState("done");
+          setSyncDialogOpen(true);
+        }
+      } catch { /* keep polling — transient network error */ }
+    };
+    poll();
+    const timer = setInterval(poll, 3000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [syncState, syncBookingId]);
+
   const isForeign = guest?.nationality !== undefined && guest.nationality !== "India";
   // Aadhaar / Voter ID / Driving License are two-sided; Passport / PAN are one-side
   const needsBackSide = ["Aadhaar", "Voter ID", "Driving License"].includes(collectedIdType);
@@ -1128,6 +1221,37 @@ function CheckinProcessModal({
                   </div>
                 </div>
 
+                {/* Capture on the mobile app — fills the slots below */}
+                {syncState !== "done" ? (
+                  <div className="rounded-md border border-border bg-surface-sunken/40 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        <span className="h-7 w-7 rounded-md bg-brand-soft text-brand-soft-foreground flex items-center justify-center shrink-0">
+                          <Smartphone className="h-4 w-4" />
+                        </span>
+                        <div>
+                          <p className="text-sm font-medium">Capture on the mobile app</p>
+                          <p className="text-xs text-muted-foreground">Send this arrival to the tablet — staff capture the face photo, ID &amp; signature there. They drop straight into the slots below.</p>
+                          {syncErr && <p className="text-[11px] text-danger mt-1">{syncErr}</p>}
+                        </div>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" onClick={startSync}>
+                        <Smartphone className="h-4 w-4" />
+                        {syncState === "creating" || syncState === "waiting" ? "View sync status" : "Sync to mobile app"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-success/40 bg-success-soft/30 p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm">
+                      <CheckCircle2 className="h-5 w-5 text-success" />
+                      <span className="font-medium">Captured from tablet</span>
+                      <span className="text-muted-foreground">· filled in below</span>
+                    </div>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setSyncDialogOpen(true)}>View</Button>
+                  </div>
+                )}
+
                 {/* ID type + number */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
@@ -1203,14 +1327,14 @@ function CheckinProcessModal({
                       <Camera className="h-3.5 w-3.5 text-muted-foreground" />
                       Live face photo <span className="text-danger">*</span>
                     </Label>
-                    <PhotoCapture label="Live face photo" aspect="square" onChange={setFacePhoto} />
+                    <PhotoCapture label="Live face photo" aspect="square" value={facePhoto} onChange={setFacePhoto} />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs inline-flex items-center gap-1.5">
                       <Pen className="h-3.5 w-3.5 text-muted-foreground" />
                       Digital signature <span className="text-danger">*</span>
                     </Label>
-                    <SignaturePad height={150} onChange={setSignature} />
+                    <SignaturePad height={150} value={signature} onChange={setSignature} />
                   </div>
                 </div>
 
@@ -1577,6 +1701,18 @@ function CheckinProcessModal({
           </div>
         </Card>
       </div>
+
+      {syncDialogOpen && syncState !== "idle" && (
+        <MobileSyncDialog
+          state={syncState}
+          reference={reservation.bookingNo}
+          docs={syncDocs}
+          errorMessage={syncErr}
+          onCancel={cancelSync}
+          onHide={() => setSyncDialogOpen(false)}
+          onDone={() => setSyncDialogOpen(false)}
+        />
+      )}
     </>
   );
 }

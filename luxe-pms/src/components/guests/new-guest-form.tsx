@@ -154,8 +154,11 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
         const b = await apiGet<SyncedBooking>(`/bookings/${syncBookingId}`);
         if (stopped) return;
         setSyncDocs(b?.documents);
-        if (b?.verification_status === "synced" && b.documents) {
-          const d = b.documents;
+        const d = b?.documents;
+        // Done as soon as all four documents are present — don't depend on the
+        // backend's verification_status string (which can lag at "in_progress").
+        const allPresent = !!(d?.guest_photo && d?.id_front && d?.id_back && d?.signature);
+        if (d && (allPresent || b?.verification_status === "synced")) {
           setData(prev => ({
             ...prev,
             photo: d.guest_photo ?? prev.photo,
@@ -331,18 +334,6 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
               </div>
               <Button type="button" variant="ghost" size="sm" onClick={() => setDialogOpen(true)}>View</Button>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
-              {([["Face photo", data.photo], ["ID Front", data.idFront], ["ID Back", data.idBack], ["Signature", data.signature]] as [string, string | null][]).map(([label, src]) => (
-                <div key={label} className="rounded-md border border-border bg-surface overflow-hidden">
-                  <div className="aspect-[4/3] bg-surface-sunken flex items-center justify-center">
-                    {src
-                      ? <img src={src} alt={label} className="h-full w-full object-contain" />
-                      : <span className="text-[11px] text-muted-foreground">—</span>}
-                  </div>
-                  <p className="text-[11px] text-center py-1 text-muted-foreground">{label}</p>
-                </div>
-              ))}
-            </div>
             <div className="mt-2 flex items-center gap-2 text-[11px]">
               {idValid && data.idNumber.trim() !== "" ? (
                 <span className="inline-flex items-center gap-1 text-success">
@@ -355,7 +346,6 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
                 <span className="text-muted-foreground">No ID number captured — add one below.</span>
               )}
             </div>
-            <p className="text-[11px] text-muted-foreground mt-1">These were captured on the tablet and saved with the guest. You can still override them below.</p>
           </div>
         )}
 
@@ -397,10 +387,10 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
               <Input value={data.idNumber} onChange={e => update("idNumber", e.target.value)} placeholder="A12345678" />
             </Field>
             <Field label={`${data.idType} — front`}>
-              <DocumentUpload label="ID Front" onChange={v => update("idFront", v)} />
+              <DocumentUpload label="ID Front" value={data.idFront} onChange={v => update("idFront", v)} />
             </Field>
             <Field label={`${data.idType} — back`}>
-              <DocumentUpload label="ID Back" onChange={v => update("idBack", v)} />
+              <DocumentUpload label="ID Back" value={data.idBack} onChange={v => update("idBack", v)} />
             </Field>
           </div>
 
@@ -411,7 +401,7 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
               <Label>Guest face photo</Label>
             </div>
             <p className="text-[11px] text-muted-foreground mb-2">Webcam capture (recommended) or upload</p>
-            <PhotoCapture onChange={v => update("photo", v)} aspect="square" />
+            <PhotoCapture value={data.photo} onChange={v => update("photo", v)} aspect="square" />
           </div>
 
           {/* Signature */}
@@ -421,7 +411,7 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
               <Label>Digital signature</Label>
             </div>
             <p className="text-[11px] text-muted-foreground mb-2">Sign with mouse, stylus, or finger</p>
-            <SignaturePad onChange={v => update("signature", v)} height={180} />
+            <SignaturePad value={data.signature} onChange={v => update("signature", v)} height={180} />
           </div>
         </div>
       </Section>
