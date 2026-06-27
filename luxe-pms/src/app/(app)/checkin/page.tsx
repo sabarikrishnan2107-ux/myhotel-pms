@@ -1966,6 +1966,17 @@ function WalkInModal({
   const [syncErr, setSyncErr] = React.useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = React.useState(false);
 
+  // ----- wizard step (1–6), booking-wizard style -----
+  const [step, setStep] = React.useState(1);
+  const STEPS = [
+    { n: 1, title: "Guest", icon: User, desc: "Name, contact & captures" },
+    { n: 2, title: "Dates", icon: Calendar, desc: "Check-in & nights" },
+    { n: 3, title: "Pax & Room", icon: BedIcon, desc: "Adults, children & room" },
+    { n: 4, title: "Rate & Add-ons", icon: UtensilsCrossed, desc: "Plan, stay extras & F&B" },
+    { n: 5, title: "Payment", icon: CreditCard, desc: "Advance & mode" },
+    { n: 6, title: "Confirm", icon: CheckCircle2, desc: "Review & start" },
+  ];
+
   // ----- pricing -----
   const roomSubtotal = (room?.rate ?? 0) * nights;
   const earlyFee = earlyCheckIn ? 500 : 0;     // ₹500 flat
@@ -2002,6 +2013,16 @@ function WalkInModal({
     (pay.mode === "Bank" && !!pay.bankName && !!pay.reference) ||
     (pay.mode === "Online" && !!pay.txnId);
   const valid = name.trim() !== "" && isValidPhone(phone) && isValidEmail(email) && roomNumber !== "" && adults >= 1 && nights >= 1 && advanceModeValid;
+
+  // ----- per-step gating: Next is disabled until the current step's required
+  // fields are valid. The final Start stays gated on the full `valid` above. -----
+  const canNext = () => {
+    if (step === 1) return name.trim() !== "" && isValidPhone(phone) && isValidEmail(email);
+    if (step === 2) return nights >= 1;
+    if (step === 3) return roomNumber !== "" && adults >= 1;
+    if (step === 5) return advanceModeValid;
+    return true;
+  };
 
   // ----- generated booking number -----
   const seed = name.length + phone.length + nights + (room?.rate ?? 0);
@@ -2123,25 +2144,66 @@ function WalkInModal({
 
   return (
     <>
-      <div className="p-4 sm:p-6 lg:p-8">
-        <Card className="p-0 animate-in">
-          {/* Header */}
-          <div className="px-5 py-4 bg-brand text-brand-foreground flex items-center gap-3 rounded-t-lg">
-            <span className="h-10 w-10 rounded-md bg-brand-foreground/15 inline-flex items-center justify-center shrink-0">
-              <Zap className="h-5 w-5" />
-            </span>
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold">Express Walk-in Check-in</h3>
-              <p className="text-xs text-brand-foreground/75">Booking ref · <span className="font-mono tabular">{bookingNo}</span></p>
-            </div>
-            <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-brand-foreground/15 inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
+      <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto">
+        {/* Page header */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-2xl font-display font-medium tracking-tight inline-flex items-center gap-2">
+              Express Walk-in Check-in
+              <Badge tone="brand"><Zap className="h-3 w-3" />Walk-in</Badge>
+            </h1>
+            <p className="text-muted-foreground text-sm mt-1">
+              Step {step} of {STEPS.length} · {STEPS[step - 1].desc} · ref <span className="font-mono tabular">{bookingNo}</span>
+            </p>
           </div>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] items-start">
-            {/* LEFT — form */}
-            <div className="px-5 py-4 space-y-5">
-              {/* Guest basics */}
-              <WalkInSection icon={User} label="Guest basics">
+        {/* Stepper */}
+        <Card className="p-4 mb-5">
+          <div className="flex items-center justify-between overflow-x-auto">
+            {STEPS.map((s, idx) => {
+              const completed = step > s.n;
+              const active = step === s.n;
+              const Icon = s.icon;
+              return (
+                <React.Fragment key={s.n}>
+                  <button
+                    type="button"
+                    onClick={() => completed && setStep(s.n)}
+                    className={cn(
+                      "flex flex-col items-center gap-1.5 min-w-[80px] transition-opacity",
+                      completed ? "cursor-pointer" : "cursor-default",
+                      !completed && !active && "opacity-60"
+                    )}
+                  >
+                    <div className={cn(
+                      "h-9 w-9 rounded-full flex items-center justify-center transition-colors",
+                      completed ? "bg-success text-white" :
+                      active ? "bg-brand text-brand-foreground" :
+                      "bg-surface-sunken text-muted-foreground border border-border"
+                    )}>
+                      {completed ? <CheckCircle2 className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+                    </div>
+                    <span className={cn("text-[11px] font-medium whitespace-nowrap", active && "text-foreground", !active && "text-muted-foreground")}>
+                      {s.title}
+                    </span>
+                  </button>
+                  {idx < STEPS.length - 1 && (
+                    <div className={cn("flex-1 h-px mx-2", completed ? "bg-success" : "bg-border")} />
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </Card>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          {/* Step content */}
+          <Card className="lg:col-span-2 p-6 min-h-[400px]">
+            {/* STEP 1 — Guest */}
+            {step === 1 && (
+              <div className="space-y-5">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs">Full name <span className="text-danger">*</span></Label>
@@ -2208,139 +2270,168 @@ function WalkInModal({
                     </div>
                   </div>
                 )}
-              </WalkInSection>
+              </div>
+            )}
 
-              {/* Stay */}
-              <WalkInSection icon={Calendar} label="Stay">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* STEP 2 — Dates */}
+            {step === 2 && (
+              <div className="space-y-5">
+                <p className="text-sm text-muted-foreground">One night = 12:00 PM check-in → next-day 11:00 AM checkout</p>
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs">Check-in</Label>
                     <Input type="date" value={checkInDate} min={today} onChange={e => setCheckInDate(e.target.value)} className="h-10 tabular" />
                   </div>
                   <NumStepper label="Nights" value={nights} onChange={setNights} min={1} />
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3 — Pax & Room */}
+            {step === 3 && (
+              <div className="space-y-5">
+                <div className="grid grid-cols-2 gap-4">
                   <NumStepper label="Adults" value={adults} onChange={setAdults} min={1} />
                   <NumStepper label="Children" value={children} onChange={setChildren} min={0} />
                 </div>
-              </WalkInSection>
-
-              {/* Room */}
-              <WalkInSection icon={BedIcon} label={`Room (${availableRooms.length} available)`}>
-                {availableRooms.length === 0 ? (
-                  <div className="rounded-md border border-dashed border-warning/40 bg-warning-soft/40 p-4 text-center">
-                    <AlertCircle className="h-5 w-5 text-warning mx-auto mb-1" />
-                    <p className="text-sm font-medium text-warning">No rooms available right now</p>
-                  </div>
-                ) : (
-                  <Select value={roomNumber} onChange={e => setRoomNumber(e.target.value)} className="h-10">
-                    {availableRooms.map(r => (
-                      <option key={r.id} value={r.number}>
-                        Room {r.number} · {r.type} · Floor {r.floor} · {money(r.rate)}/night
-                      </option>
-                    ))}
-                  </Select>
-                )}
-              </WalkInSection>
-
-              {/* Stay add-ons */}
-              <WalkInSection icon={Sparkles} label="Stay add-ons">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <ToggleAddon
-                    icon={CalendarPlus} label="Early check-in"
-                    hint="Before 12 PM · subject to availability"
-                    priceText={`+ ${money(500)} flat`}
-                    on={earlyCheckIn} onChange={setEarlyCheckIn}
-                  />
-                  <ToggleAddon
-                    icon={CalendarMinus} label="Late check-out"
-                    hint="Until 4 PM · HK reschedules"
-                    priceText={`+ ${money(500)} flat`}
-                    on={lateCheckOut} onChange={setLateCheckOut}
-                  />
-                  <ToggleAddon
-                    icon={Bed} label="Extra bed"
-                    hint="Incl. breakfast"
-                    priceText={`+ ${money(900)} / night`}
-                    on={extraBed} onChange={setExtraBed}
-                  />
-                </div>
-              </WalkInSection>
-
-              {/* Rate Plan — drives meals */}
-              <WalkInSection icon={UtensilsCrossed} label="Rate plan (sets included meals)">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {RATE_PLANS.map(p => {
-                    const isActive = ratePlanCode === p.code;
-                    return (
-                      <button
-                        key={p.code}
-                        type="button"
-                        onClick={() => applyRatePlan(p.code)}
-                        className={cn(
-                          "rounded-md border-2 p-3 text-left transition-colors flex flex-col gap-1",
-                          isActive ? "border-brand bg-brand-soft/30" : "border-border hover:bg-surface-sunken"
-                        )}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className={cn(
-                            "h-7 px-2 rounded-md inline-flex items-center justify-center text-[11px] font-bold tracking-wider",
-                            isActive ? "bg-brand text-brand-foreground" : "bg-surface-sunken text-muted-foreground"
-                          )}>{p.code}</span>
-                          {p.surchargePerNight > 0 && (
-                            <span className="text-[10px] text-muted-foreground tabular">+{money(p.surchargePerNight)}/pax/N</span>
-                          )}
-                        </div>
-                        <p className="text-xs font-semibold leading-tight">{p.name}</p>
-                        <p className="text-[10px] text-muted-foreground leading-snug">{p.description}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Inclusions preview */}
-                {ratePlan.includes.length > 0 && (
-                  <div className="mt-2 rounded-md bg-info-soft/15 border border-info/20 p-2.5 flex items-start gap-2">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-info shrink-0 mt-0.5" />
-                    <div className="flex-1 text-xs">
-                      <p className="font-semibold">{ratePlan.code} includes</p>
-                      <p className="text-muted-foreground">{ratePlan.includes.join(" · ")} for {adults + children} pax × {nights}N</p>
-                      {ratePlanSupplement > 0 && (
-                        <p className="text-[11px] text-info mt-0.5 tabular">Plan supplement: {money(ratePlanSupplement)} ({money(ratePlan.surchargePerNight)} × {adults + children} pax × {nights}N)</p>
-                      )}
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 inline-flex items-center gap-1.5">
+                    <BedIcon className="h-3 w-3" />Room ({availableRooms.length} available)
+                  </p>
+                  {availableRooms.length === 0 ? (
+                    <div className="rounded-md border border-dashed border-warning/40 bg-warning-soft/40 p-4 text-center">
+                      <AlertCircle className="h-5 w-5 text-warning mx-auto mb-1" />
+                      <p className="text-sm font-medium text-warning">No rooms available right now</p>
                     </div>
-                  </div>
-                )}
-              </WalkInSection>
-
-              {/* F&B add-ons */}
-              <WalkInSection icon={UtensilsCrossed} label="Extra F&B (above rate plan)">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {WALKIN_FB.map(pkg => {
-                    const count = fbAddons[pkg.id] ?? 0;
-                    return (
-                      <div key={pkg.id} className={cn(
-                        "rounded-md border p-3 flex items-center gap-3 transition-colors",
-                        count > 0 ? "bg-brand-soft/40 border-brand" : "border-border"
-                      )}>
-                        <span className="text-2xl shrink-0">{pkg.icon}</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium leading-tight truncate">{pkg.name}</p>
-                          <p className="text-[11px] text-muted-foreground tabular">{money(pkg.price)}/pax × {nights}N</p>
-                        </div>
-                        <div className="flex items-center border border-border rounded-md h-8 bg-surface shrink-0">
-                          <button type="button" onClick={() => setFb(pkg.id, count - 1)} disabled={count === 0} className="w-7 h-7 inline-flex items-center justify-center hover:bg-surface-sunken disabled:opacity-40"><Minus className="h-3 w-3" /></button>
-                          <span className="w-7 text-center text-sm tabular font-medium">{count}</span>
-                          <button type="button" onClick={() => setFb(pkg.id, count + 1)} className="w-7 h-7 inline-flex items-center justify-center hover:bg-surface-sunken"><Plus className="h-3 w-3" /></button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  ) : (
+                    <Select value={roomNumber} onChange={e => setRoomNumber(e.target.value)} className="h-10">
+                      {availableRooms.map(r => (
+                        <option key={r.id} value={r.number}>
+                          Room {r.number} · {r.type} · Floor {r.floor} · {money(r.rate)}/night
+                        </option>
+                      ))}
+                    </Select>
+                  )}
                 </div>
-              </WalkInSection>
+              </div>
+            )}
 
-              {/* ADVANCE PAYMENT — detailed capture */}
-              <WalkInSection icon={CreditCard} label="Advance payment">
+            {/* STEP 4 — Rate & Add-ons */}
+            {step === 4 && (
+              <div className="space-y-5">
+                {/* Rate Plan — drives meals */}
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 inline-flex items-center gap-1.5">
+                    <UtensilsCrossed className="h-3 w-3" />Rate plan (sets included meals)
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {RATE_PLANS.map(p => {
+                      const isActive = ratePlanCode === p.code;
+                      return (
+                        <button
+                          key={p.code}
+                          type="button"
+                          onClick={() => applyRatePlan(p.code)}
+                          className={cn(
+                            "rounded-md border-2 p-3 text-left transition-colors flex flex-col gap-1",
+                            isActive ? "border-brand bg-brand-soft/30" : "border-border hover:bg-surface-sunken"
+                          )}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className={cn(
+                              "h-7 px-2 rounded-md inline-flex items-center justify-center text-[11px] font-bold tracking-wider",
+                              isActive ? "bg-brand text-brand-foreground" : "bg-surface-sunken text-muted-foreground"
+                            )}>{p.code}</span>
+                            {p.surchargePerNight > 0 && (
+                              <span className="text-[10px] text-muted-foreground tabular">+{money(p.surchargePerNight)}/pax/N</span>
+                            )}
+                          </div>
+                          <p className="text-xs font-semibold leading-tight">{p.name}</p>
+                          <p className="text-[10px] text-muted-foreground leading-snug">{p.description}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Inclusions preview */}
+                  {ratePlan.includes.length > 0 && (
+                    <div className="mt-2 rounded-md bg-info-soft/15 border border-info/20 p-2.5 flex items-start gap-2">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-info shrink-0 mt-0.5" />
+                      <div className="flex-1 text-xs">
+                        <p className="font-semibold">{ratePlan.code} includes</p>
+                        <p className="text-muted-foreground">{ratePlan.includes.join(" · ")} for {adults + children} pax × {nights}N</p>
+                        {ratePlanSupplement > 0 && (
+                          <p className="text-[11px] text-info mt-0.5 tabular">Plan supplement: {money(ratePlanSupplement)} ({money(ratePlan.surchargePerNight)} × {adults + children} pax × {nights}N)</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Stay add-ons */}
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 inline-flex items-center gap-1.5">
+                    <Sparkles className="h-3 w-3" />Stay add-ons
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <ToggleAddon
+                      icon={CalendarPlus} label="Early check-in"
+                      hint="Before 12 PM · subject to availability"
+                      priceText={`+ ${money(500)} flat`}
+                      on={earlyCheckIn} onChange={setEarlyCheckIn}
+                    />
+                    <ToggleAddon
+                      icon={CalendarMinus} label="Late check-out"
+                      hint="Until 4 PM · HK reschedules"
+                      priceText={`+ ${money(500)} flat`}
+                      on={lateCheckOut} onChange={setLateCheckOut}
+                    />
+                    <ToggleAddon
+                      icon={Bed} label="Extra bed"
+                      hint="Incl. breakfast"
+                      priceText={`+ ${money(900)} / night`}
+                      on={extraBed} onChange={setExtraBed}
+                    />
+                  </div>
+                </div>
+
+                {/* F&B add-ons */}
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 inline-flex items-center gap-1.5">
+                    <UtensilsCrossed className="h-3 w-3" />Extra F&amp;B (above rate plan)
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {WALKIN_FB.map(pkg => {
+                      const count = fbAddons[pkg.id] ?? 0;
+                      return (
+                        <div key={pkg.id} className={cn(
+                          "rounded-md border p-3 flex items-center gap-3 transition-colors",
+                          count > 0 ? "bg-brand-soft/40 border-brand" : "border-border"
+                        )}>
+                          <span className="text-2xl shrink-0">{pkg.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium leading-tight truncate">{pkg.name}</p>
+                            <p className="text-[11px] text-muted-foreground tabular">{money(pkg.price)}/pax × {nights}N</p>
+                          </div>
+                          <div className="flex items-center border border-border rounded-md h-8 bg-surface shrink-0">
+                            <button type="button" onClick={() => setFb(pkg.id, count - 1)} disabled={count === 0} className="w-7 h-7 inline-flex items-center justify-center hover:bg-surface-sunken disabled:opacity-40"><Minus className="h-3 w-3" /></button>
+                            <span className="w-7 text-center text-sm tabular font-medium">{count}</span>
+                            <button type="button" onClick={() => setFb(pkg.id, count + 1)} className="w-7 h-7 inline-flex items-center justify-center hover:bg-surface-sunken"><Plus className="h-3 w-3" /></button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 5 — Payment */}
+            {step === 5 && (
+              <div className="space-y-5">
                 <div className="space-y-3">
                   {/* Quick presets + amount */}
+                  <Label className="text-xs">Advance payment</Label>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
                     {[0, 30, 50, 100].map(p => (
                       <button
@@ -2483,89 +2574,175 @@ function WalkInModal({
                     </>
                   )}
                 </div>
-              </WalkInSection>
+              </div>
+            )}
 
-              {/* What happens next */}
-              <div className="rounded-md bg-brand-soft/30 border border-brand/20 p-3 text-xs flex items-start gap-2">
-                <Sparkles className="h-3.5 w-3.5 text-brand shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold text-foreground mb-0.5">After clicking Start check-in</p>
-                  <p className="text-muted-foreground">
-                    Capture KYC (Aadhaar / Passport + face + signature) → Encode key card → Welcome message → Done.
-                  </p>
+            {/* STEP 6 — Confirm */}
+            {step === 6 && (
+              <div className="space-y-5">
+                <div className="text-center py-2">
+                  <div className="inline-flex h-16 w-16 rounded-full bg-success-soft text-success items-center justify-center mb-3">
+                    <ChevronsRight className="h-8 w-8" />
+                  </div>
+                  <h2 className="text-xl font-semibold">Ready to start check-in</h2>
+                  <p className="text-sm text-muted-foreground mt-1">Review the details, then start the KYC &amp; key-card flow.</p>
+                </div>
+
+                {/* Final review */}
+                <div className="rounded-md border border-border divide-y divide-border">
+                  <WalkInReviewRow
+                    label="Guest"
+                    value={name.trim() || "—"}
+                    sub={[phone, email].filter(Boolean).join(" · ") || nationality}
+                    onEdit={() => setStep(1)}
+                  />
+                  <WalkInReviewRow
+                    label="Stay"
+                    value={`${new Date(checkInDate + "T12:00:00").toLocaleDateString(undefined, { day: "2-digit", month: "short" })} · ${nights} night${nights === 1 ? "" : "s"}`}
+                    sub={[
+                      earlyCheckIn && "Early check-in",
+                      lateCheckOut && "Late check-out",
+                      extraBed && "Extra bed",
+                    ].filter(Boolean).join(" · ") || "12 PM → 11 AM"}
+                    onEdit={() => setStep(2)}
+                  />
+                  <WalkInReviewRow
+                    label="Room"
+                    value={room ? `Room ${room.number} · ${room.type}` : "—"}
+                    sub={`${adults}A${children ? ` + ${children}C` : ""}${room ? ` · ${money(room.rate)}/night` : ""}`}
+                    onEdit={() => setStep(3)}
+                  />
+                  <WalkInReviewRow
+                    label="Rate plan"
+                    value={`${ratePlan.code} · ${ratePlan.name}`}
+                    sub={[
+                      ratePlan.includes.length > 0 && ratePlan.includes.join(" · "),
+                      WALKIN_FB.some(p => (fbAddons[p.id] ?? 0) > 0) && `+ ${WALKIN_FB.filter(p => (fbAddons[p.id] ?? 0) > 0).map(p => `${fbAddons[p.id]}× ${p.name}`).join(" · ")}`,
+                    ].filter(Boolean).join(" · ") || "Room only"}
+                    onEdit={() => setStep(4)}
+                  />
+                  <WalkInReviewRow
+                    label="Payment"
+                    value={pay.amount <= 0 ? "No advance" : balance === 0 ? `Full · ${pay.mode}` : `${money(pay.amount)} advance · ${pay.mode}`}
+                    sub={`${money(grandTotal)} total · ${money(balance)} balance`}
+                    onEdit={() => setStep(5)}
+                  />
+                </div>
+
+                {/* What happens next */}
+                <div className="rounded-md bg-brand-soft/30 border border-brand/20 p-3 text-xs flex items-start gap-2">
+                  <Sparkles className="h-3.5 w-3.5 text-brand shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-foreground mb-0.5">After clicking Start check-in</p>
+                    <p className="text-muted-foreground">
+                      Capture KYC (Aadhaar / Passport + face + signature) → Encode key card → Welcome message → Done.
+                    </p>
+                  </div>
                 </div>
               </div>
+            )}
+          </Card>
+
+          {/* LIVE SUMMARY — sticky cost preview (was "Live cost preview") */}
+          <Card className="p-5 h-fit sticky top-20">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Live summary</p>
+
+            {/* Guest chip */}
+            {name.trim() ? (
+              <div className="mb-3 flex items-center gap-2.5">
+                <Avatar name={name.trim()} size={36} />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-medium text-sm truncate">{name.trim()}</p>
+                    <Badge tone="brand">Walk-in</Badge>
+                  </div>
+                  {phone && <p className="text-xs text-muted-foreground truncate">{phone}</p>}
+                </div>
+              </div>
+            ) : (
+              <p className="mb-3 text-sm text-muted-foreground">No guest entered</p>
+            )}
+
+            <dl className="space-y-1.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{nights} × {money(room?.rate ?? 0)}/night</span>
+                <span className="font-medium tabular">{money(roomSubtotal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground inline-flex items-center gap-1.5">
+                  <span className="px-1 py-0 rounded bg-brand-soft text-brand-soft-foreground text-[9px] font-bold">{ratePlan.code}</span>
+                  Rate plan ({ratePlan.name})
+                </span>
+                <span className="tabular text-muted-foreground">{ratePlanSupplement === 0 ? "included" : `+${money(ratePlanSupplement)}`}</span>
+              </div>
+              {earlyFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Early check-in</span><span className="tabular">{money(earlyFee)}</span></div>}
+              {lateFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Late check-out</span><span className="tabular">{money(lateFee)}</span></div>}
+              {extraBedFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Extra bed × {nights}N</span><span className="tabular">{money(extraBedFee)}</span></div>}
+              {fbTotal > 0 && (
+                <>
+                  <div className="pt-1.5 mt-1.5 border-t border-border">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">F&B add-ons</p>
+                  </div>
+                  {WALKIN_FB.filter(p => (fbAddons[p.id] ?? 0) > 0).map(p => (
+                    <div key={p.id} className="flex justify-between">
+                      <span className="text-muted-foreground">{fbAddons[p.id]}× {p.name} × {nights}N</span>
+                      <span className="tabular">{money(p.price * fbAddons[p.id] * nights)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+              <div className="pt-1.5 mt-1.5 border-t border-border flex justify-between">
+                <span className="text-muted-foreground">Tax (5%)</span>
+                <span className="tabular">{money(tax)}</span>
+              </div>
+              <div className="pt-1.5 mt-1.5 border-t border-border flex justify-between">
+                <span className="font-semibold text-sm">Grand total</span>
+                <span className="font-semibold text-base tabular">{money(grandTotal)}</span>
+              </div>
+              {pay.amount > 0 && (
+                <>
+                  <div className="flex justify-between text-success">
+                    <span className="font-medium">Advance ({pay.mode})</span>
+                    <span className="tabular font-semibold">- {money(pay.amount)}</span>
+                  </div>
+                  <div className="pt-1.5 mt-1.5 border-t border-border flex justify-between">
+                    <span className="font-semibold text-sm">Balance</span>
+                    <span className={cn("font-semibold text-base tabular", balance > 0 ? "text-warning" : "text-success")}>{money(balance)}</span>
+                  </div>
+                </>
+              )}
+            </dl>
+
+            {/* Back / Next (Start on final step) */}
+            <div className="mt-5 flex gap-2">
+              <Button variant="outline" disabled={step === 1} onClick={() => setStep(s => s - 1)} className="flex-1">
+                <ChevronLeft className="h-4 w-4" />Back
+              </Button>
+              {step < STEPS.length ? (
+                <Button onClick={() => setStep(s => Math.min(STEPS.length, s + 1))} disabled={!canNext()} className="flex-1">
+                  Next<ChevronRight className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button onClick={start} disabled={!valid} variant="success" className="flex-1">
+                  <ChevronsRight className="h-4 w-4" />Start check-in
+                </Button>
+              )}
             </div>
 
-            {/* RIGHT — live cost preview (sticky below the h-16 top bar so total stays in view) */}
-            <div className="bg-surface-elevated/40 border-t lg:border-t-0 lg:border-l border-border px-5 py-4 lg:sticky lg:top-20 lg:self-start">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Live cost preview</p>
-
-              <dl className="space-y-1.5 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{nights} × {money(room?.rate ?? 0)}/night</span>
-                  <span className="font-medium tabular">{money(roomSubtotal)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground inline-flex items-center gap-1.5">
-                    <span className="px-1 py-0 rounded bg-brand-soft text-brand-soft-foreground text-[9px] font-bold">{ratePlan.code}</span>
-                    Rate plan ({ratePlan.name})
-                  </span>
-                  <span className="tabular text-muted-foreground">{ratePlanSupplement === 0 ? "included" : `+${money(ratePlanSupplement)}`}</span>
-                </div>
-                {earlyFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Early check-in</span><span className="tabular">{money(earlyFee)}</span></div>}
-                {lateFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Late check-out</span><span className="tabular">{money(lateFee)}</span></div>}
-                {extraBedFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Extra bed × {nights}N</span><span className="tabular">{money(extraBedFee)}</span></div>}
-                {fbTotal > 0 && (
-                  <>
-                    <div className="pt-1.5 mt-1.5 border-t border-border">
-                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">F&B add-ons</p>
-                    </div>
-                    {WALKIN_FB.filter(p => (fbAddons[p.id] ?? 0) > 0).map(p => (
-                      <div key={p.id} className="flex justify-between">
-                        <span className="text-muted-foreground">{fbAddons[p.id]}× {p.name} × {nights}N</span>
-                        <span className="tabular">{money(p.price * fbAddons[p.id] * nights)}</span>
-                      </div>
-                    ))}
-                  </>
-                )}
-                <div className="pt-1.5 mt-1.5 border-t border-border flex justify-between">
-                  <span className="text-muted-foreground">Tax (5%)</span>
-                  <span className="tabular">{money(tax)}</span>
-                </div>
-                <div className="pt-1.5 mt-1.5 border-t border-border flex justify-between">
-                  <span className="font-semibold text-sm">Grand total</span>
-                  <span className="font-semibold text-base tabular">{money(grandTotal)}</span>
-                </div>
-                {pay.amount > 0 && (
-                  <>
-                    <div className="flex justify-between text-success">
-                      <span className="font-medium">Advance ({pay.mode})</span>
-                      <span className="tabular font-semibold">- {money(pay.amount)}</span>
-                    </div>
-                    <div className="pt-1.5 mt-1.5 border-t border-border flex justify-between">
-                      <span className="font-semibold text-sm">Balance</span>
-                      <span className={cn("font-semibold text-base tabular", balance > 0 ? "text-warning" : "text-success")}>{money(balance)}</span>
-                    </div>
-                  </>
-                )}
-              </dl>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="px-5 py-3 border-t border-border bg-surface-elevated flex items-center justify-between flex-wrap gap-2 rounded-b-lg">
-            <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowReceipt(true)} disabled={pay.amount === 0 || !advanceModeValid || !name.trim()}>
+            {/* Receipt — available once an advance has been entered */}
+            {step === STEPS.length && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowReceipt(true)}
+                disabled={pay.amount === 0 || !advanceModeValid || !name.trim()}
+                className="w-full mt-2"
+              >
                 <Printer className="h-3.5 w-3.5" />Print receipt
               </Button>
-              <Button onClick={start} disabled={!valid} variant="success">
-                <ChevronsRight className="h-4 w-4" />Start check-in
-              </Button>
-            </div>
-          </div>
-        </Card>
+            )}
+          </Card>
+        </div>
       </div>
 
       {dialogOpen && syncState !== "idle" && (
@@ -2601,13 +2778,16 @@ function WalkInModal({
 }
 
 // ===================== HELPER COMPONENTS =====================
-function WalkInSection({ icon: Icon, label, children }: { icon: typeof User; label: string; children: React.ReactNode }) {
+// Confirm-step review row with an Edit jump-back (mirrors the booking wizard).
+function WalkInReviewRow({ label, value, sub, onEdit }: { label: string; value: string; sub?: string; onEdit: () => void }) {
   return (
-    <div>
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 inline-flex items-center gap-1.5">
-        <Icon className="h-3 w-3" />{label}
-      </p>
-      {children}
+    <div className="flex items-center justify-between gap-3 p-3">
+      <div className="min-w-0">
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</p>
+        <p className="text-sm font-medium truncate">{value}</p>
+        {sub && <p className="text-xs text-muted-foreground truncate">{sub}</p>}
+      </div>
+      <button type="button" onClick={onEdit} className="text-xs text-brand hover:underline shrink-0">Edit</button>
     </div>
   );
 }
