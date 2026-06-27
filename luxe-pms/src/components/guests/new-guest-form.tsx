@@ -4,6 +4,7 @@ import { User, IdCard, Briefcase, Sparkles, ChevronLeft, Save, Camera, Pen, Smar
 import { Input, Label, Select } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { isValidPhone } from "@/lib/phone";
+import { isValidEmail } from "@/lib/email";
 import { Button } from "@/components/ui/button";
 import { PhotoCapture } from "./photo-capture";
 import { SignaturePad } from "./signature-pad";
@@ -11,6 +12,7 @@ import { DocumentUpload } from "./document-upload";
 import { apiGet } from "@/lib/api";
 import { MobileSyncDialog } from "./mobile-sync-dialog";
 import { cn } from "@/lib/utils";
+import { validateId } from "@/lib/id";
 
 export interface NewGuestData {
   name: string;
@@ -65,6 +67,10 @@ type SyncedBooking = {
     id_back?: string | null;
     signature?: string | null;
   };
+  identity?: {
+    id_type?: string | null;
+    id_number?: string | null;
+  };
 };
 
 /** ISO date (YYYY-MM-DD) of today minus N years — used to cap the DOB picker so the guest is at least N years old. */
@@ -90,14 +96,6 @@ function ageFromIso(iso: string): number | null {
 
 // Shared "invalid field" styling so DOB / phone / email all flag errors the same way.
 const DANGER_INPUT = "border-danger focus-visible:border-danger focus-visible:ring-danger/30";
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/** Email is optional — empty counts as valid; a non-empty value must look like an address. */
-function isEmailValid(s: string): boolean {
-  const t = s.trim();
-  return t === "" || EMAIL_RE.test(t);
-}
 
 export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
   const [data, setData] = React.useState<NewGuestData>(EMPTY);
@@ -164,6 +162,9 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
             idFront: d.id_front ?? prev.idFront,
             idBack: d.id_back ?? prev.idBack,
             signature: d.signature ?? prev.signature,
+            // Structured ID captured on the tablet — keep the form default if absent.
+            idType: b.identity?.id_type || prev.idType,
+            idNumber: b.identity?.id_number || prev.idNumber,
           }));
           setSyncState("done");
           setDialogOpen(true);
@@ -184,7 +185,7 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
   const dobValid = data.dob === "" || (dobAge !== null && dobAge >= MIN_GUEST_AGE && dobAge <= MAX_GUEST_AGE);
 
   const phoneValid = isValidPhone(data.phone);
-  const emailValid = isEmailValid(data.email);
+  const emailValid = isValidEmail(data.email);
   // Field-level errors only surface after the guest has left that field, so a
   // pristine form isn't littered with red.
   const [touched, setTouched] = React.useState<{ phone?: boolean; email?: boolean }>({});
@@ -193,12 +194,17 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
   // Required to save: a name plus a valid phone, a valid email if one was typed,
   // and a valid DOB if one was entered. ID number / scans / face photo stay
   // optional — they can be captured at check-in — so basic details always save.
-  const requiredOk = !!data.name && phoneValid && emailValid && dobValid;
+  // A non-empty ID number must be valid for its type; empty stays allowed so a
+  // no-ID draft is still savable (ID can be captured later at check-in).
+  const idCheck = validateId(data.idType, data.idNumber, data.nationality);
+  const idValid = data.idNumber.trim() === "" || idCheck.ok;
+  const requiredOk = !!data.name && phoneValid && emailValid && dobValid && idValid;
   const issues: string[] = [];
   if (!data.name) issues.push("name");
   if (!phoneValid) issues.push("valid phone");
   if (!emailValid) issues.push("valid email");
   if (!dobValid) issues.push("valid date of birth");
+  if (!idValid) issues.push("valid ID number");
   const completionPct = (() => {
     const fields: (keyof NewGuestData)[] = ["name", "phone", "email", "address", "nationality", "idType", "idNumber", "idFront", "idBack", "photo", "signature"];
     const filled = fields.filter(f => !!data[f]).length;
@@ -337,7 +343,19 @@ export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
                 </div>
               ))}
             </div>
-            <p className="text-[11px] text-muted-foreground mt-2">These were captured on the tablet and saved with the guest. You can still override them below.</p>
+            <div className="mt-2 flex items-center gap-2 text-[11px]">
+              {idValid && data.idNumber.trim() !== "" ? (
+                <span className="inline-flex items-center gap-1 text-success">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {data.idType} · {data.idNumber} verified
+                </span>
+              ) : data.idNumber.trim() !== "" ? (
+                <span className="text-danger">{data.idType} number looks invalid — check it below.</span>
+              ) : (
+                <span className="text-muted-foreground">No ID number captured — add one below.</span>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">These were captured on the tablet and saved with the guest. You can still override them below.</p>
           </div>
         )}
 
