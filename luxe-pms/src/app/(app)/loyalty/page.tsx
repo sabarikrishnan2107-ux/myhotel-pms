@@ -18,6 +18,8 @@ import { money, cn, formatDate } from "@/lib/utils";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { isValidPhone } from "@/lib/phone";
+import { EmailInput } from "@/components/ui/email-input";
+import { isValidEmail } from "@/lib/email";
 
 // ============================================================
 // TYPES & CONSTANTS
@@ -1185,7 +1187,7 @@ function AddMemberModal({ onClose, onSave }: {
     return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
-  const valid = name.trim().length > 1 && isValidPhone(phone) && /\S+@\S+\.\S+/.test(email);
+  const valid = name.trim().length > 1 && isValidPhone(phone) && email.trim() !== "" && isValidEmail(email);
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -1202,7 +1204,7 @@ function AddMemberModal({ onClose, onSave }: {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5"><Label className="text-xs">Full name *</Label><Input value={name} onChange={e => setName(e.target.value)} placeholder="Mr / Ms · Full name" className="h-9" /></div>
             <div className="space-y-1.5"><Label className="text-xs">Phone *</Label><PhoneInput value={phone} onChange={v => setPhone(v)} size="sm" invalid={phone !== "" && !isValidPhone(phone)} /></div>
-            <div className="space-y-1.5"><Label className="text-xs">Email *</Label><Input type="email" value={email} onChange={e => setEmail(e.target.value)} className="h-9" placeholder="guest@example.com" /></div>
+            <div className="space-y-1.5"><Label className="text-xs">Email *</Label><EmailInput value={email} onChange={setEmail} className="h-9" /></div>
             <div className="space-y-1.5"><Label className="text-xs">Nationality</Label>
               <Select value={nationality} onChange={e => setNationality(e.target.value)} className="h-9">
                 <option>India</option><option>UAE</option><option>USA</option><option>UK</option><option>Singapore</option><option>Other</option>

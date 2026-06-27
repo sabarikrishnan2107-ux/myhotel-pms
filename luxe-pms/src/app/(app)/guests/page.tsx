@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { isValidPhone } from "@/lib/phone";
+import { EmailInput } from "@/components/ui/email-input";
+import { isValidEmail } from "@/lib/email";
 import { KPICard } from "@/components/ui/kpi-card";
 import { GUESTS, RESERVATIONS } from "@/lib/mock-data";
 import type { Guest } from "@/lib/types";
@@ -447,7 +449,7 @@ function AddEditGuestModal({ guest, onClose, onSave }: {
     return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
-  const canSave = form.name.trim().length > 1 && isValidPhone(form.phone);
+  const canSave = form.name.trim().length > 1 && isValidPhone(form.phone) && isValidEmail(form.email || "");
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -476,7 +478,7 @@ function AddEditGuestModal({ guest, onClose, onSave }: {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Email</Label>
-              <Input type="email" value={form.email} onChange={e => update("email", e.target.value)} placeholder="guest@example.com" className="h-9" />
+              <EmailInput value={form.email || ""} onChange={v => update("email", v)} className="h-9" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Nationality</Label>

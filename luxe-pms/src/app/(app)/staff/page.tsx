@@ -16,6 +16,8 @@ import { money, cn } from "@/lib/utils";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { isValidPhone } from "@/lib/phone";
+import { EmailInput } from "@/components/ui/email-input";
+import { isValidEmail } from "@/lib/email";
 
 type Staff = typeof STAFF[number];
 
@@ -239,7 +241,7 @@ function AddStaffModal({ onClose, onSave, departments }: {
     return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
-  const valid = name.trim().length > 1 && /\S+@\S+\.\S+/.test(email) && salary > 0 && isValidPhone(phone);
+  const valid = name.trim().length > 1 && email.trim() !== "" && isValidEmail(email) && salary > 0 && isValidPhone(phone);
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -263,7 +265,7 @@ function AddStaffModal({ onClose, onSave, departments }: {
             </div>
           </div>
           <div className="space-y-1.5"><Label className="text-xs">Phone *</Label><PhoneInput value={phone} onChange={v => setPhone(v)} size="sm" invalid={phone !== "" && !isValidPhone(phone)} /></div>
-          <div className="space-y-1.5"><Label className="text-xs">Email *</Label><Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="staff@pearlmarina.com" className="h-9" /></div>
+          <div className="space-y-1.5"><Label className="text-xs">Email *</Label><EmailInput value={email} onChange={setEmail} placeholder="staff@pearlmarina.com" className="h-9" /></div>
           <div className="space-y-1.5"><Label className="text-xs">Monthly salary (₹) *</Label><Input type="number" min={0} value={salary} onChange={e => setSalary(Math.max(0, Number(e.target.value) || 0))} className="h-9 tabular text-lg font-semibold" /></div>
         </div>
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-border bg-surface-sunken/30">

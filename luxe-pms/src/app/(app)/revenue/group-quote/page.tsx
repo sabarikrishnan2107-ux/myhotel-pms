@@ -15,6 +15,8 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { isValidPhone } from "@/lib/phone";
+import { EmailInput } from "@/components/ui/email-input";
+import { isValidEmail } from "@/lib/email";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
 
@@ -407,7 +409,7 @@ export default function GroupQuotePage() {
           <Button variant="outline" size="sm" onClick={loadCorporate}>
             <Briefcase className="h-3.5 w-3.5" />Corporate preset
           </Button>
-          <Button variant="outline" size="sm" disabled={saving || !(phone === "" || isValidPhone(phone))} onClick={() => saveQuote("draft")}>
+          <Button variant="outline" size="sm" disabled={saving || !(phone === "" || isValidPhone(phone)) || !isValidEmail(email)} onClick={() => saveQuote("draft")}>
             <Save className="h-3.5 w-3.5" />Save draft
           </Button>
           <Button size="sm" onClick={() => showToast("Quote PDF generated · sent to anjali.iyer@gmail.com")}>
@@ -466,8 +468,8 @@ export default function GroupQuotePage() {
               <div className="space-y-1.5">
                 <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Email</Label>
                 <div className="relative">
-                  <Mail className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                  <Input value={email} onChange={e => setEmail(e.target.value)} className="pl-9" />
+                  <Mail className="h-3.5 w-3.5 absolute left-3 top-5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                  <EmailInput value={email} onChange={setEmail} className="pl-9" />
                 </div>
               </div>
               <div className="space-y-1.5">
@@ -1025,7 +1027,7 @@ export default function GroupQuotePage() {
                 <Button
                   size="sm"
                   className="w-full"
-                  disabled={saving || !(phone === "" || isValidPhone(phone))}
+                  disabled={saving || !(phone === "" || isValidPhone(phone)) || !isValidEmail(email)}
                   onClick={() => saveQuote("tentative")}
                 >
                   <Send className="h-3.5 w-3.5" />Approve &amp; send quote

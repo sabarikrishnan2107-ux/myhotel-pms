@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { isValidPhone } from "@/lib/phone";
+import { EmailInput } from "@/components/ui/email-input";
+import { isValidEmail } from "@/lib/email";
 import { Badge } from "@/components/ui/badge";
 import { KPICard } from "@/components/ui/kpi-card";
 import { AGENTS } from "@/lib/mock-data-ext";
@@ -592,7 +594,7 @@ function AddEditAgentModal({ agent, onClose, onSave }: {
     return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
-  const canSave = form.name.trim().length > 1 && isValidPhone(form.phone) && form.email.trim().length > 4;
+  const canSave = form.name.trim().length > 1 && isValidPhone(form.phone) && form.email.trim() !== "" && isValidEmail(form.email);
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -640,7 +642,7 @@ function AddEditAgentModal({ agent, onClose, onSave }: {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Email *</Label>
-              <Input type="email" value={form.email} onChange={e => update("email", e.target.value)} placeholder="account@example.com" className="h-9" />
+              <EmailInput value={form.email} onChange={v => update("email", v)} placeholder="account@example.com" className="h-9" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs"><Globe className="h-3 w-3 inline mr-1" />Website</Label>
@@ -755,7 +757,7 @@ function AddEditAgentModal({ agent, onClose, onSave }: {
                     <Input value={c.name} onChange={e => updateContact(i, "name", e.target.value)} placeholder="Name" className="h-8 text-xs" />
                     <Input value={c.role} onChange={e => updateContact(i, "role", e.target.value)} placeholder="Role" className="h-8 text-xs" />
                     <Input value={c.phone} onChange={e => updateContact(i, "phone", e.target.value)} placeholder="Phone" className="h-8 text-xs tabular" />
-                    <Input value={c.email} onChange={e => updateContact(i, "email", e.target.value)} placeholder="Email" className="h-8 text-xs" />
+                    <EmailInput value={c.email} onChange={v => updateContact(i, "email", v)} placeholder="Email" className="h-8 text-xs" hideError />
                     <button type="button" onClick={() => removeContact(i)} className="h-8 w-8 rounded-md hover:bg-danger-soft inline-flex items-center justify-center text-muted-foreground hover:text-danger" title="Remove"><X className="h-3.5 w-3.5" /></button>
                   </li>
                 ))}

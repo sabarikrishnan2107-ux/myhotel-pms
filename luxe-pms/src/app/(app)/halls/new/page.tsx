@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { isValidPhone } from "@/lib/phone";
+import { EmailInput } from "@/components/ui/email-input";
+import { isValidEmail } from "@/lib/email";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
@@ -83,7 +85,7 @@ export default function NewHallBookingPage() {
   });
   const advance = Math.round((total * advancePct) / 100);
 
-  const requiredOk = !!(customer && isValidPhone(phone) && eventDate && startTime && endTime && pax > 0 && pkg);
+  const requiredOk = !!(customer && isValidPhone(phone) && isValidEmail(email) && eventDate && startTime && endTime && pax > 0 && pkg);
 
   const router = useRouter();
   const [saving, setSaving] = React.useState(false);
@@ -136,8 +138,8 @@ export default function NewHallBookingPage() {
               </Field>
               <Field label="Email">
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-subtle-foreground" />
-                  <Input value={email} onChange={e => setEmail(e.target.value)} placeholder="customer@example.com" type="email" className="pl-9" />
+                  <Mail className="absolute left-3 top-5 -translate-y-1/2 h-4 w-4 text-subtle-foreground" />
+                  <EmailInput value={email} onChange={setEmail} placeholder="customer@example.com" className="pl-9" />
                 </div>
               </Field>
             </div>

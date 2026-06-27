@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { isValidPhone } from "@/lib/phone";
+import { EmailInput } from "@/components/ui/email-input";
+import { isValidEmail } from "@/lib/email";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
@@ -1504,7 +1506,7 @@ function NewAmcModal({ onClose, onSave }: {
     return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
   }, [onClose]);
 
-  const valid = name.trim() !== "" && (phone === "" || isValidPhone(phone));
+  const valid = name.trim() !== "" && (phone === "" || isValidPhone(phone)) && isValidEmail(email);
   const save = () => {
     const FREQ_DAYS: Record<Frequency, number> = { daily: 1, weekly: 7, monthly: 30, quarterly: 90 };
     const end = new Date(TODAY); end.setFullYear(end.getFullYear() + 1);
@@ -1568,7 +1570,7 @@ function NewAmcModal({ onClose, onSave }: {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Email</Label>
-              <Input value={email} onChange={e => setEmail(e.target.value)} placeholder="amc@vendor.in" className="h-9" />
+              <EmailInput value={email} onChange={setEmail} placeholder="amc@vendor.in" className="h-9" />
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">

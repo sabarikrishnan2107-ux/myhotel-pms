@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
@@ -30,6 +31,8 @@ import { apiGet, apiPut, apiPost, sendEmail } from "@/lib/api";
 import { useProperty, hotelName } from "@/lib/use-property";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { isValidPhone } from "@/lib/phone";
+import { EmailInput } from "@/components/ui/email-input";
+import { isValidEmail } from "@/lib/email";
 
 // Money collected at the check-in payment step (amount in ₹, plus mode/reference).
 type CheckInPayment = { amount: number; mode: string; reference: string };
@@ -1771,7 +1774,7 @@ function WalkInModal({
     (pay.mode === "UPI" && !!pay.upiVPA && pay.upiVPA.includes("@")) ||
     (pay.mode === "Bank" && !!pay.bankName && !!pay.reference) ||
     (pay.mode === "Online" && !!pay.txnId);
-  const valid = name.trim() !== "" && isValidPhone(phone) && roomNumber !== "" && adults >= 1 && nights >= 1 && advanceModeValid;
+  const valid = name.trim() !== "" && isValidPhone(phone) && isValidEmail(email) && roomNumber !== "" && adults >= 1 && nights >= 1 && advanceModeValid;
 
   // ----- generated booking number -----
   const seed = name.length + phone.length + nights + (room?.rate ?? 0);
@@ -1893,8 +1896,8 @@ function WalkInModal({
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-        <Card className="pointer-events-auto w-full max-w-3xl p-0 animate-in shadow-xl overflow-hidden">
+      <div className="fixed inset-0 z-50 pointer-events-none">
+        <Card className="pointer-events-auto absolute inset-0 w-full h-full max-w-none rounded-none border-0 p-0 animate-in flex flex-col overflow-hidden">
           {/* Header */}
           <div className="px-5 py-4 bg-brand text-brand-foreground flex items-center gap-3">
             <span className="h-10 w-10 rounded-md bg-brand-foreground/15 inline-flex items-center justify-center shrink-0">
@@ -1907,9 +1910,9 @@ function WalkInModal({
             <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-brand-foreground/15 inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px]">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
             {/* LEFT — form */}
-            <div className="px-5 py-4 space-y-5 max-h-[72vh] overflow-y-auto">
+            <div className="px-5 py-4 space-y-5 lg:min-h-0 lg:overflow-y-auto">
               {/* Guest basics */}
               <WalkInSection icon={User} label="Guest basics">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1923,7 +1926,7 @@ function WalkInModal({
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Email <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                    <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="guest@example.com" className="h-10" />
+                    <EmailInput value={email} onChange={setEmail} className="h-10" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs"><Globe className="h-3 w-3 inline mr-1" />Nationality</Label>
@@ -2268,7 +2271,7 @@ function WalkInModal({
             </div>
 
             {/* RIGHT — live cost preview */}
-            <div className="bg-surface-elevated/40 border-l border-border px-5 py-4 lg:max-h-[72vh] lg:overflow-y-auto">
+            <div className="bg-surface-elevated/40 border-l border-border px-5 py-4 lg:min-h-0 lg:overflow-y-auto">
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Live cost preview</p>
 
               <dl className="space-y-1.5 text-xs">
@@ -2444,18 +2447,16 @@ function AdvanceReceiptModal({
   const fmt = (d: Date) => d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
   const dateNow = new Date("2026-05-24T14:22:00").toLocaleString(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
-  return (
-    <>
-      <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm no-print" onClick={onClose} />
-      <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pointer-events-none overflow-y-auto no-print">
-        <Card className="pointer-events-auto w-full max-w-2xl p-5 animate-in shadow-xl my-auto">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold inline-flex items-center gap-2"><FileText className="h-4 w-4 text-brand" />Advance Payment Receipt</h3>
-            <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
-          </div>
+  // Gate the print portal on mount so document.body exists (SSR-safe).
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => { setMounted(true); }, []);
 
-          {/* RECEIPT PRINTABLE AREA */}
-          <div id="print-area" className="rounded-md border-2 border-double border-border p-5 bg-surface text-sm space-y-3">
+  // Single source of truth for the receipt. Rendered twice: in the on-screen
+  // modal (preview) and in a print-only portal to <body> (see the portal at the
+  // end of this component) so window.print() emits only the receipt — not the
+  // whole app as blank pages.
+  const receiptDoc = (
+    <div className="rounded-md border-2 border-double border-border p-5 bg-surface text-sm space-y-3">
             {/* Hotel header */}
             <div className="text-center border-b-2 border-double border-border pb-3">
               <p className="font-display text-lg font-medium">{name}</p>
@@ -2561,7 +2562,21 @@ function AdvanceReceiptModal({
             <p className="text-[9px] text-muted-foreground italic text-center border-t border-border pt-2">
               This is a computer-generated receipt. Subject to realisation. Original for Guest · Duplicate for Hotel records.
             </p>
+    </div>
+  );
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm no-print" onClick={onClose} />
+      <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pointer-events-none overflow-y-auto no-print">
+        <Card className="pointer-events-auto w-full max-w-2xl p-5 animate-in shadow-xl my-auto">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold inline-flex items-center gap-2"><FileText className="h-4 w-4 text-brand" />Advance Payment Receipt</h3>
+            <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
           </div>
+
+          {/* RECEIPT PREVIEW — same content (receiptDoc) that is portaled for print */}
+          {receiptDoc}
 
           <div className="flex justify-end gap-2 pt-3 border-t border-border mt-4">
             <Button variant="ghost" onClick={onClose}>Close</Button>
@@ -2570,6 +2585,10 @@ function AdvanceReceiptModal({
           </div>
         </Card>
       </div>
+
+      {/* Print-only copy, portaled to <body> so window.print() emits just the
+          receipt — the on-screen modal above is .no-print. */}
+      {mounted && createPortal(<div className="print-doc">{receiptDoc}</div>, document.body)}
     </>
   );
 }

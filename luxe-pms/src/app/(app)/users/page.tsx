@@ -17,6 +17,8 @@ import { cn } from "@/lib/utils";
 import { apiGet, apiPost, apiPut, sendEmail } from "@/lib/api";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { isValidPhone } from "@/lib/phone";
+import { EmailInput } from "@/components/ui/email-input";
+import { isValidEmail } from "@/lib/email";
 
 // Roles are master data from Configuration → Roles & Permissions (/roles).
 type Role = string;
@@ -440,7 +442,7 @@ function InviteModal({ onClose, onSave, roles }: {
     return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
-  const valid = name.trim().length > 1 && /\S+@\S+\.\S+/.test(email) && password.length >= 8 && !!role && isValidPhone(phone);
+  const valid = name.trim().length > 1 && email.trim() !== "" && isValidEmail(email) && password.length >= 8 && !!role && isValidPhone(phone);
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -463,7 +465,7 @@ function InviteModal({ onClose, onSave, roles }: {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Email *</Label>
-            <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@pearlmarina.com" className="h-9" />
+            <EmailInput value={email} onChange={setEmail} placeholder="name@pearlmarina.com" className="h-9" />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1.5">
@@ -558,7 +560,7 @@ function EditUserModal({ user, onClose, onSave, roles }: {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Email</Label>
-            <Input type="email" value={form.email} onChange={e => update("email", e.target.value)} className="h-9" />
+            <EmailInput value={form.email} onChange={v => update("email", v)} className="h-9" />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Phone</Label>
@@ -574,7 +576,7 @@ function EditUserModal({ user, onClose, onSave, roles }: {
 
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-border bg-surface-sunken/30">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onSave(form)}>
+          <Button onClick={() => onSave(form)} disabled={!isValidEmail(form.email)}>
             <CheckCircle2 className="h-3.5 w-3.5" />Save changes
           </Button>
         </div>

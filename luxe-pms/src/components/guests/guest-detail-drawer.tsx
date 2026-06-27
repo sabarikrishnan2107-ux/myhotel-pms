@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   X, Phone, Mail, MessageCircle, MapPin, IdCard, Briefcase, Crown, Ban,
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import type { Guest, Reservation } from "@/lib/types";
 import { cn, money, formatDate, formatTime } from "@/lib/utils";
 import { apiGet } from "@/lib/api";
+import { useProperty, hotelName } from "@/lib/use-property";
 
 // Raw backend row shapes for the live history tabs.
 type FolioPaymentRow = { id?: number | string; date?: string; mode?: string; reference?: string | null; amount?: number };
@@ -119,6 +121,19 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
     return () => { cancelled = true; };
   }, [open, bookingNo, roomNumber, guestName]);
 
+  // Print-only booking summary needs the property name + a "printed at" stamp.
+  // The stamp is set on the client (after open) to avoid an SSR hydration mismatch.
+  // `mounted` gates the portal so createPortal/document only run on the client.
+  const propertyName = hotelName(useProperty());
+  const [mounted, setMounted] = React.useState(false);
+  const [printedAt, setPrintedAt] = React.useState("");
+  React.useEffect(() => { setMounted(true); }, []);
+  React.useEffect(() => {
+    if (open) setPrintedAt(new Date().toLocaleString(undefined, {
+      day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+    }));
+  }, [open]);
+
   if (!guest) return null;
 
   // Map the live rows to the shapes the tabs render.
@@ -145,12 +160,88 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
     total: o.total ?? 0,
   }));
 
+  // Print-only booking summary. Portaled to <body> so it sits OUTSIDE the app
+  // shell; the @media print rules then drop everything except this summary, so
+  // "Print" emits one clean page instead of the whole (hidden) app as blanks.
+  const printSummary = reservation && (
+    <div className="print-doc">
+      <div className="p-8 text-black">
+            {/* Hotel header */}
+            <div className="text-center border-b-2 border-double border-gray-400 pb-4 mb-5">
+              <p className="text-2xl font-semibold">{propertyName}</p>
+              <p className="text-xs text-gray-600 mt-1">Main Tower · MG Road, Bandra West, Mumbai 400050</p>
+              <p className="text-xs text-gray-600">GSTIN 27AAACR5055K1Z5 · PAN AAACR5055K</p>
+              <div className="mt-3 inline-block px-4 py-1 rounded-full border border-gray-400 text-[11px] uppercase tracking-[0.18em] font-bold">
+                Booking Summary
+              </div>
+            </div>
+
+            {/* Meta */}
+            <div className="flex justify-between text-sm mb-5">
+              <span>Booking Ref: <span className="font-semibold">{reservation.bookingNo}</span></span>
+              <span className="text-gray-600">{printedAt}</span>
+            </div>
+
+            {/* Guest + Stay */}
+            <div className="grid grid-cols-2 gap-8 mb-5">
+              <div>
+                <p className="text-[11px] uppercase tracking-wider font-bold border-b border-gray-300 pb-1 mb-2">Guest</p>
+                <PrintRow k="Name" v={guest.name} />
+                <PrintRow k="Phone" v={guest.phone || "—"} />
+                <PrintRow k="Email" v={guest.email || "—"} />
+                <PrintRow k="Nationality" v={guest.nationality || "—"} />
+                <PrintRow k="ID" v={guest.idNumber ? `${guest.idType} · ${guest.idNumber}` : "—"} />
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wider font-bold border-b border-gray-300 pb-1 mb-2">Stay</p>
+                <PrintRow k="Room" v={`${reservation.roomNumber} · ${reservation.roomType}`} />
+                <PrintRow k="Check-in" v={formatDate(reservation.checkIn)} />
+                <PrintRow k="Check-out" v={formatDate(reservation.checkOut)} />
+                <PrintRow k="Nights" v={String(reservation.nights)} />
+                <PrintRow
+                  k="Guests"
+                  v={`${reservation.adults} Adult${reservation.adults === 1 ? "" : "s"}${
+                    reservation.children ? ` · ${reservation.children} Child${reservation.children === 1 ? "" : "ren"}` : ""
+                  }`}
+                />
+                <PrintRow k="Rate plan" v={RATE_PLAN_LABEL[reservation.ratePlan] ?? String(reservation.ratePlan)} />
+                <PrintRow k="Source" v={reservation.source} />
+              </div>
+            </div>
+
+            {/* Charges */}
+            <div className="border border-gray-300 rounded-md p-4 mb-8 text-sm space-y-1.5">
+              <div className="flex justify-between"><span className="text-gray-600">Grand total</span><span className="font-medium">{money(reservation.total)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-600">Advance received</span><span>- {money(reservation.advance)}</span></div>
+              <div className="flex justify-between border-t border-gray-300 pt-1.5 mt-1.5">
+                <span className="font-semibold">Balance due at checkout</span>
+                <span className="font-bold">{money(reservation.balance)}</span>
+              </div>
+            </div>
+
+            {/* Signatures */}
+            <div className="grid grid-cols-2 gap-10 pt-10">
+              <div className="border-t border-gray-400 pt-1 text-xs text-gray-600">Guest signature</div>
+              <div className="border-t border-gray-400 pt-1 text-xs text-gray-600 text-right">For {propertyName}</div>
+            </div>
+
+            <p className="text-[10px] text-gray-500 text-center mt-6">
+              Computer-generated booking summary · {reservation.bookingNo}
+            </p>
+          </div>
+        </div>
+  );
+
   return (
     <>
+      {/* Render the summary into <body> so the print stylesheet can isolate it.
+          Only while the drawer is open, so a page-level Ctrl+P elsewhere is unaffected. */}
+      {mounted && open && printSummary && createPortal(printSummary, document.body)}
+
       {/* Backdrop */}
       <div
         className={cn(
-          "fixed inset-0 z-40 bg-black/40 backdrop-blur-xs transition-opacity",
+          "fixed inset-0 z-40 bg-black/40 backdrop-blur-xs transition-opacity no-print",
           open ? "opacity-100" : "pointer-events-none opacity-0"
         )}
         onClick={onClose}
@@ -164,7 +255,7 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
         aria-label="Guest details"
         className={cn(
           "fixed top-0 right-0 z-50 h-svh w-full sm:w-[520px] lg:w-[600px]",
-          "bg-surface border-l border-border shadow-2xl flex flex-col",
+          "bg-surface border-l border-border shadow-2xl flex flex-col no-print",
           "transition-transform duration-200",
           open ? "translate-x-0" : "translate-x-full"
         )}
@@ -565,6 +656,16 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
         )}
       </aside>
     </>
+  );
+}
+
+// One label/value line in the print-only booking summary.
+function PrintRow({ k, v }: { k: string; v: React.ReactNode }) {
+  return (
+    <div className="flex justify-between gap-3 py-1 text-sm border-b border-gray-100">
+      <span className="text-gray-500">{k}</span>
+      <span className="font-medium text-right">{v}</span>
+    </div>
   );
 }
 
