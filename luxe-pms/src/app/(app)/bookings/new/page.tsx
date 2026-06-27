@@ -1053,41 +1053,45 @@ export default function BookingWizardPage() {
             {!!ratePlan && <Row k="Rate plan" v={ratePlan} />}
           </dl>
 
-          {roomType && hasCheckout ? (
+          {hasCheckout ? (
           <>
           <div className="border-t border-border my-4" />
 
           <dl className="space-y-2 text-sm">
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setRateBreakdownOpen(o => !o)}
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Room subtotal
-                {rateBreakdownOpen ? <ChevronLeft className="h-3 w-3 rotate-90" /> : <ChevronRight className="h-3 w-3 rotate-90" />}
-              </button>
-              <span className="tabular text-sm text-muted-foreground">{money(subtotal)}</span>
-            </div>
-            {rateBreakdownOpen && !halfDay && (
-              <div className="ml-2 pl-2 border-l-2 border-border space-y-1 animate-in">
-                {breakdown.lines.map((ln, i) => (
-                  <div key={i} className="flex items-center justify-between text-[11px]">
-                    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                      <span className={cn(
-                        "h-1.5 w-1.5 rounded-full",
-                        ln.kind === "holiday" ? "bg-warning" : ln.kind === "weekend" ? "bg-accent" : "bg-success"
-                      )} />
-                      {ln.date.toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })}
-                      <span className="text-subtle-foreground capitalize">· {ln.kind}</span>
-                    </span>
-                    <span className="tabular text-muted-foreground">{money(ln.rate)}</span>
+            {roomType && (
+              <>
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setRateBreakdownOpen(o => !o)}
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Room subtotal
+                    {rateBreakdownOpen ? <ChevronLeft className="h-3 w-3 rotate-90" /> : <ChevronRight className="h-3 w-3 rotate-90" />}
+                  </button>
+                  <span className="tabular text-sm text-muted-foreground">{money(subtotal)}</span>
+                </div>
+                {rateBreakdownOpen && !halfDay && (
+                  <div className="ml-2 pl-2 border-l-2 border-border space-y-1 animate-in">
+                    {breakdown.lines.map((ln, i) => (
+                      <div key={i} className="flex items-center justify-between text-[11px]">
+                        <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                          <span className={cn(
+                            "h-1.5 w-1.5 rounded-full",
+                            ln.kind === "holiday" ? "bg-warning" : ln.kind === "weekend" ? "bg-accent" : "bg-success"
+                          )} />
+                          {ln.date.toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })}
+                          <span className="text-subtle-foreground capitalize">· {ln.kind}</span>
+                        </span>
+                        <span className="tabular text-muted-foreground">{money(ln.rate)}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-            {rateBreakdownOpen && halfDay && (
-              <p className="ml-2 pl-2 border-l-2 border-border text-[11px] text-muted-foreground animate-in">Half-day rate · 50% of {money(rate)} base</p>
+                )}
+                {rateBreakdownOpen && halfDay && (
+                  <p className="ml-2 pl-2 border-l-2 border-border text-[11px] text-muted-foreground animate-in">Half-day rate · 50% of {money(rate)} base</p>
+                )}
+              </>
             )}
             {extraBedCharge > 0 && (
               <Row k={`Extra bed · ${extraOcc.extraAdults} extra adult${extraOcc.extraAdults > 1 ? "s" : ""}`} v={money(extraBedCharge)} muted />
@@ -1098,15 +1102,21 @@ export default function BookingWizardPage() {
             {extraBed && <Row k="Extra bed" v={money(900 * nights)} muted />}
             {airportTransfer && <Row k="Airport transfer" v={money(175)} muted />}
             {fbTotal > 0 && <Row k="Meals / F&B add-ons" v={money(fbTotal)} muted />}
-            <Row k="Tax (5%)" v={money(tax)} muted />
-            <div className="border-t border-border pt-2 mt-2">
-              <Row k={<span className="font-semibold">Total</span>} v={<span className="font-semibold tabular text-base">{money(total)}</span>} />
-            </div>
-            {advance > 0 && (
+            {roomType ? (
               <>
-                <Row k={`Advance (${advanceLabel})`} v={<span className="text-brand font-medium">{money(advance)}</span>} />
-                <Row k="Balance at checkout" v={money(total - advance)} muted />
+                <Row k="Tax (5%)" v={money(tax)} muted />
+                <div className="border-t border-border pt-2 mt-2">
+                  <Row k={<span className="font-semibold">Total</span>} v={<span className="font-semibold tabular text-base">{money(total)}</span>} />
+                </div>
+                {advance > 0 && (
+                  <>
+                    <Row k={`Advance (${advanceLabel})`} v={<span className="text-brand font-medium">{money(advance)}</span>} />
+                    <Row k="Balance at checkout" v={money(total - advance)} muted />
+                  </>
+                )}
               </>
+            ) : (
+              <p className="text-[11px] text-muted-foreground pt-1 border-t border-border mt-1">Pick a room type (Pax &amp; Type) to see the room rate &amp; total.</p>
             )}
           </dl>
           </>
