@@ -267,17 +267,18 @@ export default function BookingWizardPage() {
   const earlyFee = earlyCheckIn ? 500 : 0;        // ₹500 flat
   const lateFee = lateCheckout ? 500 : 0;         // ₹500 flat
 
-  // Auto extra-bed charge for guests beyond the room type's included occupancy.
-  // Each adult over maxAdults / child over maxChildren is billed the type's
-  // per-night extra-bed rate; within the included max this is ₹0. Unknown max
-  // (type not loaded) → Infinity so we never surcharge by accident.
+  // Auto extra-person charge for ADULTS beyond the room type's included max.
+  // Each adult over maxAdults is billed the type's per-night extra-adult rate;
+  // children are NEVER surcharged (maxChildren: Infinity, extraChildRate: 0).
+  // Within the included max this is ₹0. Unknown max (type not loaded) → Infinity
+  // so we never surcharge by accident.
   const selectedType = roomTypes.find(t => t.name === roomType);
   const extraOcc = extraOccupancyCharge({
     adults, children,
     maxAdults: selectedType?.maxAdults ?? Infinity,
-    maxChildren: selectedType?.maxChildren ?? Infinity,
+    maxChildren: Infinity,    // children are not charged extra — adults only
     extraAdultRate: selectedType?.extraAdultRate ?? 0,
-    extraChildRate: selectedType?.extraChildRate ?? 0,
+    extraChildRate: 0,
     nights,
   });
 
@@ -1056,7 +1057,7 @@ export default function BookingWizardPage() {
               <p className="ml-2 pl-2 border-l-2 border-border text-[11px] text-muted-foreground animate-in">Half-day rate · 50% of {money(rate)} base</p>
             )}
             {extraOcc.total > 0 && (
-              <Row k={`Extra bed × ${extraOcc.extraAdults + extraOcc.extraChildren} (beyond max ${selectedType?.maxAdults ?? 0}A${selectedType?.maxChildren ? `+${selectedType.maxChildren}C` : ""})`} v={money(extraOcc.total)} muted />
+              <Row k={`Extra adult × ${extraOcc.extraAdults} (beyond max ${selectedType?.maxAdults ?? 0}A)`} v={money(extraOcc.total)} muted />
             )}
             {extras - extraOcc.total > 0 && <Row k="Extras" v={money(extras - extraOcc.total)} muted />}
             <Row k="Tax (5%)" v={money(tax)} muted />
