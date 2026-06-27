@@ -1397,6 +1397,7 @@ function RoomsManager({
           floors={floors}
           isNew={creating}
           categoryOptions={categoryOptions}
+          roomTypes={roomTypes}
           existingNumbers={rooms.filter(r => r.id !== editing.id).map(r => r.number)}
           onClose={() => { setEditing(null); setCreating(false); }}
           onSave={saveRoom}
@@ -1548,18 +1549,33 @@ function BulkRoomModal({ floors, categoryOptions, existingNumbers, template, onC
 
 // ===================== ROOM EDIT MODAL =====================
 function RoomEditModal({
-  room, floors, isNew, categoryOptions, existingNumbers, onClose, onSave,
+  room, floors, isNew, categoryOptions, roomTypes, existingNumbers, onClose, onSave,
 }: {
   room: Room;
   floors: Floor[];
   isNew: boolean;
   categoryOptions: string[];
+  roomTypes: RoomType[];
   existingNumbers: string[];
   onClose: () => void;
   onSave: (r: Room) => void;
 }) {
-  const [draft, setDraft] = React.useState<Room>(room);
+  // The extra-bed price is owned by the room TYPE. A new room inherits its type's
+  // price (still overridable below); editing an existing room keeps its saved value.
+  const extraBedFor = React.useCallback(
+    (cat: string) => roomTypes.find(t => t.name === cat)?.extraAdultRate,
+    [roomTypes],
+  );
+  const [draft, setDraft] = React.useState<Room>(() => {
+    const fromType = isNew ? extraBedFor(room.category) : undefined;
+    return fromType != null ? { ...room, extraBedRate: fromType } : room;
+  });
   const set = <K extends keyof Room>(k: K, v: Room[K]) => setDraft(d => ({ ...d, [k]: v }));
+  // Changing the category re-inherits that type's extra-bed price.
+  const setCategory = (cat: RoomCategory) => setDraft(d => {
+    const price = extraBedFor(cat);
+    return { ...d, category: cat, ...(price != null ? { extraBedRate: price } : {}) };
+  });
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -1598,7 +1614,7 @@ function RoomEditModal({
                   {duplicate && <p className="text-[10px] text-danger mt-0.5">Room {draft.number} already exists</p>}
                 </Field2>
                 <Field2 label="Category *">
-                  <Select value={draft.category} onChange={e => set("category", e.target.value as RoomCategory)}>
+                  <Select value={draft.category} onChange={e => setCategory(e.target.value as RoomCategory)}>
                     {categoryOptions.map(c => <option key={c}>{c}</option>)}
                   </Select>
                 </Field2>
@@ -1643,6 +1659,7 @@ function RoomEditModal({
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
                   <Field2 label="Extra bed rate (₹)">
                     <Input type="number" value={draft.extraBedRate} onChange={e => set("extraBedRate", Number(e.target.value))} />
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Defaults from the {draft.category} type · charged per guest beyond max</p>
                   </Field2>
                 </div>
               )}
@@ -1771,7 +1788,7 @@ function RoomTypesManager({ roomTypes, rooms, onChange, onToast, onMarkComplete 
         <SummaryStat icon={IndianRupee} label="Highest rate" value={money(Math.max(...roomTypes.map(t => t.baseTariff), 0))} />
       </div>
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">Define each category once — its base rate flows to Rooms, bookings and check-in. Per-room occupancy and the extra-bed rate are set when you add the room.</p>
+        <p className="text-xs text-muted-foreground">Define each category once — base rate, included occupancy (adults/children) and the extra-bed price/night flow to Rooms, bookings and check-in. Guests beyond the included max are charged the extra-bed price.</p>
         <Button size="sm" onClick={add}><Plus className="h-3.5 w-3.5" />Add type</Button>
       </div>
       <div className="rounded-md border border-border overflow-hidden">
@@ -1781,6 +1798,9 @@ function RoomTypesManager({ roomTypes, rooms, onChange, onToast, onMarkComplete 
               <th className="px-3 py-2 font-semibold">Type name</th>
               <th className="px-3 py-2 font-semibold">Code</th>
               <th className="px-3 py-2 font-semibold text-right">Base rate</th>
+              <th className="px-3 py-2 font-semibold text-right">Incl. adults</th>
+              <th className="px-3 py-2 font-semibold text-right">Incl. children</th>
+              <th className="px-3 py-2 font-semibold text-right">Extra bed/night</th>
               <th className="px-3 py-2 font-semibold text-right">Rooms</th>
               <th className="px-3 py-2 font-semibold">Active</th>
               <th className="px-3 py-2 font-semibold text-right">Action</th>
@@ -1795,6 +1815,20 @@ function RoomTypesManager({ roomTypes, rooms, onChange, onToast, onMarkComplete 
                   <div className="inline-flex items-center gap-1">
                     <span className="text-xs text-muted-foreground">₹</span>
                     <Input type="number" value={t.baseTariff} onChange={e => upd(t.id, { baseTariff: Number(e.target.value) })} className="h-8 w-24 tabular text-right" />
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <Input type="number" min={1} value={t.maxAdults} onChange={e => upd(t.id, { maxAdults: Math.max(1, Number(e.target.value) || 1) })} className="h-8 w-14 tabular text-right" />
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <Input type="number" min={0} value={t.maxChildren} onChange={e => upd(t.id, { maxChildren: Math.max(0, Number(e.target.value) || 0) })} className="h-8 w-14 tabular text-right" />
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <div className="inline-flex items-center gap-1">
+                    <span className="text-xs text-muted-foreground">₹</span>
+                    {/* One "extra bed price" per type — written to both rate columns so
+                        extra adults and extra children are billed the same. */}
+                    <Input type="number" min={0} value={t.extraAdultRate ?? 0} onChange={e => { const v = Math.max(0, Number(e.target.value) || 0); upd(t.id, { extraAdultRate: v, extraChildRate: v }); }} className="h-8 w-20 tabular text-right" />
                   </div>
                 </td>
                 <td className="px-3 py-2 text-right tabular text-muted-foreground">{roomsOfType(t.name)}</td>

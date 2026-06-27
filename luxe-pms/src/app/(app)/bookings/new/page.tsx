@@ -17,6 +17,7 @@ import { apiGet, apiPost, apiPut, sendEmail } from "@/lib/api";
 import { NewGuestForm, type NewGuestData } from "@/components/guests/new-guest-form";
 import type { Guest, Room } from "@/lib/types";
 import { buildNightlyBreakdown, type Season, type Holiday } from "@/lib/room-nightly-pricing";
+import { extraOccupancyCharge } from "@/lib/booking-pricing";
 
 // Weekend uplift has no Setup field (Seasons/Holidays do) — kept as a fixed default.
 const WEEKEND_MULTIPLIER = 1.2;
@@ -65,8 +66,10 @@ export default function BookingWizardPage() {
   const [adults, setAdults] = React.useState(2);
   const [children, setChildren] = React.useState(0);
   const [roomType, setRoomType] = React.useState("");
-  // Managed room types (name → base rate) from Configuration → Room Types.
-  const [roomTypes, setRoomTypes] = React.useState<{ name: string; baseTariff: number }[]>([]);
+  // Managed room types from Configuration → Room Types. Carries included
+  // occupancy (max adults/children) + per-type extra-bed rates so the booking can
+  // surcharge only the guests beyond the included max.
+  const [roomTypes, setRoomTypes] = React.useState<{ name: string; baseTariff: number; maxAdults?: number; maxChildren?: number; extraAdultRate?: number; extraChildRate?: number }[]>([]);
   // Real guests + rooms from Postgres (seeded with mock as an offline fallback).
   const [guests, setGuests] = React.useState<Guest[]>([]);
   const [rooms, setRooms] = React.useState<Room[]>([]);
@@ -76,7 +79,7 @@ export default function BookingWizardPage() {
   const [seasons, setSeasons] = React.useState<Season[]>([]);
   const [holidays, setHolidays] = React.useState<Holiday[]>([]);
   React.useEffect(() => {
-    apiGet<{ name: string; baseTariff: number }[]>("/room-types").then(setRoomTypes).catch(() => {});
+    apiGet<{ name: string; baseTariff: number; maxAdults?: number; maxChildren?: number; extraAdultRate?: number; extraChildRate?: number }[]>("/room-types").then(setRoomTypes).catch(() => {});
     apiGet<Guest[]>("/guests").then(rows => { if (rows.length) setGuests(rows); }).catch(() => {});
     apiGet<Room[]>("/room-board").then(rows => { if (rows.length) setRooms(rows); }).catch(() => {});
     apiGet<ApiRatePlan[]>("/rate-plans").then(rows => setRatePlans(rows.map(mapRatePlan))).catch(() => {});
@@ -100,7 +103,7 @@ export default function BookingWizardPage() {
   React.useEffect(() => {
     if (roomType && roomTypes.length && !roomTypes.some(t => t.name === roomType)) setRoomType("");
   }, [roomTypes, roomType]);
-  const [breakfast, setBreakfast] = React.useState(true);
+  const [breakfast, setBreakfast] = React.useState(false);
   const [extraBed, setExtraBed] = React.useState(false);
   const [airportTransfer, setAirportTransfer] = React.useState(false);
   const [lateCheckout, setLateCheckout] = React.useState(false);
@@ -264,11 +267,26 @@ export default function BookingWizardPage() {
   const earlyFee = earlyCheckIn ? 500 : 0;        // ₹500 flat
   const lateFee = lateCheckout ? 500 : 0;         // ₹500 flat
 
+  // Auto extra-bed charge for guests beyond the room type's included occupancy.
+  // Each adult over maxAdults / child over maxChildren is billed the type's
+  // per-night extra-bed rate; within the included max this is ₹0. Unknown max
+  // (type not loaded) → Infinity so we never surcharge by accident.
+  const selectedType = roomTypes.find(t => t.name === roomType);
+  const extraOcc = extraOccupancyCharge({
+    adults, children,
+    maxAdults: selectedType?.maxAdults ?? Infinity,
+    maxChildren: selectedType?.maxChildren ?? Infinity,
+    extraAdultRate: selectedType?.extraAdultRate ?? 0,
+    extraChildRate: selectedType?.extraChildRate ?? 0,
+    nights,
+  });
+
   const extras =
     (breakfast ? 95 * adults * nights : 0) +
     (extraBed ? 900 * nights : 0) +
     (airportTransfer ? 175 : 0) +
     earlyFee + lateFee +
+    extraOcc.total +
     fbTotal;
 
   const tax = (subtotal + extras) * 0.05;
@@ -1037,7 +1055,10 @@ export default function BookingWizardPage() {
             {rateBreakdownOpen && halfDay && (
               <p className="ml-2 pl-2 border-l-2 border-border text-[11px] text-muted-foreground animate-in">Half-day rate · 50% of {money(rate)} base</p>
             )}
-            {extras > 0 && <Row k="Extras" v={money(extras)} muted />}
+            {extraOcc.total > 0 && (
+              <Row k={`Extra bed × ${extraOcc.extraAdults + extraOcc.extraChildren} (beyond max ${selectedType?.maxAdults ?? 0}A${selectedType?.maxChildren ? `+${selectedType.maxChildren}C` : ""})`} v={money(extraOcc.total)} muted />
+            )}
+            {extras - extraOcc.total > 0 && <Row k="Extras" v={money(extras - extraOcc.total)} muted />}
             <Row k="Tax (5%)" v={money(tax)} muted />
             <div className="border-t border-border pt-2 mt-2">
               <Row k={<span className="font-semibold">Total</span>} v={<span className="font-semibold tabular text-base">{money(total)}</span>} />
