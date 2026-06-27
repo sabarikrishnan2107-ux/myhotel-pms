@@ -54,6 +54,8 @@ class VerificationController extends Controller
             'verification_status' => ['nullable', 'string'],
             'uploaded_by'         => ['nullable', 'string'],
             'uploaded_at'         => ['nullable', 'string'],
+            'id_type'             => ['nullable', 'string'],
+            'id_number'           => ['nullable', 'string'],
         ]);
 
         $booking = Booking::findOrFail($id);
@@ -66,6 +68,15 @@ class VerificationController extends Controller
             }
         }
 
+        // Structured ID details (plain strings, not files) — only overwrite when
+        // a non-empty value was sent, so a docs-only push keeps any prior ID.
+        foreach (['id_type', 'id_number'] as $idField) {
+            $val = $data[$idField] ?? null;
+            if (is_string($val) && trim($val) !== '') {
+                $booking->{$idField} = trim($val);
+            }
+        }
+
         // Completeness drives the status so a partial push (e.g. ID uploaded in
         // the web form) shows as in-progress until the rest is captured.
         $present = 0;
@@ -74,7 +85,13 @@ class VerificationController extends Controller
                 $present++;
             }
         }
-        $booking->verification_status = $present >= 4 ? 'synced' : ($present > 0 ? 'in_progress' : 'not_started');
+        // `synced` requires all four documents AND a stored ID number, so the
+        // web form only flips to "done" once the full record has arrived.
+        $docsComplete = $present >= 4;
+        $hasId = !empty($booking->id_number);
+        $booking->verification_status = ($docsComplete && $hasId)
+            ? 'synced'
+            : (($present > 0 || $hasId) ? 'in_progress' : 'not_started');
         $booking->uploaded_by = $data['uploaded_by']
             ?? optional($request->user())->name
             ?? 'Front Desk';
@@ -123,6 +140,10 @@ class VerificationController extends Controller
                 'id_front'    => $b->id_front,
                 'id_back'     => $b->id_back,
                 'signature'   => $b->signature,
+            ],
+            'identity'            => [
+                'id_type'   => $b->id_type,
+                'id_number' => $b->id_number,
             ],
         ];
     }
