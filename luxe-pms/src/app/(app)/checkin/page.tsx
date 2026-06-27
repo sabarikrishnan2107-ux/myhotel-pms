@@ -87,7 +87,7 @@ async function persistCheckIn(bookingNo: string, roomNumber?: string, payment?: 
 // KYC captured at check-in (base64 data URLs + ID details) — persist it onto the
 // guest record so it shows on the profile and the next stay starts with ID on file.
 type KycCapture = {
-  idType: string; idNumber: string;
+  idType: string; idNumber: string; address?: string;
   idFront: string | null; idBack: string | null;
   photo: string | null; signature: string | null;
 };
@@ -99,6 +99,7 @@ async function persistKyc(guestName: string, kyc: KycCapture) {
     await apiPut(`/guests/${g.id}`, {
       idType: kyc.idType,
       idNumber: kyc.idNumber,
+      address: kyc.address ?? "",
       idFront: kyc.idFront ?? "",
       idBack: kyc.idBack ?? "",
       photo: kyc.photo ?? "",
@@ -853,6 +854,7 @@ function CheckinProcessModal({
     guest?.nationality && guest.nationality !== "India" ? "Passport" : "Aadhaar"
   );
   const [collectedIdNumber, setCollectedIdNumber] = React.useState<string>("");
+  const [collectedAddress, setCollectedAddress] = React.useState<string>("");
   const [idFrontFile, setIdFrontFile] = React.useState<string | null>(null);
   const [idBackFile, setIdBackFile] = React.useState<string | null>(null);
   const [facePhoto, setFacePhoto] = React.useState<string | null>(null);
@@ -862,7 +864,7 @@ function CheckinProcessModal({
   // ----- mobile capture sync (capture this arrival's KYC on the tablet) -----
   type SyncedBooking = {
     verification_status?: string;
-    identity?: { id_type?: string | null; id_number?: string | null };
+    identity?: { id_type?: string | null; id_number?: string | null; address?: string | null };
     documents?: { guest_photo?: string | null; id_front?: string | null; id_back?: string | null; signature?: string | null };
   };
   const [syncState, setSyncState] = React.useState<"idle" | "creating" | "waiting" | "done" | "error">("idle");
@@ -907,6 +909,7 @@ function CheckinProcessModal({
       signature: signature ?? "",
       id_type: collectedIdType,
       id_number: collectedIdNumber,
+      address: collectedAddress,
       uploaded_by: "Reception (web)",
     }).catch(() => {});
     setSyncState("waiting");
@@ -941,6 +944,7 @@ function CheckinProcessModal({
           if (d.signature) setSignature(d.signature);
           if (b.identity?.id_type) setCollectedIdType(b.identity.id_type);
           if (b.identity?.id_number) setCollectedIdNumber(b.identity.id_number);
+          if (b.identity?.address) setCollectedAddress(b.identity.address);
           setSyncState("done");
           setSyncDialogOpen(true);
         }
@@ -1056,6 +1060,7 @@ function CheckinProcessModal({
       persistKyc(reservation.guestName, {
         idType: collectedIdType,
         idNumber: collectedIdNumber,
+        address: collectedAddress,
         idFront: idFrontFile,
         idBack: idBackFile,
         photo: facePhoto,
@@ -1341,6 +1346,16 @@ function CheckinProcessModal({
                       </p>
                     )}
                   </div>
+                </div>
+
+                {/* Address — auto-filled from the scanned ID when present */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Address</Label>
+                  <Input
+                    value={collectedAddress}
+                    onChange={e => setCollectedAddress(e.target.value)}
+                    placeholder="Auto-filled from the scanned ID (or enter it)"
+                  />
                 </div>
 
                 {/* Document uploads (front + back) */}
@@ -2452,13 +2467,29 @@ function WalkInModal({
                       <p className="text-sm font-medium text-warning">No rooms available right now</p>
                     </div>
                   ) : (
-                    <Select value={roomNumber} onChange={e => setRoomNumber(e.target.value)} className="h-10">
-                      {availableRooms.map(r => (
-                        <option key={r.id} value={r.number}>
-                          Room {r.number} · {r.type} · Floor {r.floor} · {money(r.rate)}/night
-                        </option>
-                      ))}
-                    </Select>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {availableRooms.map(r => {
+                        const isActive = roomNumber === r.number;
+                        return (
+                          <button
+                            key={r.id}
+                            type="button"
+                            onClick={() => setRoomNumber(r.number)}
+                            className={cn(
+                              "rounded-md border p-3 text-left transition-colors",
+                              isActive ? "bg-brand-soft border-brand text-brand-soft-foreground" : "border-border hover:bg-surface-sunken"
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-sm font-semibold">Room {r.number}</span>
+                              {isActive && <CheckCircle2 className="h-4 w-4 text-brand shrink-0" />}
+                            </div>
+                            <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{r.type} · Floor {r.floor}</p>
+                            <p className="text-[11px] font-medium tabular mt-0.5">{money(r.rate)}/night</p>
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
 
