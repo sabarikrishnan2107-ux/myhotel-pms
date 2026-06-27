@@ -352,10 +352,10 @@ export default function BookingsPage() {
                       <div className="inline-flex gap-1 items-center">
                         {state === "incomplete" && (
                           <Link
-                            href={`/checkin?book=${r.bookingNo}`}
+                            href={`/bookings/new?resume=${r.bookingNo}`}
                             onClick={e => e.stopPropagation()}
                             className="h-8 px-2.5 rounded-md bg-success text-white hover:opacity-90 inline-flex items-center justify-center gap-1 text-xs font-medium transition-opacity"
-                            title="Finish this synced walk-in check-in"
+                            title="Resume this draft — reopens the booking form pre-filled"
                           >
                             <LogIn className="h-3.5 w-3.5" />Complete
                           </Link>
@@ -410,8 +410,8 @@ export default function BookingsPage() {
                                 </Link>
                               )}
                               {state === "incomplete" && (
-                                <Link href={`/checkin?book=${r.bookingNo}`} onClick={() => setActionMenuFor(null)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5">
-                                  <LogIn className="h-3.5 w-3.5 text-success" />Complete check-in
+                                <Link href={`/bookings/new?resume=${r.bookingNo}`} onClick={() => setActionMenuFor(null)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5">
+                                  <LogIn className="h-3.5 w-3.5 text-success" />Complete booking
                                 </Link>
                               )}
                               <Link href={`/folio/${r.bookingNo}`} onClick={() => setActionMenuFor(null)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5">

@@ -159,6 +159,7 @@ export default function BookingWizardPage() {
   const urlRoom = searchParams.get("room");
   const urlCheckin = searchParams.get("checkin") ?? searchParams.get("date");
   const urlCheckout = searchParams.get("checkout");
+  const resumeNo = searchParams.get("resume");
 
   // Default to today → today + 3 nights (local time), unless the URL overrides it.
   const isoDay = (offset = 0) => {
@@ -177,6 +178,42 @@ export default function BookingWizardPage() {
       setRoomType(room.type);   // pre-select the room's type; specific room is assigned at check-in
     }
   }, [urlRoom, rooms]);
+
+  // Resume an incomplete (mobile-sync) draft from the bookings list: rehydrate
+  // the wizard from its saved draftData + captured documents and land back on the
+  // pre-filled guest form so the user can finish + Confirm the SAME draft (no dup).
+  React.useEffect(() => {
+    if (!resumeNo) return;
+    let cancelled = false;
+    (async () => {
+      const rows = await apiGet<Array<{ id: number; bookingNo: string; status?: string; checkIn?: string; checkOut?: string; roomType?: string; ratePlan?: string; adults?: number; children?: number; source?: string; guestName?: string }>>("/bookings").catch(() => []);
+      const b = rows.find(r => r.bookingNo === resumeNo && (r.status ?? "") === "pending");
+      if (cancelled || !b) return;   // already completed / not a draft → start fresh
+      if (b.checkIn) setCheckIn(b.checkIn.slice(0, 10));
+      if (b.checkOut) setCheckOut(b.checkOut.slice(0, 10));
+      if (b.roomType) setRoomType(b.roomType);
+      if (b.ratePlan) setRatePlan(b.ratePlan);
+      if (typeof b.adults === "number") setAdults(b.adults);
+      if (typeof b.children === "number") setChildren(b.children);
+      if (b.source) setSource(b.source);
+      setSyncBooking({ id: b.id, bookingNo: b.bookingNo });
+      const full = await apiGet<{ draftData?: Partial<NewGuestData>; documents?: { guest_photo?: string | null; id_front?: string | null; id_back?: string | null; signature?: string | null } }>(`/bookings/${b.id}`).catch(() => null);
+      if (cancelled) return;
+      const dd = (full?.draftData ?? {}) as Partial<NewGuestData>;
+      const docs = full?.documents ?? {};
+      setNewGuest({
+        name: dd.name ?? b.guestName ?? "", phone: dd.phone ?? "+91 ", email: dd.email ?? "",
+        address: dd.address ?? "", nationality: dd.nationality ?? "India", dob: dd.dob ?? "",
+        gender: dd.gender ?? "Male", idType: dd.idType ?? "Aadhaar", idNumber: dd.idNumber ?? "",
+        idFront: docs.id_front ?? null, idBack: docs.id_back ?? null, photo: docs.guest_photo ?? null, signature: docs.signature ?? null,
+        company: dd.company ?? "", gst: dd.gst ?? "", vip: dd.vip ?? false, remarks: dd.remarks ?? "",
+      });
+      setGuest(null);
+      setStep1Mode("create");
+      setStep(1);
+    })();
+    return () => { cancelled = true; };
+  }, [resumeNo]);
 
   // ISO date helpers
   const addDays = (iso: string, days: number) => {
@@ -273,6 +310,14 @@ export default function BookingWizardPage() {
         total: Math.round(total),
         advance: Math.round(advance),
         balance: Math.round(total - advance),
+        // Persist the typed step-1 guest fields (NOT the base64 captures — those
+        // go to /verification) so an abandoned draft can be fully resumed later.
+        draftData: {
+          name: g.name, phone: g.phone, email: g.email, address: g.address,
+          nationality: g.nationality, dob: g.dob, gender: g.gender,
+          idType: g.idType, idNumber: g.idNumber, company: g.company,
+          gst: g.gst, vip: g.vip, remarks: g.remarks,
+        },
         // Held as a draft so it shows on the tablet for capture but NOT as a
         // confirmed arrival. The final "Confirm booking" promotes it.
         status: "pending",
@@ -496,6 +541,7 @@ export default function BookingWizardPage() {
           {step === 1 && step1Mode === "create" && (
             <div className="mt-5">
               <NewGuestForm
+                initialData={newGuest ?? undefined}
                 onCancel={() => setStep1Mode("search")}
                 onSave={(data) => {
                   setNewGuest(data);
@@ -1075,6 +1121,7 @@ export default function BookingWizardPage() {
                       balance: Math.round(total - advance),
                       status: "confirmed",     // reservation; room assigned at check-in
                       vip: false,
+                      draftData: null,         // promoted — clear the resume payload
                     };
                     // If this booking was already created via "Sync to mobile app",
                     // update it (keeping the captured documents) instead of duplicating.
