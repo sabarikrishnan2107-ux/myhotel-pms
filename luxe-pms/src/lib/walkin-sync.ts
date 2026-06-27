@@ -3,6 +3,9 @@ import type { BookingSource } from "@/lib/types";
 export interface WalkInSyncInput {
   bookingNo: string;
   guestName: string;
+  phone?: string;
+  email?: string;
+  nationality?: string;
   roomNumber: string;
   roomType: string;
   checkIn: string; // ISO
@@ -32,6 +35,8 @@ export interface WalkInSyncBooking {
   balance: number;
   paymentStatus: "unpaid" | "partial" | "paid";
   status: "pending";
+  /** Typed guest fields (not booking columns) so an abandoned walk-in can be resumed. */
+  draftData: { name: string; phone: string; email: string; nationality: string };
 }
 
 /**
@@ -62,5 +67,11 @@ export function buildWalkInSyncBooking(input: WalkInSyncInput): WalkInSyncBookin
     balance,
     paymentStatus,
     status: "pending",
+    draftData: {
+      name: input.guestName,
+      phone: input.phone ?? "",
+      email: input.email ?? "",
+      nationality: input.nationality ?? "",
+    },
   };
 }

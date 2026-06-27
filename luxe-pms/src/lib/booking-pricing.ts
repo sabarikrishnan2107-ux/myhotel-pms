@@ -30,3 +30,28 @@ export function computeBookingTotals(i: BookingTotalsInput): BookingTotals {
   const total = taxBase + tax;
   return { roomAfterDiscount, discountAmount, mealCost, tax, total };
 }
+
+export interface ExtraOccupancyInput {
+  adults: number; children: number;
+  maxAdults: number; maxChildren: number;
+  extraAdultRate: number; extraChildRate: number;
+  nights: number;
+}
+export interface ExtraOccupancy {
+  extraAdults: number; extraChildren: number;
+  adultCharge: number; childCharge: number; total: number;
+}
+
+/**
+ * Charge for guests beyond the room type's *included* occupancy. Each adult over
+ * `maxAdults` and each child over `maxChildren` needs an extra bed, billed at the
+ * type's extra-bed rate per night. Within the included max the charge is 0 — so a
+ * 2-adult booking in a room that includes 2 adults is never surcharged.
+ */
+export function extraOccupancyCharge(i: ExtraOccupancyInput): ExtraOccupancy {
+  const extraAdults = Math.max(0, n(i.adults) - n(i.maxAdults));
+  const extraChildren = Math.max(0, n(i.children) - n(i.maxChildren));
+  const adultCharge = extraAdults * n(i.extraAdultRate) * n(i.nights);
+  const childCharge = extraChildren * n(i.extraChildRate) * n(i.nights);
+  return { extraAdults, extraChildren, adultCharge, childCharge, total: adultCharge + childCharge };
+}

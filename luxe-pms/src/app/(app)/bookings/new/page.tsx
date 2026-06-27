@@ -17,6 +17,7 @@ import { apiGet, apiPost, apiPut, sendEmail } from "@/lib/api";
 import { NewGuestForm, type NewGuestData } from "@/components/guests/new-guest-form";
 import type { Guest, Room } from "@/lib/types";
 import { buildNightlyBreakdown, type Season, type Holiday } from "@/lib/room-nightly-pricing";
+import { extraOccupancyCharge } from "@/lib/booking-pricing";
 
 // Weekend uplift has no Setup field (Seasons/Holidays do) — kept as a fixed default.
 const WEEKEND_MULTIPLIER = 1.2;
@@ -65,8 +66,10 @@ export default function BookingWizardPage() {
   const [adults, setAdults] = React.useState(2);
   const [children, setChildren] = React.useState(0);
   const [roomType, setRoomType] = React.useState("");
-  // Managed room types (name → base rate) from Configuration → Room Types.
-  const [roomTypes, setRoomTypes] = React.useState<{ name: string; baseTariff: number }[]>([]);
+  // Managed room types from Configuration → Room Types. Carries included
+  // occupancy (max adults/children) + per-type extra-bed rates so the booking can
+  // surcharge only the guests beyond the included max.
+  const [roomTypes, setRoomTypes] = React.useState<{ name: string; baseTariff: number; maxAdults?: number; maxChildren?: number; extraAdultRate?: number; extraChildRate?: number }[]>([]);
   // Real guests + rooms from Postgres (seeded with mock as an offline fallback).
   const [guests, setGuests] = React.useState<Guest[]>([]);
   const [rooms, setRooms] = React.useState<Room[]>([]);
@@ -76,7 +79,7 @@ export default function BookingWizardPage() {
   const [seasons, setSeasons] = React.useState<Season[]>([]);
   const [holidays, setHolidays] = React.useState<Holiday[]>([]);
   React.useEffect(() => {
-    apiGet<{ name: string; baseTariff: number }[]>("/room-types").then(setRoomTypes).catch(() => {});
+    apiGet<{ name: string; baseTariff: number; maxAdults?: number; maxChildren?: number; extraAdultRate?: number; extraChildRate?: number }[]>("/room-types").then(setRoomTypes).catch(() => {});
     apiGet<Guest[]>("/guests").then(rows => { if (rows.length) setGuests(rows); }).catch(() => {});
     apiGet<Room[]>("/room-board").then(rows => { if (rows.length) setRooms(rows); }).catch(() => {});
     apiGet<ApiRatePlan[]>("/rate-plans").then(rows => setRatePlans(rows.map(mapRatePlan))).catch(() => {});
@@ -100,7 +103,7 @@ export default function BookingWizardPage() {
   React.useEffect(() => {
     if (roomType && roomTypes.length && !roomTypes.some(t => t.name === roomType)) setRoomType("");
   }, [roomTypes, roomType]);
-  const [breakfast, setBreakfast] = React.useState(true);
+  const [breakfast, setBreakfast] = React.useState(false);
   const [extraBed, setExtraBed] = React.useState(false);
   const [airportTransfer, setAirportTransfer] = React.useState(false);
   const [lateCheckout, setLateCheckout] = React.useState(false);
@@ -159,6 +162,7 @@ export default function BookingWizardPage() {
   const urlRoom = searchParams.get("room");
   const urlCheckin = searchParams.get("checkin") ?? searchParams.get("date");
   const urlCheckout = searchParams.get("checkout");
+  const resumeNo = searchParams.get("resume");
 
   // Default to today → today + 3 nights (local time), unless the URL overrides it.
   const isoDay = (offset = 0) => {
@@ -177,6 +181,46 @@ export default function BookingWizardPage() {
       setRoomType(room.type);   // pre-select the room's type; specific room is assigned at check-in
     }
   }, [urlRoom, rooms]);
+
+  // Resume an incomplete (mobile-sync) draft from the bookings list: rehydrate
+  // the wizard from its saved draftData + captured documents and land back on the
+  // pre-filled guest form so the user can finish + Confirm the SAME draft (no dup).
+  React.useEffect(() => {
+    if (!resumeNo) return;
+    let cancelled = false;
+    (async () => {
+      const rows = await apiGet<Array<{ id: number; bookingNo: string; status?: string; checkIn?: string; checkOut?: string; roomType?: string; ratePlan?: string; adults?: number; children?: number; source?: string; guestName?: string; draftData?: unknown }>>("/bookings").catch(() => []);
+      // A seed-derived bookingNo can repeat across sync sessions, so several
+      // pending rows may share it. Prefer the one that actually saved draftData,
+      // else the most recently created (highest id) — never just the first stale match.
+      const matches = rows.filter(r => r.bookingNo === resumeNo && (r.status ?? "") === "pending");
+      const b = matches.find(r => r.draftData) ?? [...matches].sort((a, z) => z.id - a.id)[0];
+      if (cancelled || !b) return;   // already completed / not a draft → start fresh
+      if (b.checkIn) setCheckIn(b.checkIn.slice(0, 10));
+      if (b.checkOut) setCheckOut(b.checkOut.slice(0, 10));
+      if (b.roomType) setRoomType(b.roomType);
+      if (b.ratePlan) setRatePlan(b.ratePlan);
+      if (typeof b.adults === "number") setAdults(b.adults);
+      if (typeof b.children === "number") setChildren(b.children);
+      if (b.source) setSource(b.source);
+      setSyncBooking({ id: b.id, bookingNo: b.bookingNo });
+      const full = await apiGet<{ draftData?: Partial<NewGuestData>; documents?: { guest_photo?: string | null; id_front?: string | null; id_back?: string | null; signature?: string | null } }>(`/bookings/${b.id}`).catch(() => null);
+      if (cancelled) return;
+      const dd = (full?.draftData ?? {}) as Partial<NewGuestData>;
+      const docs = full?.documents ?? {};
+      setNewGuest({
+        name: dd.name ?? b.guestName ?? "", phone: dd.phone ?? "+91 ", email: dd.email ?? "",
+        address: dd.address ?? "", nationality: dd.nationality ?? "India", dob: dd.dob ?? "",
+        gender: dd.gender ?? "Male", idType: dd.idType ?? "Aadhaar", idNumber: dd.idNumber ?? "",
+        idFront: docs.id_front ?? null, idBack: docs.id_back ?? null, photo: docs.guest_photo ?? null, signature: docs.signature ?? null,
+        company: dd.company ?? "", gst: dd.gst ?? "", vip: dd.vip ?? false, remarks: dd.remarks ?? "",
+      });
+      setGuest(null);
+      setStep1Mode("create");
+      setStep(1);
+    })();
+    return () => { cancelled = true; };
+  }, [resumeNo]);
 
   // ISO date helpers
   const addDays = (iso: string, days: number) => {
@@ -223,11 +267,26 @@ export default function BookingWizardPage() {
   const earlyFee = earlyCheckIn ? 500 : 0;        // ₹500 flat
   const lateFee = lateCheckout ? 500 : 0;         // ₹500 flat
 
+  // Auto extra-bed charge for guests beyond the room type's included occupancy.
+  // Each adult over maxAdults / child over maxChildren is billed the type's
+  // per-night extra-bed rate; within the included max this is ₹0. Unknown max
+  // (type not loaded) → Infinity so we never surcharge by accident.
+  const selectedType = roomTypes.find(t => t.name === roomType);
+  const extraOcc = extraOccupancyCharge({
+    adults, children,
+    maxAdults: selectedType?.maxAdults ?? Infinity,
+    maxChildren: selectedType?.maxChildren ?? Infinity,
+    extraAdultRate: selectedType?.extraAdultRate ?? 0,
+    extraChildRate: selectedType?.extraChildRate ?? 0,
+    nights,
+  });
+
   const extras =
     (breakfast ? 95 * adults * nights : 0) +
     (extraBed ? 900 * nights : 0) +
     (airportTransfer ? 175 : 0) +
     earlyFee + lateFee +
+    extraOcc.total +
     fbTotal;
 
   const tax = (subtotal + extras) * 0.05;
@@ -273,6 +332,14 @@ export default function BookingWizardPage() {
         total: Math.round(total),
         advance: Math.round(advance),
         balance: Math.round(total - advance),
+        // Persist the typed step-1 guest fields (NOT the base64 captures — those
+        // go to /verification) so an abandoned draft can be fully resumed later.
+        draftData: {
+          name: g.name, phone: g.phone, email: g.email, address: g.address,
+          nationality: g.nationality, dob: g.dob, gender: g.gender,
+          idType: g.idType, idNumber: g.idNumber, company: g.company,
+          gst: g.gst, vip: g.vip, remarks: g.remarks,
+        },
         // Held as a draft so it shows on the tablet for capture but NOT as a
         // confirmed arrival. The final "Confirm booking" promotes it.
         status: "pending",
@@ -280,18 +347,18 @@ export default function BookingWizardPage() {
       });
       if (!created?.id) return null;
       setSyncBooking({ id: created.id, bookingNo });
-      // Push any documents already captured/uploaded in this web form onto the
-      // booking so they show in the mobile app too (reception can replace the
-      // rest on the tablet). Fire-and-forget — sync shouldn't block on it.
-      if (g.photo || g.idFront || g.idBack || g.signature) {
-        apiPost(`/bookings/${created.id}/verification`, {
-          guest_photo: g.photo ?? "",
-          id_front: g.idFront ?? "",
-          id_back: g.idBack ?? "",
-          signature: g.signature ?? "",
-          uploaded_by: "Front Desk (web)",
-        }).catch(() => {});
-      }
+      // Seed the booking with the selected ID type (so the tablet frames the
+      // capture to that exact card) plus any documents already captured in this
+      // web form. Fire-and-forget — sync shouldn't block on it.
+      apiPost(`/bookings/${created.id}/verification`, {
+        guest_photo: g.photo ?? "",
+        id_front: g.idFront ?? "",
+        id_back: g.idBack ?? "",
+        signature: g.signature ?? "",
+        id_type: g.idType,
+        id_number: g.idNumber,
+        uploaded_by: "Front Desk (web)",
+      }).catch(() => {});
       return { bookingId: created.id, reference: bookingNo };
     } catch {
       return null;
@@ -496,6 +563,7 @@ export default function BookingWizardPage() {
           {step === 1 && step1Mode === "create" && (
             <div className="mt-5">
               <NewGuestForm
+                initialData={newGuest ?? undefined}
                 onCancel={() => setStep1Mode("search")}
                 onSave={(data) => {
                   setNewGuest(data);
@@ -987,7 +1055,10 @@ export default function BookingWizardPage() {
             {rateBreakdownOpen && halfDay && (
               <p className="ml-2 pl-2 border-l-2 border-border text-[11px] text-muted-foreground animate-in">Half-day rate · 50% of {money(rate)} base</p>
             )}
-            {extras > 0 && <Row k="Extras" v={money(extras)} muted />}
+            {extraOcc.total > 0 && (
+              <Row k={`Extra bed × ${extraOcc.extraAdults + extraOcc.extraChildren} (beyond max ${selectedType?.maxAdults ?? 0}A${selectedType?.maxChildren ? `+${selectedType.maxChildren}C` : ""})`} v={money(extraOcc.total)} muted />
+            )}
+            {extras - extraOcc.total > 0 && <Row k="Extras" v={money(extras - extraOcc.total)} muted />}
             <Row k="Tax (5%)" v={money(tax)} muted />
             <div className="border-t border-border pt-2 mt-2">
               <Row k={<span className="font-semibold">Total</span>} v={<span className="font-semibold tabular text-base">{money(total)}</span>} />
@@ -1075,6 +1146,7 @@ export default function BookingWizardPage() {
                       balance: Math.round(total - advance),
                       status: "confirmed",     // reservation; room assigned at check-in
                       vip: false,
+                      draftData: null,         // promoted — clear the resume payload
                     };
                     // If this booking was already created via "Sync to mobile app",
                     // update it (keeping the captured documents) instead of duplicating.

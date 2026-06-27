@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 interface Props {
   label?: string;
   onChange?: (dataUrl: string | null) => void;
+  /** Pre-fill the slot with an existing photo (e.g. captured on the tablet). */
+  value?: string | null;
   aspect?: "square" | "portrait" | "landscape";
   // "face" (default): show the alignment oval and crop to the detected face —
   // for guest selfies. "none": capture the full frame with no crop — for
@@ -78,13 +80,21 @@ async function faceFocusedDataUrl(
   return out.toDataURL("image/jpeg", 0.92);
 }
 
-export function PhotoCapture({ label = "Capture photo", onChange, aspect = "square", focus = "face" }: Props) {
+export function PhotoCapture({ label = "Capture photo", onChange, value, aspect = "square", focus = "face" }: Props) {
   const faceFocus = focus === "face";
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
-  const [mode, setMode] = React.useState<Mode>("idle");
+  const [mode, setMode] = React.useState<Mode>(value ? "captured" : "idle");
   const [error, setError] = React.useState("");
-  const [captured, setCaptured] = React.useState<string | null>(null);
+  const [captured, setCaptured] = React.useState<string | null>(value ?? null);
+
+  // Reflect a value supplied/changed by the parent (e.g. tablet capture).
+  React.useEffect(() => {
+    if (value) {
+      setCaptured(value);
+      setMode("captured");
+    }
+  }, [value]);
 
   const stop = React.useCallback(() => {
     streamRef.current?.getTracks().forEach(t => t.stop());

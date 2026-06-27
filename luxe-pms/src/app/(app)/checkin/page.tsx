@@ -33,9 +33,23 @@ import { PhoneInput } from "@/components/ui/phone-input";
 import { isValidPhone } from "@/lib/phone";
 import { EmailInput } from "@/components/ui/email-input";
 import { isValidEmail } from "@/lib/email";
+import { buildNightlyBreakdown, type Season, type Holiday } from "@/lib/room-nightly-pricing";
+
+// Weekend uplift has no Setup field (Seasons/Holidays do) — kept as a fixed default.
+const WEEKEND_MULTIPLIER = 1.2;
 
 // Money collected at the check-in payment step (amount in ₹, plus mode/reference).
 type CheckInPayment = { amount: number; mode: string; reference: string };
+
+// Pre-fill payload for resuming an incomplete (synced-but-unsubmitted) walk-in draft.
+type WalkInResume = {
+  bookingId: number;
+  bookingNo: string;
+  name?: string; phone?: string; email?: string; nationality?: string;
+  checkInDate?: string; nights?: number; adults?: number; children?: number;
+  roomNumber?: string; ratePlan?: string;
+  docs?: { guest_photo?: string | null; id_front?: string | null; id_back?: string | null; signature?: string | null };
+};
 
 // Mark a booking checked-in in Postgres (looked up by its bookingNo) and, when a
 // payment was collected at the desk, record it on the folio and roll the
@@ -73,7 +87,7 @@ async function persistCheckIn(bookingNo: string, roomNumber?: string, payment?: 
 // KYC captured at check-in (base64 data URLs + ID details) — persist it onto the
 // guest record so it shows on the profile and the next stay starts with ID on file.
 type KycCapture = {
-  idType: string; idNumber: string;
+  idType: string; idNumber: string; address?: string;
   idFront: string | null; idBack: string | null;
   photo: string | null; signature: string | null;
 };
@@ -85,6 +99,7 @@ async function persistKyc(guestName: string, kyc: KycCapture) {
     await apiPut(`/guests/${g.id}`, {
       idType: kyc.idType,
       idNumber: kyc.idNumber,
+      address: kyc.address ?? "",
       idFront: kyc.idFront ?? "",
       idBack: kyc.idBack ?? "",
       photo: kyc.photo ?? "",
@@ -174,6 +189,7 @@ export default function CheckinPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const bookParam = searchParams.get("book");
+  const resumeParam = searchParams.get("resume");
   const [q, setQ] = React.useState("");
   const [view, setView] = React.useState<"cards" | "list">("cards");
   const [selected, setSelected] = React.useState<Reservation | null>(null);
@@ -181,6 +197,7 @@ export default function CheckinPage() {
   const [completedIds, setCompletedIds] = React.useState<Set<string>>(new Set());
   const [toast, setToast] = React.useState<string | null>(null);
   const [walkInOpen, setWalkInOpen] = React.useState(false);
+  const [walkInInitial, setWalkInInitial] = React.useState<WalkInResume | null>(null);
   // Reservations created from express walk-in — force KYC capture in the check-in modal
   const [expressWalkInIds, setExpressWalkInIds] = React.useState<Set<string>>(new Set());
 
@@ -227,6 +244,37 @@ export default function CheckinPage() {
     })();
     return () => { cancelled = true; };
   }, [bookParam, router, arrivals]);
+
+  // "Complete" on an incomplete WALK-IN (WK…) draft in the bookings list → reopen
+  // the walk-in form pre-filled from its draftData + stay columns + captured docs,
+  // reusing the same WK record (no duplicate). BK… drafts resume in /bookings/new.
+  React.useEffect(() => {
+    if (!resumeParam || !resumeParam.startsWith("WK")) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await apiGet<Array<{ id: number; bookingNo: string; status?: string; checkIn?: string; nights?: number; adults?: number; children?: number; roomNumber?: string; ratePlan?: string; guestName?: string; draftData?: unknown }>>("/bookings");
+        const matches = rows.filter(r => r.bookingNo === resumeParam && (r.status ?? "") === "pending");
+        const b = matches.find(r => r.draftData) ?? [...matches].sort((a, z) => z.id - a.id)[0];
+        if (cancelled || !b) return;
+        const full = await apiGet<{ draftData?: { name?: string; phone?: string; email?: string; nationality?: string }; documents?: WalkInResume["docs"] }>(`/bookings/${b.id}`).catch(() => null);
+        if (cancelled) return;
+        const dd = full?.draftData ?? {};
+        setWalkInInitial({
+          bookingId: b.id, bookingNo: b.bookingNo,
+          name: dd.name ?? b.guestName ?? "", phone: dd.phone ?? "", email: dd.email ?? "", nationality: dd.nationality ?? "India",
+          checkInDate: (b.checkIn ?? "").slice(0, 10) || undefined,
+          nights: b.nights, adults: b.adults, children: b.children,
+          roomNumber: b.roomNumber && b.roomNumber !== "Unassigned" ? b.roomNumber : undefined,
+          ratePlan: b.ratePlan,
+          docs: full?.documents ?? undefined,
+        });
+        setWalkInOpen(true);
+        router.replace("/checkin");   // clear the query so it doesn't re-open on close
+      } catch { /* offline — nothing to open */ }
+    })();
+    return () => { cancelled = true; };
+  }, [resumeParam, router]);
 
   // Resolve a Guest record (from GUESTS or synthesized) for the selected reservation
   const selectedGuest: Guest | null = React.useMemo(() => {
@@ -290,11 +338,13 @@ export default function CheckinPage() {
   if (walkInOpen) {
     return (
       <WalkInModal
-        onClose={() => setWalkInOpen(false)}
+        initialData={walkInInitial}
+        onClose={() => { setWalkInOpen(false); setWalkInInitial(null); }}
         onStart={(reservation) => {
           setExpressWalkInIds(s => new Set([...s, reservation.id]));
           setCheckingIn(reservation);
           setWalkInOpen(false);
+          setWalkInInitial(null);
         }}
       />
     );
@@ -804,11 +854,106 @@ function CheckinProcessModal({
     guest?.nationality && guest.nationality !== "India" ? "Passport" : "Aadhaar"
   );
   const [collectedIdNumber, setCollectedIdNumber] = React.useState<string>("");
+  const [collectedAddress, setCollectedAddress] = React.useState<string>("");
   const [idFrontFile, setIdFrontFile] = React.useState<string | null>(null);
   const [idBackFile, setIdBackFile] = React.useState<string | null>(null);
   const [facePhoto, setFacePhoto] = React.useState<string | null>(null);
   const [signature, setSignature] = React.useState<string | null>(null);
   const [kycConsent, setKycConsent] = React.useState(false);
+
+  // ----- mobile capture sync (capture this arrival's KYC on the tablet) -----
+  type SyncedBooking = {
+    verification_status?: string;
+    identity?: { id_type?: string | null; id_number?: string | null; address?: string | null };
+    documents?: { guest_photo?: string | null; id_front?: string | null; id_back?: string | null; signature?: string | null };
+  };
+  const [syncState, setSyncState] = React.useState<"idle" | "creating" | "waiting" | "done" | "error">("idle");
+  const [syncBookingId, setSyncBookingId] = React.useState<number | null>(null);
+  const [syncDocs, setSyncDocs] = React.useState<SyncedBooking["documents"]>(undefined);
+  const [syncErr, setSyncErr] = React.useState<string | null>(null);
+  const [syncDialogOpen, setSyncDialogOpen] = React.useState(false);
+
+  // The arrival already exists as a booking — send it to the tablet for capture,
+  // then poll until staff upload the face photo, ID scans and signature.
+  const startSync = async () => {
+    if (syncState === "creating" || syncState === "waiting" || syncState === "done") {
+      setSyncDialogOpen(true);
+      return;
+    }
+    setSyncErr(null);
+    setSyncDocs(undefined);
+    setSyncDialogOpen(true);
+    setSyncState("creating");
+    // Resolve the numeric booking id. reservation.id is the DB id for arrivals;
+    // other entry points carry a synthetic id, so fall back to a bookingNo lookup.
+    let bookingId = Number(reservation.id);
+    if (!bookingId || Number.isNaN(bookingId)) {
+      try {
+        const list = await apiGet<{ id: number; bookingNo: string }[]>("/bookings");
+        bookingId = list.find(b => b.bookingNo === reservation.bookingNo)?.id ?? 0;
+      } catch { /* handled below */ }
+    }
+    if (!bookingId) {
+      setSyncErr("Couldn't find this booking on the server. Try again.");
+      setSyncState("error");
+      return;
+    }
+    setSyncBookingId(bookingId);
+    // Seed the booking with the selected ID type (so the tablet frames the
+    // capture to that exact card) plus anything already captured here. Fire-and
+    // -forget — the sync shouldn't block on it.
+    apiPost(`/bookings/${bookingId}/verification`, {
+      guest_photo: facePhoto ?? "",
+      id_front: idFrontFile ?? "",
+      id_back: idBackFile ?? "",
+      signature: signature ?? "",
+      id_type: collectedIdType,
+      id_number: collectedIdNumber,
+      address: collectedAddress,
+      uploaded_by: "Reception (web)",
+    }).catch(() => {});
+    setSyncState("waiting");
+  };
+
+  const cancelSync = () => {
+    setSyncState("idle");
+    setSyncBookingId(null);
+    setSyncDocs(undefined);
+    setSyncErr(null);
+    setSyncDialogOpen(false);
+  };
+
+  // While waiting, poll the booking until the tablet uploads the documents, then
+  // drop them straight into the KYC slots below.
+  React.useEffect(() => {
+    if (syncState !== "waiting" || !syncBookingId) return;
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const b = await apiGet<SyncedBooking>(`/bookings/${syncBookingId}`);
+        if (stopped) return;
+        setSyncDocs(b?.documents);
+        const d = b?.documents;
+        // Done as soon as all four documents are present — don't depend on the
+        // backend's verification_status string (which can lag at "in_progress").
+        const allPresent = !!(d?.guest_photo && d?.id_front && d?.id_back && d?.signature);
+        if (d && (allPresent || b?.verification_status === "synced")) {
+          if (d.guest_photo) setFacePhoto(d.guest_photo);
+          if (d.id_front) setIdFrontFile(d.id_front);
+          if (d.id_back) setIdBackFile(d.id_back);
+          if (d.signature) setSignature(d.signature);
+          if (b.identity?.id_type) setCollectedIdType(b.identity.id_type);
+          if (b.identity?.id_number) setCollectedIdNumber(b.identity.id_number);
+          if (b.identity?.address) setCollectedAddress(b.identity.address);
+          setSyncState("done");
+          setSyncDialogOpen(true);
+        }
+      } catch { /* keep polling — transient network error */ }
+    };
+    poll();
+    const timer = setInterval(poll, 3000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [syncState, syncBookingId]);
 
   const isForeign = guest?.nationality !== undefined && guest.nationality !== "India";
   // Aadhaar / Voter ID / Driving License are two-sided; Passport / PAN are one-side
@@ -915,6 +1060,7 @@ function CheckinProcessModal({
       persistKyc(reservation.guestName, {
         idType: collectedIdType,
         idNumber: collectedIdNumber,
+        address: collectedAddress,
         idFront: idFrontFile,
         idBack: idBackFile,
         photo: facePhoto,
@@ -1128,6 +1274,37 @@ function CheckinProcessModal({
                   </div>
                 </div>
 
+                {/* Capture on the mobile app — fills the slots below */}
+                {syncState !== "done" ? (
+                  <div className="rounded-md border border-border bg-surface-sunken/40 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        <span className="h-7 w-7 rounded-md bg-brand-soft text-brand-soft-foreground flex items-center justify-center shrink-0">
+                          <Smartphone className="h-4 w-4" />
+                        </span>
+                        <div>
+                          <p className="text-sm font-medium">Capture on the mobile app</p>
+                          <p className="text-xs text-muted-foreground">Send this arrival to the tablet — staff capture the face photo, ID &amp; signature there. They drop straight into the slots below.</p>
+                          {syncErr && <p className="text-[11px] text-danger mt-1">{syncErr}</p>}
+                        </div>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" onClick={startSync}>
+                        <Smartphone className="h-4 w-4" />
+                        {syncState === "creating" || syncState === "waiting" ? "View sync status" : "Sync to mobile app"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-success/40 bg-success-soft/30 p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm">
+                      <CheckCircle2 className="h-5 w-5 text-success" />
+                      <span className="font-medium">Captured from tablet</span>
+                      <span className="text-muted-foreground">· filled in below</span>
+                    </div>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setSyncDialogOpen(true)}>View</Button>
+                  </div>
+                )}
+
                 {/* ID type + number */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
@@ -1171,6 +1348,16 @@ function CheckinProcessModal({
                   </div>
                 </div>
 
+                {/* Address — auto-filled from the scanned ID when present */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Address</Label>
+                  <Input
+                    value={collectedAddress}
+                    onChange={e => setCollectedAddress(e.target.value)}
+                    placeholder="Auto-filled from the scanned ID (or enter it)"
+                  />
+                </div>
+
                 {/* Document uploads (front + back) */}
                 <div className="grid grid-cols-2 gap-3">
                   <KYCUploadSlot
@@ -1203,14 +1390,14 @@ function CheckinProcessModal({
                       <Camera className="h-3.5 w-3.5 text-muted-foreground" />
                       Live face photo <span className="text-danger">*</span>
                     </Label>
-                    <PhotoCapture label="Live face photo" aspect="square" onChange={setFacePhoto} />
+                    <PhotoCapture label="Live face photo" aspect="square" value={facePhoto} onChange={setFacePhoto} />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs inline-flex items-center gap-1.5">
                       <Pen className="h-3.5 w-3.5 text-muted-foreground" />
                       Digital signature <span className="text-danger">*</span>
                     </Label>
-                    <SignaturePad height={150} onChange={setSignature} />
+                    <SignaturePad height={150} value={signature} onChange={setSignature} />
                   </div>
                 </div>
 
@@ -1577,6 +1764,18 @@ function CheckinProcessModal({
           </div>
         </Card>
       </div>
+
+      {syncDialogOpen && syncState !== "idle" && (
+        <MobileSyncDialog
+          state={syncState}
+          reference={reservation.bookingNo}
+          docs={syncDocs}
+          errorMessage={syncErr}
+          onCancel={cancelSync}
+          onHide={() => setSyncDialogOpen(false)}
+          onDone={() => setSyncDialogOpen(false)}
+        />
+      )}
     </>
   );
 }
@@ -1697,29 +1896,82 @@ type AdvancePayment = {
 };
 
 function WalkInModal({
-  onClose, onStart,
+  onClose, onStart, initialData,
 }: {
   onClose: () => void;
   onStart: (r: Reservation) => void;
+  initialData?: WalkInResume | null;
 }) {
-  // ----- guest basics -----
-  const [name, setName] = React.useState("");
-  const [phone, setPhone] = React.useState("");
-  const [email, setEmail] = React.useState("");
-  const [nationality, setNationality] = React.useState("India");
+  // ----- guest basics (seeded from a resumed draft when present) -----
+  const [name, setName] = React.useState(initialData?.name ?? "");
+  const [phone, setPhone] = React.useState(initialData?.phone ?? "");
+  const [email, setEmail] = React.useState(initialData?.email ?? "");
+  const [nationality, setNationality] = React.useState(initialData?.nationality ?? "India");
+
+  // ----- existing-guest lookup (mirrors the New Booking wizard's step 1) -----
+  // A resumed draft already has its fields loaded → start in "create" (review) mode.
+  const guests = useGuests();
+  const [guestMode, setGuestMode] = React.useState<"search" | "create">(initialData ? "create" : "search");
+  const [guestSearch, setGuestSearch] = React.useState("");
+  const filteredGuests = guests
+    .filter(g => `${g.name} ${g.phone} ${g.email}`.toLowerCase().includes(guestSearch.toLowerCase()))
+    .slice(0, 5);
+  // Loaded an existing guest into the fields → show a subtle review note in create mode.
+  const [loadedFromExisting, setLoadedFromExisting] = React.useState(false);
 
   // ----- stay -----
   const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local TZ — blocks past dates
-  const [checkInDate, setCheckInDate] = React.useState(today);
-  const [nights, setNights] = React.useState(1);
-  const [adults, setAdults] = React.useState(1);
-  const [children, setChildren] = React.useState(0);
+  // ISO date helper (UTC-safe day math, matches the booking wizard).
+  const addDays = (iso: string, days: number) => {
+    const d = new Date(iso);
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
+  const [checkInDate, setCheckInDate] = React.useState(initialData?.checkInDate ?? today);
+  // Check-out is the source of truth for nights now; seed it from the resumed
+  // draft's nights (default 1) so a resume still lands on the right range.
+  const [checkOutDate, setCheckOutDate] = React.useState(
+    addDays(initialData?.checkInDate ?? today, Math.max(1, initialData?.nights ?? 1)),
+  );
+  // Nights derived from the date range (>= 1), like booking's "Stay duration".
+  const nights = Math.max(1, Math.round((new Date(checkOutDate).getTime() - new Date(checkInDate).getTime()) / 86400000));
+  const minCheckout = addDays(checkInDate, 1); // checkout must be at least 1 day after check-in
+  // Auto-push checkout forward if check-in moves on/past it.
+  const handleCheckInChange = (val: string) => {
+    setCheckInDate(val);
+    if (checkOutDate <= val) setCheckOutDate(addDays(val, Math.max(1, nights)));
+  };
+  const handleCheckOutChange = (val: string) => {
+    if (val <= checkInDate) setCheckOutDate(addDays(checkInDate, 1));
+    else setCheckOutDate(val);
+  };
+  const [adults, setAdults] = React.useState(initialData?.adults ?? 1);
+  const [children, setChildren] = React.useState(initialData?.children ?? 0);
+
+  // ----- seasonal / holiday per-day pricing (configured in Setup) -----
+  const [seasons, setSeasons] = React.useState<Season[]>([]);
+  const [holidays, setHolidays] = React.useState<Holiday[]>([]);
+  React.useEffect(() => {
+    apiGet<Array<Season & { active?: boolean }>>("/seasons")
+      .then(r => Array.isArray(r) && setSeasons(r.filter(s => s.active !== false).map(s => ({ from: s.from, to: s.to, multiplier: Number(s.multiplier) || 1 }))))
+      .catch(() => {});
+    apiGet<Array<{ date: string; surchargePct?: number }>>("/holidays")
+      .then(r => Array.isArray(r) && setHolidays(r.map(h => ({ date: h.date, surchargePct: Number(h.surchargePct) || 0 }))))
+      .catch(() => {});
+  }, []);
 
   // ----- room -----
   const rooms = useRooms();
   const availableRooms = React.useMemo(() => rooms.filter(r => r.status === "available"), [rooms]);
-  const [roomNumber, setRoomNumber] = React.useState(availableRooms[0]?.number ?? "");
+  const [roomNumber, setRoomNumber] = React.useState(initialData?.roomNumber ?? availableRooms[0]?.number ?? "");
   const room = availableRooms.find(r => r.number === roomNumber);
+
+  // ----- per-day room price breakdown (seasonal / weekend / holiday) -----
+  // Drives roomSubtotal so the walk-in matches booking's nightly pricing.
+  const breakdown = React.useMemo(
+    () => buildNightlyBreakdown(checkInDate, nights, room?.rate ?? 0, seasons, holidays, WEEKEND_MULTIPLIER),
+    [checkInDate, nights, room?.rate, seasons, holidays],
+  );
 
   // ----- stay add-ons -----
   const [earlyCheckIn, setEarlyCheckIn] = React.useState(false);
@@ -1731,7 +1983,7 @@ function WalkInModal({
   const setFb = (id: string, n: number) => setFbAddons(a => ({ ...a, [id]: Math.max(0, n) }));
 
   // ----- rate plan (drives F&B inclusions) -----
-  const [ratePlanCode, setRatePlanCode] = React.useState<RatePlanCode>("EP");
+  const [ratePlanCode, setRatePlanCode] = React.useState<RatePlanCode>((initialData?.ratePlan as RatePlanCode) ?? "EP");
   const ratePlan = RATE_PLANS.find(r => r.code === ratePlanCode)!;
 
   // Applying a rate plan: each included meal = 1 per pax (adults+children) per night
@@ -1779,14 +2031,26 @@ function WalkInModal({
       signature?: string | null;
     };
   };
-  const [syncState, setSyncState] = React.useState<"idle" | "creating" | "waiting" | "done" | "error">("idle");
-  const [syncBooking, setSyncBooking] = React.useState<{ id: number; bookingNo: string } | null>(null);
-  const [syncDocs, setSyncDocs] = React.useState<SyncedBooking["documents"]>(undefined);
+  const [syncState, setSyncState] = React.useState<"idle" | "creating" | "waiting" | "done" | "error">(initialData?.docs ? "done" : "idle");
+  const [syncBooking, setSyncBooking] = React.useState<{ id: number; bookingNo: string } | null>(initialData ? { id: initialData.bookingId, bookingNo: initialData.bookingNo } : null);
+  const [syncDocs, setSyncDocs] = React.useState<SyncedBooking["documents"]>(initialData?.docs ?? undefined);
   const [syncErr, setSyncErr] = React.useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = React.useState(false);
 
+  // ----- wizard step (1–6), booking-wizard style -----
+  const [step, setStep] = React.useState(1);
+  const STEPS = [
+    { n: 1, title: "Guest", icon: User, desc: "Name, contact & captures" },
+    { n: 2, title: "Dates", icon: Calendar, desc: "Check-in & nights" },
+    { n: 3, title: "Pax & Room", icon: BedIcon, desc: "Adults, children & room" },
+    { n: 4, title: "Rate & Add-ons", icon: UtensilsCrossed, desc: "Plan, stay extras & F&B" },
+    { n: 5, title: "Payment", icon: CreditCard, desc: "Advance & mode" },
+    { n: 6, title: "Confirm", icon: CheckCircle2, desc: "Review & start" },
+  ];
+
   // ----- pricing -----
-  const roomSubtotal = (room?.rate ?? 0) * nights;
+  // Per-day seasonal/weekend/holiday total (was a flat rate × nights).
+  const roomSubtotal = breakdown.total;
   const earlyFee = earlyCheckIn ? 500 : 0;     // ₹500 flat
   const lateFee = lateCheckOut ? 500 : 0;      // ₹500 flat
   const extraBedFee = extraBed ? 900 * nights : 0;
@@ -1822,9 +2086,19 @@ function WalkInModal({
     (pay.mode === "Online" && !!pay.txnId);
   const valid = name.trim() !== "" && isValidPhone(phone) && isValidEmail(email) && roomNumber !== "" && adults >= 1 && nights >= 1 && advanceModeValid;
 
+  // ----- per-step gating: Next is disabled until the current step's required
+  // fields are valid. The final Start stays gated on the full `valid` above. -----
+  const canNext = () => {
+    if (step === 1) return name.trim() !== "" && isValidPhone(phone) && isValidEmail(email);
+    if (step === 2) return nights >= 1;
+    if (step === 3) return roomNumber !== "" && adults >= 1;
+    if (step === 5) return advanceModeValid;
+    return true;
+  };
+
   // ----- generated booking number -----
   const seed = name.length + phone.length + nights + (room?.rate ?? 0);
-  const bookingNo = `WK${100000 + (seed % 9000)}`;
+  const bookingNo = syncBooking?.bookingNo ?? `WK${100000 + (seed % 9000)}`;
   const receiptNo = `ADV-2026-${bookingNo.slice(2)}`;
 
   const start = () => {
@@ -1883,6 +2157,7 @@ function WalkInModal({
     const payload = buildWalkInSyncBooking({
       bookingNo,
       guestName: name.trim(),
+      phone, email, nationality,   // saved as draftData so an abandoned walk-in resumes fully
       roomNumber: room.number,
       roomType: room.type,
       checkIn: ci.toISOString(),
@@ -1941,48 +2216,284 @@ function WalkInModal({
 
   return (
     <>
-      <div className="p-4 sm:p-6 lg:p-8">
-        <Card className="p-0 animate-in">
-          {/* Header */}
-          <div className="px-5 py-4 bg-brand text-brand-foreground flex items-center gap-3 rounded-t-lg">
-            <span className="h-10 w-10 rounded-md bg-brand-foreground/15 inline-flex items-center justify-center shrink-0">
-              <Zap className="h-5 w-5" />
-            </span>
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold">Express Walk-in Check-in</h3>
-              <p className="text-xs text-brand-foreground/75">Booking ref · <span className="font-mono tabular">{bookingNo}</span></p>
-            </div>
-            <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-brand-foreground/15 inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
+      <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto">
+        {/* Page header */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-2xl font-display font-medium tracking-tight inline-flex items-center gap-2">
+              Express Walk-in Check-in
+              <Badge tone="brand"><Zap className="h-3 w-3" />Walk-in</Badge>
+            </h1>
+            <p className="text-muted-foreground text-sm mt-1">
+              Step {step} of {STEPS.length} · {STEPS[step - 1].desc} · ref <span className="font-mono tabular">{bookingNo}</span>
+            </p>
           </div>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] items-start">
-            {/* LEFT — form */}
-            <div className="px-5 py-4 space-y-5">
-              {/* Guest basics */}
-              <WalkInSection icon={User} label="Guest basics">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Stepper */}
+        <Card className="p-4 mb-5">
+          <div className="flex items-center justify-between overflow-x-auto">
+            {STEPS.map((s, idx) => {
+              const completed = step > s.n;
+              const active = step === s.n;
+              const Icon = s.icon;
+              return (
+                <React.Fragment key={s.n}>
+                  <button
+                    type="button"
+                    onClick={() => completed && setStep(s.n)}
+                    className={cn(
+                      "flex flex-col items-center gap-1.5 min-w-[80px] transition-opacity",
+                      completed ? "cursor-pointer" : "cursor-default",
+                      !completed && !active && "opacity-60"
+                    )}
+                  >
+                    <div className={cn(
+                      "h-9 w-9 rounded-full flex items-center justify-center transition-colors",
+                      completed ? "bg-success text-white" :
+                      active ? "bg-brand text-brand-foreground" :
+                      "bg-surface-sunken text-muted-foreground border border-border"
+                    )}>
+                      {completed ? <CheckCircle2 className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+                    </div>
+                    <span className={cn("text-[11px] font-medium whitespace-nowrap", active && "text-foreground", !active && "text-muted-foreground")}>
+                      {s.title}
+                    </span>
+                  </button>
+                  {idx < STEPS.length - 1 && (
+                    <div className={cn("flex-1 h-px mx-2", completed ? "bg-success" : "bg-border")} />
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </Card>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          {/* Step content */}
+          <Card className="lg:col-span-2 p-6 min-h-[400px]">
+            {/* STEP 1 — Guest */}
+            {step === 1 && (
+              <div className="space-y-5">
+                {/* Search Existing | Create New Guest toggle */}
+                <div className="inline-flex rounded-md border border-border bg-surface-sunken p-0.5 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => setGuestMode("search")}
+                    className={cn(
+                      "flex-1 sm:flex-initial h-9 px-4 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2 justify-center",
+                      guestMode === "search" ? "bg-surface text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <Search className="h-3.5 w-3.5" />Search Existing
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setGuestMode("create"); setLoadedFromExisting(false); }}
+                    className={cn(
+                      "flex-1 sm:flex-initial h-9 px-4 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2 justify-center",
+                      guestMode === "create" ? "bg-surface text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <Plus className="h-3.5 w-3.5" />Create New Guest
+                  </button>
+                </div>
+
+                {/* SEARCH MODE — find a returning guest and pre-fill their details */}
+                {guestMode === "search" && (
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Search existing guest</Label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-subtle-foreground" />
+                        <Input
+                          placeholder="Phone, name, email, or ID number…"
+                          value={guestSearch}
+                          onChange={e => setGuestSearch(e.target.value)}
+                          className="pl-9 h-10"
+                          autoFocus
+                        />
+                      </div>
+                    </div>
+
+                    {guestSearch && (
+                      <div className="space-y-2">
+                        {filteredGuests.length === 0 ? (
+                          <div className="rounded-md border border-dashed border-border p-4 text-center">
+                            <p className="text-sm text-muted-foreground mb-2">No matches found for &ldquo;{guestSearch}&rdquo;</p>
+                            <Button size="sm" onClick={() => { setGuestMode("create"); setLoadedFromExisting(false); }}>
+                              <Plus className="h-3.5 w-3.5" />Create new guest
+                            </Button>
+                          </div>
+                        ) : filteredGuests.map(g => (
+                          <button
+                            key={g.id}
+                            type="button"
+                            onClick={() => {
+                              setName(g.name ?? "");
+                              setPhone(g.phone ?? "");
+                              setEmail(g.email ?? "");
+                              setNationality(g.nationality ?? "India");
+                              setLoadedFromExisting(true);
+                              setGuestMode("create");
+                            }}
+                            className="w-full flex items-center gap-3 p-3 rounded-md border border-border text-left transition-colors hover:bg-surface-sunken"
+                          >
+                            <Avatar name={g.name} size={36} vip={g.vip} />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm truncate">
+                                {g.name} {g.vip && <Badge tone="brand" className="ml-1">VIP</Badge>}
+                              </p>
+                              <p className="text-xs text-muted-foreground truncate">{g.phone}{g.nationality ? ` · ${g.nationality}` : ""}</p>
+                            </div>
+                            {g.idNumber && (
+                              <Badge tone="success"><IdCard className="h-3 w-3" />ID on file</Badge>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <p className="text-[11px] text-muted-foreground pt-2 border-t border-border">
+                      First-time visitor? Switch to the{" "}
+                      <button type="button" onClick={() => { setGuestMode("create"); setLoadedFromExisting(false); }} className="text-foreground font-medium hover:underline">Create New Guest</button>{" "}
+                      tab above to enter their details.
+                    </p>
+                  </div>
+                )}
+
+                {/* CREATE MODE — enter / review the guest fields (also used after a prefill) */}
+                {guestMode === "create" && (
+                  <div className="space-y-3">
+                    {loadedFromExisting && (
+                      <div className="rounded-md bg-success-soft/30 border border-success/30 p-2.5 text-xs inline-flex items-center gap-2">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+                        <span>Loaded from an existing guest — review &amp; edit below.</span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Full name <span className="text-danger">*</span></Label>
+                        <Input value={name} onChange={e => setName(e.target.value)} placeholder="Full name as on ID" className="h-10" autoFocus />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Phone <span className="text-danger">*</span></Label>
+                        <PhoneInput value={phone} onChange={v => setPhone(v)} size="md" invalid={phone !== "" && !isValidPhone(phone)} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Email <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                        <EmailInput value={email} onChange={setEmail} className="h-10" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs"><Globe className="h-3 w-3 inline mr-1" />Nationality</Label>
+                        <Select value={nationality} onChange={e => setNationality(e.target.value)} className="h-10">
+                          <option>India</option><option>UAE</option><option>USA</option><option>UK</option>
+                          <option>Russia</option><option>Singapore</option><option>Japan</option><option>Other</option>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* STEP 2 — Dates */}
+            {step === 2 && (
+              <div className="space-y-5">
+                <p className="text-sm text-muted-foreground">One night = 12:00 PM check-in → next-day 11:00 AM checkout</p>
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Full name <span className="text-danger">*</span></Label>
-                    <Input value={name} onChange={e => setName(e.target.value)} placeholder="Full name as on ID" className="h-10" autoFocus />
+                    <Label className="text-xs">Check-in</Label>
+                    <Input type="date" value={checkInDate} min={today} onChange={e => handleCheckInChange(e.target.value)} className="h-10 tabular" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Phone <span className="text-danger">*</span></Label>
-                    <PhoneInput value={phone} onChange={v => setPhone(v)} size="md" invalid={phone !== "" && !isValidPhone(phone)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Email <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                    <EmailInput value={email} onChange={setEmail} className="h-10" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs"><Globe className="h-3 w-3 inline mr-1" />Nationality</Label>
-                    <Select value={nationality} onChange={e => setNationality(e.target.value)} className="h-10">
-                      <option>India</option><option>UAE</option><option>USA</option><option>UK</option>
-                      <option>Russia</option><option>Singapore</option><option>Japan</option><option>Other</option>
-                    </Select>
+                    <Label className="text-xs">Check-out</Label>
+                    <Input type="date" value={checkOutDate} min={minCheckout > today ? minCheckout : today} onChange={e => handleCheckOutChange(e.target.value)} className="h-10 tabular" />
+                    <p className="text-[11px] text-muted-foreground">Must be after check-in · auto-adjusts if you change dates</p>
                   </div>
                 </div>
 
-                {/* Capture on the mobile app */}
+                <div className="rounded-md bg-brand-soft text-brand-soft-foreground p-4 flex items-center gap-3">
+                  <Calendar className="h-5 w-5" />
+                  <div className="text-sm">
+                    <span className="font-semibold">{nights} {nights === 1 ? "night" : "nights"}</span> · {new Date(checkInDate).toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })} → {new Date(checkOutDate).toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })}
+                  </div>
+                </div>
+
+                {/* Day-type breakdown — weekday vs weekend vs holiday */}
+                <div className="rounded-md border border-border p-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-muted-foreground uppercase tracking-wider">Rate by day type</span>
+                    <span className="text-muted-foreground">{breakdown.counts.weekday}W · {breakdown.counts.weekend}WE · {breakdown.counts.holiday}H</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {breakdown.lines.map((ln, i) => {
+                      const tone = ln.kind === "holiday" ? "bg-warning-soft text-warning border-warning/30"
+                                : ln.kind === "weekend" ? "bg-accent-soft text-accent border-accent/30"
+                                : "bg-success-soft text-success border-success/30";
+                      return (
+                        <span key={i} className={cn("inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-medium", tone)}>
+                          <span className="font-semibold tabular">{ln.date.toLocaleDateString(undefined, { day: "2-digit", month: "short" })}</span>
+                          <span className="opacity-70">·</span>
+                          <span className="tabular">{money(ln.rate)}</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-2 flex items-center gap-3">
+                    <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" />Weekday</span>
+                    <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-accent" />Weekend +20%</span>
+                    <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" />Holiday +30%</span>
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3 — Pax & Room */}
+            {step === 3 && (
+              <div className="space-y-5">
+                <div className="grid grid-cols-2 gap-4">
+                  <NumStepper label="Adults" value={adults} onChange={setAdults} min={1} />
+                  <NumStepper label="Children" value={children} onChange={setChildren} min={0} />
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 inline-flex items-center gap-1.5">
+                    <BedIcon className="h-3 w-3" />Room ({availableRooms.length} available)
+                  </p>
+                  {availableRooms.length === 0 ? (
+                    <div className="rounded-md border border-dashed border-warning/40 bg-warning-soft/40 p-4 text-center">
+                      <AlertCircle className="h-5 w-5 text-warning mx-auto mb-1" />
+                      <p className="text-sm font-medium text-warning">No rooms available right now</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {availableRooms.map(r => {
+                        const isActive = roomNumber === r.number;
+                        return (
+                          <button
+                            key={r.id}
+                            type="button"
+                            onClick={() => setRoomNumber(r.number)}
+                            className={cn(
+                              "rounded-md border p-3 text-left transition-colors",
+                              isActive ? "bg-brand-soft border-brand text-brand-soft-foreground" : "border-border hover:bg-surface-sunken"
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-sm font-semibold">Room {r.number}</span>
+                              {isActive && <CheckCircle2 className="h-4 w-4 text-brand shrink-0" />}
+                            </div>
+                            <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{r.type} · Floor {r.floor}</p>
+                            <p className="text-[11px] font-medium tabular mt-0.5">{money(r.rate)}/night</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Capture on the mobile app — after a room is picked (sync needs the room) */}
                 {syncState !== "done" ? (
                   <div className="mt-3 rounded-md border border-border bg-surface-sunken/40 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2026,139 +2537,125 @@ function WalkInModal({
                     </div>
                   </div>
                 )}
-              </WalkInSection>
+              </div>
+            )}
 
-              {/* Stay */}
-              <WalkInSection icon={Calendar} label="Stay">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Check-in</Label>
-                    <Input type="date" value={checkInDate} min={today} onChange={e => setCheckInDate(e.target.value)} className="h-10 tabular" />
-                  </div>
-                  <NumStepper label="Nights" value={nights} onChange={setNights} min={1} />
-                  <NumStepper label="Adults" value={adults} onChange={setAdults} min={1} />
-                  <NumStepper label="Children" value={children} onChange={setChildren} min={0} />
-                </div>
-              </WalkInSection>
-
-              {/* Room */}
-              <WalkInSection icon={BedIcon} label={`Room (${availableRooms.length} available)`}>
-                {availableRooms.length === 0 ? (
-                  <div className="rounded-md border border-dashed border-warning/40 bg-warning-soft/40 p-4 text-center">
-                    <AlertCircle className="h-5 w-5 text-warning mx-auto mb-1" />
-                    <p className="text-sm font-medium text-warning">No rooms available right now</p>
-                  </div>
-                ) : (
-                  <Select value={roomNumber} onChange={e => setRoomNumber(e.target.value)} className="h-10">
-                    {availableRooms.map(r => (
-                      <option key={r.id} value={r.number}>
-                        Room {r.number} · {r.type} · Floor {r.floor} · {money(r.rate)}/night
-                      </option>
-                    ))}
-                  </Select>
-                )}
-              </WalkInSection>
-
-              {/* Stay add-ons */}
-              <WalkInSection icon={Sparkles} label="Stay add-ons">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <ToggleAddon
-                    icon={CalendarPlus} label="Early check-in"
-                    hint="Before 12 PM · subject to availability"
-                    priceText={`+ ${money(500)} flat`}
-                    on={earlyCheckIn} onChange={setEarlyCheckIn}
-                  />
-                  <ToggleAddon
-                    icon={CalendarMinus} label="Late check-out"
-                    hint="Until 4 PM · HK reschedules"
-                    priceText={`+ ${money(500)} flat`}
-                    on={lateCheckOut} onChange={setLateCheckOut}
-                  />
-                  <ToggleAddon
-                    icon={Bed} label="Extra bed"
-                    hint="Incl. breakfast"
-                    priceText={`+ ${money(900)} / night`}
-                    on={extraBed} onChange={setExtraBed}
-                  />
-                </div>
-              </WalkInSection>
-
-              {/* Rate Plan — drives meals */}
-              <WalkInSection icon={UtensilsCrossed} label="Rate plan (sets included meals)">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {RATE_PLANS.map(p => {
-                    const isActive = ratePlanCode === p.code;
-                    return (
-                      <button
-                        key={p.code}
-                        type="button"
-                        onClick={() => applyRatePlan(p.code)}
-                        className={cn(
-                          "rounded-md border-2 p-3 text-left transition-colors flex flex-col gap-1",
-                          isActive ? "border-brand bg-brand-soft/30" : "border-border hover:bg-surface-sunken"
-                        )}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className={cn(
-                            "h-7 px-2 rounded-md inline-flex items-center justify-center text-[11px] font-bold tracking-wider",
-                            isActive ? "bg-brand text-brand-foreground" : "bg-surface-sunken text-muted-foreground"
-                          )}>{p.code}</span>
-                          {p.surchargePerNight > 0 && (
-                            <span className="text-[10px] text-muted-foreground tabular">+{money(p.surchargePerNight)}/pax/N</span>
+            {/* STEP 4 — Rate & Add-ons */}
+            {step === 4 && (
+              <div className="space-y-5">
+                {/* Rate Plan — drives meals */}
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 inline-flex items-center gap-1.5">
+                    <UtensilsCrossed className="h-3 w-3" />Rate plan (sets included meals)
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {RATE_PLANS.map(p => {
+                      const isActive = ratePlanCode === p.code;
+                      return (
+                        <button
+                          key={p.code}
+                          type="button"
+                          onClick={() => applyRatePlan(p.code)}
+                          className={cn(
+                            "rounded-md border-2 p-3 text-left transition-colors flex flex-col gap-1",
+                            isActive ? "border-brand bg-brand-soft/30" : "border-border hover:bg-surface-sunken"
                           )}
-                        </div>
-                        <p className="text-xs font-semibold leading-tight">{p.name}</p>
-                        <p className="text-[10px] text-muted-foreground leading-snug">{p.description}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Inclusions preview */}
-                {ratePlan.includes.length > 0 && (
-                  <div className="mt-2 rounded-md bg-info-soft/15 border border-info/20 p-2.5 flex items-start gap-2">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-info shrink-0 mt-0.5" />
-                    <div className="flex-1 text-xs">
-                      <p className="font-semibold">{ratePlan.code} includes</p>
-                      <p className="text-muted-foreground">{ratePlan.includes.join(" · ")} for {adults + children} pax × {nights}N</p>
-                      {ratePlanSupplement > 0 && (
-                        <p className="text-[11px] text-info mt-0.5 tabular">Plan supplement: {money(ratePlanSupplement)} ({money(ratePlan.surchargePerNight)} × {adults + children} pax × {nights}N)</p>
-                      )}
-                    </div>
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className={cn(
+                              "h-7 px-2 rounded-md inline-flex items-center justify-center text-[11px] font-bold tracking-wider",
+                              isActive ? "bg-brand text-brand-foreground" : "bg-surface-sunken text-muted-foreground"
+                            )}>{p.code}</span>
+                            {p.surchargePerNight > 0 && (
+                              <span className="text-[10px] text-muted-foreground tabular">+{money(p.surchargePerNight)}/pax/N</span>
+                            )}
+                          </div>
+                          <p className="text-xs font-semibold leading-tight">{p.name}</p>
+                          <p className="text-[10px] text-muted-foreground leading-snug">{p.description}</p>
+                        </button>
+                      );
+                    })}
                   </div>
-                )}
-              </WalkInSection>
 
-              {/* F&B add-ons */}
-              <WalkInSection icon={UtensilsCrossed} label="Extra F&B (above rate plan)">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {WALKIN_FB.map(pkg => {
-                    const count = fbAddons[pkg.id] ?? 0;
-                    return (
-                      <div key={pkg.id} className={cn(
-                        "rounded-md border p-3 flex items-center gap-3 transition-colors",
-                        count > 0 ? "bg-brand-soft/40 border-brand" : "border-border"
-                      )}>
-                        <span className="text-2xl shrink-0">{pkg.icon}</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium leading-tight truncate">{pkg.name}</p>
-                          <p className="text-[11px] text-muted-foreground tabular">{money(pkg.price)}/pax × {nights}N</p>
-                        </div>
-                        <div className="flex items-center border border-border rounded-md h-8 bg-surface shrink-0">
-                          <button type="button" onClick={() => setFb(pkg.id, count - 1)} disabled={count === 0} className="w-7 h-7 inline-flex items-center justify-center hover:bg-surface-sunken disabled:opacity-40"><Minus className="h-3 w-3" /></button>
-                          <span className="w-7 text-center text-sm tabular font-medium">{count}</span>
-                          <button type="button" onClick={() => setFb(pkg.id, count + 1)} className="w-7 h-7 inline-flex items-center justify-center hover:bg-surface-sunken"><Plus className="h-3 w-3" /></button>
-                        </div>
+                  {/* Inclusions preview */}
+                  {ratePlan.includes.length > 0 && (
+                    <div className="mt-2 rounded-md bg-info-soft/15 border border-info/20 p-2.5 flex items-start gap-2">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-info shrink-0 mt-0.5" />
+                      <div className="flex-1 text-xs">
+                        <p className="font-semibold">{ratePlan.code} includes</p>
+                        <p className="text-muted-foreground">{ratePlan.includes.join(" · ")} for {adults + children} pax × {nights}N</p>
+                        {ratePlanSupplement > 0 && (
+                          <p className="text-[11px] text-info mt-0.5 tabular">Plan supplement: {money(ratePlanSupplement)} ({money(ratePlan.surchargePerNight)} × {adults + children} pax × {nights}N)</p>
+                        )}
                       </div>
-                    );
-                  })}
+                    </div>
+                  )}
                 </div>
-              </WalkInSection>
 
-              {/* ADVANCE PAYMENT — detailed capture */}
-              <WalkInSection icon={CreditCard} label="Advance payment">
+                {/* Stay add-ons */}
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 inline-flex items-center gap-1.5">
+                    <Sparkles className="h-3 w-3" />Stay add-ons
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <ToggleAddon
+                      icon={CalendarPlus} label="Early check-in"
+                      hint="Before 12 PM · subject to availability"
+                      priceText={`+ ${money(500)} flat`}
+                      on={earlyCheckIn} onChange={setEarlyCheckIn}
+                    />
+                    <ToggleAddon
+                      icon={CalendarMinus} label="Late check-out"
+                      hint="Until 4 PM · HK reschedules"
+                      priceText={`+ ${money(500)} flat`}
+                      on={lateCheckOut} onChange={setLateCheckOut}
+                    />
+                    <ToggleAddon
+                      icon={Bed} label="Extra bed"
+                      hint="Incl. breakfast"
+                      priceText={`+ ${money(900)} / night`}
+                      on={extraBed} onChange={setExtraBed}
+                    />
+                  </div>
+                </div>
+
+                {/* F&B add-ons */}
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 inline-flex items-center gap-1.5">
+                    <UtensilsCrossed className="h-3 w-3" />Extra F&amp;B (above rate plan)
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {WALKIN_FB.map(pkg => {
+                      const count = fbAddons[pkg.id] ?? 0;
+                      return (
+                        <div key={pkg.id} className={cn(
+                          "rounded-md border p-3 flex items-center gap-3 transition-colors",
+                          count > 0 ? "bg-brand-soft/40 border-brand" : "border-border"
+                        )}>
+                          <span className="text-2xl shrink-0">{pkg.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium leading-tight truncate">{pkg.name}</p>
+                            <p className="text-[11px] text-muted-foreground tabular">{money(pkg.price)}/pax × {nights}N</p>
+                          </div>
+                          <div className="flex items-center border border-border rounded-md h-8 bg-surface shrink-0">
+                            <button type="button" onClick={() => setFb(pkg.id, count - 1)} disabled={count === 0} className="w-7 h-7 inline-flex items-center justify-center hover:bg-surface-sunken disabled:opacity-40"><Minus className="h-3 w-3" /></button>
+                            <span className="w-7 text-center text-sm tabular font-medium">{count}</span>
+                            <button type="button" onClick={() => setFb(pkg.id, count + 1)} className="w-7 h-7 inline-flex items-center justify-center hover:bg-surface-sunken"><Plus className="h-3 w-3" /></button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 5 — Payment */}
+            {step === 5 && (
+              <div className="space-y-5">
                 <div className="space-y-3">
                   {/* Quick presets + amount */}
+                  <Label className="text-xs">Advance payment</Label>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
                     {[0, 30, 50, 100].map(p => (
                       <button
@@ -2301,89 +2798,175 @@ function WalkInModal({
                     </>
                   )}
                 </div>
-              </WalkInSection>
+              </div>
+            )}
 
-              {/* What happens next */}
-              <div className="rounded-md bg-brand-soft/30 border border-brand/20 p-3 text-xs flex items-start gap-2">
-                <Sparkles className="h-3.5 w-3.5 text-brand shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold text-foreground mb-0.5">After clicking Start check-in</p>
-                  <p className="text-muted-foreground">
-                    Capture KYC (Aadhaar / Passport + face + signature) → Encode key card → Welcome message → Done.
-                  </p>
+            {/* STEP 6 — Confirm */}
+            {step === 6 && (
+              <div className="space-y-5">
+                <div className="text-center py-2">
+                  <div className="inline-flex h-16 w-16 rounded-full bg-success-soft text-success items-center justify-center mb-3">
+                    <ChevronsRight className="h-8 w-8" />
+                  </div>
+                  <h2 className="text-xl font-semibold">Ready to start check-in</h2>
+                  <p className="text-sm text-muted-foreground mt-1">Review the details, then start the KYC &amp; key-card flow.</p>
+                </div>
+
+                {/* Final review */}
+                <div className="rounded-md border border-border divide-y divide-border">
+                  <WalkInReviewRow
+                    label="Guest"
+                    value={name.trim() || "—"}
+                    sub={[phone, email].filter(Boolean).join(" · ") || nationality}
+                    onEdit={() => setStep(1)}
+                  />
+                  <WalkInReviewRow
+                    label="Stay"
+                    value={`${new Date(checkInDate + "T12:00:00").toLocaleDateString(undefined, { day: "2-digit", month: "short" })} · ${nights} night${nights === 1 ? "" : "s"}`}
+                    sub={[
+                      earlyCheckIn && "Early check-in",
+                      lateCheckOut && "Late check-out",
+                      extraBed && "Extra bed",
+                    ].filter(Boolean).join(" · ") || "12 PM → 11 AM"}
+                    onEdit={() => setStep(2)}
+                  />
+                  <WalkInReviewRow
+                    label="Room"
+                    value={room ? `Room ${room.number} · ${room.type}` : "—"}
+                    sub={`${adults}A${children ? ` + ${children}C` : ""}${room ? ` · ${money(room.rate)}/night` : ""}`}
+                    onEdit={() => setStep(3)}
+                  />
+                  <WalkInReviewRow
+                    label="Rate plan"
+                    value={`${ratePlan.code} · ${ratePlan.name}`}
+                    sub={[
+                      ratePlan.includes.length > 0 && ratePlan.includes.join(" · "),
+                      WALKIN_FB.some(p => (fbAddons[p.id] ?? 0) > 0) && `+ ${WALKIN_FB.filter(p => (fbAddons[p.id] ?? 0) > 0).map(p => `${fbAddons[p.id]}× ${p.name}`).join(" · ")}`,
+                    ].filter(Boolean).join(" · ") || "Room only"}
+                    onEdit={() => setStep(4)}
+                  />
+                  <WalkInReviewRow
+                    label="Payment"
+                    value={pay.amount <= 0 ? "No advance" : balance === 0 ? `Full · ${pay.mode}` : `${money(pay.amount)} advance · ${pay.mode}`}
+                    sub={`${money(grandTotal)} total · ${money(balance)} balance`}
+                    onEdit={() => setStep(5)}
+                  />
+                </div>
+
+                {/* What happens next */}
+                <div className="rounded-md bg-brand-soft/30 border border-brand/20 p-3 text-xs flex items-start gap-2">
+                  <Sparkles className="h-3.5 w-3.5 text-brand shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-foreground mb-0.5">After clicking Start check-in</p>
+                    <p className="text-muted-foreground">
+                      Capture KYC (Aadhaar / Passport + face + signature) → Encode key card → Welcome message → Done.
+                    </p>
+                  </div>
                 </div>
               </div>
+            )}
+          </Card>
+
+          {/* LIVE SUMMARY — sticky cost preview (was "Live cost preview") */}
+          <Card className="p-5 h-fit sticky top-20">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Live summary</p>
+
+            {/* Guest chip */}
+            {name.trim() ? (
+              <div className="mb-3 flex items-center gap-2.5">
+                <Avatar name={name.trim()} size={36} />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-medium text-sm truncate">{name.trim()}</p>
+                    <Badge tone="brand">Walk-in</Badge>
+                  </div>
+                  {phone && <p className="text-xs text-muted-foreground truncate">{phone}</p>}
+                </div>
+              </div>
+            ) : (
+              <p className="mb-3 text-sm text-muted-foreground">No guest entered</p>
+            )}
+
+            <dl className="space-y-1.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Room · {nights}N {breakdown.avgRate > 0 ? `· avg ${money(breakdown.avgRate)}/night` : ""}</span>
+                <span className="font-medium tabular">{money(roomSubtotal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground inline-flex items-center gap-1.5">
+                  <span className="px-1 py-0 rounded bg-brand-soft text-brand-soft-foreground text-[9px] font-bold">{ratePlan.code}</span>
+                  Rate plan ({ratePlan.name})
+                </span>
+                <span className="tabular text-muted-foreground">{ratePlanSupplement === 0 ? "included" : `+${money(ratePlanSupplement)}`}</span>
+              </div>
+              {earlyFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Early check-in</span><span className="tabular">{money(earlyFee)}</span></div>}
+              {lateFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Late check-out</span><span className="tabular">{money(lateFee)}</span></div>}
+              {extraBedFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Extra bed × {nights}N</span><span className="tabular">{money(extraBedFee)}</span></div>}
+              {fbTotal > 0 && (
+                <>
+                  <div className="pt-1.5 mt-1.5 border-t border-border">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">F&B add-ons</p>
+                  </div>
+                  {WALKIN_FB.filter(p => (fbAddons[p.id] ?? 0) > 0).map(p => (
+                    <div key={p.id} className="flex justify-between">
+                      <span className="text-muted-foreground">{fbAddons[p.id]}× {p.name} × {nights}N</span>
+                      <span className="tabular">{money(p.price * fbAddons[p.id] * nights)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+              <div className="pt-1.5 mt-1.5 border-t border-border flex justify-between">
+                <span className="text-muted-foreground">Tax (5%)</span>
+                <span className="tabular">{money(tax)}</span>
+              </div>
+              <div className="pt-1.5 mt-1.5 border-t border-border flex justify-between">
+                <span className="font-semibold text-sm">Grand total</span>
+                <span className="font-semibold text-base tabular">{money(grandTotal)}</span>
+              </div>
+              {pay.amount > 0 && (
+                <>
+                  <div className="flex justify-between text-success">
+                    <span className="font-medium">Advance ({pay.mode})</span>
+                    <span className="tabular font-semibold">- {money(pay.amount)}</span>
+                  </div>
+                  <div className="pt-1.5 mt-1.5 border-t border-border flex justify-between">
+                    <span className="font-semibold text-sm">Balance</span>
+                    <span className={cn("font-semibold text-base tabular", balance > 0 ? "text-warning" : "text-success")}>{money(balance)}</span>
+                  </div>
+                </>
+              )}
+            </dl>
+
+            {/* Back / Next (Start on final step) */}
+            <div className="mt-5 flex gap-2">
+              <Button variant="outline" disabled={step === 1} onClick={() => setStep(s => s - 1)} className="flex-1">
+                <ChevronLeft className="h-4 w-4" />Back
+              </Button>
+              {step < STEPS.length ? (
+                <Button onClick={() => setStep(s => Math.min(STEPS.length, s + 1))} disabled={!canNext()} className="flex-1">
+                  Next<ChevronRight className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button onClick={start} disabled={!valid} variant="success" className="flex-1">
+                  <ChevronsRight className="h-4 w-4" />Start check-in
+                </Button>
+              )}
             </div>
 
-            {/* RIGHT — live cost preview (sticky below the h-16 top bar so total stays in view) */}
-            <div className="bg-surface-elevated/40 border-t lg:border-t-0 lg:border-l border-border px-5 py-4 lg:sticky lg:top-20 lg:self-start">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Live cost preview</p>
-
-              <dl className="space-y-1.5 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{nights} × {money(room?.rate ?? 0)}/night</span>
-                  <span className="font-medium tabular">{money(roomSubtotal)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground inline-flex items-center gap-1.5">
-                    <span className="px-1 py-0 rounded bg-brand-soft text-brand-soft-foreground text-[9px] font-bold">{ratePlan.code}</span>
-                    Rate plan ({ratePlan.name})
-                  </span>
-                  <span className="tabular text-muted-foreground">{ratePlanSupplement === 0 ? "included" : `+${money(ratePlanSupplement)}`}</span>
-                </div>
-                {earlyFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Early check-in</span><span className="tabular">{money(earlyFee)}</span></div>}
-                {lateFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Late check-out</span><span className="tabular">{money(lateFee)}</span></div>}
-                {extraBedFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Extra bed × {nights}N</span><span className="tabular">{money(extraBedFee)}</span></div>}
-                {fbTotal > 0 && (
-                  <>
-                    <div className="pt-1.5 mt-1.5 border-t border-border">
-                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">F&B add-ons</p>
-                    </div>
-                    {WALKIN_FB.filter(p => (fbAddons[p.id] ?? 0) > 0).map(p => (
-                      <div key={p.id} className="flex justify-between">
-                        <span className="text-muted-foreground">{fbAddons[p.id]}× {p.name} × {nights}N</span>
-                        <span className="tabular">{money(p.price * fbAddons[p.id] * nights)}</span>
-                      </div>
-                    ))}
-                  </>
-                )}
-                <div className="pt-1.5 mt-1.5 border-t border-border flex justify-between">
-                  <span className="text-muted-foreground">Tax (5%)</span>
-                  <span className="tabular">{money(tax)}</span>
-                </div>
-                <div className="pt-1.5 mt-1.5 border-t border-border flex justify-between">
-                  <span className="font-semibold text-sm">Grand total</span>
-                  <span className="font-semibold text-base tabular">{money(grandTotal)}</span>
-                </div>
-                {pay.amount > 0 && (
-                  <>
-                    <div className="flex justify-between text-success">
-                      <span className="font-medium">Advance ({pay.mode})</span>
-                      <span className="tabular font-semibold">- {money(pay.amount)}</span>
-                    </div>
-                    <div className="pt-1.5 mt-1.5 border-t border-border flex justify-between">
-                      <span className="font-semibold text-sm">Balance</span>
-                      <span className={cn("font-semibold text-base tabular", balance > 0 ? "text-warning" : "text-success")}>{money(balance)}</span>
-                    </div>
-                  </>
-                )}
-              </dl>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="px-5 py-3 border-t border-border bg-surface-elevated flex items-center justify-between flex-wrap gap-2 rounded-b-lg">
-            <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowReceipt(true)} disabled={pay.amount === 0 || !advanceModeValid || !name.trim()}>
+            {/* Receipt — available once an advance has been entered */}
+            {step === STEPS.length && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowReceipt(true)}
+                disabled={pay.amount === 0 || !advanceModeValid || !name.trim()}
+                className="w-full mt-2"
+              >
                 <Printer className="h-3.5 w-3.5" />Print receipt
               </Button>
-              <Button onClick={start} disabled={!valid} variant="success">
-                <ChevronsRight className="h-4 w-4" />Start check-in
-              </Button>
-            </div>
-          </div>
-        </Card>
+            )}
+          </Card>
+        </div>
       </div>
 
       {dialogOpen && syncState !== "idle" && (
@@ -2419,13 +3002,16 @@ function WalkInModal({
 }
 
 // ===================== HELPER COMPONENTS =====================
-function WalkInSection({ icon: Icon, label, children }: { icon: typeof User; label: string; children: React.ReactNode }) {
+// Confirm-step review row with an Edit jump-back (mirrors the booking wizard).
+function WalkInReviewRow({ label, value, sub, onEdit }: { label: string; value: string; sub?: string; onEdit: () => void }) {
   return (
-    <div>
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 inline-flex items-center gap-1.5">
-        <Icon className="h-3 w-3" />{label}
-      </p>
-      {children}
+    <div className="flex items-center justify-between gap-3 p-3">
+      <div className="min-w-0">
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</p>
+        <p className="text-sm font-medium truncate">{value}</p>
+        {sub && <p className="text-xs text-muted-foreground truncate">{sub}</p>}
+      </div>
+      <button type="button" onClick={onEdit} className="text-xs text-brand hover:underline shrink-0">Edit</button>
     </div>
   );
 }
