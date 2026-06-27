@@ -122,11 +122,13 @@ export function PhoneInput({
         disabled={disabled}
         onClick={() => setOpen(o => !o)}
         className={cn(
-          "flex items-center gap-1.5 rounded-l-md border border-r-0 border-border bg-surface-sunken px-2.5 text-sm shrink-0",
-          "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 outline-hidden",
+          "flex items-center gap-1.5 rounded-l-md border border-r-0 bg-surface-sunken px-2.5 text-sm shrink-0 outline-hidden",
+          "focus-visible:ring-2",
           "disabled:cursor-not-allowed disabled:opacity-50",
           h,
-          invalid && "border-danger",
+          invalid
+            ? "border-danger focus-visible:border-danger focus-visible:ring-danger/30"
+            : "border-border focus-visible:border-ring focus-visible:ring-ring/30",
         )}
       >
         {selected ? (
@@ -156,12 +158,14 @@ export function PhoneInput({
         placeholder={country ? (placeholder ?? phoneExample(country).placeholder) : "Select country first"}
         aria-invalid={invalid}
         className={cn(
-          "flex-1 min-w-0 rounded-r-md border border-border bg-surface px-3 py-2 text-sm tabular outline-hidden",
+          "flex-1 min-w-0 rounded-r-md border bg-surface px-3 py-2 text-sm tabular outline-hidden",
           "placeholder:text-subtle-foreground",
-          "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30",
+          "focus-visible:ring-2",
           "disabled:cursor-not-allowed disabled:opacity-50",
           h,
-          invalid && "border-danger focus-visible:border-danger focus-visible:ring-danger/30",
+          invalid
+            ? "border-danger focus-visible:border-danger focus-visible:ring-danger/30"
+            : "border-border focus-visible:border-ring focus-visible:ring-ring/30",
         )}
       />
 

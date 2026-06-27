@@ -59,10 +59,14 @@ describe("formatPhone / parsePhone / composePhone", () => {
 });
 
 describe("India is exactly 10 digits", () => {
-  it("accepts 10, rejects 9 and 11", () => {
+  it("accepts 10, rejects 8, 9 and 11", () => {
     expect(isValidPhone("+91 98765 43210")).toBe(true);
+    expect(isValidPhone("+91 12345678")).toBe(false);     // 8 — must be rejected (full-pattern metadata)
     expect(isValidPhone("+91 9876 54321")).toBe(false);   // 9
     expect(isValidPhone("+91 98765 432101")).toBe(false); // 11
+  });
+  it("rejects a 10-digit number with an invalid mobile prefix", () => {
+    expect(isValidPhone("+91 5034567890")).toBe(false);   // starts with 5 — not a real IN number
   });
 });
 

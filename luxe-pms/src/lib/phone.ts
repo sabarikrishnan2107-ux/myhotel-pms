@@ -1,3 +1,7 @@
+// Use the FULL ("max") metadata so validation checks each country's real
+// national patterns (correct length AND valid prefixes) — the default "min"
+// metadata only checks possible length, which wrongly accepts e.g. an 8-digit
+// Indian number. Importing every helper from /max keeps a single metadata set.
 import {
   getCountries,
   getCountryCallingCode,
@@ -6,7 +10,7 @@ import {
   getExampleNumber,
   AsYouType,
   type CountryCode,
-} from "libphonenumber-js";
+} from "libphonenumber-js/max";
 import examples from "libphonenumber-js/examples.mobile.json";
 
 export type { CountryCode };
