@@ -2225,51 +2225,6 @@ function WalkInModal({
                     </Select>
                   </div>
                 </div>
-
-                {/* Capture on the mobile app */}
-                {syncState !== "done" ? (
-                  <div className="mt-3 rounded-md border border-border bg-surface-sunken/40 p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-start gap-2.5">
-                        <span className="h-7 w-7 rounded-md bg-brand-soft text-brand-soft-foreground flex items-center justify-center shrink-0">
-                          <Smartphone className="h-4 w-4" />
-                        </span>
-                        <div>
-                          <p className="text-sm font-medium">Capture on the mobile app</p>
-                          <p className="text-xs text-muted-foreground">Send this walk-in to the tablet — staff capture the face photo, ID &amp; signature there.</p>
-                          {syncErr && <p className="text-[11px] text-danger mt-1">{syncErr}</p>}
-                        </div>
-                      </div>
-                      <Button type="button" variant="outline" size="sm" onClick={requestWalkInSync}>
-                        <Smartphone className="h-4 w-4" />
-                        {syncState === "creating" || syncState === "waiting" ? "View sync status" : "Sync to mobile app"}
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-3 rounded-md border border-success/40 bg-success-soft/30 p-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-sm">
-                        <CheckCircle2 className="h-5 w-5 text-success" />
-                        <span className="font-medium">Captured from tablet</span>
-                        {syncBooking && <span className="text-muted-foreground">· booking {syncBooking.bookingNo}</span>}
-                      </div>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => setDialogOpen(true)}>View</Button>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
-                      {([["Face photo", syncDocs?.guest_photo], ["ID Front", syncDocs?.id_front], ["ID Back", syncDocs?.id_back], ["Signature", syncDocs?.signature]] as [string, string | null | undefined][]).map(([label, src]) => (
-                        <div key={label} className="rounded-md border border-border bg-surface overflow-hidden">
-                          <div className="aspect-[4/3] bg-surface-sunken flex items-center justify-center">
-                            {src
-                              ? <img src={src} alt={label} className="h-full w-full object-contain" />
-                              : <span className="text-[11px] text-muted-foreground">—</span>}
-                          </div>
-                          <p className="text-[11px] text-center py-1 text-muted-foreground">{label}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 
@@ -2313,6 +2268,51 @@ function WalkInModal({
                     </Select>
                   )}
                 </div>
+
+                {/* Capture on the mobile app — after a room is picked (sync needs the room) */}
+                {syncState !== "done" ? (
+                  <div className="mt-3 rounded-md border border-border bg-surface-sunken/40 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        <span className="h-7 w-7 rounded-md bg-brand-soft text-brand-soft-foreground flex items-center justify-center shrink-0">
+                          <Smartphone className="h-4 w-4" />
+                        </span>
+                        <div>
+                          <p className="text-sm font-medium">Capture on the mobile app</p>
+                          <p className="text-xs text-muted-foreground">Send this walk-in to the tablet — staff capture the face photo, ID &amp; signature there.</p>
+                          {syncErr && <p className="text-[11px] text-danger mt-1">{syncErr}</p>}
+                        </div>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" onClick={requestWalkInSync}>
+                        <Smartphone className="h-4 w-4" />
+                        {syncState === "creating" || syncState === "waiting" ? "View sync status" : "Sync to mobile app"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-md border border-success/40 bg-success-soft/30 p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle2 className="h-5 w-5 text-success" />
+                        <span className="font-medium">Captured from tablet</span>
+                        {syncBooking && <span className="text-muted-foreground">· booking {syncBooking.bookingNo}</span>}
+                      </div>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setDialogOpen(true)}>View</Button>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+                      {([["Face photo", syncDocs?.guest_photo], ["ID Front", syncDocs?.id_front], ["ID Back", syncDocs?.id_back], ["Signature", syncDocs?.signature]] as [string, string | null | undefined][]).map(([label, src]) => (
+                        <div key={label} className="rounded-md border border-border bg-surface overflow-hidden">
+                          <div className="aspect-[4/3] bg-surface-sunken flex items-center justify-center">
+                            {src
+                              ? <img src={src} alt={label} className="h-full w-full object-contain" />
+                              : <span className="text-[11px] text-muted-foreground">—</span>}
+                          </div>
+                          <p className="text-[11px] text-center py-1 text-muted-foreground">{label}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
