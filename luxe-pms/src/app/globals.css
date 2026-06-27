@@ -456,6 +456,9 @@
 
 /* ============ Print stylesheet ============
    Hides chrome (sidebar, top bar, action bars) and produces a clean folio. */
+/* Print-only documents (guest-drawer booking summary, advance-payment receipt)
+   are portaled to <body> with this class. Hidden on screen; revealed in print. */
+.print-doc { display: none; }
 @media print {
   /* Hide everything that's not the folio root */
   body * { visibility: hidden; }
@@ -470,6 +473,13 @@
   }
   /* Hide UI elements within the folio that don't belong on the invoice */
   .no-print { display: none !important; }
+  /* Portaled print documents: when one is present, drop everything else from the
+     layout entirely (display:none, not just visibility:hidden) so no empty pages
+     from the underlying app remain, then show the document. Scoped via :has() so
+     it never affects the folio page (which has no .print-doc). */
+  body:has(.print-doc) > :not(.print-doc) { display: none !important; }
+  .print-doc { display: block !important; position: static !important; }
+  .print-doc, .print-doc * { visibility: visible !important; }
   /* Force light theme + remove shadows */
   :root { --background: 0 0% 100%; --surface: 0 0% 100%; --foreground: 0 0% 0%; }
   .shadow-soft, .shadow-soft-md, .shadow-soft-lg, .shadow-xs, .shadow-md, .shadow-lg, .shadow-xl {

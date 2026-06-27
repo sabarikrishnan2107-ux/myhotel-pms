@@ -1,12 +1,18 @@
 "use client";
 import * as React from "react";
-import { User, IdCard, Briefcase, Sparkles, ChevronLeft, Save, Camera, Pen } from "lucide-react";
+import { User, IdCard, Briefcase, Sparkles, ChevronLeft, Save, Camera, Pen, Smartphone, CheckCircle2 } from "lucide-react";
 import { Input, Label, Select } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
+import { isValidEmail } from "@/lib/email";
 import { Button } from "@/components/ui/button";
 import { PhotoCapture } from "./photo-capture";
 import { SignaturePad } from "./signature-pad";
 import { DocumentUpload } from "./document-upload";
+import { apiGet } from "@/lib/api";
+import { MobileSyncDialog } from "./mobile-sync-dialog";
 import { cn } from "@/lib/utils";
+import { validateId } from "@/lib/id";
 
 export interface NewGuestData {
   name: string;
@@ -29,8 +35,8 @@ export interface NewGuestData {
 }
 
 const EMPTY: NewGuestData = {
-  name: "", phone: "+91 ", email: "", address: "", nationality: "India",
-  dob: "", gender: "Prefer not to say",
+  name: "", phone: "", email: "", address: "", nationality: "India",
+  dob: "", gender: "Male",
   idType: "Aadhaar", idNumber: "",
   idFront: null, idBack: null, photo: null, signature: null,
   company: "", gst: "", vip: false, remarks: "",
@@ -41,7 +47,31 @@ const NATIONALITIES = ["India", "USA", "UK", "Japan", "UAE", "Singapore", "Austr
 interface Props {
   onCancel: () => void;
   onSave: (data: NewGuestData) => void;
+  /**
+   * When provided, shows a "Sync to mobile app" button in the Captures section.
+   * `onRequest` creates the booking on the server (so the tablet can see it) and
+   * returns its id + reference; the form then polls that booking until the app
+   * uploads the documents, and fills the capture slots from the result.
+   */
+  mobileSync?: {
+    onRequest: (data: NewGuestData) => Promise<{ bookingId: number; reference: string } | null>;
+  };
 }
+
+/** Shape returned by GET /bookings/{id} (the fields this form needs). */
+type SyncedBooking = {
+  verification_status?: string;
+  documents?: {
+    guest_photo?: string | null;
+    id_front?: string | null;
+    id_back?: string | null;
+    signature?: string | null;
+  };
+  identity?: {
+    id_type?: string | null;
+    id_number?: string | null;
+  };
+};
 
 /** ISO date (YYYY-MM-DD) of today minus N years — used to cap the DOB picker so the guest is at least N years old. */
 function isoDateNYearsAgo(years: number) {
@@ -64,10 +94,89 @@ function ageFromIso(iso: string): number | null {
   return age;
 }
 
-export function NewGuestForm({ onCancel, onSave }: Props) {
+// Shared "invalid field" styling so DOB / phone / email all flag errors the same way.
+const DANGER_INPUT = "border-danger focus-visible:border-danger focus-visible:ring-danger/30";
+
+export function NewGuestForm({ onCancel, onSave, mobileSync }: Props) {
   const [data, setData] = React.useState<NewGuestData>(EMPTY);
   const update = <K extends keyof NewGuestData>(k: K, v: NewGuestData[K]) =>
     setData(prev => ({ ...prev, [k]: v }));
+
+  // --- Mobile capture sync ------------------------------------------------
+  const [syncState, setSyncState] = React.useState<"idle" | "creating" | "waiting" | "done" | "error">("idle");
+  const [syncRef, setSyncRef] = React.useState<string | null>(null);
+  const [syncBookingId, setSyncBookingId] = React.useState<number | null>(null);
+  const [syncErr, setSyncErr] = React.useState<string | null>(null);
+  const [syncDocs, setSyncDocs] = React.useState<SyncedBooking["documents"]>(undefined);
+  const [dialogOpen, setDialogOpen] = React.useState(false);
+
+  const startSync = async () => {
+    if (!mobileSync) return;
+    // A sync is already running or finished — just re-open the dialog.
+    if (syncState === "creating" || syncState === "waiting" || syncState === "done") {
+      setDialogOpen(true);
+      return;
+    }
+    if (!data.name || !data.phone) {
+      setSyncErr("Enter the guest's name and phone first.");
+      return;
+    }
+    setSyncErr(null);
+    setSyncDocs(undefined);
+    setDialogOpen(true);
+    setSyncState("creating");
+    const res = await mobileSync.onRequest(data);
+    if (!res) {
+      setSyncErr("Couldn't create the booking. Check your connection and try again.");
+      setSyncState("error");
+      return;
+    }
+    setSyncBookingId(res.bookingId);
+    setSyncRef(res.reference);
+    setSyncState("waiting");
+  };
+
+  const cancelSync = () => {
+    setSyncState("idle");
+    setSyncBookingId(null);
+    setSyncRef(null);
+    setSyncErr(null);
+    setSyncDocs(undefined);
+    setDialogOpen(false);
+  };
+
+  // While waiting, poll the booking until the app uploads the documents.
+  React.useEffect(() => {
+    if (syncState !== "waiting" || !syncBookingId) return;
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const b = await apiGet<SyncedBooking>(`/bookings/${syncBookingId}`);
+        if (stopped) return;
+        setSyncDocs(b?.documents);
+        if (b?.verification_status === "synced" && b.documents) {
+          const d = b.documents;
+          setData(prev => ({
+            ...prev,
+            photo: d.guest_photo ?? prev.photo,
+            idFront: d.id_front ?? prev.idFront,
+            idBack: d.id_back ?? prev.idBack,
+            signature: d.signature ?? prev.signature,
+            // Structured ID captured on the tablet — keep the form default if absent.
+            idType: b.identity?.id_type || prev.idType,
+            idNumber: b.identity?.id_number || prev.idNumber,
+          }));
+          setSyncState("done");
+          setDialogOpen(true);
+        }
+      } catch {
+        /* keep polling — transient network error */
+      }
+    };
+    poll();
+    const timer = setInterval(poll, 3000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [syncState, syncBookingId]);
 
   // DOB constraints — guest must be 18+ and not absurdly old
   const maxDob = React.useMemo(() => isoDateNYearsAgo(MIN_GUEST_AGE), []);
@@ -75,11 +184,27 @@ export function NewGuestForm({ onCancel, onSave }: Props) {
   const dobAge = ageFromIso(data.dob);
   const dobValid = data.dob === "" || (dobAge !== null && dobAge >= MIN_GUEST_AGE && dobAge <= MAX_GUEST_AGE);
 
-  // Required to save: name + phone (and a valid DOB if one was entered).
-  // ID number / ID scans / face photo are optional here — they can be captured
-  // later at check-in. This keeps the form usable so a guest's basic details
-  // (name, phone, email, ID) always save instead of being dropped.
-  const requiredOk = !!(data.name && data.phone) && dobValid;
+  const phoneValid = isValidPhone(data.phone);
+  const emailValid = isValidEmail(data.email);
+  // Field-level errors only surface after the guest has left that field, so a
+  // pristine form isn't littered with red.
+  const [touched, setTouched] = React.useState<{ phone?: boolean; email?: boolean }>({});
+  const markTouched = (k: "phone" | "email") => setTouched(t => ({ ...t, [k]: true }));
+
+  // Required to save: a name plus a valid phone, a valid email if one was typed,
+  // and a valid DOB if one was entered. ID number / scans / face photo stay
+  // optional — they can be captured at check-in — so basic details always save.
+  // A non-empty ID number must be valid for its type; empty stays allowed so a
+  // no-ID draft is still savable (ID can be captured later at check-in).
+  const idCheck = validateId(data.idType, data.idNumber, data.nationality);
+  const idValid = data.idNumber.trim() === "" || idCheck.ok;
+  const requiredOk = !!data.name && phoneValid && emailValid && dobValid && idValid;
+  const issues: string[] = [];
+  if (!data.name) issues.push("name");
+  if (!phoneValid) issues.push("valid phone");
+  if (!emailValid) issues.push("valid email");
+  if (!dobValid) issues.push("valid date of birth");
+  if (!idValid) issues.push("valid ID number");
   const completionPct = (() => {
     const fields: (keyof NewGuestData)[] = ["name", "phone", "email", "address", "nationality", "idType", "idNumber", "idFront", "idBack", "photo", "signature"];
     const filled = fields.filter(f => !!data[f]).length;
@@ -108,10 +233,30 @@ export function NewGuestForm({ onCancel, onSave }: Props) {
             <Input value={data.name} onChange={e => update("name", e.target.value)} placeholder="Mr. John Doe" autoFocus />
           </Field>
           <Field label="Phone *">
-            <Input value={data.phone} onChange={e => update("phone", e.target.value)} placeholder="+971 50 123 4567" type="tel" />
+            <PhoneInput
+              value={data.phone}
+              onChange={v => update("phone", v)}
+              onBlur={() => markTouched("phone")}
+              invalid={touched.phone && !phoneValid}
+            />
+            {touched.phone && !phoneValid && (
+              <p className="text-[11px] text-danger mt-1">Pick a country and enter a valid phone number</p>
+            )}
           </Field>
           <Field label="Email">
-            <Input value={data.email} onChange={e => update("email", e.target.value)} placeholder="guest@example.com" type="email" />
+            <Input
+              value={data.email}
+              onChange={e => update("email", e.target.value)}
+              onBlur={() => markTouched("email")}
+              placeholder="guest@example.com"
+              type="email"
+              inputMode="email"
+              aria-invalid={touched.email && !emailValid}
+              className={touched.email && !emailValid ? DANGER_INPUT : ""}
+            />
+            {touched.email && !emailValid && (
+              <p className="text-[11px] text-danger mt-1">Enter a valid email address (e.g. guest@example.com)</p>
+            )}
           </Field>
           <Field label="Date of birth">
             <Input
@@ -121,7 +266,7 @@ export function NewGuestForm({ onCancel, onSave }: Props) {
               min={minDob}
               max={maxDob}
               aria-invalid={!dobValid}
-              className={!dobValid ? "border-danger focus-visible:border-danger focus-visible:ring-danger/30" : ""}
+              className={!dobValid ? DANGER_INPUT : ""}
             />
             {data.dob && dobAge !== null && dobValid && (
               <p className="text-[11px] text-muted-foreground mt-1 tabular">
@@ -145,7 +290,7 @@ export function NewGuestForm({ onCancel, onSave }: Props) {
           </Field>
           <Field label="Gender">
             <Select value={data.gender} onChange={e => update("gender", e.target.value)}>
-              <option>Male</option><option>Female</option><option>Prefer not to say</option>
+              <option>Male</option><option>Female</option>
             </Select>
           </Field>
           <Field label="Address" className="md:col-span-2">
@@ -156,6 +301,75 @@ export function NewGuestForm({ onCancel, onSave }: Props) {
 
       {/* Identification + Photo + Signature */}
       <Section icon={IdCard} title="Identification & Captures" optional>
+        {mobileSync && syncState !== "done" && (
+          <div className="rounded-md border border-border bg-surface-sunken/40 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <span className="h-7 w-7 rounded-md bg-brand-soft text-brand-soft-foreground flex items-center justify-center shrink-0">
+                  <Smartphone className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-medium">Capture on the mobile app</p>
+                  <p className="text-xs text-muted-foreground">Send this booking to the tablet — staff capture the face photo, ID &amp; signature there, and they flow back into this form.</p>
+                  {syncErr && <p className="text-[11px] text-danger mt-1">{syncErr}</p>}
+                </div>
+              </div>
+              <Button type="button" variant="outline" onClick={startSync}>
+                <Smartphone className="h-4 w-4" />
+                {syncState === "creating" || syncState === "waiting" ? "View sync status" : "Sync to mobile app"}
+              </Button>
+            </div>
+          </div>
+        )}
+        {mobileSync && syncState === "done" && (
+          <div className="rounded-md border border-success/40 bg-success-soft/30 p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm">
+                <CheckCircle2 className="h-5 w-5 text-success" />
+                <span className="font-medium">Captured from tablet</span>
+                {syncRef && <span className="text-muted-foreground">· booking {syncRef}</span>}
+              </div>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setDialogOpen(true)}>View</Button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+              {([["Face photo", data.photo], ["ID Front", data.idFront], ["ID Back", data.idBack], ["Signature", data.signature]] as [string, string | null][]).map(([label, src]) => (
+                <div key={label} className="rounded-md border border-border bg-surface overflow-hidden">
+                  <div className="aspect-[4/3] bg-surface-sunken flex items-center justify-center">
+                    {src
+                      ? <img src={src} alt={label} className="h-full w-full object-contain" />
+                      : <span className="text-[11px] text-muted-foreground">—</span>}
+                  </div>
+                  <p className="text-[11px] text-center py-1 text-muted-foreground">{label}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex items-center gap-2 text-[11px]">
+              {idValid && data.idNumber.trim() !== "" ? (
+                <span className="inline-flex items-center gap-1 text-success">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {data.idType} · {data.idNumber} verified
+                </span>
+              ) : data.idNumber.trim() !== "" ? (
+                <span className="text-danger">{data.idType} number looks invalid — check it below.</span>
+              ) : (
+                <span className="text-muted-foreground">No ID number captured — add one below.</span>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">These were captured on the tablet and saved with the guest. You can still override them below.</p>
+          </div>
+        )}
+
+        {mobileSync && dialogOpen && syncState !== "idle" && (
+          <MobileSyncDialog
+            state={syncState}
+            reference={syncRef}
+            docs={syncDocs}
+            errorMessage={syncErr}
+            onCancel={cancelSync}
+            onHide={() => setDialogOpen(false)}
+            onDone={() => setDialogOpen(false)}
+          />
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* ID details */}
           <div className="space-y-3">
@@ -286,7 +500,7 @@ export function NewGuestForm({ onCancel, onSave }: Props) {
         <div className="text-xs text-muted-foreground">
           {requiredOk
             ? "Ready to save · ID & photo can be captured at check-in"
-            : "Required: name · phone"}
+            : `Needs: ${issues.join(" · ")}`}
         </div>
         <div className="flex gap-2">
           <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>

@@ -11,6 +11,10 @@ import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
+import { EmailInput } from "@/components/ui/email-input";
+import { isValidEmail } from "@/lib/email";
 import { KPICard } from "@/components/ui/kpi-card";
 import { GUESTS, RESERVATIONS } from "@/lib/mock-data";
 import type { Guest } from "@/lib/types";
@@ -427,7 +431,7 @@ function AddEditGuestModal({ guest, onClose, onSave }: {
   onSave: (g: GuestExt) => void;
 }) {
   const [form, setForm] = React.useState<GuestExt>(guest || {
-    id: "", name: "", phone: "+91 ", email: "", nationality: "India",
+    id: "", name: "", phone: "", email: "", nationality: "India",
     idType: "Aadhaar", idNumber: "", vip: false, blacklist: false,
     lifetimeNights: 0, lifetimeSpend: 0,
     preferences: [], loyaltyPoints: 0,
@@ -445,7 +449,7 @@ function AddEditGuestModal({ guest, onClose, onSave }: {
     return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
-  const canSave = form.name.trim().length > 1 && form.phone.trim().length > 4;
+  const canSave = form.name.trim().length > 1 && isValidPhone(form.phone) && isValidEmail(form.email || "");
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -470,11 +474,11 @@ function AddEditGuestModal({ guest, onClose, onSave }: {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Phone *</Label>
-              <Input value={form.phone} onChange={e => update("phone", e.target.value)} placeholder="+91 9XXXX XXXXX" className="h-9 tabular" />
+              <PhoneInput value={form.phone} onChange={v => update("phone", v)} size="sm" invalid={form.phone !== "" && !isValidPhone(form.phone)} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Email</Label>
-              <Input type="email" value={form.email} onChange={e => update("email", e.target.value)} placeholder="guest@example.com" className="h-9" />
+              <EmailInput value={form.email || ""} onChange={v => update("email", v)} className="h-9" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Nationality</Label>

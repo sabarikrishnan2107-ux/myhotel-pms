@@ -281,18 +281,6 @@ export default function HousekeepingPage() {
         <KPICard label="Active Staff" value={housekeepers.filter(h => h.active).length} icon={Users} accent="brand" />
       </div>
 
-      {/* AI Insight */}
-      <AIInsight
-        variant="panel"
-        title="AI Housekeeping Insight"
-        text={
-          <>
-            Based on past stays, <span className="font-semibold">5 of today&apos;s dirty rooms</span> should take under 25 min each (no F&amp;B service, single occupancy). Recommend assigning to <span className="font-semibold">Maria Lopez</span> (avg 28 min) and <span className="font-semibold">Joseph D&apos;Souza</span> (avg 26 min) — they can clear them by 16:30 in time for evening arrivals.
-          </>
-        }
-        action={{ label: "Auto-assign tasks", onClick: () => showToast("AI auto-assigned 8 tasks") }}
-      />
-
       {/* Tabs */}
       <div className="border-b border-border flex items-center gap-1 overflow-x-auto">
         {TABS.map(t => {

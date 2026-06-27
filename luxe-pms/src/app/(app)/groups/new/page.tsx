@@ -9,6 +9,10 @@ import {
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
+import { EmailInput } from "@/components/ui/email-input";
+import { isValidEmail } from "@/lib/email";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
@@ -268,7 +272,7 @@ export default function NewGroupPage() {
 
   const router = useRouter();
   const [saving, setSaving] = React.useState(false);
-  const requiredOk = !!(name && contactName && contactPhone && arrival && departure && block.length);
+  const requiredOk = !!(name && contactName && isValidPhone(contactPhone) && isValidEmail(contactEmail) && arrival && departure && block.length);
 
   const save = (status: "confirmed" | "tentative") => {
     if (saving || !requiredOk) return;
@@ -371,8 +375,8 @@ export default function NewGroupPage() {
               <Input value={contactName} onChange={e => setContactName(e.target.value)} />
             </Field>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field label="Phone *"><Input value={contactPhone} onChange={e => setContactPhone(e.target.value)} /></Field>
-              <Field label="Email"><Input type="email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} /></Field>
+              <Field label="Phone *"><PhoneInput value={contactPhone} onChange={v => setContactPhone(v)} size="md" invalid={contactPhone !== "" && !isValidPhone(contactPhone)} /></Field>
+              <Field label="Email"><EmailInput value={contactEmail} onChange={setContactEmail} /></Field>
             </div>
           </Card>
 

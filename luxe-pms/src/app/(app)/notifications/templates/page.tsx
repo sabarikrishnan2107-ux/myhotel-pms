@@ -10,6 +10,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPut } from "@/lib/api";
 
@@ -331,7 +333,7 @@ export default function WhatsAppTemplatesPage() {
   const [filterStatus, setFilterStatus] = React.useState<"All" | Status>("All");
   const [filterCategory, setFilterCategory] = React.useState<"All" | Category>("All");
   const [filterLang, setFilterLang] = React.useState<"All" | Language>("All");
-  const [testPhone, setTestPhone] = React.useState("+91 98200 ");
+  const [testPhone, setTestPhone] = React.useState("");
 
   const selected = templates.find((t) => t.id === selectedId) || templates[0];
 
@@ -983,15 +985,17 @@ export default function WhatsAppTemplatesPage() {
                 Send Test Message
               </Label>
               <div className="flex items-center gap-2">
-                <Input
+                <PhoneInput
                   value={testPhone}
-                  onChange={(e) => setTestPhone(e.target.value)}
-                  placeholder="+91 98200 12345"
-                  className="h-9 text-sm font-mono flex-1"
+                  onChange={(v) => setTestPhone(v)}
+                  invalid={testPhone !== "" && !isValidPhone(testPhone)}
+                  size="sm"
+                  className="flex-1"
                 />
                 <Button
                   size="sm"
                   variant="outline"
+                  disabled={!isValidPhone(testPhone)}
                   onClick={() => {
                     if (selected.status !== "Approved") {
                       showToast("Template must be approved to send");

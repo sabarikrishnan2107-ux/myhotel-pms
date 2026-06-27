@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { use } from "react";
 import {
   Printer, Send, CreditCard, Split, Plus, Percent, X,
@@ -52,8 +53,57 @@ const NOTES = {
   ],
 };
 
+// Open a captured ID scan / photo / signature full-size in a new tab. Base64
+// data URLs are converted to a Blob first (avoids huge URL bars / browser caps);
+// PDFs and anything non-image just open directly.
+function openCapture(dataUrl: string) {
+  const m = /^data:([^;]+);base64,([\s\S]*)$/.exec(dataUrl);
+  if (!m) { window.open(dataUrl, "_blank", "noopener,noreferrer"); return; }
+  try {
+    const bin = atob(m[2]);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([bytes], { type: m[1] }));
+    window.open(url, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch {
+    window.open(dataUrl, "_blank", "noopener,noreferrer");
+  }
+}
+
+// A single KYC capture thumbnail. Images render inline; PDFs/other show a file
+// tile. Clicking opens the full-size document in a new tab.
+function CaptureTile({ label, src, contain }: { label: string; src: string; contain?: boolean }) {
+  const isImage = /^data:image\//.test(src) || /\.(png|jpe?g|webp|gif)$/i.test(src);
+  return (
+    <button type="button" onClick={() => openCapture(src)} title="Open full size" className="group text-left shrink-0">
+      {isImage ? (
+        <img
+          src={src}
+          alt={label}
+          className={cn(
+            "h-24 w-32 rounded-md border border-border bg-white/90 group-hover:ring-2 group-hover:ring-brand transition",
+            contain ? "object-contain p-1" : "object-cover"
+          )}
+        />
+      ) : (
+        <div className="h-24 w-32 rounded-md border border-border flex flex-col items-center justify-center gap-1 text-muted-foreground group-hover:ring-2 group-hover:ring-brand transition">
+          <FileText className="h-6 w-6" />
+          <span className="text-[10px]">Open document</span>
+        </div>
+      )}
+      <span className="block text-[11px] text-muted-foreground mt-1">{label}</span>
+    </button>
+  );
+}
+
 export default function FolioDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  // Back link respects where the folio was opened from: the Room Rack passes
+  // ?from=rack, otherwise we return to the Folios list.
+  const backTo = useSearchParams().get("from") === "rack"
+    ? { href: "/rack", label: "Room Rack" }
+    : { href: "/folio", label: "Folios" };
   const name = hotelName(useProperty());
   const branding = useBranding();
   // Real booking from Postgres (falls back to the seed only while offline / not found).
@@ -61,9 +111,9 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
   const reservation = liveRes ?? RESERVATIONS.find(r => r.bookingNo === id) ?? RESERVATIONS[0];
   const mockGuest = GUESTS.find(g => g.name === reservation.guestName);
   // Live guest from Postgres (overlays the seed so KYC fields reflect the DB).
-  const [liveGuest, setLiveGuest] = React.useState<{ id: number; name: string; idType?: string; idNumber?: string; nationality?: string; vip?: boolean; kycVerified?: boolean; kycVerifiedAt?: string; kycVerifiedBy?: string } | null>(null);
+  const [liveGuest, setLiveGuest] = React.useState<{ id: number; name: string; idType?: string; idNumber?: string; nationality?: string; vip?: boolean; kycVerified?: boolean; kycVerifiedAt?: string; kycVerifiedBy?: string; idFront?: string | null; idBack?: string | null; photo?: string | null; signature?: string | null } | null>(null);
   const guest = (liveGuest ? { ...mockGuest, ...liveGuest } : mockGuest) as
-    (Omit<NonNullable<typeof mockGuest>, "id"> & { id?: string | number; kycVerified?: boolean; kycVerifiedAt?: string; kycVerifiedBy?: string }) | undefined;
+    (Omit<NonNullable<typeof mockGuest>, "id"> & { id?: string | number; kycVerified?: boolean; kycVerifiedAt?: string; kycVerifiedBy?: string; idFront?: string | null; idBack?: string | null; photo?: string | null; signature?: string | null }) | undefined;
 
   const [tab, setTab] = React.useState<TabId>("overview");
   const [groupByDay, setGroupByDay] = React.useState(true);
@@ -164,8 +214,8 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
     <div className="p-4 sm:p-6 lg:p-8 space-y-5" id="folio-root">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground no-print">
-        <Link href="/folio" className="hover:text-foreground inline-flex items-center gap-1">
-          <ChevronLeft className="h-3.5 w-3.5" />Folios
+        <Link href={backTo.href} className="hover:text-foreground inline-flex items-center gap-1">
+          <ChevronLeft className="h-3.5 w-3.5" />{backTo.label}
         </Link>
         <ChevronRight className="h-3 w-3" />
         <span className="text-foreground font-medium tabular">{reservation.bookingNo}</span>
@@ -506,6 +556,20 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
                   <ComplianceRow k="Verified On" v={guest?.kycVerifiedAt || "—"} />
                   <ComplianceRow k="Hotel Register" v={<span className="font-mono tabular">HRR-2026-{reservation.bookingNo.slice(-5)}</span>} />
                 </dl>
+                {/* ID proof, guest photo & signature captured at booking / check-in */}
+                <div className="mt-3 pt-3 border-t border-border">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-semibold mb-2">Documents on file</p>
+                  {guest?.idFront || guest?.idBack || guest?.photo || guest?.signature ? (
+                    <div className="flex flex-wrap gap-3">
+                      {guest?.idFront && <CaptureTile label={`${guest?.idType || "ID"} — front`} src={guest.idFront} />}
+                      {guest?.idBack && <CaptureTile label={`${guest?.idType || "ID"} — back`} src={guest.idBack} />}
+                      {guest?.photo && <CaptureTile label="Guest photo" src={guest.photo} />}
+                      {guest?.signature && <CaptureTile label="Signature" src={guest.signature} contain />}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">No ID proof, photo or signature captured yet — capture at check-in.</p>
+                  )}
+                </div>
                 {guest?.id != null && (
                   <div className="mt-3 pt-3 border-t border-border">
                     <Button size="sm" variant={guest?.kycVerified ? "outline" : "success"} onClick={() => setShowVerifyKyc(true)}>

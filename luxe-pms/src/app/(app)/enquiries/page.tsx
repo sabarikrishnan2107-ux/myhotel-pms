@@ -16,6 +16,10 @@ import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { cn, money, formatDate } from "@/lib/utils";
 import { apiGet, apiPost, apiPut, apiDelete, sendEmail } from "@/lib/api";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
+import { EmailInput } from "@/components/ui/email-input";
+import { isValidEmail } from "@/lib/email";
 
 // ============ TYPES ============
 type EnquiryType = "Room" | "Hall" | "Both";
@@ -946,7 +950,7 @@ function NewEnquiryModal({ onClose, onSave }: {
 }) {
   const [type, setType] = React.useState<EnquiryType>("Hall");
   const [name, setName] = React.useState("");
-  const [phone, setPhone] = React.useState("+91 ");
+  const [phone, setPhone] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [company, setCompany] = React.useState("");
   const [source, setSource] = React.useState<EnquirySource>("Website");
@@ -968,7 +972,7 @@ function NewEnquiryModal({ onClose, onSave }: {
     return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
   }, [onClose]);
 
-  const valid = name.trim() !== "" && phone.trim().length >= 5;
+  const valid = name.trim() !== "" && isValidPhone(phone) && isValidEmail(email);
 
   const save = () => {
     const id = `enq-${Date.now()}`;
@@ -1037,11 +1041,11 @@ function NewEnquiryModal({ onClose, onSave }: {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Phone *</Label>
-                <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 9XXXX XXXXX" className="h-9 font-mono tabular" />
+                <PhoneInput value={phone} onChange={v => setPhone(v)} size="sm" invalid={phone !== "" && !isValidPhone(phone)} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Email</Label>
-                <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="customer@example.com" className="h-9" />
+                <EmailInput value={email} onChange={setEmail} placeholder="customer@example.com" className="h-9" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Company (optional)</Label>

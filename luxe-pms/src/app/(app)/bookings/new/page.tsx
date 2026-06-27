@@ -133,6 +133,10 @@ export default function BookingWizardPage() {
   const needsRef = collectingAdvance && !!PAY_REF_FIELD[paymentMode];
   const [channels, setChannels] = React.useState<{ email: boolean; whatsapp: boolean; sms: boolean }>({ email: true, whatsapp: true, sms: false });
   const [submitting, setSubmitting] = React.useState(false);
+  // Booking created early via "Sync to mobile app" so the tablet can capture
+  // documents. When set, the final Confirm UPDATES this booking instead of
+  // creating a duplicate.
+  const [syncBooking, setSyncBooking] = React.useState<{ id: number; bookingNo: string } | null>(null);
   const [confirmed, setConfirmed] = React.useState<null | {
     bookingNo: string;
     guestName: string;
@@ -225,6 +229,7 @@ export default function BookingWizardPage() {
     (airportTransfer ? 175 : 0) +
     earlyFee + lateFee +
     fbTotal;
+
   const tax = (subtotal + extras) * 0.05;
   const total = subtotal + extras + tax;
   const advance = customAdvance !== null
@@ -232,7 +237,66 @@ export default function BookingWizardPage() {
     : Math.round((total * paymentPct) / 100);
   const advanceLabel = customAdvance !== null ? "custom" : `${paymentPct}%`;
 
+  // The Live Summary starts empty and reveals each section only once it's
+  // relevant. Dates appear from the Dates step (2), pax from the Pax & Type
+  // step (3); a chosen room type / rate plan also implies the guest has reached
+  // those steps, so the rows stay visible even after navigating back.
+  const showDates = step >= 2 || !!roomType || !!ratePlan;
+  const showPax = step >= 3 || !!roomType || !!ratePlan;
+
   const filteredGuests = guests.filter(g => `${g.name} ${g.phone} ${g.email}`.toLowerCase().includes(search.toLowerCase())).slice(0, 5);
+
+  // "Sync to mobile app" — create the booking now so it appears on the tablet
+  // for document capture. Returns the new booking id + reference for the form
+  // to poll; the final Confirm step updates this same booking.
+  const requestMobileSync = async (g: NewGuestData): Promise<{ bookingId: number; reference: string } | null> => {
+    // Guard: one booking per wizard — re-syncing reuses the same draft booking.
+    if (syncBooking) {
+      return { bookingId: syncBooking.id, reference: syncBooking.bookingNo };
+    }
+    const seed = (g.name || "X").length * 137 + roomType.length * 53 + nights * 7;
+    const bookingNo = `BK${100400 + (seed % 9000)}`;
+    try {
+      const created = await apiPost<{ id: number }>("/bookings", {
+        bookingNo,
+        guestName: g.name,
+        roomNumber: "Unassigned",
+        roomType,
+        source,
+        checkIn,
+        checkOut,
+        nights,
+        adults,
+        children,
+        paymentStatus: advance <= 0 ? "unpaid" : advance >= total ? "paid" : "partial",
+        ratePlan,
+        total: Math.round(total),
+        advance: Math.round(advance),
+        balance: Math.round(total - advance),
+        // Held as a draft so it shows on the tablet for capture but NOT as a
+        // confirmed arrival. The final "Confirm booking" promotes it.
+        status: "pending",
+        vip: g.vip ?? false,
+      });
+      if (!created?.id) return null;
+      setSyncBooking({ id: created.id, bookingNo });
+      // Push any documents already captured/uploaded in this web form onto the
+      // booking so they show in the mobile app too (reception can replace the
+      // rest on the tablet). Fire-and-forget — sync shouldn't block on it.
+      if (g.photo || g.idFront || g.idBack || g.signature) {
+        apiPost(`/bookings/${created.id}/verification`, {
+          guest_photo: g.photo ?? "",
+          id_front: g.idFront ?? "",
+          id_back: g.idBack ?? "",
+          signature: g.signature ?? "",
+          uploaded_by: "Front Desk (web)",
+        }).catch(() => {});
+      }
+      return { bookingId: created.id, reference: bookingNo };
+    } catch {
+      return null;
+    }
+  };
 
   const canNext = () => {
     if (step === 1) return guest !== null || newGuest !== null;
@@ -438,6 +502,7 @@ export default function BookingWizardPage() {
                   setGuest(null);
                   setStep1Mode("search");
                 }}
+                mobileSync={{ onRequest: requestMobileSync }}
               />
             </div>
           )}
@@ -877,13 +942,13 @@ export default function BookingWizardPage() {
             <p className="mt-3 text-sm text-muted-foreground">No guest selected</p>
           )}
 
-          <dl className="mt-5 space-y-2.5 text-sm">
-            <Row k="Check-in" v={new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />
-            <Row k="Check-out" v={new Date(checkOut).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />
-            <Row k="Nights" v={`${nights}`} />
-            <Row k="Pax" v={`${adults}A${children ? ` + ${children}C` : ""}`} />
-            <Row k="Room type" v={roomType || "—"} />
-            <Row k="Rate plan" v={ratePlan || "—"} />
+          <dl className="mt-5 space-y-2.5 text-sm empty:mt-0">
+            {showDates && <Row k="Check-in" v={new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />}
+            {showDates && <Row k="Check-out" v={new Date(checkOut).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />}
+            {showDates && <Row k="Nights" v={`${nights}`} />}
+            {showPax && <Row k="Pax" v={`${adults}A${children ? ` + ${children}C` : ""}`} />}
+            {!!roomType && <Row k="Room type" v={roomType} />}
+            {!!ratePlan && <Row k="Rate plan" v={ratePlan} />}
           </dl>
 
           {roomType ? (
@@ -935,11 +1000,11 @@ export default function BookingWizardPage() {
             )}
           </dl>
           </>
-          ) : (
+          ) : showPax ? (
             <div className="mt-4 border-t border-border pt-4">
               <p className="text-sm text-muted-foreground">Select a room type to see pricing.</p>
             </div>
-          )}
+          ) : null}
 
           <div className="mt-5 flex gap-2">
             <Button variant="outline" disabled={step === 1} onClick={() => setStep(s => s - 1)} className="flex-1">
@@ -958,7 +1023,8 @@ export default function BookingWizardPage() {
                   setSubmitting(true);
                   // Deterministic-ish booking number (no Date.now() to avoid hydration drift if rendered server-side)
                   const seed = (selectedGuestDisplay?.name ?? "X").length * 137 + roomType.length * 53 + nights * 7;
-                  const bookingNo = `BK${100400 + (seed % 9000)}`;
+                  // Reuse the reference from the early "Sync to mobile" booking if one exists.
+                  const bookingNo = syncBooking?.bookingNo ?? `BK${100400 + (seed % 9000)}`;
                   // Persist the booking (and the guest, if a brand-new one was entered).
                   // NOTE: don't gate on step1Mode here — saving the new-guest form flips
                   // the mode back to "search", so checking it dropped every new profile.
@@ -991,7 +1057,7 @@ export default function BookingWizardPage() {
                         await apiPut(`/guests/${createdGuest.id}`, captures).catch(() => {});
                       }
                     }
-                    await apiPost("/bookings", {
+                    const bookingPayload = {
                       bookingNo,
                       guestName: selectedGuestDisplay!.name,
                       roomNumber: "Unassigned",   // specific room assigned at check-in
@@ -1009,7 +1075,14 @@ export default function BookingWizardPage() {
                       balance: Math.round(total - advance),
                       status: "confirmed",     // reservation; room assigned at check-in
                       vip: false,
-                    });
+                    };
+                    // If this booking was already created via "Sync to mobile app",
+                    // update it (keeping the captured documents) instead of duplicating.
+                    if (syncBooking) {
+                      await apiPut(`/bookings/${syncBooking.id}`, bookingPayload);
+                    } else {
+                      await apiPost("/bookings", bookingPayload);
+                    }
                   } catch {
                     /* show the confirmation anyway; the booking just didn't persist */
                   }

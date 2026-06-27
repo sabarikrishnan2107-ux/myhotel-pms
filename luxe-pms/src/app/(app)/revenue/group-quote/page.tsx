@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import {
-  Users, Building2, Phone, Mail, Calendar, BedDouble, UtensilsCrossed,
+  Users, Building2, Mail, Calendar, BedDouble, UtensilsCrossed,
   Gift, PartyPopper, FileText, Sparkles,
   Percent, Target, ShieldCheck, ShieldAlert, ShieldX,
   CheckCircle2, XCircle, RefreshCw, Download, Send, ArrowUpRight,
@@ -13,6 +13,10 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
+import { EmailInput } from "@/components/ui/email-input";
+import { isValidEmail } from "@/lib/email";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
 
@@ -114,7 +118,7 @@ export default function GroupQuotePage() {
   // --- LEAD ---
   const [company, setCompany] = React.useState("Iyer–Mehta Wedding");
   const [contact, setContact] = React.useState("Anjali Iyer");
-  const [phone, setPhone] = React.useState("+91 98201 47821");
+  const [phone, setPhone] = React.useState("");
   const [email, setEmail] = React.useState("anjali.iyer@gmail.com");
   const [leadType, setLeadType] = React.useState<LeadType>("wedding");
   const [source, setSource] = React.useState("Direct enquiry");
@@ -340,7 +344,7 @@ export default function GroupQuotePage() {
   const loadWedding = () => {
     setCompany("Iyer–Mehta Wedding");
     setContact("Anjali Iyer");
-    setPhone("+91 98201 47821");
+    setPhone("");
     setEmail("anjali.iyer@gmail.com");
     setLeadType("wedding");
     setArrival("2026-11-21");
@@ -362,7 +366,7 @@ export default function GroupQuotePage() {
   const loadCorporate = () => {
     setCompany("Tata Consultancy Services");
     setContact("Karan Mehta");
-    setPhone("+91 99203 64210");
+    setPhone("");
     setEmail("karan.mehta@tcs.com");
     setLeadType("conference");
     setArrival("2026-09-14");
@@ -405,7 +409,7 @@ export default function GroupQuotePage() {
           <Button variant="outline" size="sm" onClick={loadCorporate}>
             <Briefcase className="h-3.5 w-3.5" />Corporate preset
           </Button>
-          <Button variant="outline" size="sm" disabled={saving} onClick={() => saveQuote("draft")}>
+          <Button variant="outline" size="sm" disabled={saving || !(phone === "" || isValidPhone(phone)) || !isValidEmail(email)} onClick={() => saveQuote("draft")}>
             <Save className="h-3.5 w-3.5" />Save draft
           </Button>
           <Button size="sm" onClick={() => showToast("Quote PDF generated · sent to anjali.iyer@gmail.com")}>
@@ -459,16 +463,13 @@ export default function GroupQuotePage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Phone</Label>
-                <div className="relative">
-                  <Phone className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                  <Input value={phone} onChange={e => setPhone(e.target.value)} className="pl-9" />
-                </div>
+                <PhoneInput value={phone} onChange={v => setPhone(v)} invalid={phone !== "" && !isValidPhone(phone)} size="md" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Email</Label>
                 <div className="relative">
-                  <Mail className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                  <Input value={email} onChange={e => setEmail(e.target.value)} className="pl-9" />
+                  <Mail className="h-3.5 w-3.5 absolute left-3 top-5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                  <EmailInput value={email} onChange={setEmail} className="pl-9" />
                 </div>
               </div>
               <div className="space-y-1.5">
@@ -1026,7 +1027,7 @@ export default function GroupQuotePage() {
                 <Button
                   size="sm"
                   className="w-full"
-                  disabled={saving}
+                  disabled={saving || !(phone === "" || isValidPhone(phone)) || !isValidEmail(email)}
                   onClick={() => saveQuote("tentative")}
                 >
                   <Send className="h-3.5 w-3.5" />Approve &amp; send quote

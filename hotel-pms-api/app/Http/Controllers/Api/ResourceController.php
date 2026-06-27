@@ -239,6 +239,7 @@ class ResourceController extends Controller
             'code' => 'string|max:50', 'name' => 'string|max:255', 'inclBreakfast' => 'boolean',
             'inclLunch' => 'boolean', 'inclDinner' => 'boolean', 'discountPct' => 'integer|min:0|max:100',
             'refundable' => 'boolean', 'active' => 'boolean',
+            'breakfastPrice' => 'integer|min:0', 'lunchPrice' => 'integer|min:0', 'dinnerPrice' => 'integer|min:0',
         ],
         'seasons' => [
             'name' => 'string|max:255', 'from' => 'string|max:50', 'to' => 'string|max:50',
@@ -298,6 +299,7 @@ class ResourceController extends Controller
             'checkOut' => 'string|max:50|nullable', 'nights' => 'integer|min:0', 'adults' => 'integer|min:1', 'children' => 'integer|min:0',
             'paymentStatus' => 'string|max:50', 'ratePlan' => 'string|max:50', 'total' => 'integer|min:0',
             'advance' => 'integer|min:0', 'balance' => 'integer', 'vip' => 'boolean', 'status' => 'string|max:50',
+            'draftData' => 'array|nullable',
         ],
         'folio-charges' => [
             'bookingNo' => 'string|max:50', 'date' => 'string|max:50', 'description' => 'string|max:500',

@@ -9,6 +9,8 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
 import { cn, money } from "@/lib/utils";
 import { useProperty, hotelName } from "@/lib/use-property";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
@@ -864,7 +866,7 @@ export default function TablesPage() {
               </div>
               <div>
                 <Label>Phone</Label>
-                <Input placeholder="+91 98XXX XXXXX" value={newRes.phone} onChange={e => setNewRes(s => ({ ...s, phone: e.target.value }))} className="mt-1.5" />
+                <PhoneInput value={newRes.phone} onChange={v => setNewRes(s => ({ ...s, phone: v }))} invalid={newRes.phone !== "" && !isValidPhone(newRes.phone)} size="md" className="mt-1.5" />
               </div>
               <div>
                 <Label>Occasion</Label>
@@ -894,10 +896,10 @@ export default function TablesPage() {
             </div>
             <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2 bg-surface-sunken/30">
               <Button size="sm" variant="ghost" onClick={() => setShowNew(false)}>Cancel</Button>
-              <Button size="sm" variant="outline" onClick={() => submitNewReservation(true)}>
+              <Button size="sm" variant="outline" disabled={!(newRes.phone === "" || isValidPhone(newRes.phone))} onClick={() => submitNewReservation(true)}>
                 Save &amp; send SMS
               </Button>
-              <Button size="sm" onClick={() => submitNewReservation(false)}>
+              <Button size="sm" disabled={!(newRes.phone === "" || isValidPhone(newRes.phone))} onClick={() => submitNewReservation(false)}>
                 <CheckCircle2 className="h-3.5 w-3.5" /> Create reservation
               </Button>
             </div>
@@ -919,7 +921,7 @@ export default function TablesPage() {
                 <div><Label>Party</Label><Select value={walkForm.party} onChange={e => setWalkForm(s => ({ ...s, party: Number(e.target.value) }))} className="mt-1.5">{[1,2,3,4,5,6,7,8].map(n => <option key={n}>{n}</option>)}</Select></div>
                 <div><Label>Est wait (min)</Label><Input value={walkForm.waitMin} onChange={e => setWalkForm(s => ({ ...s, waitMin: Number(e.target.value) }))} type="number" className="mt-1.5" /></div>
               </div>
-              <div><Label>Phone (for SMS)</Label><Input placeholder="+91 …" value={walkForm.phone} onChange={e => setWalkForm(s => ({ ...s, phone: e.target.value }))} className="mt-1.5" /></div>
+              <div><Label>Phone (for SMS)</Label><PhoneInput value={walkForm.phone} onChange={v => setWalkForm(s => ({ ...s, phone: v }))} size="md" invalid={walkForm.phone !== "" && !isValidPhone(walkForm.phone)} className="mt-1.5" /></div>
             </div>
             <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2 bg-surface-sunken/30">
               <Button size="sm" variant="ghost" onClick={() => setShowWalkin(false)}>Cancel</Button>

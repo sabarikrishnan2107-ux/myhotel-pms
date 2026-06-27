@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>POS80 Receipt — Sample</title>
+<style>
+  /* ===== Screen styling (the grey desk + print button) ===== */
+  :root{ --ink:#000; --muted:#444; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; background:#e9edf3; font-family:"Segoe UI",system-ui,sans-serif; }
+  .desk{ display:flex; flex-direction:column; align-items:center; gap:16px; padding:28px 12px 60px; }
+  .toolbar{ display:flex; gap:10px; align-items:center; }
+  .btn{ border:0; border-radius:10px; padding:11px 18px; font-size:14px; font-weight:600;
+         cursor:pointer; background:#1f6feb; color:#fff; }
+  .btn.alt{ background:#fff; color:#1f2937; border:1px solid #cbd5e1; }
+  .note{ color:#475569; font-size:12px; max-width:360px; text-align:center; line-height:1.5; }
+
+  /* ===== The actual 80mm receipt ===== */
+  .receipt{
+    width:80mm;                 /* roll width */
+    padding:4mm 3mm;            /* ~74mm printable area */
+    background:#fff;
+    color:var(--ink);
+    font-family:"Consolas","Courier New",monospace;
+    font-size:12px;
+    line-height:1.45;
+    box-shadow:0 6px 24px rgba(0,0,0,.18);
+  }
+  .center{ text-align:center; }
+  .right{ text-align:right; }
+  .b{ font-weight:700; }
+  .lg{ font-size:17px; }
+  .sm{ font-size:11px; }
+  .muted{ color:var(--muted); }
+  .hr{ border:0; border-top:1px dashed #000; margin:6px 0; }
+  .row{ display:flex; justify-content:space-between; gap:8px; }
+  .row > span:last-child{ text-align:right; white-space:nowrap; }
+  .items .line{ margin:4px 0; }
+  .items .name{ display:flex; justify-content:space-between; gap:8px; }
+  .items .qty{ color:var(--muted); font-size:11px; }
+  .tot .row{ margin:2px 0; }
+  .grand{ font-size:15px; font-weight:700; border-top:1px solid #000; border-bottom:1px solid #000;
+          padding:4px 0; margin:4px 0; }
+  .logo{ width:46px;height:46px;border:2px solid #000;border-radius:50%;display:inline-flex;
+         align-items:center;justify-content:center;font-weight:800;font-size:18px;margin-bottom:4px;}
+
+  /* ===== Print: kill everything except the receipt, set the roll size ===== */
+  @media print{
+    @page{ size:80mm auto; margin:0; }     /* 80mm wide, auto height = continuous roll */
+    html,body{ background:#fff; }
+    .desk{ padding:0; }
+    .toolbar,.note{ display:none !important; }
+    .receipt{ box-shadow:none; width:80mm; }
+  }
+</style>
+</head>
+<body>
+<div class="desk">
+
+  <div class="toolbar">
+    <button class="btn" onclick="window.print()">🖨  Print receipt</button>
+    <button class="btn alt" onclick="location.reload()">↻ New time</button>
+  </div>
+  <div class="note">
+    Press <b>Ctrl&nbsp;+&nbsp;P</b> (or the button) → pick your <b>POS80</b> printer →
+    Paper size <b>80&nbsp;×&nbsp;297mm</b> (or "Roll 80mm") → Margins <b>None</b> → Print.
+  </div>
+
+  <!-- ============ RECEIPT ============ -->
+  <div class="receipt" id="receipt">
+
+    <div class="center">
+      <div class="logo">HS</div>
+      <div class="b lg">HYDER SPARK</div>
+      <div class="sm">123 Banjara Hills Road No.12</div>
+      <div class="sm">Hyderabad, TS - 500034</div>
+      <div class="sm">Ph: +91 90000 12345</div>
+      <div class="sm">GSTIN: 36ABCDE1234F1Z5</div>
+    </div>
+
+    <hr class="hr"/>
+    <div class="center b">TAX INVOICE</div>
+    <hr class="hr"/>
+
+    <div class="row sm"><span>Bill No</span><span id="billno">INV-000128</span></div>
+    <div class="row sm"><span>Date</span><span id="datetime">—</span></div>
+    <div class="row sm"><span>Cashier</span><span>Reception 1</span></div>
+    <div class="row sm"><span>Guest</span><span>Rajesh Kumar</span></div>
+    <div class="row sm"><span>Room / Folio</span><span>401 / F-2207</span></div>
+    <div class="row sm"><span>Stay</span><span>26 Jun → 28 Jun (2N)</span></div>
+
+    <hr class="hr"/>
+
+    <div class="items">
+      <div class="line">
+        <div class="name"><span>Room Charge — Suite</span><span>30,000.00</span></div>
+        <div class="qty">2 nights × 15,000.00</div>
+      </div>
+      <div class="line">
+        <div class="name"><span>Restaurant — Dinner</span><span>2,400.00</span></div>
+        <div class="qty">1 × 2,400.00</div>
+      </div>
+      <div class="line">
+        <div class="name"><span>Laundry</span><span>650.00</span></div>
+        <div class="qty">1 × 650.00</div>
+      </div>
+      <div class="line">
+        <div class="name"><span>Mini Bar</span><span>1,050.00</span></div>
+        <div class="qty">3 × 350.00</div>
+      </div>
+    </div>
+
+    <hr class="hr"/>
+
+    <div class="tot">
+      <div class="row"><span>Subtotal</span><span>34,100.00</span></div>
+      <div class="row sm"><span>CGST @ 6%</span><span>2,046.00</span></div>
+      <div class="row sm"><span>SGST @ 6%</span><span>2,046.00</span></div>
+      <div class="row sm"><span>Round Off</span><span>-0.00</span></div>
+    </div>
+
+    <div class="row grand"><span>GRAND TOTAL</span><span>₹ 38,192.00</span></div>
+
+    <div class="sm muted">Rupees Thirty Eight Thousand One Hundred<br/>Ninety Two Only</div>
+
+    <hr class="hr"/>
+    <div class="row"><span>Paid — UPI</span><span>38,192.00</span></div>
+    <div class="row sm"><span>Balance</span><span>0.00</span></div>
+    <hr class="hr"/>
+
+    <div class="center sm">
+      <div class="b">Thank you for staying with us!</div>
+      <div class="muted">Check-out before 11:00 AM</div>
+      <br/>
+      <div class="muted">*** Computer generated receipt ***</div>
+      <div class="muted">No signature required</div>
+    </div>
+
+    <!-- feed a little blank space before the cut -->
+    <div style="height:8mm"></div>
+  </div>
+  <!-- ============ /RECEIPT ============ -->
+
+</div>
+
+<script>
+  // Fill live date/time so the sample looks real
+  (function(){
+    var d = new Date();
+    var pad = function(n){ return String(n).padStart(2,'0'); };
+    var s = pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear()
+          + '  ' + pad(d.getHours())+':'+pad(d.getMinutes());
+    document.getElementById('datetime').textContent = s;
+  })();
+</script>
+</body>
+</html>

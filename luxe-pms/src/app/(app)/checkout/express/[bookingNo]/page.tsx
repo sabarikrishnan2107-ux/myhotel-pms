@@ -11,6 +11,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
 import { cn, money } from "@/lib/utils";
 import { useProperty, hotelName } from "@/lib/use-property";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
@@ -484,11 +486,12 @@ export default function ExpressCheckoutPage({ params }: { params: Promise<{ book
                 <MessageCircle className="h-4 w-4 text-muted-foreground mt-1 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <Label className="text-sm">WhatsApp invoice</Label>
-                  <Input
+                  <PhoneInput
                     value={phone}
                     disabled={!waOn}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+91 …"
+                    onChange={(v) => setPhone(v)}
+                    invalid={phone !== "" && !isValidPhone(phone)}
+                    size="md"
                     className="mt-1.5"
                   />
                 </div>
@@ -551,7 +554,7 @@ export default function ExpressCheckoutPage({ params }: { params: Promise<{ book
                       <RotateCcw className="h-4 w-4" /> Cancel
                     </Button>
                   </Link>
-                  <Button onClick={handleConfirm} disabled={submitting} className="flex-1 sm:flex-none">
+                  <Button onClick={handleConfirm} disabled={submitting || !(phone === "" || isValidPhone(phone))} className="flex-1 sm:flex-none">
                     {submitting ? "Processing…" : <>Confirm &amp; checkout <ArrowRight className="h-4 w-4" /></>}
                   </Button>
                 </div>

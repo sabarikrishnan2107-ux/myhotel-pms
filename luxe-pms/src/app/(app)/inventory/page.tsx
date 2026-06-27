@@ -9,6 +9,8 @@ import {
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, NumberInput } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { isValidPhone } from "@/lib/phone";
 import { Badge } from "@/components/ui/badge";
 import { KPICard } from "@/components/ui/kpi-card";
 import { INVENTORY_ITEMS } from "@/lib/mock-data-ext";
@@ -2109,7 +2111,7 @@ function PurchaseEntryForm({ purchase, onClose, onSave }: {
   const [vendor, setVendor] = React.useState(purchase?.vendor ?? "");
   const [vendorGstin, setVendorGstin] = React.useState(purchase?.vendorGstin ?? "");
   const [vendorPan, setVendorPan] = React.useState(purchase?.vendorPan ?? "");
-  const [vendorPhone, setVendorPhone] = React.useState(purchase?.vendorPhone ?? "+91 ");
+  const [vendorPhone, setVendorPhone] = React.useState(purchase?.vendorPhone ?? "");
   const [billNo, setBillNo] = React.useState(purchase?.billNo ?? "");
   const [billDate, setBillDate] = React.useState(purchase?.billDate ?? new Date().toISOString().slice(0, 10));
 
@@ -2177,7 +2179,7 @@ function PurchaseEntryForm({ purchase, onClose, onSave }: {
 
   const totals = purchaseTotals({ lines, discount, freight, roundOff, interState });
   const balance = totals.grandTotal - paidAmount;
-  const valid = vendor.trim() !== "" && billNo.trim() !== "" && lines.some(l => l.item.trim() !== "" && l.amount > 0);
+  const valid = vendor.trim() !== "" && billNo.trim() !== "" && lines.some(l => l.item.trim() !== "" && l.amount > 0) && (vendorPhone === "" || isValidPhone(vendorPhone));
 
   // Auto-set paid amount when status changes
   React.useEffect(() => {
@@ -2268,7 +2270,7 @@ function PurchaseEntryForm({ purchase, onClose, onSave }: {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="space-y-1 md:col-span-2"><label className="block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Vendor name *</label><Input value={vendor} onChange={e => setVendor(e.target.value)} placeholder="e.g. Crawford Market Vendor — Suresh" className="h-9" /></div>
-              <div className="space-y-1"><label className="block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Vendor phone</label><Input value={vendorPhone} onChange={e => setVendorPhone(e.target.value)} placeholder="+91 9XXXX XXXXX" className="h-9 tabular" /></div>
+              <div className="space-y-1"><label className="block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Vendor phone</label><PhoneInput value={vendorPhone} onChange={v => setVendorPhone(v)} size="sm" invalid={vendorPhone !== "" && !isValidPhone(vendorPhone)} /></div>
               <div className="space-y-1"><label className="block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Vendor GSTIN</label><Input value={vendorGstin} onChange={e => setVendorGstin(e.target.value.toUpperCase())} placeholder="27ABCDE1234F1Z5" className="h-9 font-mono tabular" /></div>
               <div className="space-y-1"><label className="block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Vendor PAN</label><Input value={vendorPan} onChange={e => setVendorPan(e.target.value.toUpperCase())} placeholder="ABCDE1234F" className="h-9 font-mono tabular" /></div>
               <div className="space-y-1"><label className="block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Bill / Invoice no *</label><Input value={billNo} onChange={e => setBillNo(e.target.value)} placeholder="VEG-24-557" className="h-9 font-mono tabular" /></div>
