@@ -10,7 +10,7 @@ import {
   ChevronLeft, Printer, AlertCircle, Upload, FileCheck2, ScanLine, Pen,
   Plus, BedDouble as BedIcon, Globe, ChevronsRight, Minus,
   Banknote, Smartphone, Building2, Wallet, UtensilsCrossed,
-  CalendarPlus, CalendarMinus, Bed, Download, FileText,
+  CalendarPlus, CalendarMinus, Download, FileText,
 } from "lucide-react";
 import { Label } from "@/components/ui/input";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -1976,7 +1976,6 @@ function WalkInModal({
   // ----- stay add-ons -----
   const [earlyCheckIn, setEarlyCheckIn] = React.useState(false);
   const [lateCheckOut, setLateCheckOut] = React.useState(false);
-  const [extraBed, setExtraBed] = React.useState(false);
 
   // ----- F&B add-ons (per-pax count × nights) -----
   const [fbAddons, setFbAddons] = React.useState<Record<string, number>>({});
@@ -2017,6 +2016,7 @@ function WalkInModal({
   // ----- advance payment -----
   const [pay, setPay] = React.useState<AdvancePayment>({ amount: 0, mode: "UPI" });
   const setP = <K extends keyof AdvancePayment>(k: K, v: AdvancePayment[K]) => setPay(p => ({ ...p, [k]: v }));
+  const [customAdvance, setCustomAdvance] = React.useState(false);   // "Custom" advance toggle → reveals an amount input
 
   // ----- receipt preview -----
   const [showReceipt, setShowReceipt] = React.useState(false);
@@ -2053,10 +2053,9 @@ function WalkInModal({
   const roomSubtotal = breakdown.total;
   const earlyFee = earlyCheckIn ? 500 : 0;     // ₹500 flat
   const lateFee = lateCheckOut ? 500 : 0;      // ₹500 flat
-  const extraBedFee = extraBed ? 900 * nights : 0;
   const fbTotal = WALKIN_FB.reduce((t, p) => t + p.price * (fbAddons[p.id] ?? 0) * nights, 0);
   const ratePlanSupplement = ratePlan.surchargePerNight * nights * (adults + children);
-  const extras = earlyFee + lateFee + extraBedFee + fbTotal + ratePlanSupplement;
+  const extras = earlyFee + lateFee + fbTotal + ratePlanSupplement;
   const subtotal = roomSubtotal + extras;
   const tax = Math.round(subtotal * 0.05);
   const grandTotal = subtotal + tax;
@@ -2597,7 +2596,7 @@ function WalkInModal({
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 inline-flex items-center gap-1.5">
                     <Sparkles className="h-3 w-3" />Stay add-ons
                   </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <ToggleAddon
                       icon={CalendarPlus} label="Early check-in"
                       hint="Before 12 PM · subject to availability"
@@ -2609,12 +2608,6 @@ function WalkInModal({
                       hint="Until 4 PM · HK reschedules"
                       priceText={`+ ${money(500)} flat`}
                       on={lateCheckOut} onChange={setLateCheckOut}
-                    />
-                    <ToggleAddon
-                      icon={Bed} label="Extra bed"
-                      hint="Incl. breakfast"
-                      priceText={`+ ${money(900)} / night`}
-                      on={extraBed} onChange={setExtraBed}
                     />
                   </div>
                 </div>
@@ -2661,10 +2654,10 @@ function WalkInModal({
                       <button
                         key={p}
                         type="button"
-                        onClick={() => setP("amount", Math.round(grandTotal * p / 100))}
+                        onClick={() => { setCustomAdvance(false); setP("amount", Math.round(grandTotal * p / 100)); }}
                         className={cn(
                           "h-9 rounded-md border text-xs font-medium transition-colors",
-                          Math.abs(pay.amount - Math.round(grandTotal * p / 100)) < 5
+                          !customAdvance && Math.abs(pay.amount - Math.round(grandTotal * p / 100)) < 5
                             ? "bg-brand text-brand-foreground border-brand"
                             : "border-border hover:bg-surface-sunken"
                         )}
@@ -2672,8 +2665,33 @@ function WalkInModal({
                         {p === 0 ? "No advance" : p === 100 ? "Full" : `${p}%`}
                       </button>
                     ))}
-                    <Input type="number" min={0} max={grandTotal} value={pay.amount} onChange={e => setP("amount", Number(e.target.value))} className="h-9 tabular text-center font-semibold" />
+                    <button
+                      type="button"
+                      onClick={() => setCustomAdvance(true)}
+                      className={cn(
+                        "h-9 rounded-md border text-xs font-medium transition-colors",
+                        customAdvance ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
+                      )}
+                    >
+                      Custom
+                    </button>
                   </div>
+                  {customAdvance && (
+                    <div className="relative animate-in">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={grandTotal}
+                        value={pay.amount}
+                        onChange={e => setP("amount", Math.min(grandTotal, Math.max(0, Number(e.target.value))))}
+                        placeholder="Enter advance amount"
+                        className="h-10 tabular pl-7 font-semibold"
+                        autoFocus
+                      />
+                      <p className="text-[11px] text-muted-foreground mt-1">Enter any amount up to {money(grandTotal)}.</p>
+                    </div>
+                  )}
 
                   {/* Mode selector — visual icons */}
                   {pay.amount > 0 && (
@@ -2826,7 +2844,6 @@ function WalkInModal({
                     sub={[
                       earlyCheckIn && "Early check-in",
                       lateCheckOut && "Late check-out",
-                      extraBed && "Extra bed",
                     ].filter(Boolean).join(" · ") || "12 PM → 11 AM"}
                     onEdit={() => setStep(2)}
                   />
@@ -2901,7 +2918,6 @@ function WalkInModal({
               </div>
               {earlyFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Early check-in</span><span className="tabular">{money(earlyFee)}</span></div>}
               {lateFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Late check-out</span><span className="tabular">{money(lateFee)}</span></div>}
-              {extraBedFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Extra bed × {nights}N</span><span className="tabular">{money(extraBedFee)}</span></div>}
               {fbTotal > 0 && (
                 <>
                   <div className="pt-1.5 mt-1.5 border-t border-border">
