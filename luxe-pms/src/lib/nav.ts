@@ -61,6 +61,7 @@ export const NAV: NavItem[] = [
   { href: "/website", label: "Website Booking", icon: MonitorSmartphone, group: "erp", roles: MANAGER },
   { href: "/notifications", label: "Notifications", icon: Bell, group: "system" },
   { href: "/night-audit", label: "Night Audit", icon: Moon, group: "system", roles: MANAGER },
+  { href: "/analytics", label: "Analytics Report", icon: TrendingUp, group: "system", roles: MANAGER },
   { href: "/reports", label: "Reports", icon: FileBarChart, group: "system", roles: MANAGER },
   { href: "/ai", label: "AI Assistant", icon: Bot, group: "system", roles: MANAGER },
 

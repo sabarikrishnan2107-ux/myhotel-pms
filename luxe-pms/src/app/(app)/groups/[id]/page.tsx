@@ -15,7 +15,7 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { Input, Label, Select } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { isValidPhone } from "@/lib/phone";
-import { GROUP_BOOKINGS, SAMPLE_ROOMING_LIST, GROUP_TIMELINE, type GroupStatus, type GroupBooking } from "@/lib/mock-data-ext";
+import { GROUP_TIMELINE, type GroupStatus, type GroupBooking } from "@/lib/mock-data-ext";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { computeGroupTotals, type GstSlab } from "@/lib/group-pricing";
 import { mealPerNightPerGuest } from "@/lib/booking-pricing";
@@ -42,7 +42,7 @@ const TABS = [
 
 export default function GroupDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const [group, setGroup] = React.useState<GroupBooking>(() => GROUP_BOOKINGS.find(g => g.code === id) ?? GROUP_BOOKINGS[0]);
+  const [group, setGroup] = React.useState<GroupBooking | null>(null);
   const [payAmount, setPayAmount] = React.useState(0);
   const [payMode, setPayMode] = React.useState("Cash");
   React.useEffect(() => {
@@ -59,7 +59,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const [tab, setTab] = React.useState("overview");
 
   // Rooming list — group-scoped, loaded from the API.
-  const [rooming, setRooming] = React.useState<RoomingEntry[]>(SAMPLE_ROOMING_LIST);
+  const [rooming, setRooming] = React.useState<RoomingEntry[]>([]);
   const [assignId, setAssignId] = React.useState<string | null>(null);
   const [addGuestOpen, setAddGuestOpen] = React.useState(false);
   // Per-row "..." actions menu, portalled to <body> (the table card clips overflow).
@@ -113,7 +113,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   // dirty/cleaning/occupied state doesn't apply to a future window.
   const freeRooms = React.useMemo(() => {
     const day = (s?: string) => (s ?? "").slice(0, 10);
-    const rIn = day(group.arrival), rOut = day(group.departure);
+    const rIn = day(group?.arrival), rOut = day(group?.departure);
     const occupied = new Set<string>();
     if (rIn && rOut && rIn < rOut) {
       allBookings.forEach(b => {
@@ -125,7 +125,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
       });
     }
     return board.filter(r => r.status !== "blocked" && r.status !== "maintenance" && !occupied.has(r.number));
-  }, [board, allBookings, group.arrival, group.departure]);
+  }, [board, allBookings, group?.arrival, group?.departure]);
 
   // Rooms a given rooming entry can be assigned: free rooms of the matching type
   // that aren't already taken by another guest in THIS group (no duplicates).
@@ -167,12 +167,13 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const timeline = React.useMemo(() => {
     if (!auditRows) return null;
     return auditRows
-      .filter(r => /group/i.test(r.module) && (r.entity === group.name || r.entity === group.code))
+      .filter(r => /group/i.test(r.module) && (r.entity === group?.name || r.entity === group?.code))
       .map(r => ({ id: r.id, action: `${r.action}${r.entity ? " · " + r.entity : ""}`, time: `${r.date} ${r.time}`.trim(), actor: r.user }));
-  }, [auditRows, group.name, group.code]);
+  }, [auditRows, group?.name, group?.code]);
 
   // Receive payment — persists a master-folio payment + updates the group balance.
   const receivePayment = () => {
+    if (!group) return;
     const amt = Math.round(Number(payAmount) || 0);
     if (amt <= 0) { flash("Enter a valid amount"); return; }
     const today = new Date().toISOString().slice(0, 10);
@@ -180,7 +181,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
       .catch(() => flash("⚠ Payment not saved — backend offline"));
     const advance = group.advance + amt;
     const balance = Math.max(0, group.balance - amt);
-    setGroup(g => ({ ...g, advance, balance }));
+    setGroup(g => g ? { ...g, advance, balance } : g);
     setPayAmount(balance);
     apiPut(`/group-bookings/${group.id}`, { advance, balance }).catch(() => {});
     flash(`Payment of ${money(amt)} recorded via ${payMode}`);
@@ -188,9 +189,10 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
 
   // Add a service — persists onto the group record.
   const addService = (name: string) => {
+    if (!group) return;
     if (group.services.includes(name)) { flash(`${name} already added`); return; }
     const services = [...group.services, name];
-    setGroup(g => ({ ...g, services }));
+    setGroup(g => g ? { ...g, services } : g);
     apiPut(`/group-bookings/${group.id}`, { services }).catch(() => flash("⚠ Save failed — backend offline"));
     flash(`${name} added to the group`);
   };
@@ -218,10 +220,22 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
 
   // Check the whole group in.
   const checkInGroup = () => {
-    setGroup(g => ({ ...g, status: "in-house" }));
+    if (!group) return;
+    setGroup(g => g ? { ...g, status: "in-house" } : g);
     apiPut(`/group-bookings/${group.id}`, { status: "in-house" }).catch(() => flash("⚠ Save failed — backend offline"));
     flash("Group checked in");
   };
+
+  if (!group) {
+    return (
+      <div className="p-4 sm:p-6 lg:p-8">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-6">
+          <Link href="/groups" className="hover:text-foreground inline-flex items-center gap-1"><ChevronLeft className="h-3.5 w-3.5" />Groups</Link>
+        </div>
+        <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">Loading group…</div>
+      </div>
+    );
+  }
 
   const allocated = group.block.reduce((s, b) => s + b.assigned, 0);
   const allocPct = Math.round((allocated / group.totalRooms) * 100);
@@ -524,7 +538,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                       <p className="text-xs text-muted-foreground mt-0.5">Booked · confirmed for the group window</p>
                     </div>
                     <Badge tone="success">Active</Badge>
-                    <button onClick={() => { const services = group.services.filter(x => x !== s); setGroup(g => ({ ...g, services })); apiPut(`/group-bookings/${group.id}`, { services }).catch(() => flash("⚠ Save failed")); flash(`${s} removed`); }} className="text-muted-foreground hover:text-danger" title="Remove"><X className="h-4 w-4" /></button>
+                    <button onClick={() => { const services = group.services.filter(x => x !== s); setGroup(g => g ? { ...g, services } : null); apiPut(`/group-bookings/${group.id}`, { services }).catch(() => flash("⚠ Save failed")); flash(`${s} removed`); }} className="text-muted-foreground hover:text-danger" title="Remove"><X className="h-4 w-4" /></button>
                   </li>
                 ))}
               </ul>
