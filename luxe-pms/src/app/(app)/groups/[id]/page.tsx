@@ -234,8 +234,11 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     breakfastPrice: planCfg?.breakfastPrice ?? 0, lunchPrice: planCfg?.lunchPrice ?? 0, dinnerPrice: planCfg?.dinnerPrice ?? 0,
   }) * (group.totalPax || 0) * (group.nights || 0);
   const extraBedRateFor = (typeName: string) => roomTypes.find(t => t.name === typeName)?.extraAdultRate ?? 0;
+  // Prefer the extra-bed rate frozen onto the block at creation (like room rate);
+  // fall back to live Setup for legacy groups saved before it was persisted.
+  const extraBedRateOf = (b: { type: string; extraBedRate?: number }) => b.extraBedRate ?? extraBedRateFor(b.type);
   const folio = computeGroupTotals(
-    group.block.map(b => ({ rate: b.rate, qty: b.qty, extraBeds: b.extraBeds ?? 0, extraBedRate: extraBedRateFor(b.type) })),
+    group.block.map(b => ({ rate: b.rate, qty: b.qty, extraBeds: b.extraBeds ?? 0, extraBedRate: extraBedRateOf(b) })),
     group.nights, [], group.totalPax || 0, gstSlabs, planMeals,
   );
 
@@ -574,8 +577,8 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                   <tr key={`eb${i}`}>
                     <td className="px-5 py-3">{b.type} · extra bed · {group.nights} nights</td>
                     <td className="px-5 py-3 text-right tabular">{b.extraBeds}</td>
-                    <td className="px-5 py-3 text-right tabular">{money(extraBedRateFor(b.type) * group.nights)}</td>
-                    <td className="px-5 py-3 text-right tabular font-medium">{money((b.extraBeds ?? 0) * extraBedRateFor(b.type) * group.nights)}</td>
+                    <td className="px-5 py-3 text-right tabular">{money(extraBedRateOf(b) * group.nights)}</td>
+                    <td className="px-5 py-3 text-right tabular font-medium">{money((b.extraBeds ?? 0) * extraBedRateOf(b) * group.nights)}</td>
                   </tr>
                 ))}
                 {folio.mealsSubtotal > 0 && (
