@@ -273,7 +273,7 @@ export default function NewGroupPage() {
 
   // Soft occupancy check: rooms (× included adults) + extra beds vs expected pax.
   const blockCapacity = block.reduce((s, b) => s + b.qty * maxAdultsFor(b.type) + b.extraBeds, 0);
-  const overCapacity = pax > 0 && pax > blockCapacity;
+  const overCapacity = pax > 0 && totalRooms > 0 && pax > blockCapacity;
 
   const advance = paymentTerm === "custom" ? 0 : Math.round((total * Number(paymentTerm)) / 100);
 
