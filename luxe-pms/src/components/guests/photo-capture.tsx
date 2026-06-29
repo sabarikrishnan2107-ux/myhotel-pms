@@ -250,11 +250,20 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
           <Image src={captured} alt="Captured photo" fill unoptimized className="object-cover" />
         )}
         {mode === "idle" && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-subtle-foreground select-none">
-            <Camera className="h-6 w-6" />
-            <p className="text-xs mt-2 font-medium">{label}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Click to start camera</p>
-          </div>
+          <>
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-subtle-foreground select-none">
+              <Camera className="h-6 w-6" />
+              <p className="text-xs mt-2 font-medium">{label}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Click to start camera</p>
+            </div>
+            <label
+              onClick={e => e.stopPropagation()}
+              className="absolute bottom-2 right-2 h-7 px-2.5 rounded border border-border bg-surface/80 hover:bg-surface text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              <Upload className="h-3 w-3" />Upload
+              <input type="file" accept="image/*" onChange={upload} className="sr-only" />
+            </label>
+          </>
         )}
         {mode === "error" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-danger p-3 text-center">
@@ -278,12 +287,6 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
         </div>
       )}
       <div className="flex gap-1.5">
-        {mode === "idle" && (
-          <label className="w-full h-7 px-2 rounded text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center justify-center gap-1 cursor-pointer transition-colors">
-            <Upload className="h-3 w-3" />Upload instead
-            <input type="file" accept="image/*" onChange={upload} className="sr-only" />
-          </label>
-        )}
         {(mode === "processing" || mode === "validating" || mode === "removing-bg") && (
           <div className="flex-1 h-8 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
