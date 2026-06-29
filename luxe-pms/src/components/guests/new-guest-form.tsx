@@ -397,12 +397,6 @@ export function NewGuestForm({ onCancel, onSave, mobileSync, initialData, hideCa
         {/* Capture boxes — 4 equal columns: ID front · ID back · Face photo · Signature */}
         {!hideCaptures && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 items-start">
-            <Field label={`${data.idType} — front`}>
-              <DocumentUpload label="ID Front" value={data.idFront} onChange={v => update("idFront", v)} />
-            </Field>
-            <Field label={`${data.idType} — back`}>
-              <DocumentUpload label="ID Back" value={data.idBack} onChange={v => update("idBack", v)} />
-            </Field>
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <Camera className="h-4 w-4 text-muted-foreground" />
@@ -410,6 +404,12 @@ export function NewGuestForm({ onCancel, onSave, mobileSync, initialData, hideCa
               </div>
               <PhotoCapture value={data.photo} onChange={v => update("photo", v)} aspect="square" />
             </div>
+            <Field label={`${data.idType} — front`}>
+              <DocumentUpload label="ID Front" value={data.idFront} onChange={v => update("idFront", v)} />
+            </Field>
+            <Field label={`${data.idType} — back`}>
+              <DocumentUpload label="ID Back" value={data.idBack} onChange={v => update("idBack", v)} />
+            </Field>
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <Pen className="h-4 w-4 text-muted-foreground" />
