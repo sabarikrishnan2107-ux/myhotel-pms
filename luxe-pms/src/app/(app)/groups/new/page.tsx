@@ -331,7 +331,7 @@ export default function NewGroupPage() {
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-6 w-full">
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Link href="/groups" className="hover:text-foreground inline-flex items-center gap-1"><ChevronLeft className="h-3.5 w-3.5" />Groups</Link>
@@ -347,9 +347,9 @@ export default function NewGroupPage() {
         <Badge tone="brand"><Sparkles className="h-3 w-3" />AI fills suggested rates from past groups</Badge>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
         {/* Left: form */}
-        <div className="lg:col-span-2 space-y-5">
+        <div className="space-y-5">
           {/* Group identity */}
           <Card className="p-6 space-y-4">
             <SectionHead icon={UsersRound} title="Group Identity" hint="What is the group called and what's its purpose?" />
@@ -671,7 +671,7 @@ export default function NewGroupPage() {
         </div>
 
         {/* Right: live summary */}
-        <Card className="p-5 h-fit sticky top-20 space-y-4">
+        <Card className="p-6 h-fit sticky top-20 space-y-4">
           <div>
             <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Live Summary</p>
           </div>
