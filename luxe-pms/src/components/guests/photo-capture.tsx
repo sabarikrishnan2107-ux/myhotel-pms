@@ -224,9 +224,16 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
               aspectClass,
             ),
       )}>
-        {(mode === "live" || mode === "processing" || mode === "validating" || mode === "removing-bg") && (
-          <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted />
-        )}
+        {/* Always mounted so videoRef is available before setMode("live") fires */}
+        <video
+          ref={videoRef}
+          className={cn(
+            "absolute inset-0 w-full h-full object-cover",
+            (mode === "live" || mode === "processing" || mode === "validating" || mode === "removing-bg") ? "" : "hidden",
+          )}
+          playsInline
+          muted
+        />
         {/* Face-alignment guide while the camera is live (face mode only) */}
         {mode === "live" && faceFocus && (
           <div className="absolute inset-0 pointer-events-none">
