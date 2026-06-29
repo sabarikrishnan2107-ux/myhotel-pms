@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
 import { computeGroupTotals, type GstSlab } from "@/lib/group-pricing";
+import { type GroupPolicies, DEFAULT_POLICIES } from "@/app/(app)/setup/group-policies-manager";
 import { mealPerNightPerGuest } from "@/lib/booking-pricing";
 
 interface BlockRow { id: string; type: string; qty: number; rate: number; extraBeds: number; }
@@ -96,7 +97,8 @@ export default function NewGroupPage() {
   const [arrival, setArrival] = React.useState("");
   const [departure, setDeparture] = React.useState("");
   const [ratePlan, setRatePlan] = React.useState("CP");
-  const [paymentTerm, setPaymentTerm] = React.useState<"30" | "50" | "100" | "custom">("30");
+  const [paymentTerm, setPaymentTerm] = React.useState<number | "custom">(30);
+  const [policies, setPolicies] = React.useState<GroupPolicies>(DEFAULT_POLICIES);
   const [billingMode, setBillingMode] = React.useState<"master" | "per-room" | "split">("master");
   const [notes, setNotes] = React.useState("");
   const [services, setServices] = React.useState<string[]>([]);
@@ -108,16 +110,17 @@ export default function NewGroupPage() {
     { id: "b1", type: "Deluxe", qty: 0, rate: 0, extraBeds: 0 },
   ]);
 
-  // Live room inventory + bookings, so the block can only reserve rooms that are
-  // actually free for the chosen dates (specific rooms are picked at check-in).
-  const [rooms, setRooms] = React.useState<{ number: string; type: string; status: string }[]>([]);
-  const [allBookings, setAllBookings] = React.useState<
-    { roomNumber?: string; status?: string; checkIn?: string; checkOut?: string }[]
-  >([]);
+  // Room availability for the chosen date window — fetched from the backend which
+  // cross-checks individual bookings AND group rooming assignments so the same room
+  // can never be double-booked across any flow.
+  const [availData, setAvailData] = React.useState<{ number: string; type: string; available: boolean }[]>([]);
   React.useEffect(() => {
-    apiGet<typeof rooms>("/room-board").then(setRooms).catch(() => {});
-    apiGet<typeof allBookings>("/bookings").then(setAllBookings).catch(() => {});
-  }, []);
+    const from = (arrival ?? "").slice(0, 10);
+    const to   = (departure ?? "").slice(0, 10);
+    if (!from || !to || from >= to) { setAvailData([]); return; }
+    apiGet<typeof availData>(`/room-availability?from=${from}&to=${to}`)
+      .then(setAvailData).catch(() => {});
+  }, [arrival, departure]);
 
   // Config state — room types, rate plans, agents, service catalog, GST slabs
   type RoomType = { name: string; baseTariff: number; maxAdults?: number; extraAdultRate?: number };
@@ -135,14 +138,37 @@ export default function NewGroupPage() {
     apiGet<AgentRow[]>("/agents").then(r => Array.isArray(r) && setAgents(r)).catch(() => {});
     apiGet<GroupSvc[]>("/group-services").then(r => Array.isArray(r) && setSvcCatalog(r.filter(s => s.active))).catch(() => {});
     apiGet<GstSlab[]>("/gst-slabs").then(r => Array.isArray(r) && setGstSlabs(r)).catch(() => {});
+    apiGet<Partial<GroupPolicies>>("/settings/group_policies").then(d => {
+      if (d && typeof d === "object") {
+        const merged: GroupPolicies = {
+          depositPresets: Array.isArray(d.depositPresets) && d.depositPresets.length ? d.depositPresets : DEFAULT_POLICIES.depositPresets,
+          cancellationTiers: Array.isArray(d.cancellationTiers) ? d.cancellationTiers : DEFAULT_POLICIES.cancellationTiers,
+          discountTiers: Array.isArray(d.discountTiers) ? d.discountTiers : DEFAULT_POLICIES.discountTiers,
+        };
+        setPolicies(merged);
+        // Set first deposit preset as default advance
+        if (merged.depositPresets.length) setPaymentTerm(merged.depositPresets[0]);
+      }
+    }).catch(() => {});
   }, []);
 
   const selectedPlan = ratePlans.find(p => p.code === ratePlan || p.name === ratePlan);
   const planDiscount = Number(selectedPlan?.discountPct) || 0;
+
+  // totalRooms must be computed before volumeDiscountPct (which depends on it).
+  const totalRooms = block.reduce((s, b) => s + b.qty, 0);
+
+  // Volume discount: highest tier whose minRooms threshold the block meets.
+  const volumeDiscountPct = (() => {
+    const tiers = [...policies.discountTiers].sort((a, b) => b.minRooms - a.minRooms);
+    return tiers.find(t => totalRooms >= t.minRooms)?.discountPct ?? 0;
+  })();
+
   const suggestRate = React.useCallback((typeName: string) => {
     const base = roomTypes.find(t => t.name === typeName)?.baseTariff ?? 0;
-    return Math.round(base * (1 - planDiscount / 100));
-  }, [roomTypes, planDiscount]);
+    const combinedDiscount = Math.min(planDiscount + volumeDiscountPct, 100);
+    return Math.round(base * (1 - combinedDiscount / 100));
+  }, [roomTypes, planDiscount, volumeDiscountPct]);
 
   // Track which rows the user has manually edited the rate for
   const editedRates = React.useRef<Set<string>>(new Set());
@@ -152,29 +178,15 @@ export default function NewGroupPage() {
     setBlock(prev => prev.map(r => editedRates.current.has(r.id) ? r : { ...r, rate: suggestRate(r.type) || r.rate }));
   }, [roomTypes, suggestRate]);
 
-  // Free rooms per type for [arrival, departure): all rooms of the type minus
-  // those blocked/out-of-order or held by another active overlapping booking.
-  // (Today's dirty/cleaning/occupied state doesn't apply to a future window.)
+  // Count free rooms per type from the server-side availability response.
   const availabilityByType = React.useMemo(() => {
-    const day = (s?: string) => (s ?? "").slice(0, 10);
-    const rIn = day(arrival), rOut = day(departure);
     const result: Record<string, number> = {};
-    if (!rIn || !rOut || rIn >= rOut) return result;
-    const occupied = new Set<string>();
-    allBookings.forEach(b => {
-      const st = b.status ?? "confirmed";
-      if (st === "cancelled" || st === "checked-out") return;
-      if (!b.roomNumber || b.roomNumber === "Unassigned") return;
-      const bIn = day(b.checkIn), bOut = day(b.checkOut);
-      if (bIn && bOut && bIn < rOut && bOut > rIn) occupied.add(b.roomNumber);
-    });
-    rooms.forEach(r => {
-      if (r.status === "blocked" || r.status === "maintenance" || occupied.has(r.number)) return;
+    availData.filter(r => r.available).forEach(r => {
       const key = r.type.toLowerCase();
       result[key] = (result[key] ?? 0) + 1;
     });
     return result;
-  }, [rooms, allBookings, arrival, departure]);
+  }, [availData]);
 
   const datesChosen = !!(arrival && departure && arrival < departure);
   // Max qty for a row = free rooms of its type minus what earlier rows of the
@@ -237,7 +249,6 @@ export default function NewGroupPage() {
     }
   };
 
-  const totalRooms = block.reduce((s, b) => s + b.qty, 0);
   const todayISO = new Date().toLocaleDateString("en-CA"); // blocks past dates on arrival/departure
   const nights = (() => {
     const a = new Date(arrival); const d = new Date(departure);
@@ -275,7 +286,7 @@ export default function NewGroupPage() {
   const blockCapacity = block.reduce((s, b) => s + b.qty * maxAdultsFor(b.type) + b.extraBeds, 0);
   const overCapacity = pax > 0 && totalRooms > 0 && pax > blockCapacity;
 
-  const advance = paymentTerm === "custom" ? 0 : Math.round((total * Number(paymentTerm)) / 100);
+  const advance = paymentTerm === "custom" ? 0 : Math.round((total * paymentTerm) / 100);
 
   const updateBlock = (id: string, key: keyof BlockRow, value: number | string) => {
     setBlock(b => b.map(r => {
@@ -297,7 +308,7 @@ export default function NewGroupPage() {
   const save = (status: "confirmed" | "tentative") => {
     if (saving || !requiredOk) return;
     setSaving(true);
-    const code = `GRP-${new Date().getFullYear().toString().slice(-2)}${Math.floor(10 + (totalRooms % 90))}`;
+    const code = `GRP${Date.now().toString().slice(-7)}`;
     apiPost("/group-bookings", {
       code, name, type, contactName, contactPhone, contactEmail,
       bookedBy, arrival, departure, nights,
@@ -694,7 +705,7 @@ export default function NewGroupPage() {
           <div className="border-t border-border pt-3">
             <Label>Advance payment</Label>
             <div className="flex gap-1.5 mt-1.5 flex-wrap">
-              {(["30", "50", "100", "custom"] as const).map(p => (
+              {policies.depositPresets.map(p => (
                 <button
                   key={p}
                   type="button"
@@ -704,15 +715,28 @@ export default function NewGroupPage() {
                     paymentTerm === p ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
                   )}
                 >
-                  {p === "custom" ? "Instalments" : p === "100" ? "Full" : `${p}%`}
+                  {p === 100 ? "Full" : `${p}%`}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => setPaymentTerm("custom")}
+                className={cn(
+                  "h-9 px-3 rounded-md border text-xs font-medium transition-colors",
+                  paymentTerm === "custom" ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
+                )}
+              >
+                Instalments
+              </button>
             </div>
             {paymentTerm !== "custom" && (
               <div className="mt-3 space-y-1.5 text-sm">
                 <Row k={`Advance (${paymentTerm}%)`} v={<span className="text-brand font-semibold">{money(advance)}</span>} />
                 <Row k="Balance" v={money(total - advance)} muted />
               </div>
+            )}
+            {volumeDiscountPct > 0 && (
+              <p className="text-xs text-success mt-1.5">Volume discount applied: {volumeDiscountPct}% off (block ≥ {policies.discountTiers.filter(t => totalRooms >= t.minRooms).sort((a,b) => b.minRooms - a.minRooms)[0]?.minRooms} rooms)</p>
             )}
           </div>
 

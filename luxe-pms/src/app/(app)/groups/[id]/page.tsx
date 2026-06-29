@@ -23,8 +23,8 @@ import { mealPerNightPerGuest } from "@/lib/booking-pricing";
 type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string };
 type AuditRow = { id: string; action: string; entity: string; module: string; user: string; date: string; time: string };
 type RoomBoardRow = { number: string; status: string; type?: string; floor?: number };
-type BookingLite = { roomNumber?: string; status?: string; checkIn?: string; checkOut?: string };
 import { cn, money, formatDate } from "@/lib/utils";
+import { useProperty, hotelName } from "@/lib/use-property";
 
 const STATUS_TONE: Record<GroupStatus, "neutral" | "info" | "success" | "brand" | "warning" | "danger"> = {
   draft: "neutral", tentative: "warning", confirmed: "info",
@@ -42,6 +42,10 @@ const TABS = [
 
 export default function GroupDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const hotel = hotelName(useProperty());
+  // SSR-safe gate for the print-only summary portal (needs document.body).
+  const [printMounted, setPrintMounted] = React.useState(false);
+  React.useEffect(() => setPrintMounted(true), []);
   const [group, setGroup] = React.useState<GroupBooking | null>(null);
   const [payAmount, setPayAmount] = React.useState(0);
   const [payMode, setPayMode] = React.useState("Cash");
@@ -75,13 +79,21 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     return () => { document.removeEventListener("click", onClick); window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
   }, [rowMenuFor]);
 
-  // Room inventory + bookings, to offer only rooms free for the group's stay.
+  // Room inventory (for room details / type filtering) + availability for this group's
+  // stay window. The backend cross-checks individual bookings AND group_rooming so
+  // no room can be offered if it's already committed to any other booking or group.
   const [board, setBoard] = React.useState<RoomBoardRow[]>([]);
-  const [allBookings, setAllBookings] = React.useState<BookingLite[]>([]);
   React.useEffect(() => {
     apiGet<RoomBoardRow[]>("/room-board").then(setBoard).catch(() => {});
-    apiGet<BookingLite[]>("/bookings").then(setAllBookings).catch(() => {});
   }, []);
+  const [availRoomData, setAvailRoomData] = React.useState<{ number: string; available: boolean; type: string }[]>([]);
+  React.useEffect(() => {
+    const from = (group?.arrival ?? "").slice(0, 10);
+    const to   = (group?.departure ?? "").slice(0, 10);
+    if (!from || !to || from >= to) return;
+    apiGet<typeof availRoomData>(`/room-availability?from=${from}&to=${to}`)
+      .then(setAvailRoomData).catch(() => {});
+  }, [group?.arrival, group?.departure]);
   type RoomTypeCfg = { name: string; extraAdultRate?: number };
   type RatePlanCfg = { code: string; name: string; inclBreakfast?: boolean; inclLunch?: boolean; inclDinner?: boolean; breakfastPrice?: number; lunchPrice?: number; dinnerPrice?: number };
   const [roomTypes, setRoomTypes] = React.useState<RoomTypeCfg[]>([]);
@@ -108,24 +120,12 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     flash(`Room ${roomNo} assigned to ${entry.lead}`);
   };
 
-  // Rooms physically free for the group's stay window: not blocked/out-of-order
-  // and not held by another booking overlapping [arrival, departure). Today's
-  // dirty/cleaning/occupied state doesn't apply to a future window.
+  // Rooms free for this group's stay: server availability already excludes rooms
+  // committed via individual bookings OR other group rooming assignments.
   const freeRooms = React.useMemo(() => {
-    const day = (s?: string) => (s ?? "").slice(0, 10);
-    const rIn = day(group?.arrival), rOut = day(group?.departure);
-    const occupied = new Set<string>();
-    if (rIn && rOut && rIn < rOut) {
-      allBookings.forEach(b => {
-        const st = b.status ?? "confirmed";
-        if (st === "cancelled" || st === "checked-out") return;
-        if (!b.roomNumber || b.roomNumber === "Unassigned") return;
-        const bIn = day(b.checkIn), bOut = day(b.checkOut);
-        if (bIn && bOut && bIn < rOut && bOut > rIn) occupied.add(b.roomNumber);
-      });
-    }
-    return board.filter(r => r.status !== "blocked" && r.status !== "maintenance" && !occupied.has(r.number));
-  }, [board, allBookings, group?.arrival, group?.departure]);
+    const avail = new Set(availRoomData.filter(r => r.available).map(r => r.number));
+    return board.filter(r => avail.has(r.number));
+  }, [board, availRoomData]);
 
   // Rooms a given rooming entry can be assigned: free rooms of the matching type
   // that aren't already taken by another guest in THIS group (no duplicates).
@@ -258,6 +258,79 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
+      {/* Print-only group summary. Portaled to <body> so the global print CSS
+          reveals it; without a .print-doc, window.print() hides the whole dark
+          page (body * { visibility:hidden }) and produces a blank sheet. Explicit
+          colors so it stays readable on white paper regardless of the dark theme. */}
+      {printMounted && createPortal(
+        <div className="print-doc">
+          <div style={{ color: "#111", padding: "6mm", fontSize: "12px", lineHeight: 1.5, fontFamily: "system-ui, Arial, sans-serif" }}>
+            <div style={{ textAlign: "center", borderBottom: "2px solid #999", paddingBottom: "10px", marginBottom: "14px" }}>
+              <div style={{ fontSize: "18px", fontWeight: 600 }}>{hotel}</div>
+              <div style={{ fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", color: "#666", marginTop: "2px" }}>Group Booking Summary</div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px" }}>
+              <div>
+                <div style={{ fontSize: "15px", fontWeight: 600 }}>{group.name}</div>
+                <div style={{ fontSize: "11px", color: "#666", textTransform: "capitalize" }}>{group.type} · {group.status}</div>
+              </div>
+              <div style={{ textAlign: "right", fontSize: "11px", color: "#666" }}>
+                <div>Ref <span style={{ fontFamily: "monospace", color: "#111", fontWeight: 600 }}>{group.code}</span></div>
+                <div>{new Date().toLocaleString(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
+              </div>
+            </div>
+
+            <table style={{ width: "100%", fontSize: "11px", marginBottom: "16px", borderCollapse: "collapse" }}>
+              <tbody>
+                <tr><td style={{ color: "#666", padding: "2px 0", width: "30%", verticalAlign: "top" }}>Contact</td><td style={{ padding: "2px 0", fontWeight: 500 }}>{group.contactName}</td></tr>
+                <tr><td style={{ color: "#666", padding: "2px 0", verticalAlign: "top" }}>Phone</td><td style={{ padding: "2px 0" }}>{group.contactPhone}</td></tr>
+                <tr><td style={{ color: "#666", padding: "2px 0", verticalAlign: "top" }}>Email</td><td style={{ padding: "2px 0" }}>{group.contactEmail}</td></tr>
+                <tr><td style={{ color: "#666", padding: "2px 0", verticalAlign: "top" }}>Stay</td><td style={{ padding: "2px 0", fontWeight: 500 }}>{formatDate(group.arrival)} → {formatDate(group.departure)} · {group.nights} night{group.nights === 1 ? "" : "s"}</td></tr>
+                <tr><td style={{ color: "#666", padding: "2px 0", verticalAlign: "top" }}>Rooms / Pax</td><td style={{ padding: "2px 0" }}>{group.totalRooms} rooms · {group.totalPax} pax</td></tr>
+                <tr><td style={{ color: "#666", padding: "2px 0", verticalAlign: "top" }}>Rate plan</td><td style={{ padding: "2px 0" }}>{group.ratePlan}</td></tr>
+                {group.bookedBy && <tr><td style={{ color: "#666", padding: "2px 0", verticalAlign: "top" }}>Booked by</td><td style={{ padding: "2px 0" }}>{group.bookedBy}</td></tr>}
+              </tbody>
+            </table>
+
+            <div style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#666", marginBottom: "4px" }}>Room block</div>
+            <table style={{ width: "100%", fontSize: "11px", borderCollapse: "collapse", marginBottom: "16px" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid #ccc" }}>
+                  <th style={{ textAlign: "left", padding: "4px 0" }}>Type</th>
+                  <th style={{ textAlign: "right", padding: "4px 0" }}>Qty</th>
+                  <th style={{ textAlign: "right", padding: "4px 0" }}>Rate/night</th>
+                  <th style={{ textAlign: "right", padding: "4px 0" }}>Nights</th>
+                  <th style={{ textAlign: "right", padding: "4px 0" }}>Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {group.block.map((b, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
+                    <td style={{ padding: "4px 0" }}>{b.type}{b.extraBeds ? ` · +${b.extraBeds} extra bed${b.extraBeds === 1 ? "" : "s"}` : ""}</td>
+                    <td style={{ textAlign: "right", padding: "4px 0" }}>{b.qty}</td>
+                    <td style={{ textAlign: "right", padding: "4px 0" }}>{money(b.rate)}</td>
+                    <td style={{ textAlign: "right", padding: "4px 0" }}>{group.nights}</td>
+                    <td style={{ textAlign: "right", padding: "4px 0", fontWeight: 600 }}>{money(b.qty * b.rate * group.nights + (b.extraBeds ?? 0) * extraBedRateOf(b) * group.nights)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div style={{ marginLeft: "auto", width: "55%", fontSize: "12px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#666" }}>Total</span><span style={{ fontWeight: 600 }}>{money(group.total)}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#666" }}>Advance paid</span><span>− {money(group.advance)}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderTop: "1px solid #ccc", fontWeight: 700 }}><span>Balance due</span><span>{money(group.balance)}</span></div>
+            </div>
+
+            <div style={{ marginTop: "20px", paddingTop: "8px", borderTop: "1px solid #eee", fontSize: "9px", color: "#999", textAlign: "center" }}>
+              Computer-generated group booking summary · {hotel} · {group.code}
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link href="/groups" className="hover:text-foreground inline-flex items-center gap-1">
