@@ -367,46 +367,42 @@ export function NewGuestForm({ onCancel, onSave, mobileSync, initialData, hideCa
             onDone={() => setDialogOpen(false)}
           />
         )}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {/* ID details */}
-          <div className="space-y-3">
-            <Field label="ID type">
-              <Select value={data.idType} onChange={e => update("idType", e.target.value)}>
-                {data.nationality === "India" ? (
-                  <>
-                    <option>Aadhaar</option>
-                    <option>PAN</option>
-                    <option>Driving License</option>
-                    <option>Voter ID</option>
-                    <option>Passport</option>
-                  </>
-                ) : (
-                  <>
-                    <option>Passport</option>
-                    <option>OCI Card</option>
-                    <option>PIO Card</option>
-                    <option>Driving License</option>
-                  </>
-                )}
-              </Select>
-            </Field>
-            <Field label="ID number">
-              <Input value={data.idNumber} onChange={e => update("idNumber", e.target.value)} placeholder="A12345678" />
-            </Field>
-            {!hideCaptures && (
-              <>
-                <Field label={`${data.idType} — front`}>
-                  <DocumentUpload label="ID Front" value={data.idFront} onChange={v => update("idFront", v)} />
-                </Field>
-                <Field label={`${data.idType} — back`}>
-                  <DocumentUpload label="ID Back" value={data.idBack} onChange={v => update("idBack", v)} />
-                </Field>
-              </>
-            )}
-          </div>
+        {/* ID type + number — compact row above the capture boxes */}
+        <div className="grid grid-cols-2 gap-3 max-w-md">
+          <Field label="ID type">
+            <Select value={data.idType} onChange={e => update("idType", e.target.value)}>
+              {data.nationality === "India" ? (
+                <>
+                  <option>Aadhaar</option>
+                  <option>PAN</option>
+                  <option>Driving License</option>
+                  <option>Voter ID</option>
+                  <option>Passport</option>
+                </>
+              ) : (
+                <>
+                  <option>Passport</option>
+                  <option>OCI Card</option>
+                  <option>PIO Card</option>
+                  <option>Driving License</option>
+                </>
+              )}
+            </Select>
+          </Field>
+          <Field label="ID number">
+            <Input value={data.idNumber} onChange={e => update("idNumber", e.target.value)} placeholder="A12345678" />
+          </Field>
+        </div>
 
-          {/* Guest face */}
-          {!hideCaptures && (
+        {/* Capture boxes — 4 equal columns: ID front · ID back · Face photo · Signature */}
+        {!hideCaptures && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 items-start">
+            <Field label={`${data.idType} — front`}>
+              <DocumentUpload label="ID Front" value={data.idFront} onChange={v => update("idFront", v)} />
+            </Field>
+            <Field label={`${data.idType} — back`}>
+              <DocumentUpload label="ID Back" value={data.idBack} onChange={v => update("idBack", v)} />
+            </Field>
             <div>
               <div className="flex items-center gap-2 mb-1.5">
                 <Camera className="h-4 w-4 text-muted-foreground" />
@@ -415,20 +411,16 @@ export function NewGuestForm({ onCancel, onSave, mobileSync, initialData, hideCa
               <p className="text-[11px] text-muted-foreground mb-2">Webcam capture (recommended) or upload</p>
               <PhotoCapture value={data.photo} onChange={v => update("photo", v)} aspect="square" />
             </div>
-          )}
-
-          {/* Signature */}
-          {!hideCaptures && (
             <div>
               <div className="flex items-center gap-2 mb-1.5">
                 <Pen className="h-4 w-4 text-muted-foreground" />
                 <Label>Digital signature</Label>
               </div>
               <p className="text-[11px] text-muted-foreground mb-2">Sign with mouse, stylus, or finger</p>
-              <SignaturePad value={data.signature} onChange={v => update("signature", v)} height={180} />
+              <SignaturePad value={data.signature} onChange={v => update("signature", v)} height={210} />
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </Section>
 
       {/* Business */}
