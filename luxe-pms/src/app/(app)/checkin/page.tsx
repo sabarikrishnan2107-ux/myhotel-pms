@@ -2396,7 +2396,7 @@ function WalkInModal({
 
   return (
     <>
-      <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto">
+      <div className="p-4 sm:p-6 lg:p-6 w-full">
         {/* Page header */}
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -2450,9 +2450,9 @@ function WalkInModal({
           </div>
         </Card>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
           {/* Step content */}
-          <Card className="lg:col-span-2 p-6 min-h-[400px]">
+          <Card className="p-6 min-h-[400px]">
             {/* STEP 1 — Guest */}
             {step === 1 && (
               <div className="space-y-5">
@@ -3067,7 +3067,7 @@ function WalkInModal({
           </Card>
 
           {/* LIVE SUMMARY — sticky cost preview (was "Live cost preview") */}
-          <Card className="p-5 h-fit sticky top-20">
+          <Card className="p-6 h-fit sticky top-20">
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-3">Live summary</p>
 
             {/* Guest chip */}
