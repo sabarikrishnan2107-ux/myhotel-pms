@@ -123,6 +123,7 @@ already used by booking/walk-in. No new Setup screens, no DB migration (the
   `extraBeds × extraAdultRate × nights`; GST buckets correct; no-slabs → meal/
   extra-bed GST = 0.
 - Live: configure AP B=300/L=500/D=600 and a room type with extraAdultRate; build
-  a group (AP, 10 pax × 3 nights, 1 extra bed) → "Plan meals" = ₹24,000, extra
-  bed = `rate × 3`, capacity warning appears when pax exceeds block capacity, and
+  a group (AP, 10 pax × 3 nights, 1 extra bed) → "Plan meals" = ₹42,000
+  (1,400 × 10 × 3), extra bed = `rate × 3`, capacity warning appears when pax
+  exceeds block capacity, and
   the detail Billing total equals the create total.
