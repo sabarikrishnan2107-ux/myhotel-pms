@@ -215,7 +215,7 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
           "relative overflow-hidden",
           faceFocus
             ? cn(
-                "rounded-full border-2",
+                "rounded-lg border-2",
                 mode === "captured"
                   ? "border-success"
                   : "border-dashed border-border bg-surface-sunken",
@@ -241,8 +241,7 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
         {/* Face-alignment guide while the camera is live (face mode only) */}
         {mode === "live" && faceFocus && (
           <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute inset-0 bg-black/25" style={{ WebkitMaskImage: "radial-gradient(ellipse 38% 46% at 50% 44%, transparent 98%, black 100%)", maskImage: "radial-gradient(ellipse 38% 46% at 50% 44%, transparent 98%, black 100%)" }} />
-            <div className="absolute left-1/2 top-[44%] -translate-x-1/2 -translate-y-1/2 h-[80%] w-[64%] rounded-[50%] border-2 border-white/70 border-dashed" />
+            <div className="absolute inset-2 rounded border-2 border-white/50 border-dashed" />
           </div>
         )}
         {(mode === "processing" || mode === "validating" || mode === "removing-bg") && (
