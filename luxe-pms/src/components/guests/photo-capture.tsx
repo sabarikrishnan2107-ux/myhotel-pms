@@ -224,7 +224,7 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
               aspectClass,
             ),
       )}>
-        {(mode === "live" || mode === "processing") && (
+        {(mode === "live" || mode === "processing" || mode === "validating" || mode === "removing-bg") && (
           <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted />
         )}
         {/* Face-alignment guide while the camera is live (face mode only) */}
@@ -232,11 +232,6 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
           <div className="absolute inset-0 pointer-events-none">
             <div className="absolute inset-0 bg-black/25" style={{ WebkitMaskImage: "radial-gradient(ellipse 38% 46% at 50% 44%, transparent 98%, black 100%)", maskImage: "radial-gradient(ellipse 38% 46% at 50% 44%, transparent 98%, black 100%)" }} />
             <div className="absolute left-1/2 top-[44%] -translate-x-1/2 -translate-y-1/2 h-[80%] w-[64%] rounded-[50%] border-2 border-white/70 border-dashed" />
-            <div className="absolute bottom-2 inset-x-0 flex justify-center">
-              <span className="text-[10px] font-medium text-white bg-black/55 rounded-full px-2 py-0.5 inline-flex items-center gap-1">
-                <ScanFace className="h-3 w-3" /> Align your face in the oval
-              </span>
-            </div>
           </div>
         )}
         {(mode === "processing" || mode === "validating" || mode === "removing-bg") && (
@@ -274,6 +269,13 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
         )}
       </div>
 
+      {mode === "live" && faceFocus && (
+        <div className="flex justify-center">
+          <span className="text-[10px] font-medium text-muted-foreground inline-flex items-center gap-1">
+            <ScanFace className="h-3 w-3" /> Align your face in the oval
+          </span>
+        </div>
+      )}
       <div className="flex gap-1.5">
         {mode === "idle" && (
           <>
