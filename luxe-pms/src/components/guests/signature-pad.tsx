@@ -1,15 +1,17 @@
 "use client";
 import * as React from "react";
 import { Eraser, Pen, CheckCircle2, RotateCcw } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Props {
   onChange?: (dataUrl: string | null) => void;
   /** Pre-fill with an existing signature (e.g. captured on the tablet). */
   value?: string | null;
   height?: number;
+  className?: string;
 }
 
-export function SignaturePad({ onChange, value, height = 160 }: Props) {
+export function SignaturePad({ onChange, value, height = 160, className }: Props) {
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const drawingRef = React.useRef(false);
   const [hasInk, setHasInk] = React.useState(false);
@@ -84,7 +86,7 @@ export function SignaturePad({ onChange, value, height = 160 }: Props) {
 
   return (
     <div>
-      <div className="relative rounded-md border-2 border-dashed border-border bg-surface overflow-hidden" style={{ height }}>
+      <div className={cn("relative rounded-md border-2 border-dashed border-border bg-surface overflow-hidden", className)} style={className ? undefined : { height }}>
         {showSaved ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}

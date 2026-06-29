@@ -394,7 +394,7 @@ export function NewGuestForm({ onCancel, onSave, mobileSync, initialData, hideCa
           </Field>
         </div>
 
-        {/* Capture boxes — 4 equal columns: ID front · ID back · Face photo · Signature */}
+        {/* Capture boxes — 4 equal columns: photo · ID front · ID back · signature */}
         {!hideCaptures && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 items-start">
             <div>
@@ -402,7 +402,7 @@ export function NewGuestForm({ onCancel, onSave, mobileSync, initialData, hideCa
                 <Camera className="h-4 w-4 text-muted-foreground" />
                 <Label>Guest face photo</Label>
               </div>
-              <PhotoCapture value={data.photo} onChange={v => update("photo", v)} aspect="square" />
+              <PhotoCapture value={data.photo} onChange={v => update("photo", v)} aspect="landscape" />
             </div>
             <Field label={`${data.idType} — front`}>
               <DocumentUpload label="ID Front" value={data.idFront} onChange={v => update("idFront", v)} />
@@ -415,7 +415,7 @@ export function NewGuestForm({ onCancel, onSave, mobileSync, initialData, hideCa
                 <Pen className="h-4 w-4 text-muted-foreground" />
                 <Label>Digital signature</Label>
               </div>
-              <SignaturePad value={data.signature} onChange={v => update("signature", v)} height={210} />
+              <SignaturePad value={data.signature} onChange={v => update("signature", v)} className="aspect-[3/2]" />
             </div>
           </div>
         )}

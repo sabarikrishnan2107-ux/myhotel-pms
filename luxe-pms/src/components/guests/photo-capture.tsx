@@ -12,7 +12,7 @@ interface Props {
   onChange?: (dataUrl: string | null) => void;
   /** Pre-fill the slot with an existing photo (e.g. captured on the tablet). */
   value?: string | null;
-  aspect?: "square" | "portrait" | "landscape";
+  aspect?: "square" | "portrait" | "landscape" | "video";
   // "face" (default): show the alignment oval and crop to the detected face —
   // for guest selfies. "none": capture the full frame with no crop — for
   // documents (ID front/back) where cropping to a face would be wrong.
@@ -205,7 +205,7 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
     reader.readAsDataURL(file);
   };
 
-  const aspectClass = aspect === "square" ? "aspect-square" : aspect === "portrait" ? "aspect-[3/4]" : "aspect-video";
+  const aspectClass = aspect === "square" ? "aspect-square" : aspect === "portrait" ? "aspect-[3/4]" : aspect === "landscape" ? "aspect-[3/2]" : "aspect-video";
 
   return (
     <div className="space-y-2">
@@ -214,7 +214,7 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
         className={cn(
           "relative overflow-hidden rounded-md border-2 bg-surface-sunken",
           mode === "captured" ? "border-success" : "border-dashed border-border",
-          faceFocus ? "aspect-[3/2]" : aspectClass,
+          aspectClass,
           (mode === "idle" || mode === "live") && "cursor-pointer hover:border-brand transition-colors",
         )}
       >
