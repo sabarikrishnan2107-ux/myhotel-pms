@@ -56,6 +56,7 @@ class VerificationController extends Controller
             'uploaded_at'         => ['nullable', 'string'],
             'id_type'             => ['nullable', 'string'],
             'id_number'           => ['nullable', 'string'],
+            'address'             => ['nullable', 'string'],
         ]);
 
         $booking = Booking::findOrFail($id);
@@ -75,6 +76,12 @@ class VerificationController extends Controller
             if (is_string($val) && trim($val) !== '') {
                 $booking->{$idField} = trim($val);
             }
+        }
+
+        // Address OCR'd off the card (maps to the id_address column).
+        $addr = $data['address'] ?? null;
+        if (is_string($addr) && trim($addr) !== '') {
+            $booking->id_address = trim($addr);
         }
 
         // Completeness drives the status so a partial push (e.g. ID uploaded in
@@ -144,6 +151,7 @@ class VerificationController extends Controller
             'identity'            => [
                 'id_type'   => $b->id_type,
                 'id_number' => $b->id_number,
+                'address'   => $b->id_address,
             ],
         ];
     }

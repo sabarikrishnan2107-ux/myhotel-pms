@@ -58,6 +58,9 @@ interface Props {
   mobileSync?: {
     onRequest: (data: NewGuestData) => Promise<{ bookingId: number; reference: string } | null>;
   };
+  /** Hide the face / ID-scan / signature capture widgets (ID type/number stay).
+   *  Used by the walk-in flow, which captures KYC later in the check-in process. */
+  hideCaptures?: boolean;
 }
 
 /** Shape returned by GET /bookings/{id} (the fields this form needs). */
@@ -72,6 +75,7 @@ type SyncedBooking = {
   identity?: {
     id_type?: string | null;
     id_number?: string | null;
+    address?: string | null;
   };
 };
 
@@ -99,7 +103,7 @@ function ageFromIso(iso: string): number | null {
 // Shared "invalid field" styling so DOB / phone / email all flag errors the same way.
 const DANGER_INPUT = "border-danger focus-visible:border-danger focus-visible:ring-danger/30";
 
-export function NewGuestForm({ onCancel, onSave, mobileSync, initialData }: Props) {
+export function NewGuestForm({ onCancel, onSave, mobileSync, initialData, hideCaptures }: Props) {
   const [data, setData] = React.useState<NewGuestData>({ ...EMPTY, ...initialData });
   const update = <K extends keyof NewGuestData>(k: K, v: NewGuestData[K]) =>
     setData(prev => ({ ...prev, [k]: v }));
@@ -170,6 +174,7 @@ export function NewGuestForm({ onCancel, onSave, mobileSync, initialData }: Prop
             // Structured ID captured on the tablet — keep the form default if absent.
             idType: b.identity?.id_type || prev.idType,
             idNumber: b.identity?.id_number || prev.idNumber,
+            address: b.identity?.address || prev.address,
           }));
           setSyncState("done");
           setDialogOpen(true);
@@ -305,7 +310,7 @@ export function NewGuestForm({ onCancel, onSave, mobileSync, initialData }: Prop
       </Section>
 
       {/* Identification + Photo + Signature */}
-      <Section icon={IdCard} title="Identification & Captures" optional>
+      <Section icon={IdCard} title={hideCaptures ? "Identification" : "Identification & Captures"} optional>
         {mobileSync && syncState !== "done" && (
           <div className="rounded-md border border-border bg-surface-sunken/40 p-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -388,33 +393,41 @@ export function NewGuestForm({ onCancel, onSave, mobileSync, initialData }: Prop
             <Field label="ID number">
               <Input value={data.idNumber} onChange={e => update("idNumber", e.target.value)} placeholder="A12345678" />
             </Field>
-            <Field label={`${data.idType} — front`}>
-              <DocumentUpload label="ID Front" value={data.idFront} onChange={v => update("idFront", v)} />
-            </Field>
-            <Field label={`${data.idType} — back`}>
-              <DocumentUpload label="ID Back" value={data.idBack} onChange={v => update("idBack", v)} />
-            </Field>
+            {!hideCaptures && (
+              <>
+                <Field label={`${data.idType} — front`}>
+                  <DocumentUpload label="ID Front" value={data.idFront} onChange={v => update("idFront", v)} />
+                </Field>
+                <Field label={`${data.idType} — back`}>
+                  <DocumentUpload label="ID Back" value={data.idBack} onChange={v => update("idBack", v)} />
+                </Field>
+              </>
+            )}
           </div>
 
           {/* Guest face */}
-          <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <Camera className="h-4 w-4 text-muted-foreground" />
-              <Label>Guest face photo</Label>
+          {!hideCaptures && (
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <Camera className="h-4 w-4 text-muted-foreground" />
+                <Label>Guest face photo</Label>
+              </div>
+              <p className="text-[11px] text-muted-foreground mb-2">Webcam capture (recommended) or upload</p>
+              <PhotoCapture value={data.photo} onChange={v => update("photo", v)} aspect="square" />
             </div>
-            <p className="text-[11px] text-muted-foreground mb-2">Webcam capture (recommended) or upload</p>
-            <PhotoCapture value={data.photo} onChange={v => update("photo", v)} aspect="square" />
-          </div>
+          )}
 
           {/* Signature */}
-          <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <Pen className="h-4 w-4 text-muted-foreground" />
-              <Label>Digital signature</Label>
+          {!hideCaptures && (
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <Pen className="h-4 w-4 text-muted-foreground" />
+                <Label>Digital signature</Label>
+              </div>
+              <p className="text-[11px] text-muted-foreground mb-2">Sign with mouse, stylus, or finger</p>
+              <SignaturePad value={data.signature} onChange={v => update("signature", v)} height={180} />
             </div>
-            <p className="text-[11px] text-muted-foreground mb-2">Sign with mouse, stylus, or finger</p>
-            <SignaturePad value={data.signature} onChange={v => update("signature", v)} height={180} />
-          </div>
+          )}
         </div>
       </Section>
 

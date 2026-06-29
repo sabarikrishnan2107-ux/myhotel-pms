@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>POS80 Token — Small Sample</title>
+<style>
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; background:#e9edf3; font-family:"Segoe UI",system-ui,sans-serif; }
+  .desk{ display:flex; flex-direction:column; align-items:center; gap:14px; padding:26px 12px 50px; }
+  .btn{ border:0; border-radius:10px; padding:11px 18px; font-size:14px; font-weight:600;
+        cursor:pointer; background:#1f6feb; color:#fff; }
+  .note{ color:#475569; font-size:12px; max-width:320px; text-align:center; }
+
+  /* ---- small 80mm token slip ---- */
+  .slip{
+    width:80mm;
+    padding:5mm 3mm;
+    background:#fff; color:#000;
+    font-family:"Consolas","Courier New",monospace;
+    box-shadow:0 6px 24px rgba(0,0,0,.18);
+    text-align:center;
+  }
+  .name{ font-size:18px; font-weight:700; letter-spacing:.5px; }
+  .sub{ font-size:12px; }
+  .hr{ border:0; border-top:1px dashed #000; margin:6px 0; }
+  .label{ font-size:12px; }
+  .token{ font-size:40px; font-weight:800; line-height:1.1; margin:4px 0; }
+  .row{ display:flex; justify-content:space-between; font-size:13px; text-align:left; margin:2px 0; }
+  .amt{ font-size:20px; font-weight:700; margin:4px 0; }
+  .ty{ font-size:12px; margin-top:4px; }
+
+  @media print{
+    @page{ size:80mm auto; margin:0; }
+    html,body{ background:#fff; }
+    .desk{ padding:0; }
+    .btn,.note{ display:none !important; }
+    .slip{ box-shadow:none; }
+  }
+</style>
+</head>
+<body>
+<div class="desk">
+
+  <button class="btn" onclick="window.print()">🖨  Print token</button>
+  <div class="note">Press the button or <b>Ctrl+P</b> → pick <b>POS80</b> → Margins <b>None</b> → Print.</div>
+
+  <!-- ===== TOKEN SLIP ===== -->
+  <div class="slip" id="slip">
+    <div class="name">HYDER SPARK</div>
+    <div class="sub">Ph: +91 90000 12345</div>
+    <hr class="hr"/>
+
+    <div class="label">TOKEN NO.</div>
+    <div class="token">042</div>
+    <hr class="hr"/>
+
+    <div class="row"><span>Date</span><span id="datetime">—</span></div>
+    <div class="row"><span>Counter</span><span>Reception</span></div>
+    <div class="row"><span>Item</span><span>Restaurant</span></div>
+    <hr class="hr"/>
+
+    <div class="amt">Rs. 2,400.00</div>
+    <div class="sub">Paid &middot; UPI</div>
+    <hr class="hr"/>
+
+    <div class="ty">Thank you! Please keep this token.</div>
+    <div style="height:6mm"></div>
+  </div>
+  <!-- ===== /TOKEN SLIP ===== -->
+
+</div>
+
+<script>
+  (function(){
+    var d = new Date();
+    var p = function(n){ return String(n).padStart(2,'0'); };
+    document.getElementById('datetime').textContent =
+      p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+String(d.getFullYear()).slice(2)+' '+p(d.getHours())+':'+p(d.getMinutes());
+  })();
+</script>
+</body>
+</html>

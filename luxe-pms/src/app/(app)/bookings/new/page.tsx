@@ -15,6 +15,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost, apiPut, sendEmail } from "@/lib/api";
 import { NewGuestForm, type NewGuestData } from "@/components/guests/new-guest-form";
+import { saveNewGuest } from "@/lib/guest-profile";
 import type { Guest, Room } from "@/lib/types";
 import { buildNightlyBreakdown, type Season, type Holiday } from "@/lib/room-nightly-pricing";
 import { extraOccupancyCharge, mealPerNightPerGuest } from "@/lib/booking-pricing";
@@ -1103,33 +1104,11 @@ export default function BookingWizardPage() {
                   // NOTE: don't gate on step1Mode here — saving the new-guest form flips
                   // the mode back to "search", so checking it dropped every new profile.
                   try {
+                    // A brand-new guest from the form is persisted to the registry
+                    // (core profile first, then KYC captures) via the shared helper
+                    // the walk-in flow uses too, so every path stores guests alike.
                     if (newGuest) {
-                      // Save the core profile FIRST (small payload, always succeeds) so
-                      // name/phone/email/ID can never be lost. The large base64 KYC
-                      // captures are attached in a second request — if they're too big
-                      // or fail, the core profile is already safely stored.
-                      const createdGuest = await apiPost<{ id: number }>("/guests", {
-                        name: selectedGuestDisplay!.name,
-                        phone: selectedGuestDisplay!.phone ?? "",
-                        email: newGuest.email ?? "",
-                        nationality: newGuest.nationality ?? "",
-                        idType: newGuest.idType ?? "",
-                        idNumber: newGuest.idNumber ?? "",
-                        address: newGuest.address ?? "",
-                        birthday: newGuest.dob ?? "",
-                        gender: newGuest.gender ?? "",
-                        company: newGuest.company ?? "",
-                        gst: newGuest.gst ?? "",
-                        vip: newGuest.vip ?? false,
-                        internalNotes: newGuest.remarks ?? "",
-                      }).catch(() => null);
-                      const captures = {
-                        idFront: newGuest.idFront ?? "", idBack: newGuest.idBack ?? "",
-                        photo: newGuest.photo ?? "", signature: newGuest.signature ?? "",
-                      };
-                      if (createdGuest?.id && (captures.idFront || captures.idBack || captures.photo || captures.signature)) {
-                        await apiPut(`/guests/${createdGuest.id}`, captures).catch(() => {});
-                      }
+                      await saveNewGuest(newGuest);
                     }
                     const bookingPayload = {
                       bookingNo,
