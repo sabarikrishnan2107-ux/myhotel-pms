@@ -404,19 +404,17 @@ export function NewGuestForm({ onCancel, onSave, mobileSync, initialData, hideCa
               <DocumentUpload label="ID Back" value={data.idBack} onChange={v => update("idBack", v)} />
             </Field>
             <div>
-              <div className="flex items-center gap-2 mb-1.5">
+              <div className="flex items-center gap-2 mb-3">
                 <Camera className="h-4 w-4 text-muted-foreground" />
                 <Label>Guest face photo</Label>
               </div>
-              <p className="text-[11px] text-muted-foreground mb-2">Webcam capture (recommended) or upload</p>
               <PhotoCapture value={data.photo} onChange={v => update("photo", v)} aspect="square" />
             </div>
             <div>
-              <div className="flex items-center gap-2 mb-1.5">
+              <div className="flex items-center gap-2 mb-3">
                 <Pen className="h-4 w-4 text-muted-foreground" />
                 <Label>Digital signature</Label>
               </div>
-              <p className="text-[11px] text-muted-foreground mb-2">Sign with mouse, stylus, or finger</p>
               <SignaturePad value={data.signature} onChange={v => update("signature", v)} height={210} />
             </div>
           </div>
