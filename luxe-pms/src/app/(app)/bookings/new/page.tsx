@@ -429,7 +429,7 @@ export default function BookingWizardPage() {
   }, [guest, newGuest, guests]);
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-screen-2xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-6 w-full">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-display font-medium tracking-tight">New Booking</h1>
