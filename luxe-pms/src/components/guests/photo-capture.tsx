@@ -209,21 +209,25 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
 
   return (
     <div className="space-y-2">
-      <div className={cn(
-        "relative overflow-hidden",
-        faceFocus
-          ? cn(
-              "rounded-full border-2",
-              mode === "captured"
-                ? "border-success"
-                : "border-dashed border-border bg-surface-sunken",
-              "w-40 h-40",
-            )
-          : cn(
-              "rounded-md border-2 border-dashed border-border bg-surface-sunken",
-              aspectClass,
-            ),
-      )}>
+      <div
+        onClick={mode === "idle" ? start : mode === "live" ? capture : undefined}
+        className={cn(
+          "relative overflow-hidden",
+          faceFocus
+            ? cn(
+                "rounded-full border-2",
+                mode === "captured"
+                  ? "border-success"
+                  : "border-dashed border-border bg-surface-sunken",
+                "w-40 h-40",
+              )
+            : cn(
+                "rounded-md border-2 border-dashed border-border bg-surface-sunken",
+                aspectClass,
+              ),
+          (mode === "idle" || mode === "live") && "cursor-pointer hover:border-brand hover:bg-surface-sunken/80 transition-colors",
+        )}
+      >
         {/* Always mounted so videoRef is available before setMode("live") fires */}
         <video
           ref={videoRef}
@@ -257,7 +261,7 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
           <Image src={captured} alt="Captured photo" fill unoptimized className="object-cover" />
         )}
         {mode === "idle" && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-subtle-foreground">
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-subtle-foreground select-none">
             <Camera className="h-8 w-8" />
             <p className="text-xs mt-2">{label}</p>
           </div>
@@ -285,24 +289,19 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
       )}
       <div className="flex gap-1.5">
         {mode === "idle" && (
-          <>
-            <Button type="button" size="sm" variant="secondary" onClick={start} className="flex-1">
-              <Camera className="h-3.5 w-3.5" />Start camera
-            </Button>
-            <label className="flex-1 h-8 px-3 rounded-md border border-border text-xs font-medium hover:bg-surface-sunken inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors">
-              <Upload className="h-3.5 w-3.5" />Upload
-              <input type="file" accept="image/*" onChange={upload} className="sr-only" />
-            </label>
-          </>
+          <label className="w-full h-7 px-2 rounded text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center justify-center gap-1 cursor-pointer transition-colors">
+            <Upload className="h-3 w-3" />Upload instead
+            <input type="file" accept="image/*" onChange={upload} className="sr-only" />
+          </label>
         )}
-        {(mode === "live" || mode === "processing" || mode === "validating" || mode === "removing-bg") && (
-          <>
-            <Button type="button" size="sm" onClick={capture} disabled={mode !== "live"} className="flex-1">
-              {mode !== "live" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
-              {mode !== "live" ? "Processing…" : "Capture"}
-            </Button>
-            <Button type="button" size="sm" variant="outline" onClick={reset} disabled={mode !== "live"}>Cancel</Button>
-          </>
+        {(mode === "processing" || mode === "validating" || mode === "removing-bg") && (
+          <div className="flex-1 h-8 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            {mode === "validating" ? "Validating…" : mode === "removing-bg" ? "Removing background…" : "Processing…"}
+          </div>
+        )}
+        {mode === "live" && (
+          <Button type="button" size="sm" variant="outline" onClick={reset} className="w-full">Cancel</Button>
         )}
         {mode === "captured" && (
           <>
