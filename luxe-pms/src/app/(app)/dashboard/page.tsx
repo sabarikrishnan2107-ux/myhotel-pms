@@ -17,6 +17,7 @@ import { Sparkline } from "@/components/ui/sparkline";
 import { OccupancyGauge } from "@/components/ui/occupancy-gauge";
 import { FloorHeatmap } from "@/components/ui/floor-heatmap";
 import { GoalProgress } from "@/components/ui/goal-progress";
+import { SectionHeader } from "@/components/dashboard/section-header";
 import { money, formatTime, cn } from "@/lib/utils";
 import { apiGet } from "@/lib/api";
 import { useProperty, currencySymbol } from "@/lib/use-property";
@@ -388,155 +389,6 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* ============ PRIORITIES + LIVE STATUS + ACTIVITY + AI ============ */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 items-stretch">
-        {/* Priorities */}
-        <Card className="p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.16em] text-subtle-foreground font-semibold">Today&apos;s Priorities</p>
-              <h2 className="text-lg font-semibold mt-0.5">What needs attention</h2>
-            </div>
-            <Badge tone="brand">{priorities.length} {priorities.length === 1 ? "item" : "items"}</Badge>
-          </div>
-          <div className="space-y-2">
-            {priorities.length === 0 ? (
-              <div className="flex items-center gap-3 p-4 rounded-md border border-border bg-surface-sunken/40">
-                <span className="h-9 w-9 rounded-md bg-success-soft text-success flex items-center justify-center shrink-0">
-                  <CheckCircle2 className="h-4 w-4" />
-                </span>
-                <div>
-                  <p className="font-medium text-sm">All clear</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">No arrivals, checkouts or open balances right now.</p>
-                </div>
-              </div>
-            ) : (
-              priorities.map((p, i) => (
-                <PriorityRow key={i} tone={p.tone} icon={p.icon} count={p.count} title={p.title} hint={p.hint} href={p.href} />
-              ))
-            )}
-          </div>
-        </Card>
-
-        {/* Live Status — gauge + floor heatmap */}
-        <Card className="p-5">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <p className="text-xs uppercase tracking-[0.16em] text-subtle-foreground font-semibold">Live Status</p>
-              <h2 className="text-lg font-semibold mt-0.5">{roomCounts.total} rooms · all floors</h2>
-            </div>
-            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
-              <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-              Live
-            </span>
-          </div>
-          <div className="flex flex-col items-center pt-1">
-            <OccupancyGauge value={occPct} size={170} hint={`${roomCounts.occupied} of ${roomCounts.total} sold`} />
-          </div>
-
-          {/* Floor heatmap — visual room-status grid */}
-          <div className="mt-3 pt-3 border-t border-border">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] uppercase tracking-[0.16em] text-subtle-foreground font-semibold">Floor Map</p>
-              <Link href="/rack" className="text-[10px] text-brand hover:underline font-medium inline-flex items-center gap-0.5">
-                Open rack <ChevronRight className="h-2.5 w-2.5" />
-              </Link>
-            </div>
-            <FloorHeatmap rooms={boardRooms as unknown as Room[]} />
-            {/* Legend */}
-            <div className="mt-2.5 flex flex-wrap gap-x-2 gap-y-1 text-[10px]">
-              <LegendDot color="bg-status-occupied" label={`Occupied ${roomCounts.occupied}`} />
-              <LegendDot color="bg-status-available" label={`Available ${roomCounts.available}`} />
-              <LegendDot color="bg-status-dirty" label={`Dirty ${roomCounts.dirty}`} />
-              <LegendDot color="bg-status-cleaning" label={`Cleaning ${roomCounts.cleaning}`} />
-              <LegendDot color="bg-status-maintenance" label={`Maint ${roomCounts.maintenance}`} />
-            </div>
-          </div>
-        </Card>
-
-        {/* Activity */}
-        <Card className="p-5 flex flex-col">
-          <div className="mb-3">
-            <h2 className="text-lg font-semibold">Activity</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">Recent staff &amp; system events</p>
-            </div>
-            <ul className="-mx-2 flex-1 min-h-0 max-h-[440px] overflow-y-auto pr-1">
-              {activity.map(a => {
-                const v = activityVisual(`${a.verb} ${a.target}`, a.tone);
-                const Icon = v.icon;
-                const title = a.verb.charAt(0).toUpperCase() + a.verb.slice(1);
-                const detail = a.target && a.target !== "—" ? ` · ${a.target}` : "";
-                const who = a.actor && a.actor !== "System" ? `${a.actor} · ` : "";
-                return (
-                  <li key={a.id} className="flex items-start gap-3 px-2 py-2 rounded-md hover:bg-surface-sunken/50 transition-colors">
-                    <span className={cn("h-8 w-8 shrink-0 rounded-lg flex items-center justify-center", ACTIVITY_CHIP[v.accent])}>
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm leading-snug">
-                        <span className="font-medium">{title}</span>
-                        <span className="text-muted-foreground">{detail}</span>
-                      </p>
-                      <p className="text-[11px] text-subtle-foreground mt-0.5">{who}{a.at}</p>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </Card>
-
-          {/* AI Daily Briefing */}
-          <Card className="p-5 flex flex-col relative overflow-hidden border-l-2 border-l-accent bg-linear-to-br from-accent-soft/15 via-surface to-surface">
-            <div className="flex items-center gap-2.5 mb-3">
-              <span className="h-9 w-9 rounded-md bg-accent text-accent-foreground flex items-center justify-center shadow-xs">
-                <Bot className="h-4.5 w-4.5" />
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold">AI Daily Briefing</p>
-                <p className="text-[11px] text-muted-foreground">Live insight stream · just now</p>
-              </div>
-              <span className="inline-flex items-center gap-1 rounded-md bg-info-soft text-info px-2 py-0.5 text-[10px] font-semibold">
-                <span className="h-1.5 w-1.5 rounded-full bg-info animate-pulse" /> AI
-              </span>
-            </div>
-            <ul className="space-y-2.5 text-[13px] flex-1">
-              {aiBriefing.map((b, i) => (
-                <li key={i} className="flex items-start gap-2 leading-snug">
-                  <span className={cn(
-                    "h-1.5 w-1.5 rounded-full mt-1.5 shrink-0",
-                    b.tone === "success" && "bg-success",
-                    b.tone === "info" && "bg-info",
-                    b.tone === "warning" && "bg-warning",
-                    b.tone === "danger" && "bg-danger",
-                  )} />
-                  <span>{b.text}</span>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-auto pt-3 border-t border-border/40 flex items-center justify-between">
-              <span className="inline-flex items-center gap-1 text-[10px] text-success font-medium">
-                <CheckCircle2 className="h-3 w-3" /> Verified vs live PMS data
-              </span>
-              <Link href="/ai" className="text-xs text-brand hover:underline inline-flex items-center gap-0.5 font-medium">
-                Ask AI <ChevronRight className="h-3 w-3" />
-              </Link>
-            </div>
-        </Card>
-      </section>
-
-      {/* ============ REVENUE BREAKDOWN ============ */}
-      <section>
-        <SectionHeader title="Revenue" hint="Live booked revenue across departments" icon={TrendingUp} />
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-          <KPISpark icon={BedDouble} label="Room" value={money(rev?.room ?? 0, cur)} delta={null} accent="brand" />
-          <KPISpark icon={UtensilsCrossed} label="F&B" value={money(rev?.food ?? 0, cur)} delta={null} accent="accent" />
-          <KPISpark icon={Building2} label="Hall" value={money(rev?.hall ?? 0, cur)} delta={null} accent="info" />
-          <KPISpark icon={Wallet} label="Advance" value={money(rev?.advance ?? 0, cur)} delta={null} accent="success" hint="Collected" />
-          <KPISpark icon={Receipt} label="Outstanding" value={money(rev?.pending ?? 0, cur)} delta={null} accent="warning" hint="To collect" />
-          <KPISpark icon={TrendingUp} label="Total" value={money(rev?.total ?? 0, cur)} delta={null} accent="brand" hint="Room + F&B + Hall" />
-        </div>
-      </section>
-
       {/* ============ ARRIVALS + DEPARTURES ============ */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Arrivals */}
@@ -686,6 +538,155 @@ export default function DashboardPage() {
             </ul>
           )}
         </Card>
+      </section>
+
+      {/* ============ PRIORITIES + LIVE STATUS + ACTIVITY + AI ============ */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 items-stretch">
+        {/* Priorities */}
+        <Card className="p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.16em] text-subtle-foreground font-semibold">Today&apos;s Priorities</p>
+              <h2 className="text-lg font-semibold mt-0.5">What needs attention</h2>
+            </div>
+            <Badge tone="brand">{priorities.length} {priorities.length === 1 ? "item" : "items"}</Badge>
+          </div>
+          <div className="space-y-2">
+            {priorities.length === 0 ? (
+              <div className="flex items-center gap-3 p-4 rounded-md border border-border bg-surface-sunken/40">
+                <span className="h-9 w-9 rounded-md bg-success-soft text-success flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="font-medium text-sm">All clear</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">No arrivals, checkouts or open balances right now.</p>
+                </div>
+              </div>
+            ) : (
+              priorities.map((p, i) => (
+                <PriorityRow key={i} tone={p.tone} icon={p.icon} count={p.count} title={p.title} hint={p.hint} href={p.href} />
+              ))
+            )}
+          </div>
+        </Card>
+
+        {/* Live Status — gauge + floor heatmap */}
+        <Card className="p-5">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <p className="text-xs uppercase tracking-[0.16em] text-subtle-foreground font-semibold">Live Status</p>
+              <h2 className="text-lg font-semibold mt-0.5">{roomCounts.total} rooms · all floors</h2>
+            </div>
+            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
+              <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+              Live
+            </span>
+          </div>
+          <div className="flex flex-col items-center pt-1">
+            <OccupancyGauge value={occPct} size={170} hint={`${roomCounts.occupied} of ${roomCounts.total} sold`} />
+          </div>
+
+          {/* Floor heatmap — visual room-status grid */}
+          <div className="mt-3 pt-3 border-t border-border">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-subtle-foreground font-semibold">Floor Map</p>
+              <Link href="/rack" className="text-[10px] text-brand hover:underline font-medium inline-flex items-center gap-0.5">
+                Open rack <ChevronRight className="h-2.5 w-2.5" />
+              </Link>
+            </div>
+            <FloorHeatmap rooms={boardRooms as unknown as Room[]} />
+            {/* Legend */}
+            <div className="mt-2.5 flex flex-wrap gap-x-2 gap-y-1 text-[10px]">
+              <LegendDot color="bg-status-occupied" label={`Occupied ${roomCounts.occupied}`} />
+              <LegendDot color="bg-status-available" label={`Available ${roomCounts.available}`} />
+              <LegendDot color="bg-status-dirty" label={`Dirty ${roomCounts.dirty}`} />
+              <LegendDot color="bg-status-cleaning" label={`Cleaning ${roomCounts.cleaning}`} />
+              <LegendDot color="bg-status-maintenance" label={`Maint ${roomCounts.maintenance}`} />
+            </div>
+          </div>
+        </Card>
+
+        {/* Activity */}
+        <Card className="p-5 flex flex-col">
+          <div className="mb-3">
+            <h2 className="text-lg font-semibold">Activity</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Recent staff &amp; system events</p>
+            </div>
+            <ul className="-mx-2 flex-1 min-h-0 max-h-[440px] overflow-y-auto pr-1">
+              {activity.map(a => {
+                const v = activityVisual(`${a.verb} ${a.target}`, a.tone);
+                const Icon = v.icon;
+                const title = a.verb.charAt(0).toUpperCase() + a.verb.slice(1);
+                const detail = a.target && a.target !== "—" ? ` · ${a.target}` : "";
+                const who = a.actor && a.actor !== "System" ? `${a.actor} · ` : "";
+                return (
+                  <li key={a.id} className="flex items-start gap-3 px-2 py-2 rounded-md hover:bg-surface-sunken/50 transition-colors">
+                    <span className={cn("h-8 w-8 shrink-0 rounded-lg flex items-center justify-center", ACTIVITY_CHIP[v.accent])}>
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm leading-snug">
+                        <span className="font-medium">{title}</span>
+                        <span className="text-muted-foreground">{detail}</span>
+                      </p>
+                      <p className="text-[11px] text-subtle-foreground mt-0.5">{who}{a.at}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+
+          {/* AI Daily Briefing */}
+          <Card className="p-5 flex flex-col relative overflow-hidden border-l-2 border-l-accent bg-linear-to-br from-accent-soft/15 via-surface to-surface">
+            <div className="flex items-center gap-2.5 mb-3">
+              <span className="h-9 w-9 rounded-md bg-accent text-accent-foreground flex items-center justify-center shadow-xs">
+                <Bot className="h-4.5 w-4.5" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold">AI Daily Briefing</p>
+                <p className="text-[11px] text-muted-foreground">Live insight stream · just now</p>
+              </div>
+              <span className="inline-flex items-center gap-1 rounded-md bg-info-soft text-info px-2 py-0.5 text-[10px] font-semibold">
+                <span className="h-1.5 w-1.5 rounded-full bg-info animate-pulse" /> AI
+              </span>
+            </div>
+            <ul className="space-y-2.5 text-[13px] flex-1">
+              {aiBriefing.map((b, i) => (
+                <li key={i} className="flex items-start gap-2 leading-snug">
+                  <span className={cn(
+                    "h-1.5 w-1.5 rounded-full mt-1.5 shrink-0",
+                    b.tone === "success" && "bg-success",
+                    b.tone === "info" && "bg-info",
+                    b.tone === "warning" && "bg-warning",
+                    b.tone === "danger" && "bg-danger",
+                  )} />
+                  <span>{b.text}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-auto pt-3 border-t border-border/40 flex items-center justify-between">
+              <span className="inline-flex items-center gap-1 text-[10px] text-success font-medium">
+                <CheckCircle2 className="h-3 w-3" /> Verified vs live PMS data
+              </span>
+              <Link href="/ai" className="text-xs text-brand hover:underline inline-flex items-center gap-0.5 font-medium">
+                Ask AI <ChevronRight className="h-3 w-3" />
+              </Link>
+            </div>
+        </Card>
+      </section>
+
+      {/* ============ REVENUE BREAKDOWN ============ */}
+      <section>
+        <SectionHeader title="Revenue" hint="Live booked revenue across departments" icon={TrendingUp} />
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+          <KPISpark icon={BedDouble} label="Room" value={money(rev?.room ?? 0, cur)} delta={null} accent="brand" />
+          <KPISpark icon={UtensilsCrossed} label="F&B" value={money(rev?.food ?? 0, cur)} delta={null} accent="accent" />
+          <KPISpark icon={Building2} label="Hall" value={money(rev?.hall ?? 0, cur)} delta={null} accent="info" />
+          <KPISpark icon={Wallet} label="Advance" value={money(rev?.advance ?? 0, cur)} delta={null} accent="success" hint="Collected" />
+          <KPISpark icon={Receipt} label="Outstanding" value={money(rev?.pending ?? 0, cur)} delta={null} accent="warning" hint="To collect" />
+          <KPISpark icon={TrendingUp} label="Total" value={money(rev?.total ?? 0, cur)} delta={null} accent="brand" hint="Room + F&B + Hall" />
+        </div>
       </section>
 
       {/* ============ MONTHLY GOALS + TOP SOURCES ============ */}
@@ -943,18 +944,6 @@ export default function DashboardPage() {
   );
 }
 
-function SectionHeader({ title, hint, icon: Icon }: { title: string; hint?: string; icon?: typeof ActivityIcon }) {
-  return (
-    <div className="mb-3 flex items-center gap-2">
-      {Icon && <Icon className="h-3.5 w-3.5 text-brand" />}
-      <div>
-        <h2 className="text-[11px] uppercase tracking-[0.16em] font-semibold text-subtle-foreground">{title}</h2>
-      </div>
-      {hint && <span className="text-xs text-muted-foreground">· {hint}</span>}
-      <div className="flex-1 h-px bg-border ml-2" />
-    </div>
-  );
-}
 
 function ExecKpi({ label, value, badge, sub, icon: Icon, accent }: {
   label: string; value: number | string; badge?: string; sub?: string;
