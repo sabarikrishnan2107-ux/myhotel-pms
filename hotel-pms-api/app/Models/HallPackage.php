@@ -6,5 +6,5 @@ class HallPackage extends Model {
     use BelongsToCompany;
     protected $table = 'hall_packages';
     protected $guarded = ['id'];
-    protected $casts = ['active'=>'boolean','capacity'=>'integer','hourly'=>'integer','halfDay'=>'integer','fullDay'=>'integer','setupFee'=>'integer','gst'=>'integer'];
+    protected $casts = ['active'=>'boolean','capacity'=>'integer','hourly'=>'integer','halfDay'=>'integer','fullDay'=>'integer','setupFee'=>'integer','gst'=>'integer','extraPaxFee'=>'integer'];
 }

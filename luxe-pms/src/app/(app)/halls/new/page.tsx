@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Building2, Calendar, Users, UtensilsCrossed, Sparkles,
   ChevronLeft, Send, Plus, Minus, CheckCircle2, User, Mail,
@@ -31,9 +31,14 @@ type ExtraService = { id: string; label: string; price: number };
 const TIME_SLOTS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00"];
 
 export default function NewHallBookingPage() {
-  const [customer, setCustomer] = React.useState("");
-  const [phone, setPhone] = React.useState("");
-  const [email, setEmail] = React.useState("");
+  // Pre-fill from a converted enquiry: /halls/new?customer=&phone=&email=&date=&pax=&hall=
+  const searchParams = useSearchParams();
+  const todayISO = new Date().toLocaleDateString("en-CA"); // blocks past dates on event date
+  const qpDate = searchParams.get("date");
+  const qpPax = Number(searchParams.get("pax"));
+  const [customer, setCustomer] = React.useState(searchParams.get("customer") ?? "");
+  const [phone, setPhone] = React.useState(searchParams.get("phone") ?? "");
+  const [email, setEmail] = React.useState(searchParams.get("email") ?? "");
   const [eventType, setEventType] = React.useState("Wedding");
   // Venues (master) loaded from Configuration → Food & Hall Packages (/hall-packages).
   const [halls, setHalls] = React.useState<Venue[]>([]);
@@ -42,13 +47,16 @@ export default function NewHallBookingPage() {
     apiGet<Venue[]>("/hall-packages").then(rows => setHalls(rows.map(h => ({ ...h, id: String(h.id) })))).catch(() => {});
   }, []);
   React.useEffect(() => {
-    if (halls.length && !halls.some(h => h.id === hallId)) setHallId(halls[0].id);
-  }, [halls, hallId]);
-  const todayISO = new Date().toLocaleDateString("en-CA"); // blocks past dates on event date
-  const [eventDate, setEventDate] = React.useState(todayISO); // default to today, never the past
+    if (!halls.length || halls.some(h => h.id === hallId)) return;
+    // Prefer the venue named in the enquiry pre-fill, else the first available.
+    const qpHall = searchParams.get("hall");
+    const match = qpHall ? halls.find(h => h.name.toLowerCase() === qpHall.toLowerCase()) : undefined;
+    setHallId((match ?? halls[0]).id);
+  }, [halls, hallId, searchParams]);
+  const [eventDate, setEventDate] = React.useState(qpDate && qpDate >= todayISO ? qpDate : todayISO);
   const [startTime, setStartTime] = React.useState("18:00");
   const [endTime, setEndTime] = React.useState("23:00");
-  const [pax, setPax] = React.useState(150);
+  const [pax, setPax] = React.useState(qpPax > 0 ? qpPax : 150);
   const [banquetPkgs, setBanquetPkgs] = React.useState<BanquetPkg[]>([]);
   const [extraServices, setExtraServices] = React.useState<ExtraService[]>([]);
   React.useEffect(() => {

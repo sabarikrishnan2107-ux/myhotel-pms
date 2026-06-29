@@ -18,7 +18,7 @@ import { money, cn, formatDate } from "@/lib/utils";
 import { apiGet, apiPut, apiPost } from "@/lib/api";
 
 type Hall = typeof HALLS[number];
-type HallStatus = "confirmed" | "pending" | "in-progress" | "cancelled";
+type HallStatus = "confirmed" | "pending" | "in-progress" | "completed" | "cancelled";
 type HallBooking = Omit<typeof HALL_BOOKINGS[number], "status"> & { status: HallStatus; notes?: string; email?: string };
 
 const STATUS_TONE: Record<HallBooking["status"] | "cancelled" | "completed", "success" | "warning" | "info" | "danger" | "neutral"> = {
@@ -32,7 +32,7 @@ const STATUS_TONE: Record<HallBooking["status"] | "cancelled" | "completed", "su
 type HallOverride = {
   date?: string; start?: string; end?: string;
   guests?: number; package?: string; status?: HallBooking["status"];
-  notes?: string;
+  notes?: string; advance?: number;
 };
 
 export default function HallsPage() {
@@ -62,6 +62,7 @@ export default function HallsPage() {
   const [selected, setSelected] = React.useState<HallBooking | null>(null);
   const [modifyTarget, setModifyTarget] = React.useState<HallBooking | null>(null);
   const [cancelTarget, setCancelTarget] = React.useState<HallBooking | null>(null);
+  const [payTarget, setPayTarget] = React.useState<HallBooking | null>(null);
   const [toast, setToast] = React.useState<string | null>(null);
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2800); };
@@ -100,6 +101,32 @@ export default function HallsPage() {
     setCancelTarget(null);
     showToast(`${b.customer} cancelled · ${money(refund)} refund processed (${reason})`);
   };
+  // Mark a held event as completed (terminal state) — persists to the DB so past
+  // events stop showing as "in-progress" forever.
+  const handleComplete = (b: HallBooking) => {
+    setOverrides(o => ({ ...o, [b.id]: { ...(o[b.id] ?? {}), status: "completed" } }));
+    apiPut(`/hall-bookings/${b.id}`, { status: "completed" }).catch(() => showToast("Could not update status"));
+    setActionMenuFor(null);
+    showToast(`${b.customer} marked completed`);
+  };
+  // Record a payment against a hall booking: bumps the persisted advance (so the
+  // balance drops everywhere) AND writes a folio-payment line for the money trail,
+  // mirroring the room/group flows.
+  const handlePayment = (b: HallBooking, amount: number, mode: string) => {
+    const amt = Math.max(0, Math.round(amount));
+    const newAdvance = Math.min(b.total, b.advance + amt);
+    setOverrides(o => ({ ...o, [b.id]: { ...(o[b.id] ?? {}), advance: newAdvance } }));
+    apiPut(`/hall-bookings/${b.id}`, { advance: newAdvance }).catch(() => showToast("Could not save payment"));
+    apiPost("/folio-payments", {
+      bookingNo: `HALL-${b.id}`,
+      date: new Date().toLocaleDateString("en-CA"),
+      mode,
+      reference: `Hall · ${b.hall}`,
+      amount: amt,
+    }).catch(() => { /* trail is best-effort; the advance update is the source of truth */ });
+    setPayTarget(null);
+    showToast(`${money(amt)} received from ${b.customer} · balance ${money(Math.max(0, b.total - newAdvance))}`);
+  };
   // Sends the booking-confirmation email via the backend (Gmail SMTP).
   const handleEmail = (b: HallBooking) => {
     setActionMenuFor(null);
@@ -129,7 +156,7 @@ export default function HallsPage() {
   }, [actionMenuFor]);
 
   const activeFilters = (hallFilter !== "all" ? 1 : 0) + (statusFilter !== "all" ? 1 : 0) + (search ? 1 : 0);
-  const STATUS_CHIPS: ("all" | HallBooking["status"] | "cancelled")[] = ["all", "pending", "confirmed", "in-progress", "cancelled"];
+  const STATUS_CHIPS: ("all" | HallBooking["status"] | "cancelled")[] = ["all", "pending", "confirmed", "in-progress", "completed", "cancelled"];
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
@@ -393,6 +420,16 @@ export default function HallsPage() {
               <MessageCircle className="h-3.5 w-3.5 text-success" />WhatsApp customer
             </button>
             <div className="my-1 h-px bg-border" />
+            {b.status !== "cancelled" && b.status !== "completed" && (b.total - b.advance) > 0 && (
+              <button type="button" onClick={() => { setPayTarget(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                <Wallet className="h-3.5 w-3.5 text-success" />Receive payment
+              </button>
+            )}
+            {(b.status === "confirmed" || b.status === "in-progress") && (
+              <button type="button" onClick={() => handleComplete(b)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                <CheckCircle2 className="h-3.5 w-3.5 text-success" />Mark completed
+              </button>
+            )}
             <button type="button" disabled={isCancelled} onClick={() => { setModifyTarget(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left disabled:opacity-40 disabled:cursor-not-allowed">
               <Edit className="h-3.5 w-3.5 text-muted-foreground" />Modify booking
             </button>
@@ -412,6 +449,17 @@ export default function HallsPage() {
           onClose={() => setSelected(null)}
           onModify={() => { setModifyTarget(selected); setSelected(null); }}
           onCancel={() => { setCancelTarget(selected); setSelected(null); }}
+          onPay={() => { setPayTarget(selected); setSelected(null); }}
+          onComplete={() => { handleComplete(selected); setSelected(null); }}
+        />
+      )}
+
+      {/* Receive payment dialog */}
+      {payTarget && (
+        <ReceivePaymentDialog
+          booking={payTarget}
+          onClose={() => setPayTarget(null)}
+          onConfirm={(amount, mode) => handlePayment(payTarget, amount, mode)}
         />
       )}
 
@@ -450,8 +498,9 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 // ===================== DETAIL DRAWER =====================
-function HallDetailDrawer({ booking, notes, onClose, onModify, onCancel }: {
+function HallDetailDrawer({ booking, notes, onClose, onModify, onCancel, onPay, onComplete }: {
   booking: HallBooking; notes: string; onClose: () => void; onModify: () => void; onCancel: () => void;
+  onPay: () => void; onComplete: () => void;
 }) {
   const [halls, setHalls] = React.useState<Hall[]>([]);
   React.useEffect(() => { apiGet<Hall[]>("/hall-packages").then(r => setHalls(r.map(h => ({ ...h, id: String(h.id) })))).catch(() => {}); }, []);
@@ -537,16 +586,28 @@ function HallDetailDrawer({ booking, notes, onClose, onModify, onCancel }: {
         </div>
 
         {/* Footer */}
-        <div className="border-t border-border p-3 grid grid-cols-3 gap-2">
-          <Button variant="outline" size="sm" onClick={onModify} disabled={booking.status === "cancelled"}>
-            <Edit className="h-3.5 w-3.5" />Modify
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
-            <Printer className="h-3.5 w-3.5" />BEO sheet
-          </Button>
-          <Button variant="danger" size="sm" onClick={onCancel} disabled={booking.status === "cancelled"}>
-            <Ban className="h-3.5 w-3.5" />Cancel
-          </Button>
+        <div className="border-t border-border p-3 space-y-2">
+          {booking.status !== "cancelled" && booking.status !== "completed" && (
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="success" size="sm" onClick={onPay} disabled={booking.total - booking.advance <= 0}>
+                <Wallet className="h-3.5 w-3.5" />{booking.total - booking.advance > 0 ? "Receive payment" : "Fully paid"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={onComplete} disabled={booking.status === "pending"}>
+                <CheckCircle2 className="h-3.5 w-3.5" />Mark completed
+              </Button>
+            </div>
+          )}
+          <div className="grid grid-cols-3 gap-2">
+            <Button variant="outline" size="sm" onClick={onModify} disabled={booking.status === "cancelled"}>
+              <Edit className="h-3.5 w-3.5" />Modify
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Printer className="h-3.5 w-3.5" />BEO sheet
+            </Button>
+            <Button variant="danger" size="sm" onClick={onCancel} disabled={booking.status === "cancelled" || booking.status === "completed"}>
+              <Ban className="h-3.5 w-3.5" />Cancel
+            </Button>
+          </div>
         </div>
       </aside>
     </>
@@ -594,6 +655,10 @@ function ModifyHallDialog({ booking, notes, onClose, onSave }: {
     status: booking.status as HallBooking["status"],
     notes: notes,
   });
+
+  // Banquet packages drive the package dropdown — no more free-text / invalid names.
+  const [pkgs, setPkgs] = React.useState<{ name: string }[]>([]);
+  React.useEffect(() => { apiGet<{ name: string }[]>("/banquet-packages").then(setPkgs).catch(() => {}); }, []);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -650,7 +715,10 @@ function ModifyHallDialog({ booking, notes, onClose, onSave }: {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Package</Label>
-                <Input value={draft.package} onChange={e => set("package", e.target.value)} className="h-9" />
+                <Select value={draft.package} onChange={e => set("package", e.target.value)} className="h-9">
+                  {draft.package && !pkgs.some(p => p.name === draft.package) && <option value={draft.package}>{draft.package}</option>}
+                  {pkgs.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
+                </Select>
               </div>
             </div>
 
@@ -660,6 +728,7 @@ function ModifyHallDialog({ booking, notes, onClose, onSave }: {
                 <option value="pending">Pending</option>
                 <option value="confirmed">Confirmed</option>
                 <option value="in-progress">In Progress</option>
+                <option value="completed">Completed</option>
               </Select>
             </div>
 
@@ -687,6 +756,70 @@ function ModifyHallDialog({ booking, notes, onClose, onSave }: {
           <div className="px-5 py-3 border-t border-border bg-surface-elevated flex items-center justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
             <Button onClick={() => onSave(draft)} disabled={!valid} variant="success"><CheckCircle2 className="h-4 w-4" />Save changes</Button>
+          </div>
+        </Card>
+      </div>
+    </>
+  );
+}
+
+// ===================== RECEIVE PAYMENT DIALOG =====================
+function ReceivePaymentDialog({ booking, onClose, onConfirm }: {
+  booking: HallBooking; onClose: () => void; onConfirm: (amount: number, mode: string) => void;
+}) {
+  const balance = Math.max(0, booking.total - booking.advance);
+  const [amount, setAmount] = React.useState(balance);
+  const [mode, setMode] = React.useState("Cash");
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [onClose]);
+  const valid = amount > 0 && amount <= balance;
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <Card className="pointer-events-auto w-full max-w-md p-0 animate-in shadow-xl overflow-hidden">
+          <div className="px-5 py-4 bg-surface-elevated border-b border-border flex items-center gap-3">
+            <span className="h-10 w-10 rounded-md bg-success-soft text-success inline-flex items-center justify-center shrink-0"><Wallet className="h-5 w-5" /></span>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold truncate">Receive payment</h3>
+              <p className="text-xs text-muted-foreground truncate">{booking.customer} · {booking.hall}</p>
+            </div>
+            <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="px-5 py-4 space-y-4">
+            <div className="rounded-md border border-border p-3 space-y-1.5 text-sm">
+              <Row label="Total" value={money(booking.total)} />
+              <Row label="Already received" value={money(booking.advance)} />
+              <div className="border-t border-border pt-1.5 mt-1.5 flex items-center justify-between">
+                <span className="font-semibold text-warning">Balance due</span>
+                <span className="text-base font-semibold tabular text-warning">{money(balance)}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Amount (₹)</Label>
+                <Input type="number" min={1} max={balance} value={amount} onChange={e => setAmount(Math.min(balance, Math.max(0, Number(e.target.value))))} className="h-9 tabular" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Mode</Label>
+                <Select value={mode} onChange={e => setMode(e.target.value)} className="h-9">
+                  <option>Cash</option><option>Card</option><option>UPI</option><option>Bank</option><option>Online</option>
+                </Select>
+              </div>
+            </div>
+            <div className="flex gap-1.5">
+              {[25, 50, 100].map(p => (
+                <button key={p} type="button" onClick={() => setAmount(Math.round(balance * p / 100))} className="flex-1 h-8 rounded-md border border-border text-xs font-medium hover:bg-surface-sunken transition-colors">{p === 100 ? "Full" : `${p}%`}</button>
+              ))}
+            </div>
+          </div>
+          <div className="px-5 py-3 border-t border-border bg-surface-elevated flex items-center justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+            <Button variant="success" disabled={!valid} onClick={() => onConfirm(amount, mode)}><CheckCircle2 className="h-4 w-4" />Record payment</Button>
           </div>
         </Card>
       </div>

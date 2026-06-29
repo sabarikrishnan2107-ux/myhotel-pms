@@ -429,7 +429,7 @@ export default function BookingWizardPage() {
   }, [guest, newGuest, guests]);
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-screen-2xl mx-auto">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-display font-medium tracking-tight">New Booking</h1>
@@ -476,9 +476,9 @@ export default function BookingWizardPage() {
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
         {/* Step content */}
-        <Card className="lg:col-span-2 p-6 min-h-[400px]">
+        <Card className="p-6 min-h-[400px]">
           {step === 1 && (
             <div className="space-y-5">
               {/* Guest source tabs */}
@@ -709,7 +709,7 @@ export default function BookingWizardPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>Room type</Label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
                   {roomTypes.map(t => t.name).map(t => (
                     <button
                       key={t}
@@ -741,7 +741,7 @@ export default function BookingWizardPage() {
               <div className="space-y-1.5">
                 <Label>Rate plan</Label>
                 <p className="text-[11px] text-muted-foreground">Choose how meals are bundled with the room.</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 mt-2">
                   {ratePlans.map(p => {
                     const isSelected = ratePlan === p.v;
                     return (
@@ -949,7 +949,7 @@ export default function BookingWizardPage() {
         </Card>
 
         {/* Live summary */}
-        <Card className="p-5 h-fit sticky top-20">
+        <Card className="p-6 h-fit sticky top-20">
           <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Live summary</p>
 
           {selectedGuestDisplay ? (

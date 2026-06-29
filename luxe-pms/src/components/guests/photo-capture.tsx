@@ -1,9 +1,11 @@
 "use client";
 import * as React from "react";
 import Image from "next/image";
-import { Camera, RotateCcw, Upload, X, CheckCircle2, ScanFace, Loader2 } from "lucide-react";
+import { Camera, RotateCcw, Upload, X, CheckCircle2, ScanFace, Loader2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { prewarmFaceDetector, cropFaceWithPadding } from "@/lib/face-crop";
+import { prewarmBackgroundRemoval, replaceBackgroundWithWhite } from "@/lib/background-removal";
 
 interface Props {
   label?: string;
@@ -17,68 +19,7 @@ interface Props {
   focus?: "face" | "none";
 }
 
-type Mode = "idle" | "live" | "processing" | "captured" | "error";
-
-// Native Shape-Detection FaceDetector (Chromium/Edge). Typed minimally; we
-// feature-detect at runtime and gracefully fall back when it's unavailable.
-type FaceBox = { x: number; y: number; width: number; height: number };
-type DetectedFace = { boundingBox: FaceBox };
-type FaceDetectorLike = { detect: (src: CanvasImageSource) => Promise<DetectedFace[]> };
-type FaceDetectorCtor = new (opts?: { fastMode?: boolean; maxDetectedFaces?: number }) => FaceDetectorLike;
-
-async function detectFaceBox(canvas: HTMLCanvasElement): Promise<FaceBox | null> {
-  const Ctor = (window as unknown as { FaceDetector?: FaceDetectorCtor }).FaceDetector;
-  if (!Ctor) return null;
-  try {
-    const fd = new Ctor({ fastMode: true, maxDetectedFaces: 1 });
-    const faces = await fd.detect(canvas);
-    return faces?.[0]?.boundingBox ?? null;
-  } catch {
-    return null;
-  }
-}
-
-const OUT_SIZE = 640; // output square edge in px
-
-// Crop the frame to a square focused on the face and return a JPEG data URL.
-// Uses the detected face box (padded) when available; otherwise an optional
-// guided center crop (the on-screen oval keeps the face centred).
-async function faceFocusedDataUrl(
-  source: HTMLCanvasElement,
-  { centerFallback }: { centerFallback: boolean },
-): Promise<string | null> {
-  const cw = source.width, ch = source.height;
-  if (!cw || !ch) return null;
-  const box = await detectFaceBox(source);
-
-  let sx: number, sy: number, size: number;
-  if (box) {
-    // Pad the face box so we keep hair + a little shoulder, then square it off.
-    const cx = box.x + box.width / 2;
-    const cy = box.y + box.height / 2;
-    size = Math.min(Math.max(box.width, box.height) * 1.8, cw, ch);
-    sx = cx - size / 2;
-    sy = cy - size / 2 - box.height * 0.1; // bias up slightly for headroom
-  } else {
-    if (!centerFallback) return null;
-    // No detector: crop the central square (biased up a touch) — the oval
-    // guide during preview keeps the face roughly here.
-    size = Math.min(cw, ch) * 0.8;
-    sx = (cw - size) / 2;
-    sy = (ch - size) / 2 - ch * 0.05;
-  }
-  // Clamp inside the frame.
-  sx = Math.max(0, Math.min(cw - size, sx));
-  sy = Math.max(0, Math.min(ch - size, sy));
-
-  const out = document.createElement("canvas");
-  out.width = OUT_SIZE;
-  out.height = OUT_SIZE;
-  const octx = out.getContext("2d");
-  if (!octx) return null;
-  octx.drawImage(source, sx, sy, size, size, 0, 0, OUT_SIZE, OUT_SIZE);
-  return out.toDataURL("image/jpeg", 0.92);
-}
+type Mode = "idle" | "live" | "processing" | "validating" | "removing-bg" | "captured" | "error";
 
 export function PhotoCapture({ label = "Capture photo", onChange, value, aspect = "square", focus = "face" }: Props) {
   const faceFocus = focus === "face";
@@ -87,6 +28,8 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
   const [mode, setMode] = React.useState<Mode>(value ? "captured" : "idle");
   const [error, setError] = React.useState("");
   const [captured, setCaptured] = React.useState<string | null>(value ?? null);
+  const [validationScore, setValidationScore] = React.useState<number | null>(null);
+  const [validationMessage, setValidationMessage] = React.useState<string | null>(null);
 
   // Reflect a value supplied/changed by the parent (e.g. tablet capture).
   React.useEffect(() => {
@@ -102,6 +45,106 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
   }, []);
 
   React.useEffect(() => () => stop(), [stop]);
+
+  // Pre-warm models 800 ms after mount so first upload is near-instant.
+  React.useEffect(() => {
+    if (!faceFocus) return;
+    const id = setTimeout(() => {
+      prewarmBackgroundRemoval().catch(() => {});
+      prewarmFaceDetector();
+    }, 800);
+    return () => clearTimeout(id);
+  }, [faceFocus]);
+
+  async function compressImage(dataUrl: string): Promise<string> {
+    return new Promise((resolve) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const scale = Math.min(1, 1000 / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.round(img.naturalWidth * scale);
+        const h = Math.round(img.naturalHeight * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", 0.8));
+      };
+      img.src = dataUrl;
+    });
+  }
+
+  async function validatePhoto(
+    base64: string,
+  ): Promise<{ ok: true } | { ok: false; message: string }> {
+    const url = process.env.NEXT_PUBLIC_FACE_VALIDATOR_URL;
+    if (!url) return { ok: true };
+    const imageBase64 = base64.startsWith("data:") ? base64.split(",")[1] : base64;
+    try {
+      const res = await fetch(`${url}/validate-passport`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_base64: imageBase64 }),
+      });
+      const json = (await res.json()) as { status: boolean; message: string };
+      return json.status ? { ok: true } : { ok: false, message: json.message };
+    } catch {
+      setValidationScore(null);
+      setValidationMessage("Validation service offline — photo saved without check");
+      return { ok: true }; // lenient: continue pipeline
+    }
+  }
+
+  function loadImageEl(dataUrl: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const img = new window.Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
+  }
+
+  async function runPipeline(rawDataUrl: string): Promise<void> {
+    setValidationScore(null);
+    setValidationMessage(null);
+
+    // 1. Compress to max 1000×1000, JPEG 0.8
+    const compressed = await compressImage(rawDataUrl);
+
+    // 2. Validate (face mode + URL configured)
+    if (faceFocus) {
+      setMode("validating");
+      const result = await validatePhoto(compressed);
+      if (!result.ok) {
+        setValidationScore(0);
+        setValidationMessage(result.message);
+        setMode("idle");
+        return;
+      }
+      if (process.env.NEXT_PUBLIC_FACE_VALIDATOR_URL) {
+        setValidationScore(100);
+      }
+    }
+
+    // 3. Face crop
+    setMode("processing");
+    let cropped = compressed;
+    if (faceFocus) {
+      const imgEl = await loadImageEl(compressed);
+      cropped = await cropFaceWithPadding(imgEl);
+    }
+
+    // 4. Background removal
+    let finalUrl = cropped;
+    if (faceFocus) {
+      setMode("removing-bg");
+      finalUrl = await replaceBackgroundWithWhite(cropped);
+    }
+
+    // 5. Store result
+    setCaptured(finalUrl);
+    onChange?.(finalUrl);
+    setMode("captured");
+  }
 
   const start = async () => {
     setError("");
@@ -130,15 +173,9 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
     const ctx = canvas.getContext("2d");
     if (!ctx) { setMode("live"); return; }
     ctx.drawImage(v, 0, 0);
-    // Face mode: detect + crop (guided center-crop fallback). Document mode:
-    // keep the full frame so the whole ID stays in shot.
-    const url = faceFocus
-      ? ((await faceFocusedDataUrl(canvas, { centerFallback: true })) ?? canvas.toDataURL("image/jpeg", 0.92))
-      : canvas.toDataURL("image/jpeg", 0.92);
-    setCaptured(url);
-    onChange?.(url);
-    setMode("captured");
     stop();
+    const rawUrl = canvas.toDataURL("image/jpeg", 0.92);
+    await runPipeline(rawUrl);
   };
 
   const retake = () => {
@@ -151,34 +188,19 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
     setCaptured(null);
     onChange?.(null);
     setMode("idle");
+    setValidationScore(null);
+    setValidationMessage(null);
     stop();
   };
 
   const upload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setMode("processing");
     const reader = new FileReader();
-    reader.onload = async ev => {
-      const original = ev.target?.result as string;
-      // Try to face-crop the upload too; if no face is detected, keep the
-      // original (don't blindly center-crop an arbitrary photo).
-      const img = new window.Image();
-      img.onload = async () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext("2d");
-        let url = original;
-        if (ctx && faceFocus) {
-          ctx.drawImage(img, 0, 0);
-          url = (await faceFocusedDataUrl(canvas, { centerFallback: false })) ?? original;
-        }
-        setCaptured(url);
-        onChange?.(url);
-        setMode("captured");
-      };
-      img.onerror = () => { setCaptured(original); onChange?.(original); setMode("captured"); };
-      img.src = original;
+    reader.onload = async (ev) => {
+      const rawUrl = ev.target?.result as string;
+      await runPipeline(rawUrl);
     };
     reader.readAsDataURL(file);
   };
@@ -188,8 +210,19 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
   return (
     <div className="space-y-2">
       <div className={cn(
-        "relative rounded-md border-2 border-dashed border-border bg-surface-sunken overflow-hidden",
-        aspectClass
+        "relative overflow-hidden",
+        faceFocus
+          ? cn(
+              "rounded-full border-2",
+              mode === "captured"
+                ? "border-success"
+                : "border-dashed border-border bg-surface-sunken",
+              "w-40 h-40",
+            )
+          : cn(
+              "rounded-md border-2 border-dashed border-border bg-surface-sunken",
+              aspectClass,
+            ),
       )}>
         {(mode === "live" || mode === "processing") && (
           <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted />
@@ -206,10 +239,16 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
             </div>
           </div>
         )}
-        {mode === "processing" && (
+        {(mode === "processing" || mode === "validating" || mode === "removing-bg") && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/45 text-white">
             <Loader2 className="h-6 w-6 animate-spin" />
-            <p className="text-[11px] mt-2">{faceFocus ? "Focusing on face…" : "Processing…"}</p>
+            <p className="text-[11px] mt-2">
+              {mode === "validating"
+                ? "Validating…"
+                : mode === "removing-bg"
+                ? "Removing background…"
+                : "Processing…"}
+            </p>
           </div>
         )}
         {mode === "captured" && captured && (
@@ -247,13 +286,13 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
             </label>
           </>
         )}
-        {(mode === "live" || mode === "processing") && (
+        {(mode === "live" || mode === "processing" || mode === "validating" || mode === "removing-bg") && (
           <>
-            <Button type="button" size="sm" onClick={capture} disabled={mode === "processing"} className="flex-1">
-              {mode === "processing" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
-              {mode === "processing" ? "Capturing…" : "Capture"}
+            <Button type="button" size="sm" onClick={capture} disabled={mode !== "live"} className="flex-1">
+              {mode !== "live" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+              {mode !== "live" ? "Processing…" : "Capture"}
             </Button>
-            <Button type="button" size="sm" variant="outline" onClick={reset} disabled={mode === "processing"}>Cancel</Button>
+            <Button type="button" size="sm" variant="outline" onClick={reset} disabled={mode !== "live"}>Cancel</Button>
           </>
         )}
         {mode === "captured" && (
@@ -271,6 +310,37 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
           </label>
         )}
       </div>
+      {faceFocus && validationScore !== null && (
+        <div className="space-y-1.5 pt-1">
+          <div className="h-1.5 w-full bg-surface-sunken rounded-full overflow-hidden">
+            <div
+              className={cn(
+                "h-full transition-all duration-500",
+                validationScore >= 70 ? "bg-success" : "bg-danger",
+              )}
+              style={{ width: `${validationScore}%` }}
+            />
+          </div>
+          <div className="flex items-center gap-1.5">
+            {validationScore >= 70 ? (
+              <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+            ) : (
+              <AlertCircle className="h-3.5 w-3.5 text-danger" />
+            )}
+            <span
+              className={cn(
+                "text-[11px] font-medium",
+                validationScore >= 70 ? "text-success" : "text-danger",
+              )}
+            >
+              Score: {validationScore}%
+            </span>
+          </div>
+          {validationMessage && (
+            <p className="text-[11px] text-danger leading-snug">{validationMessage}</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

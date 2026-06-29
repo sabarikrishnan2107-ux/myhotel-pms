@@ -700,7 +700,16 @@ function EnquiryDetail({ enquiry, onClose, onUpdate, onAddFollowUp, onMarkFollow
                   </div>
                 )}
                 {enquiry.status === "won" && (
-                  <Link href={enquiry.type === "Hall" ? "/halls/new" : "/bookings/new"} className="block">
+                  <Link
+                    href={enquiry.type === "Hall"
+                      ? `/halls/new?${new URLSearchParams(
+                          Object.entries({
+                            customer: enquiry.name, phone: enquiry.phone, email: enquiry.email,
+                            date: enquiry.eventDate, pax: enquiry.guestCount, hall: enquiry.hallName, enq: enquiry.enqNo,
+                          }).filter(([, v]) => v != null && v !== "").map(([k, v]) => [k, String(v)]),
+                        ).toString()}`
+                      : "/bookings/new"}
+                    className="block">
                     <Button variant="success" className="w-full" size="sm">
                       <ArrowRight className="h-3.5 w-3.5" />Convert to {enquiry.type === "Hall" ? "Hall Booking" : "Booking"}
                     </Button>
