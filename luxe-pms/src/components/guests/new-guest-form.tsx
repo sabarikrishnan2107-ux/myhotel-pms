@@ -238,7 +238,7 @@ export function NewGuestForm({ onCancel, onSave, mobileSync, initialData, hideCa
 
       {/* Personal */}
       <Section icon={User} title="Personal Details" required>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           <Field label="Full name *">
             <Input value={data.name} onChange={e => update("name", e.target.value)} placeholder="Mr. John Doe" autoFocus />
           </Field>
@@ -303,7 +303,7 @@ export function NewGuestForm({ onCancel, onSave, mobileSync, initialData, hideCa
               <option>Male</option><option>Female</option>
             </Select>
           </Field>
-          <Field label="Address" className="md:col-span-2">
+          <Field label="Address" className="md:col-span-2 xl:col-span-3">
             <Input value={data.address} onChange={e => update("address", e.target.value)} placeholder="Street, Building, City, Country" />
           </Field>
         </div>
