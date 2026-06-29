@@ -17,6 +17,8 @@ import { PhoneInput } from "@/components/ui/phone-input";
 import { isValidPhone } from "@/lib/phone";
 import { GROUP_BOOKINGS, SAMPLE_ROOMING_LIST, GROUP_TIMELINE, type GroupStatus, type GroupBooking } from "@/lib/mock-data-ext";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
+import { computeGroupTotals, type GstSlab } from "@/lib/group-pricing";
+import { mealPerNightPerGuest } from "@/lib/booking-pricing";
 
 type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string };
 type AuditRow = { id: string; action: string; entity: string; module: string; user: string; date: string; time: string };
@@ -79,6 +81,16 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   React.useEffect(() => {
     apiGet<RoomBoardRow[]>("/room-board").then(setBoard).catch(() => {});
     apiGet<BookingLite[]>("/bookings").then(setAllBookings).catch(() => {});
+  }, []);
+  type RoomTypeCfg = { name: string; extraAdultRate?: number };
+  type RatePlanCfg = { code: string; name: string; inclBreakfast?: boolean; inclLunch?: boolean; inclDinner?: boolean; breakfastPrice?: number; lunchPrice?: number; dinnerPrice?: number };
+  const [roomTypes, setRoomTypes] = React.useState<RoomTypeCfg[]>([]);
+  const [ratePlans, setRatePlans] = React.useState<RatePlanCfg[]>([]);
+  const [gstSlabs, setGstSlabs] = React.useState<GstSlab[]>([]);
+  React.useEffect(() => {
+    apiGet<RoomTypeCfg[]>("/room-types").then(r => Array.isArray(r) && setRoomTypes(r)).catch(() => {});
+    apiGet<RatePlanCfg[]>("/rate-plans").then(r => Array.isArray(r) && setRatePlans(r)).catch(() => {});
+    apiGet<GstSlab[]>("/gst-slabs").then(r => Array.isArray(r) && setGstSlabs(r)).catch(() => {});
   }, []);
   const [toast, setToast] = React.useState<string | null>(null);
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
@@ -213,6 +225,19 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
 
   const allocated = group.block.reduce((s, b) => s + b.assigned, 0);
   const allocPct = Math.round((allocated / group.totalRooms) * 100);
+
+  // Recompute the folio from the stored block + rate plan so the displayed total
+  // matches what was quoted at creation (replaces the old hardcoded 5%/10% math).
+  const planCfg = ratePlans.find(p => p.code === group.ratePlan || p.name === group.ratePlan);
+  const planMeals = mealPerNightPerGuest({
+    inclB: !!planCfg?.inclBreakfast, inclL: !!planCfg?.inclLunch, inclD: !!planCfg?.inclDinner,
+    breakfastPrice: planCfg?.breakfastPrice ?? 0, lunchPrice: planCfg?.lunchPrice ?? 0, dinnerPrice: planCfg?.dinnerPrice ?? 0,
+  }) * (group.totalPax || 0) * (group.nights || 0);
+  const extraBedRateFor = (typeName: string) => roomTypes.find(t => t.name === typeName)?.extraAdultRate ?? 0;
+  const folio = computeGroupTotals(
+    group.block.map(b => ({ rate: b.rate, qty: b.qty, extraBeds: b.extraBeds ?? 0, extraBedRate: extraBedRateFor(b.type) })),
+    group.nights, [], group.totalPax || 0, gstSlabs, planMeals,
+  );
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
@@ -367,7 +392,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                   <div className="flex items-start justify-between">
                     <div>
                       <p className="font-semibold">{b.type}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5 tabular">{money(b.rate)} per night · group rate</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 tabular">{money(b.rate)} per night · group rate{b.extraBeds ? ` · +${b.extraBeds} extra bed${b.extraBeds > 1 ? "s" : ""}` : ""}</p>
                     </div>
                     <Badge tone={pct === 100 ? "success" : pct > 0 ? "warning" : "neutral"}>
                       {b.assigned}/{b.qty}
@@ -545,27 +570,43 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                     <td className="px-5 py-3 text-right tabular font-medium">{money(b.qty * b.rate * group.nights)}</td>
                   </tr>
                 ))}
+                {group.block.filter(b => b.extraBeds).map((b, i) => (
+                  <tr key={`eb${i}`}>
+                    <td className="px-5 py-3">{b.type} · extra bed · {group.nights} nights</td>
+                    <td className="px-5 py-3 text-right tabular">{b.extraBeds}</td>
+                    <td className="px-5 py-3 text-right tabular">{money(extraBedRateFor(b.type) * group.nights)}</td>
+                    <td className="px-5 py-3 text-right tabular font-medium">{money((b.extraBeds ?? 0) * extraBedRateFor(b.type) * group.nights)}</td>
+                  </tr>
+                ))}
+                {folio.mealsSubtotal > 0 && (
+                  <tr>
+                    <td className="px-5 py-3">Plan meals ({group.ratePlan}) · {group.totalPax} pax × {group.nights} nights</td>
+                    <td className="px-5 py-3 text-right tabular">{group.totalPax}</td>
+                    <td className="px-5 py-3 text-right tabular text-muted-foreground">—</td>
+                    <td className="px-5 py-3 text-right tabular font-medium">{money(folio.mealsSubtotal)}</td>
+                  </tr>
+                )}
                 {group.services.map((s, i) => (
                   <tr key={`s${i}`}>
                     <td className="px-5 py-3">{s}</td>
                     <td className="px-5 py-3 text-right tabular">1</td>
                     <td className="px-5 py-3 text-right tabular text-muted-foreground">—</td>
-                    <td className="px-5 py-3 text-right tabular font-medium">{money(Math.round((group.total * 0.1) / Math.max(1, group.services.length)))}</td>
+                    <td className="px-5 py-3 text-right tabular text-muted-foreground">—</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot className="bg-surface-elevated border-t border-border">
                 <tr>
                   <td colSpan={3} className="px-5 py-2 text-right text-xs uppercase tracking-wider font-semibold text-muted-foreground">Subtotal</td>
-                  <td className="px-5 py-2 text-right tabular">{money(group.total / 1.05)}</td>
+                  <td className="px-5 py-2 text-right tabular">{money(folio.roomSubtotal + folio.extraBedSubtotal + folio.mealsSubtotal)}</td>
                 </tr>
                 <tr>
-                  <td colSpan={3} className="px-5 py-2 text-right text-xs uppercase tracking-wider font-semibold text-muted-foreground">Tax (5%)</td>
-                  <td className="px-5 py-2 text-right tabular text-muted-foreground">{money(group.total - group.total / 1.05)}</td>
+                  <td colSpan={3} className="px-5 py-2 text-right text-xs uppercase tracking-wider font-semibold text-muted-foreground">Tax (GST)</td>
+                  <td className="px-5 py-2 text-right tabular text-muted-foreground">{money(folio.gst)}</td>
                 </tr>
                 <tr>
                   <td colSpan={3} className="px-5 py-3 text-right text-xs uppercase tracking-wider font-semibold">Total</td>
-                  <td className="px-5 py-3 text-right tabular font-semibold text-base">{money(group.total)}</td>
+                  <td className="px-5 py-3 text-right tabular font-semibold text-base">{money(folio.grandTotal)}</td>
                 </tr>
               </tfoot>
             </table>
