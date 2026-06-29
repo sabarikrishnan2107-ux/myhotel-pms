@@ -212,20 +212,10 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
       <div
         onClick={mode === "idle" ? start : mode === "live" ? capture : undefined}
         className={cn(
-          "relative overflow-hidden",
-          faceFocus
-            ? cn(
-                "rounded-lg border-2",
-                mode === "captured"
-                  ? "border-success"
-                  : "border-dashed border-border bg-surface-sunken",
-                "w-40 h-40",
-              )
-            : cn(
-                "rounded-md border-2 border-dashed border-border bg-surface-sunken",
-                aspectClass,
-              ),
-          (mode === "idle" || mode === "live") && "cursor-pointer hover:border-brand hover:bg-surface-sunken/80 transition-colors",
+          "relative overflow-hidden rounded-md border-2 bg-surface-sunken",
+          mode === "captured" ? "border-success" : "border-dashed border-border",
+          faceFocus ? "aspect-[3/2]" : aspectClass,
+          (mode === "idle" || mode === "live") && "cursor-pointer hover:border-brand transition-colors",
         )}
       >
         {/* Always mounted so videoRef is available before setMode("live") fires */}
@@ -261,8 +251,9 @@ export function PhotoCapture({ label = "Capture photo", onChange, value, aspect 
         )}
         {mode === "idle" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-subtle-foreground select-none">
-            <Camera className="h-8 w-8" />
-            <p className="text-xs mt-2">{label}</p>
+            <Camera className="h-6 w-6" />
+            <p className="text-xs mt-2 font-medium">{label}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Click to start camera</p>
           </div>
         )}
         {mode === "error" && (
