@@ -1,11 +1,13 @@
 // Pure pricing math for the New Group Booking flow. Framework-free (node-testable).
 
 export interface GstSlab { from: number; to?: number | null; rate: number }
-export interface GroupRoomRow { rate: number; qty: number }
+export interface GroupRoomRow { rate: number; qty: number; extraBeds?: number; extraBedRate?: number }
 export interface GroupSvcLine { price: number; perPax: boolean; gst: number }
 export interface GroupTotals {
   roomSubtotal: number;
+  extraBedSubtotal: number;
   servicesSubtotal: number;
+  mealsSubtotal: number;
   gst: number;
   grandTotal: number;
 }
@@ -25,26 +27,37 @@ export function computeGroupTotals(
   services: GroupSvcLine[],
   totalPax: number,
   slabs: GstSlab[],
+  planMeals = 0,
 ): GroupTotals {
-  let roomSubtotal = 0;
-  let roomGst = 0;
+  const N = Number(nights) || 0;
+  let roomSubtotal = 0, roomGst = 0, extraBedSubtotal = 0, extraBedGst = 0, maxRate = 0;
   for (const r of rooms) {
-    const amt = (Number(r.rate) || 0) * (Number(r.qty) || 0) * (Number(nights) || 0);
+    const rate = Number(r.rate) || 0;
+    const qty = Number(r.qty) || 0;
+    const slab = gstRateForRate(rate, slabs);
+    const amt = rate * qty * N;
     roomSubtotal += amt;
-    roomGst += (amt * gstRateForRate(Number(r.rate) || 0, slabs)) / 100;
+    roomGst += (amt * slab) / 100;
+    if (rate > maxRate) maxRate = rate;
+
+    const ebAmt = (Number(r.extraBeds) || 0) * (Number(r.extraBedRate) || 0) * N;
+    extraBedSubtotal += ebAmt;
+    extraBedGst += (ebAmt * slab) / 100;   // extra bed billed at its room type's slab
   }
 
-  let servicesSubtotal = 0;
-  let svcGst = 0;
+  let servicesSubtotal = 0, svcGst = 0;
   for (const sv of services) {
     const amt = sv.perPax
-      ? (Number(sv.price) || 0) * (Number(totalPax) || 0) * (Number(nights) || 0)
+      ? (Number(sv.price) || 0) * (Number(totalPax) || 0) * N
       : (Number(sv.price) || 0);
     servicesSubtotal += amt;
     svcGst += (amt * (Number(sv.gst) || 0)) / 100;
   }
 
-  const gst = Math.round(roomGst + svcGst);
-  const grandTotal = Math.round(roomSubtotal + servicesSubtotal + gst);
-  return { roomSubtotal, servicesSubtotal, gst, grandTotal };
+  const mealsSubtotal = Number(planMeals) || 0;
+  const mealGst = (mealsSubtotal * gstRateForRate(maxRate, slabs)) / 100;
+
+  const gst = Math.round(roomGst + extraBedGst + svcGst + mealGst);
+  const grandTotal = Math.round(roomSubtotal + extraBedSubtotal + servicesSubtotal + mealsSubtotal + gst);
+  return { roomSubtotal, extraBedSubtotal, servicesSubtotal, mealsSubtotal, gst, grandTotal };
 }

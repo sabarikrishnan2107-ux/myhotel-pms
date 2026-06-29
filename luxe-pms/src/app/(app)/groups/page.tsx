@@ -18,6 +18,7 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { GROUP_BOOKINGS, type GroupStatus, type GroupType, type GroupBooking } from "@/lib/mock-data-ext";
 import { money, cn, formatDate } from "@/lib/utils";
 import { apiGet, apiPut, sendEmail } from "@/lib/api";
+import { type GroupPolicies, DEFAULT_POLICIES } from "@/app/(app)/setup/group-policies-manager";
 
 const STATUS_TONE: Record<GroupStatus, "neutral" | "info" | "success" | "brand" | "warning" | "danger"> = {
   draft: "neutral",
@@ -58,10 +59,19 @@ export default function GroupsPage() {
 
   // Groups load from the database; cancel/modify layer over them and persist.
   const [groups, setGroups] = React.useState<GroupBooking[]>([]);
+  const [policies, setPolicies] = React.useState<GroupPolicies>(DEFAULT_POLICIES);
   React.useEffect(() => {
     apiGet<GroupBooking[]>("/group-bookings")
       .then(rows => setGroups(rows.map(g => ({ ...g, id: String(g.id), block: g.block ?? [], services: g.services ?? [] }))))
       .catch(() => {});
+    apiGet<Partial<GroupPolicies>>("/settings/group_policies")
+      .then(d => {
+        if (d && typeof d === "object") setPolicies({
+          depositPresets: Array.isArray(d.depositPresets) && d.depositPresets.length ? d.depositPresets : DEFAULT_POLICIES.depositPresets,
+          cancellationTiers: Array.isArray(d.cancellationTiers) && d.cancellationTiers.length ? d.cancellationTiers : DEFAULT_POLICIES.cancellationTiers,
+          discountTiers: Array.isArray(d.discountTiers) ? d.discountTiers : DEFAULT_POLICIES.discountTiers,
+        });
+      }).catch(() => {});
   }, []);
 
   // Local mutations
@@ -425,6 +435,7 @@ export default function GroupsPage() {
       {cancelTarget && (
         <CancelGroupDialog
           group={cancelTarget}
+          cancellationTiers={policies.cancellationTiers}
           onClose={() => setCancelTarget(null)}
           onConfirm={(reason, refund) => handleCancel(cancelTarget, reason, refund)}
         />
@@ -581,8 +592,9 @@ function ModifyGroupDialog({ group, onClose, onSave }: {
 }
 
 // ===================== CANCEL GROUP DIALOG =====================
-function CancelGroupDialog({ group, onClose, onConfirm }: {
+function CancelGroupDialog({ group, cancellationTiers, onClose, onConfirm }: {
   group: typeof GROUP_BOOKINGS[number];
+  cancellationTiers: { upToDays: number; refundPct: number }[];
   onClose: () => void;
   onConfirm: (reason: string, refund: number) => void;
 }) {
@@ -597,16 +609,24 @@ function CancelGroupDialog({ group, onClose, onConfirm }: {
     return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
   }, [onClose]);
 
-  // Group cancellation policy: tiered by days-until-arrival
-  const today = new Date("2026-05-24");
+  // Group cancellation policy: use configured tiers sorted ascending by upToDays.
+  // The first tier where daysUntil < upToDays applies. Stays already started → 0%.
+  const today = new Date();
   const arr = new Date(group.arrival);
   const daysUntil = Math.floor((arr.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
-  let refundPct = 100;
-  let policyNote = "Full refund — > 30 days before arrival";
-  if (daysUntil < 0) { refundPct = 0; policyNote = "No refund — stay has started"; }
-  else if (daysUntil < 7) { refundPct = 25; policyNote = "25% refund — within 7 days of arrival"; }
-  else if (daysUntil < 14) { refundPct = 50; policyNote = "50% refund — within 14 days of arrival"; }
-  else if (daysUntil < 30) { refundPct = 75; policyNote = "75% refund — within 30 days of arrival"; }
+  let refundPct = 0;
+  let policyNote = "No refund — stay has started";
+  if (daysUntil >= 0) {
+    const sorted = [...cancellationTiers].sort((a, b) => a.upToDays - b.upToDays);
+    const match = sorted.find(t => daysUntil < t.upToDays) ?? sorted[sorted.length - 1];
+    if (match) {
+      refundPct = match.refundPct;
+      const isLast = match === sorted[sorted.length - 1] && match.upToDays >= 9999;
+      policyNote = isLast
+        ? `Full refund — more than ${sorted[sorted.length - 2]?.upToDays ?? 30} days before arrival`
+        : `${refundPct}% refund — within ${match.upToDays} days of arrival`;
+    }
+  }
 
   const advance = group.total - group.balance;
   const refund = Math.round(advance * (refundPct / 100));

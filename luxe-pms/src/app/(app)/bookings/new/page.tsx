@@ -15,34 +15,29 @@ import { Avatar } from "@/components/ui/avatar";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost, apiPut, sendEmail } from "@/lib/api";
 import { NewGuestForm, type NewGuestData } from "@/components/guests/new-guest-form";
+import { saveNewGuest } from "@/lib/guest-profile";
 import type { Guest, Room } from "@/lib/types";
 import { buildNightlyBreakdown, type Season, type Holiday } from "@/lib/room-nightly-pricing";
-import { extraOccupancyCharge } from "@/lib/booking-pricing";
+import { extraOccupancyCharge, mealPerNightPerGuest } from "@/lib/booking-pricing";
 
 // Weekend uplift has no Setup field (Seasons/Holidays do) — kept as a fixed default.
 const WEEKEND_MULTIPLIER = 1.2;
 
 // Rate plan + F&B catalogs are MASTER DATA — loaded live from Configuration →
-// Rate Plans (/rate-plans) and Food & Hall Packages (/fb-packages). No hardcoded
+// Rate Plans (/rate-plans). No hardcoded
 // catalog: whatever is configured in Setup is what appears here.
 type Meal = "B" | "L" | "D"; // Breakfast / Lunch / Dinner
-type RatePlanOpt = { v: string; label: string; meals: Meal[]; refundable: boolean; discountPct: number; hint?: string };
-type FbPkgOpt = { id: string; name: string; short: string; icon: string; price: number; type: string };
+type RatePlanOpt = { v: string; label: string; meals: Meal[]; refundable: boolean; discountPct: number; breakfastPrice: number; lunchPrice: number; dinnerPrice: number; hint?: string };
 
 // API → UI mappers (Configuration is the single source of truth).
-type ApiRatePlan = { code: string; name: string; inclBreakfast?: boolean; inclLunch?: boolean; inclDinner?: boolean; refundable?: boolean; discountPct?: number };
-type ApiFbPackage = { id: number | string; name: string; type?: string; price: number };
+type ApiRatePlan = { code: string; name: string; inclBreakfast?: boolean; inclLunch?: boolean; inclDinner?: boolean; refundable?: boolean; discountPct?: number; breakfastPrice?: number; lunchPrice?: number; dinnerPrice?: number };
 function mapRatePlan(r: ApiRatePlan): RatePlanOpt {
   const meals: Meal[] = [];
   if (r.inclBreakfast) meals.push("B");
   if (r.inclLunch) meals.push("L");
   if (r.inclDinner) meals.push("D");
   const mealHint = meals.length ? "Room + " + [meals.includes("B") && "Breakfast", meals.includes("L") && "Lunch", meals.includes("D") && "Dinner"].filter(Boolean).join(" + ") : "Room only";
-  return { v: r.code, label: r.name, meals, refundable: r.refundable ?? true, discountPct: r.discountPct ?? 0, hint: r.discountPct ? `${mealHint} · ${r.discountPct}% off` : mealHint };
-}
-const FB_ICON: Record<string, string> = { Breakfast: "☕", Lunch: "🍽", Dinner: "🍽", "High Tea": "🍪", Snacks: "🍪" };
-function mapFbPackage(p: ApiFbPackage): FbPkgOpt {
-  return { id: String(p.id), name: p.name, short: p.type || p.name, icon: FB_ICON[p.type ?? ""] ?? "🍽", price: p.price, type: p.type ?? "" };
+  return { v: r.code, label: r.name, meals, refundable: r.refundable ?? true, discountPct: r.discountPct ?? 0, breakfastPrice: r.breakfastPrice ?? 0, lunchPrice: r.lunchPrice ?? 0, dinnerPrice: r.dinnerPrice ?? 0, hint: r.discountPct ? `${mealHint} · ${r.discountPct}% off` : mealHint };
 }
 
 // Room number is NOT chosen at booking — only the room type is reserved. The
@@ -75,7 +70,6 @@ export default function BookingWizardPage() {
   const [rooms, setRooms] = React.useState<Room[]>([]);
   // Master rate plans + F&B packages from Configuration (single source of truth).
   const [ratePlans, setRatePlans] = React.useState<RatePlanOpt[]>([]);
-  const [fbPackages, setFbPackages] = React.useState<FbPkgOpt[]>([]);
   const [seasons, setSeasons] = React.useState<Season[]>([]);
   const [holidays, setHolidays] = React.useState<Holiday[]>([]);
   React.useEffect(() => {
@@ -83,7 +77,6 @@ export default function BookingWizardPage() {
     apiGet<Guest[]>("/guests").then(rows => { if (rows.length) setGuests(rows); }).catch(() => {});
     apiGet<Room[]>("/room-board").then(rows => { if (rows.length) setRooms(rows); }).catch(() => {});
     apiGet<ApiRatePlan[]>("/rate-plans").then(rows => setRatePlans(rows.map(mapRatePlan))).catch(() => {});
-    apiGet<ApiFbPackage[]>("/fb-packages").then(rows => setFbPackages(rows.map(mapFbPackage))).catch(() => {});
   }, []);
   React.useEffect(() => {
     apiGet<Array<Season & { active?: boolean }>>("/seasons")
@@ -103,8 +96,8 @@ export default function BookingWizardPage() {
   React.useEffect(() => {
     if (roomType && roomTypes.length && !roomTypes.some(t => t.name === roomType)) setRoomType("");
   }, [roomTypes, roomType]);
-  const [breakfast, setBreakfast] = React.useState(false);
   const [extraBed, setExtraBed] = React.useState(false);
+  const [extraBedForExtra, setExtraBedForExtra] = React.useState(false);   // opt-in: charge the extra bed for adults beyond the room max
   const [airportTransfer, setAirportTransfer] = React.useState(false);
   const [lateCheckout, setLateCheckout] = React.useState(false);
   // Step-2 stay options
@@ -114,8 +107,6 @@ export default function BookingWizardPage() {
   const [instructions, setInstructions] = React.useState("");
   // Live rate-breakdown drawer toggle
   const [rateBreakdownOpen, setRateBreakdownOpen] = React.useState(false);
-  // F&B add-on packages (per-pax counts × nights)
-  const [fbAddons, setFbAddons] = React.useState<Record<string, number>>({}); // { id: count-of-pax-per-day }
   const [paymentPct, setPaymentPct] = React.useState(30);
   // When set (not null), the advance is a fixed money amount instead of a percentage.
   const [customAdvance, setCustomAdvance] = React.useState<number | null>(null);
@@ -164,14 +155,16 @@ export default function BookingWizardPage() {
   const urlCheckout = searchParams.get("checkout");
   const resumeNo = searchParams.get("resume");
 
-  // Default to today → today + 3 nights (local time), unless the URL overrides it.
+  // Check-in defaults to today (local time); check-out starts EMPTY so it is
+  // deliberately entered for every stay. URL drag-prefill / draft-resume still
+  // populate check-out when present — only the cold default is blank.
   const isoDay = (offset = 0) => {
     const d = new Date();
     d.setDate(d.getDate() + offset);
     return d.toLocaleDateString("en-CA");
   };
   const [checkIn, setCheckIn] = React.useState(urlCheckin ?? isoDay(0));
-  const [checkOut, setCheckOut] = React.useState(urlCheckout ?? isoDay(3));
+  const [checkOut, setCheckOut] = React.useState(urlCheckout ?? "");
 
   // If the URL specified a room, find it and pre-select its type + the room itself
   React.useEffect(() => {
@@ -231,14 +224,17 @@ export default function BookingWizardPage() {
   const minCheckout = addDays(checkIn, 1); // checkout must be at least 1 day after check-in
   const todayISO = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD local — blocks past dates
 
-  // Auto-push checkout forward if check-in moves past it
+  // Auto-push checkout forward if check-in moves past it — but only when a
+  // checkout is already set. An empty checkout stays empty (never silently filled).
   const handleCheckInChange = (val: string) => {
     setCheckIn(val);
-    if (checkOut <= val) {
+    if (checkOut && checkOut <= val) {
       setCheckOut(addDays(val, Math.max(1, nights)));
     }
   };
   const handleCheckOutChange = (val: string) => {
+    // Clearing the field is allowed (empty = "not chosen yet").
+    if (!val) { setCheckOut(""); return; }
     // Guard: never allow checkout on/before check-in
     if (val <= checkIn) {
       setCheckOut(addDays(checkIn, 1));
@@ -247,7 +243,12 @@ export default function BookingWizardPage() {
     }
   };
 
-  const nights = Math.max(1, Math.round((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86400000));
+  // A valid checkout is non-empty and strictly after check-in. Until then,
+  // `nights` is 0 so pricing/breakdown/totals resolve to 0 instead of NaN.
+  const hasCheckout = !!checkOut && checkOut > checkIn;
+  const nights = hasCheckout
+    ? Math.max(1, Math.round((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86400000))
+    : 0;
 
   // Per-night base rate comes from the managed Room Type; falls back to a
   // sensible default only if the type list hasn't loaded.
@@ -260,34 +261,69 @@ export default function BookingWizardPage() {
   );
   const subtotal = halfDay ? Math.round(rate * 0.5) : breakdown.total;
 
-  // Each F&B add-on package: price × pax-per-day × nights
-  const fbTotal = fbPackages.reduce((t, p) => t + p.price * (fbAddons[p.id] ?? 0) * nights, 0);
 
   // Stay options as flat fees
   const earlyFee = earlyCheckIn ? 500 : 0;        // ₹500 flat
   const lateFee = lateCheckout ? 500 : 0;         // ₹500 flat
 
-  // Auto extra-bed charge for guests beyond the room type's included occupancy.
-  // Each adult over maxAdults / child over maxChildren is billed the type's
-  // per-night extra-bed rate; within the included max this is ₹0. Unknown max
-  // (type not loaded) → Infinity so we never surcharge by accident.
+  // Auto extra-person charge for ADULTS beyond the room type's included max.
+  // Each adult over maxAdults is billed the type's per-night extra-adult rate;
+  // children are NEVER surcharged (maxChildren: Infinity, extraChildRate: 0).
+  // Within the included max this is ₹0. Unknown max (type not loaded) → Infinity
+  // so we never surcharge by accident.
   const selectedType = roomTypes.find(t => t.name === roomType);
   const extraOcc = extraOccupancyCharge({
     adults, children,
     maxAdults: selectedType?.maxAdults ?? Infinity,
-    maxChildren: selectedType?.maxChildren ?? Infinity,
+    maxChildren: Infinity,    // children are not charged extra — adults only
     extraAdultRate: selectedType?.extraAdultRate ?? 0,
-    extraChildRate: selectedType?.extraChildRate ?? 0,
+    extraChildRate: 0,
     nights,
   });
 
+  // The extra-bed charge for adults beyond the room max applies ONLY when the
+  // "Extra bed" toggle (shown on Pax & Type) is enabled — opt-in, not automatic.
+  const extraBedCharge = (extraOcc.extraAdults > 0 && extraBedForExtra) ? extraOcc.total : 0;
+  // Manual "Extra bed" add-on bills the room type's configured extra-bed/night rate (from Setup), not a flat value.
+  const extraBedRate = selectedType?.extraAdultRate ?? 900;
+
+  // Occupancy is hard-capped at the room type's included adults/children. The
+  // opt-in "Extra bed" toggle lifts the ADULT cap by one (and charges the rate).
+  // Before a type is chosen, fall back to a neutral 6/4.
+  const inclAdults = selectedType?.maxAdults ?? 6;
+  const inclChildren = selectedType?.maxChildren ?? 4;
+  const adultsMax = inclAdults + (extraBedForExtra ? 1 : 0);
+  const childrenMax = inclChildren;
+  const enableExtraBed = (on: boolean) => {
+    setExtraBedForExtra(on);
+    if (on) setAdults(a => Math.max(a, inclAdults + 1));   // fill the extra bed so the charge shows
+  };
+  // Clamp counts down whenever the cap shrinks (smaller type, or extra bed off).
+  React.useEffect(() => {
+    setAdults(a => Math.min(a, adultsMax));
+    setChildren(c => Math.min(c, childrenMax));
+  }, [adultsMax, childrenMax]);
+
+  // Plan meals: per-plan meal prices from Configuration → Rate Plans, charged
+  // per guest per night for each meal the selected plan includes.
+  const selectedPlan = ratePlans.find(p => p.v === ratePlan);
+  const planMealsTotal = selectedPlan
+    ? mealPerNightPerGuest({
+        inclB: selectedPlan.meals.includes("B"),
+        inclL: selectedPlan.meals.includes("L"),
+        inclD: selectedPlan.meals.includes("D"),
+        breakfastPrice: selectedPlan.breakfastPrice,
+        lunchPrice: selectedPlan.lunchPrice,
+        dinnerPrice: selectedPlan.dinnerPrice,
+      }) * (adults + children) * nights
+    : 0;
+
   const extras =
-    (breakfast ? 95 * adults * nights : 0) +
-    (extraBed ? 900 * nights : 0) +
+    planMealsTotal +
+    (extraBed ? extraBedRate * nights : 0) +
     (airportTransfer ? 175 : 0) +
     earlyFee + lateFee +
-    extraOcc.total +
-    fbTotal;
+    extraBedCharge;
 
   const tax = (subtotal + extras) * 0.05;
   const total = subtotal + extras + tax;
@@ -367,6 +403,8 @@ export default function BookingWizardPage() {
 
   const canNext = () => {
     if (step === 1) return guest !== null || newGuest !== null;
+    // Step 2 (Dates) requires a check-out date to be chosen.
+    if (step === 2) return hasCheckout;
     // Step 3 (Pax & Type) and Step 4 (Rate Plan) require an explicit selection.
     if (step === 3) return roomType !== "";
     if (step === 4) return ratePlan !== "";
@@ -589,39 +627,48 @@ export default function BookingWizardPage() {
                   <p className="text-[11px] text-muted-foreground">Must be after check-in · auto-adjusts if you change dates</p>
                 </div>
               </div>
-              <div className="rounded-md bg-brand-soft text-brand-soft-foreground p-4 flex items-center gap-3">
-                <Calendar className="h-5 w-5" />
-                <div className="text-sm">
-                  <span className="font-semibold">{nights} {nights === 1 ? "night" : "nights"}</span> · {new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })} → {new Date(checkOut).toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })}
+              {!hasCheckout ? (
+                <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground flex items-center gap-3">
+                  <Calendar className="h-5 w-5 shrink-0" />
+                  Pick a check-out date to see nights &amp; pricing.
                 </div>
-              </div>
+              ) : (
+                <>
+                  <div className="rounded-md bg-brand-soft text-brand-soft-foreground p-4 flex items-center gap-3">
+                    <Calendar className="h-5 w-5" />
+                    <div className="text-sm">
+                      <span className="font-semibold">{nights} {nights === 1 ? "night" : "nights"}</span> · {new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })} → {new Date(checkOut).toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })}
+                    </div>
+                  </div>
 
-              {/* Day-type breakdown — weekday vs weekend vs holiday */}
-              <div className="rounded-md border border-border p-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-muted-foreground uppercase tracking-wider">Rate by day type</span>
-                  <span className="text-muted-foreground">{breakdown.counts.weekday}W · {breakdown.counts.weekend}WE · {breakdown.counts.holiday}H</span>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {breakdown.lines.map((ln, i) => {
-                    const tone = ln.kind === "holiday" ? "bg-warning-soft text-warning border-warning/30"
-                              : ln.kind === "weekend" ? "bg-accent-soft text-accent border-accent/30"
-                              : "bg-success-soft text-success border-success/30";
-                    return (
-                      <span key={i} className={cn("inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-medium", tone)}>
-                        <span className="font-semibold tabular">{ln.date.toLocaleDateString(undefined, { day: "2-digit", month: "short" })}</span>
-                        <span className="opacity-70">·</span>
-                        <span className="tabular">{money(ln.rate)}</span>
-                      </span>
-                    );
-                  })}
-                </div>
-                <p className="text-[10px] text-muted-foreground mt-2 flex items-center gap-3">
-                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" />Weekday</span>
-                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-accent" />Weekend +20%</span>
-                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" />Holiday +30%</span>
-                </p>
-              </div>
+                  {/* Day-type breakdown — weekday vs weekend vs holiday */}
+                  <div className="rounded-md border border-border p-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-muted-foreground uppercase tracking-wider">Rate by day type</span>
+                      <span className="text-muted-foreground">{breakdown.counts.weekday}W · {breakdown.counts.weekend}WE · {breakdown.counts.holiday}H</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {breakdown.lines.map((ln, i) => {
+                        const tone = ln.kind === "holiday" ? "bg-warning-soft text-warning border-warning/30"
+                                  : ln.kind === "weekend" ? "bg-accent-soft text-accent border-accent/30"
+                                  : "bg-success-soft text-success border-success/30";
+                        return (
+                          <span key={i} className={cn("inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-medium", tone)}>
+                            <span className="font-semibold tabular">{ln.date.toLocaleDateString(undefined, { day: "2-digit", month: "short" })}</span>
+                            <span className="opacity-70">·</span>
+                            <span className="tabular">{money(ln.rate)}</span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-2 flex items-center gap-3">
+                      <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" />Weekday</span>
+                      <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-accent" />Weekend +20%</span>
+                      <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" />Holiday +30%</span>
+                    </p>
+                  </div>
+                </>
+              )}
 
               {/* Early / Late / Half-day options */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-sm">
@@ -657,8 +704,8 @@ export default function BookingWizardPage() {
           {step === 3 && (
             <div className="space-y-5">
               <div className="grid grid-cols-2 gap-4">
-                <Stepper label="Adults" value={adults} onChange={setAdults} min={1} max={6} />
-                <Stepper label="Children" value={children} onChange={setChildren} min={0} max={4} />
+                <Stepper label="Adults" value={adults} onChange={setAdults} min={1} max={adultsMax} />
+                <Stepper label="Children" value={children} onChange={setChildren} min={0} max={childrenMax} />
               </div>
               <div className="space-y-1.5">
                 <Label>Room type</Label>
@@ -677,6 +724,14 @@ export default function BookingWizardPage() {
                   ))}
                 </div>
               </div>
+              {!!roomType && (
+                <ToggleRow
+                  label="Extra bed"
+                  hint={`Seat 1 more guest beyond the room's ${inclAdults}-adult limit · ${money(selectedType?.extraAdultRate ?? 0)}/night`}
+                  checked={extraBedForExtra}
+                  onChange={enableExtraBed}
+                />
+              )}
             </div>
           )}
 
@@ -720,74 +775,10 @@ export default function BookingWizardPage() {
                 </div>
               </div>
 
-              {/* F&B add-on packages — for extra meals beyond the rate plan */}
-              <div className="space-y-1.5">
-                <Label>F&amp;B add-on packages</Label>
-                <p className="text-[11px] text-muted-foreground">
-                  Pre-book additional meals or banquets for the stay. Charged <span className="text-foreground font-medium">per pax × {nights} night{nights === 1 ? "" : "s"}</span>.
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-                  {fbPackages.map(pkg => {
-                    const count = fbAddons[pkg.id] ?? 0;
-                    const includedInPlan = (pkg.type === "Breakfast" && ratePlans.find(rp => rp.v === ratePlan)?.meals.includes("B")) ||
-                                           (pkg.type === "Lunch" && ratePlans.find(rp => rp.v === ratePlan)?.meals.includes("L")) ||
-                                           (pkg.type === "Dinner" && ratePlans.find(rp => rp.v === ratePlan)?.meals.includes("D"));
-                    return (
-                      <div
-                        key={pkg.id}
-                        className={cn(
-                          "rounded-md border p-3 flex items-center gap-3 transition-colors",
-                          count > 0 ? "bg-brand-soft/40 border-brand" : "border-border",
-                          includedInPlan && "opacity-70"
-                        )}
-                      >
-                        <span className="text-2xl shrink-0">{pkg.icon}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <p className="text-sm font-medium leading-tight truncate">{pkg.short}</p>
-                            {includedInPlan && (
-                              <span className="text-[9px] font-semibold uppercase tracking-wider bg-success-soft text-success px-1.5 py-0.5 rounded">included in {ratePlan}</span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-muted-foreground tabular">{money(pkg.price)}/pax × {nights}N</p>
-                        </div>
-                        <div className="flex items-center border border-border rounded-md h-8 bg-surface shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => setFbAddons(a => ({ ...a, [pkg.id]: Math.max(0, (a[pkg.id] ?? 0) - 1) }))}
-                            disabled={count === 0}
-                            className="w-7 h-7 inline-flex items-center justify-center hover:bg-surface-sunken disabled:opacity-40 disabled:cursor-not-allowed"
-                            aria-label={`Decrease ${pkg.short}`}
-                          >
-                            <Minus className="h-3 w-3" />
-                          </button>
-                          <span className="w-7 text-center text-sm tabular font-medium">{count}</span>
-                          <button
-                            type="button"
-                            onClick={() => setFbAddons(a => ({ ...a, [pkg.id]: (a[pkg.id] ?? 0) + 1 }))}
-                            className="w-7 h-7 inline-flex items-center justify-center hover:bg-surface-sunken"
-                            aria-label={`Increase ${pkg.short}`}
-                          >
-                            <Plus className="h-3 w-3" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                {fbTotal > 0 && (
-                  <div className="mt-2 px-3 py-2 rounded-md bg-brand-soft/30 border border-brand/20 text-xs flex items-center justify-between">
-                    <span className="text-muted-foreground">F&amp;B add-on subtotal</span>
-                    <span className="font-semibold tabular text-brand-soft-foreground">{money(fbTotal)}</span>
-                  </div>
-                )}
-              </div>
-
               {/* Other extras */}
               <div className="space-y-2">
                 <Label>Other extras</Label>
-                <ToggleRow label="Breakfast buffet (à la carte top-up)" hint={`${money(95)} per person/day · use this only if not on a meal plan`} checked={breakfast} onChange={setBreakfast} />
-                <ToggleRow label="Extra bed" hint={`${money(900)} per person/night (incl. breakfast)`} checked={extraBed} onChange={setExtraBed} />
+                <ToggleRow label="Extra bed" hint={`${money(extraBedRate)} per night (incl. breakfast)`} checked={extraBed} onChange={setExtraBed} />
                 <ToggleRow label="Airport transfer" hint={`${money(175)} one way`} checked={airportTransfer} onChange={setAirportTransfer} />
               </div>
             </div>
@@ -928,8 +919,7 @@ export default function BookingWizardPage() {
                   label="Rate plan"
                   value={`${ratePlan} · ${ratePlans.find(p => p.v === ratePlan)?.hint ?? ""}`}
                   sub={[
-                    Object.values(fbAddons).some(c => c > 0) && `+ ${fbPackages.filter(p => (fbAddons[p.id] ?? 0) > 0).map(p => `${fbAddons[p.id]}× ${p.short}`).join(" · ")}`,
-                    breakfast && "Breakfast top-up",
+                    planMealsTotal > 0 && "Plan meals",
                     extraBed && "Extra bed",
                     airportTransfer && "Airport transfer",
                     lateCheckout && "Late check-out",
@@ -1012,62 +1002,76 @@ export default function BookingWizardPage() {
 
           <dl className="mt-5 space-y-2.5 text-sm empty:mt-0">
             {showDates && <Row k="Check-in" v={new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />}
-            {showDates && <Row k="Check-out" v={new Date(checkOut).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />}
-            {showDates && <Row k="Nights" v={`${nights}`} />}
+            {showDates && hasCheckout && <Row k="Check-out" v={new Date(checkOut).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />}
+            {showDates && hasCheckout && <Row k="Nights" v={`${nights}`} />}
             {showPax && <Row k="Pax" v={`${adults}A${children ? ` + ${children}C` : ""}`} />}
             {!!roomType && <Row k="Room type" v={roomType} />}
             {!!ratePlan && <Row k="Rate plan" v={ratePlan} />}
           </dl>
 
-          {roomType ? (
+          {hasCheckout ? (
           <>
           <div className="border-t border-border my-4" />
 
           <dl className="space-y-2 text-sm">
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setRateBreakdownOpen(o => !o)}
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Room subtotal
-                {rateBreakdownOpen ? <ChevronLeft className="h-3 w-3 rotate-90" /> : <ChevronRight className="h-3 w-3 rotate-90" />}
-              </button>
-              <span className="tabular text-sm text-muted-foreground">{money(subtotal)}</span>
-            </div>
-            {rateBreakdownOpen && !halfDay && (
-              <div className="ml-2 pl-2 border-l-2 border-border space-y-1 animate-in">
-                {breakdown.lines.map((ln, i) => (
-                  <div key={i} className="flex items-center justify-between text-[11px]">
-                    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                      <span className={cn(
-                        "h-1.5 w-1.5 rounded-full",
-                        ln.kind === "holiday" ? "bg-warning" : ln.kind === "weekend" ? "bg-accent" : "bg-success"
-                      )} />
-                      {ln.date.toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })}
-                      <span className="text-subtle-foreground capitalize">· {ln.kind}</span>
-                    </span>
-                    <span className="tabular text-muted-foreground">{money(ln.rate)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {rateBreakdownOpen && halfDay && (
-              <p className="ml-2 pl-2 border-l-2 border-border text-[11px] text-muted-foreground animate-in">Half-day rate · 50% of {money(rate)} base</p>
-            )}
-            {extraOcc.total > 0 && (
-              <Row k={`Extra bed × ${extraOcc.extraAdults + extraOcc.extraChildren} (beyond max ${selectedType?.maxAdults ?? 0}A${selectedType?.maxChildren ? `+${selectedType.maxChildren}C` : ""})`} v={money(extraOcc.total)} muted />
-            )}
-            {extras - extraOcc.total > 0 && <Row k="Extras" v={money(extras - extraOcc.total)} muted />}
-            <Row k="Tax (5%)" v={money(tax)} muted />
-            <div className="border-t border-border pt-2 mt-2">
-              <Row k={<span className="font-semibold">Total</span>} v={<span className="font-semibold tabular text-base">{money(total)}</span>} />
-            </div>
-            {advance > 0 && (
+            {roomType && (
               <>
-                <Row k={`Advance (${advanceLabel})`} v={<span className="text-brand font-medium">{money(advance)}</span>} />
-                <Row k="Balance at checkout" v={money(total - advance)} muted />
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setRateBreakdownOpen(o => !o)}
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Room subtotal
+                    {rateBreakdownOpen ? <ChevronLeft className="h-3 w-3 rotate-90" /> : <ChevronRight className="h-3 w-3 rotate-90" />}
+                  </button>
+                  <span className="tabular text-sm text-muted-foreground">{money(subtotal)}</span>
+                </div>
+                {rateBreakdownOpen && !halfDay && (
+                  <div className="ml-2 pl-2 border-l-2 border-border space-y-1 animate-in">
+                    {breakdown.lines.map((ln, i) => (
+                      <div key={i} className="flex items-center justify-between text-[11px]">
+                        <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                          <span className={cn(
+                            "h-1.5 w-1.5 rounded-full",
+                            ln.kind === "holiday" ? "bg-warning" : ln.kind === "weekend" ? "bg-accent" : "bg-success"
+                          )} />
+                          {ln.date.toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })}
+                          <span className="text-subtle-foreground capitalize">· {ln.kind}</span>
+                        </span>
+                        <span className="tabular text-muted-foreground">{money(ln.rate)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {rateBreakdownOpen && halfDay && (
+                  <p className="ml-2 pl-2 border-l-2 border-border text-[11px] text-muted-foreground animate-in">Half-day rate · 50% of {money(rate)} base</p>
+                )}
               </>
+            )}
+            {extraBedCharge > 0 && (
+              <Row k={`Extra bed · ${extraOcc.extraAdults} extra adult${extraOcc.extraAdults > 1 ? "s" : ""}`} v={money(extraBedCharge)} muted />
+            )}
+            {earlyFee > 0 && <Row k="Early check-in" v={money(earlyFee)} muted />}
+            {lateFee > 0 && <Row k="Late check-out" v={money(lateFee)} muted />}
+            {planMealsTotal > 0 && <Row k={`Plan meals (${selectedPlan?.meals.join("/")}) × ${adults + children} guest${adults + children > 1 ? "s" : ""} × ${nights}N`} v={money(planMealsTotal)} muted />}
+            {extraBed && <Row k="Extra bed" v={money(extraBedRate * nights)} muted />}
+            {airportTransfer && <Row k="Airport transfer" v={money(175)} muted />}
+            {roomType ? (
+              <>
+                <Row k="Tax (5%)" v={money(tax)} muted />
+                <div className="border-t border-border pt-2 mt-2">
+                  <Row k={<span className="font-semibold">Total</span>} v={<span className="font-semibold tabular text-base">{money(total)}</span>} />
+                </div>
+                {advance > 0 && (
+                  <>
+                    <Row k={`Advance (${advanceLabel})`} v={<span className="text-brand font-medium">{money(advance)}</span>} />
+                    <Row k="Balance at checkout" v={money(total - advance)} muted />
+                  </>
+                )}
+              </>
+            ) : (
+              <p className="text-[11px] text-muted-foreground pt-1 border-t border-border mt-1">Pick a room type (Pax &amp; Type) to see the room rate &amp; total.</p>
             )}
           </dl>
           </>
@@ -1100,33 +1104,11 @@ export default function BookingWizardPage() {
                   // NOTE: don't gate on step1Mode here — saving the new-guest form flips
                   // the mode back to "search", so checking it dropped every new profile.
                   try {
+                    // A brand-new guest from the form is persisted to the registry
+                    // (core profile first, then KYC captures) via the shared helper
+                    // the walk-in flow uses too, so every path stores guests alike.
                     if (newGuest) {
-                      // Save the core profile FIRST (small payload, always succeeds) so
-                      // name/phone/email/ID can never be lost. The large base64 KYC
-                      // captures are attached in a second request — if they're too big
-                      // or fail, the core profile is already safely stored.
-                      const createdGuest = await apiPost<{ id: number }>("/guests", {
-                        name: selectedGuestDisplay!.name,
-                        phone: selectedGuestDisplay!.phone ?? "",
-                        email: newGuest.email ?? "",
-                        nationality: newGuest.nationality ?? "",
-                        idType: newGuest.idType ?? "",
-                        idNumber: newGuest.idNumber ?? "",
-                        address: newGuest.address ?? "",
-                        birthday: newGuest.dob ?? "",
-                        gender: newGuest.gender ?? "",
-                        company: newGuest.company ?? "",
-                        gst: newGuest.gst ?? "",
-                        vip: newGuest.vip ?? false,
-                        internalNotes: newGuest.remarks ?? "",
-                      }).catch(() => null);
-                      const captures = {
-                        idFront: newGuest.idFront ?? "", idBack: newGuest.idBack ?? "",
-                        photo: newGuest.photo ?? "", signature: newGuest.signature ?? "",
-                      };
-                      if (createdGuest?.id && (captures.idFront || captures.idBack || captures.photo || captures.signature)) {
-                        await apiPut(`/guests/${createdGuest.id}`, captures).catch(() => {});
-                      }
+                      await saveNewGuest(newGuest);
                     }
                     const bookingPayload = {
                       bookingNo,
@@ -1412,15 +1394,17 @@ function Row({ k, v, muted }: { k: React.ReactNode; v: React.ReactNode; muted?: 
 }
 
 function Stepper({ label, value, onChange, min = 0, max = 10 }: { label: string; value: number; onChange: (n: number) => void; min?: number; max?: number }) {
+  const atMin = value <= min;
+  const atMax = value >= max;
   return (
     <div className="space-y-1.5">
       <Label>{label}</Label>
       <div className="flex items-center border border-border rounded-md h-10">
-        <button onClick={() => onChange(Math.max(min, value - 1))} className="h-full w-10 hover:bg-surface-sunken inline-flex items-center justify-center border-r border-border">
+        <button type="button" disabled={atMin} onClick={() => onChange(Math.max(min, value - 1))} className={cn("h-full w-10 inline-flex items-center justify-center border-r border-border", atMin ? "opacity-40 cursor-not-allowed" : "hover:bg-surface-sunken")}>
           <Minus className="h-3.5 w-3.5" />
         </button>
         <span className="flex-1 text-center font-medium tabular">{value}</span>
-        <button onClick={() => onChange(Math.min(max, value + 1))} className="h-full w-10 hover:bg-surface-sunken inline-flex items-center justify-center border-l border-border">
+        <button type="button" disabled={atMax} onClick={() => onChange(Math.min(max, value + 1))} className={cn("h-full w-10 inline-flex items-center justify-center border-l border-border", atMax ? "opacity-40 cursor-not-allowed" : "hover:bg-surface-sunken")}>
           <Plus className="h-3.5 w-3.5" />
         </button>
       </div>

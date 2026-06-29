@@ -47,6 +47,7 @@ Route::middleware(['auth:sanctum', 'company.active'])->group(function () {
     // Dashboard KPIs + live room board (aggregated from real data)
     Route::get('/stats', [StatsController::class, 'index']);
     Route::get('/room-board', [StatsController::class, 'roomBoard']);
+    Route::get('/room-availability', [StatsController::class, 'roomAvailability']);
     Route::get('/dashboard/revenue-trend', [StatsController::class, 'revenueTrend']);
     Route::get('/dashboard/occupancy-forecast', [StatsController::class, 'occupancyForecast']);
     Route::get('/dashboard/alerts', [StatsController::class, 'alerts']);

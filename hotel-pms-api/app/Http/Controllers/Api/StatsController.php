@@ -18,6 +18,8 @@ use App\Models\HallBooking;
 use App\Models\InventoryItem;
 use App\Models\MaintenanceTicket;
 use App\Models\Room;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Live dashboard KPIs aggregated from the real Postgres data
@@ -825,5 +827,54 @@ class StatsController extends Controller
             'sources'     => $sources,
             'leadBuckets' => $leadBuckets,
         ]);
+    }
+
+    /**
+     * Return per-room availability for a date range, excluding rooms committed
+     * to individual bookings OR group rooming assignments that overlap.
+     *
+     * GET /room-availability?from=YYYY-MM-DD&to=YYYY-MM-DD
+     */
+    public function roomAvailability(Request $request)
+    {
+        $from = $request->query('from', date('Y-m-d'));
+        $to   = $request->query('to',   date('Y-m-d', strtotime('+1 day')));
+
+        // Individual bookings with a room number that overlap the window
+        $bookedRooms = Booking::whereNotIn('status', ['cancelled', 'checked-out', 'no-show'])
+            ->whereNotNull('roomNumber')
+            ->where('roomNumber', '!=', 'Unassigned')
+            ->where('checkIn',  '<', $to)
+            ->where('checkOut', '>', $from)
+            ->pluck('roomNumber')
+            ->toArray();
+
+        // Group rooming assignments for groups whose stay overlaps the window
+        $groupRooms = DB::table('group_rooming')
+            ->join('group_bookings', 'group_rooming.groupCode', '=', 'group_bookings.code')
+            ->whereNotIn('group_bookings.status', ['cancelled'])
+            ->whereNotNull('group_rooming.roomNo')
+            ->where('group_rooming.roomNo', '!=', '')
+            ->where('group_bookings.arrival',   '<', $to)
+            ->where('group_bookings.departure', '>', $from)
+            ->pluck('group_rooming.roomNo')
+            ->toArray();
+
+        $committed = array_unique(array_merge($bookedRooms, $groupRooms));
+
+        $rooms = Room::orderBy('floor')->orderBy('number')->get()->map(function ($r) use ($committed) {
+            $available = !in_array($r->number, $committed)
+                && $r->status !== 'blocked'
+                && $r->status !== 'out-of-order';
+            return [
+                'number'    => $r->number,
+                'floor'     => (int) $r->floor,
+                'type'      => $r->category,
+                'available' => $available,
+                'status'    => $r->status,
+            ];
+        });
+
+        return response()->json($rooms);
     }
 }

@@ -41,4 +41,42 @@ describe("computeGroupTotals", () => {
     expect(t.gst).toBe(1350);                      // 7500 * 18%
     expect(t.grandTotal).toBe(8850);
   });
+
+  it("is backward-compatible: existing return fields unchanged when no meals/extra beds", () => {
+    const t = computeGroupTotals([{ rate: 650, qty: 10 }], 2, [], 0, slabs);
+    expect(t.roomSubtotal).toBe(13000);
+    expect(t.extraBedSubtotal).toBe(0);
+    expect(t.mealsSubtotal).toBe(0);
+    expect(t.gst).toBe(1560);
+    expect(t.grandTotal).toBe(14560);
+  });
+
+  it("adds plan meals taxed at the block's highest room slab", () => {
+    // rooms: 9000*1*2 = 18000 @18% = 3240 ; meals: planMeals 8400 @18% (max rate 9000) = 1512
+    const t = computeGroupTotals([{ rate: 9000, qty: 1 }], 2, [], 4, slabs, 8400);
+    expect(t.mealsSubtotal).toBe(8400);
+    expect(t.gst).toBe(4752);                 // 3240 + 1512
+    expect(t.grandTotal).toBe(31152);         // 18000 + 8400 + 4752
+  });
+
+  it("adds extra beds (extraBeds*extraBedRate*nights) taxed at the row's room slab", () => {
+    // rooms: 650*10*2 = 13000 @12% = 1560 ; extra beds: 2*500*2 = 2000 @12% = 240
+    const t = computeGroupTotals(
+      [{ rate: 650, qty: 10, extraBeds: 2, extraBedRate: 500 }], 2, [], 0, slabs,
+    );
+    expect(t.extraBedSubtotal).toBe(2000);
+    expect(t.gst).toBe(1800);                 // 1560 + 240
+    expect(t.grandTotal).toBe(16800);         // 13000 + 2000 + 1800
+  });
+
+  it("charges no meal/extra-bed GST when there are no slabs", () => {
+    const t = computeGroupTotals(
+      [{ rate: 650, qty: 1, extraBeds: 1, extraBedRate: 500 }], 1, [], 2, [], 1000,
+    );
+    expect(t.roomSubtotal).toBe(650);
+    expect(t.extraBedSubtotal).toBe(500);
+    expect(t.mealsSubtotal).toBe(1000);
+    expect(t.gst).toBe(0);
+    expect(t.grandTotal).toBe(2150);
+  });
 });

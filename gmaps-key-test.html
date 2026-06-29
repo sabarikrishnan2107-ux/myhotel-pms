@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Google API Key Tester</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    body { margin: 0; background: #0f172a; color: #e2e8f0; }
+    .wrap { max-width: 820px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .sub { color: #94a3b8; font-size: 13px; margin-bottom: 20px; }
+    .key-row { display: flex; gap: 8px; margin-bottom: 20px; }
+    input { flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155;
+            background: #1e293b; color: #e2e8f0; font-family: monospace; font-size: 13px; }
+    button { padding: 10px 16px; border-radius: 8px; border: 0; background: #3b82f6;
+             color: #fff; font-weight: 600; cursor: pointer; }
+    button:hover { background: #2563eb; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+            padding: 16px; margin-bottom: 16px; }
+    .card h2 { font-size: 14px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+    .status { font-size: 12px; padding: 2px 8px; border-radius: 999px; font-weight: 700; }
+    .pending { background: #475569; color: #cbd5e1; }
+    .ok { background: #166534; color: #bbf7d0; }
+    .fail { background: #7f1d1d; color: #fecaca; }
+    pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-word;
+          font-size: 12px; color: #94a3b8; max-height: 220px; overflow: auto; }
+    #map { height: 280px; border-radius: 8px; background: #0f172a; }
+    .hint { font-size: 12px; color: #64748b; margin-top: 6px; }
+    .warn { font-size: 12px; color: #fbbf24; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Google API Key Tester</h1>
+    <div class="sub">Checks a Google Maps Platform key against several APIs and reports what's enabled or broken.</div>
+    <div class="warn">⚠ A key used in client-side HTML is publicly visible. Restrict it (HTTP referrers + specific APIs) in Google Cloud Console, and don't commit a live unrestricted key.</div>
+
+    <div class="key-row">
+      <input id="key" value="AIzaSyAZ0bzsIMqPBmq0I1kKHjgLDNeoqHEgUmo" />
+      <button onclick="runTests()">Test key</button>
+    </div>
+
+    <!-- Maps JavaScript API -->
+    <div class="card">
+      <h2>Maps JavaScript API <span id="js-status" class="status pending">not run</span></h2>
+      <div id="map"></div>
+      <div class="hint">A map renders below if the JS API + billing are enabled for this key on this origin.</div>
+    </div>
+
+    <!-- Geocoding API (REST) -->
+    <div class="card">
+      <h2>Geocoding API <span id="geo-status" class="status pending">not run</span></h2>
+      <pre id="geo-out">Click "Test key" to run.</pre>
+    </div>
+
+    <!-- Places API (REST) -->
+    <div class="card">
+      <h2>Places API (Autocomplete) <span id="places-status" class="status pending">not run</span></h2>
+      <pre id="places-out">Click "Test key" to run.</pre>
+    </div>
+  </div>
+
+  <script>
+    let mapsScriptLoaded = false;
+
+    function setStatus(id, kind, text) {
+      const el = document.getElementById(id);
+      el.className = 'status ' + kind;
+      el.textContent = text;
+    }
+
+    // Google calls this automatically when the JS API key fails auth.
+    window.gm_authFailure = function () {
+      setStatus('js-status', 'fail', 'auth failed');
+      document.getElementById('map').innerHTML =
+        '<div style="padding:16px;color:#fecaca;font-size:13px">' +
+        'gm_authFailure: key rejected. Likely the Maps JavaScript API is not enabled, ' +
+        'billing is off, or HTTP-referrer restrictions block this origin.</div>';
+    };
+
+    window.initMap = function () {
+      try {
+        new google.maps.Map(document.getElementById('map'), {
+          center: { lat: 13.0827, lng: 80.2707 }, // Chennai
+          zoom: 11,
+        });
+        setStatus('js-status', 'ok', 'working');
+      } catch (e) {
+        setStatus('js-status', 'fail', 'error');
+        document.getElementById('map').innerHTML =
+          '<pre style="color:#fecaca">' + e.message + '</pre>';
+      }
+    };
+
+    function loadMapsJs(key) {
+      if (mapsScriptLoaded) { window.initMap(); return; }
+      mapsScriptLoaded = true;
+      const s = document.createElement('script');
+      s.src = 'https://maps.googleapis.com/maps/api/js?key=' +
+              encodeURIComponent(key) + '&callback=initMap&libraries=places';
+      s.async = true;
+      s.onerror = function () { setStatus('js-status', 'fail', 'script load error'); };
+      document.head.appendChild(s);
+    }
+
+    async function testGeocoding(key) {
+      setStatus('geo-status', 'pending', 'running...');
+      const url = 'https://maps.googleapis.com/maps/api/geocode/json?address=Chennai&key=' +
+                  encodeURIComponent(key);
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        document.getElementById('geo-out').textContent = JSON.stringify(data, null, 2);
+        if (data.status === 'OK') {
+          setStatus('geo-status', 'ok', 'working');
+        } else {
+          setStatus('geo-status', 'fail', data.status || 'failed');
+        }
+      } catch (e) {
+        setStatus('geo-status', 'fail', 'network/CORS error');
+        document.getElementById('geo-out').textContent = e.message +
+          '\n\n(Geocoding REST calls can be blocked by browser CORS — ' +
+          'treat the JS API result above as the primary signal.)';
+      }
+    }
+
+    async function testPlaces(key) {
+      setStatus('places-status', 'pending', 'running...');
+      const url = 'https://maps.googleapis.com/maps/api/place/autocomplete/json?input=Taj&key=' +
+                  encodeURIComponent(key);
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        document.getElementById('places-out').textContent = JSON.stringify(data, null, 2);
+        if (data.status === 'OK' || data.status === 'ZERO_RESULTS') {
+          setStatus('places-status', 'ok', 'working');
+        } else {
+          setStatus('places-status', 'fail', data.status || 'failed');
+        }
+      } catch (e) {
+        setStatus('places-status', 'fail', 'network/CORS error');
+        document.getElementById('places-out').textContent = e.message +
+          '\n\n(Places REST calls are usually blocked by browser CORS — ' +
+          'use the JS API result above as the primary signal.)';
+      }
+    }
+
+    function runTests() {
+      const key = document.getElementById('key').value.trim();
+      if (!key) { alert('Enter a key first.'); return; }
+      loadMapsJs(key);
+      testGeocoding(key);
+      testPlaces(key);
+    }
+
+    window.addEventListener('load', runTests);
+  </script>
+</body>
+</html>

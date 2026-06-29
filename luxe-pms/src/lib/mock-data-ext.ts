@@ -274,7 +274,7 @@ export const AUDIT_LOG_ENTRIES = [
 export type GroupStatus = "draft" | "tentative" | "confirmed" | "in-house" | "completed" | "cancelled";
 export type GroupType = "Wedding" | "Conference" | "Tour Group" | "Sports Team" | "Corporate Retreat" | "Other";
 
-export interface GroupRoomBlock { type: string; qty: number; rate: number; assigned: number; }
+export interface GroupRoomBlock { type: string; qty: number; rate: number; assigned: number; extraBeds?: number; extraBedRate?: number; }
 export interface GroupGuestEntry { id: string; roomNo?: string; roomType: string; lead: string; pax: number; phone?: string; remarks?: string; }
 
 export interface GroupBooking {

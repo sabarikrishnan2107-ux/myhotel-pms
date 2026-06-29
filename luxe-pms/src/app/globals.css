@@ -338,6 +338,19 @@
     background-clip: padding-box;
     border: 2px solid transparent;
   }
+
+  /* Type-only number fields — hide the native up/down spinner arrows
+     so numeric inputs (rates, counts) read as plain text fields. */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
 }
 
 @keyframes fade-in-up {

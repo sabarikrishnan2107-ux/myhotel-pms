@@ -9,8 +9,8 @@ import {
   Phone, Mail, Hash, User, X, Eye, CheckCircle2, KeyRound, MessageCircle,
   ChevronLeft, Printer, AlertCircle, Upload, FileCheck2, ScanLine, Pen,
   Plus, BedDouble as BedIcon, Globe, ChevronsRight, Minus,
-  Banknote, Smartphone, Building2, Wallet, UtensilsCrossed,
-  CalendarPlus, CalendarMinus, Bed, Download, FileText,
+  Smartphone, UtensilsCrossed,
+  CalendarPlus, Download, FileText,
 } from "lucide-react";
 import { Label } from "@/components/ui/input";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -21,12 +21,15 @@ import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
 import { PhotoCapture } from "@/components/guests/photo-capture";
+import { NewGuestForm, type NewGuestData } from "@/components/guests/new-guest-form";
 import { SignaturePad } from "@/components/guests/signature-pad";
 import { MobileSyncDialog } from "@/components/guests/mobile-sync-dialog";
 import { buildWalkInSyncBooking } from "@/lib/walkin-sync";
+import { saveNewGuest } from "@/lib/guest-profile";
 import { useGuests, useRooms } from "@/lib/use-directory";
 import type { Reservation, PaymentStatus, BookingSource, Guest } from "@/lib/types";
 import { cn, money, formatTime } from "@/lib/utils";
+import { mealPerNightPerGuest } from "@/lib/booking-pricing";
 import { apiGet, apiPut, apiPost, sendEmail } from "@/lib/api";
 import { useProperty, hotelName } from "@/lib/use-property";
 import { PhoneInput } from "@/components/ui/phone-input";
@@ -34,9 +37,23 @@ import { isValidPhone } from "@/lib/phone";
 import { EmailInput } from "@/components/ui/email-input";
 import { isValidEmail } from "@/lib/email";
 import { buildNightlyBreakdown, type Season, type Holiday } from "@/lib/room-nightly-pricing";
+import { extraOccupancyCharge } from "@/lib/booking-pricing";
 
 // Weekend uplift has no Setup field (Seasons/Holidays do) — kept as a fixed default.
 const WEEKEND_MULTIPLIER = 1.2;
+
+// DOB picker bounds — guest must be 18+ and not absurdly old. Setting `max` to
+// 18 years ago also makes the calendar open on that month (not today), matching
+// the booking guest form.
+const MIN_GUEST_AGE = 18;
+const MAX_GUEST_AGE = 110;
+function isoDateNYearsAgo(years: number) {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - years);
+  return d.toISOString().slice(0, 10);
+}
+const DOB_MAX = isoDateNYearsAgo(MIN_GUEST_AGE);
+const DOB_MIN = isoDateNYearsAgo(MAX_GUEST_AGE);
 
 // Money collected at the check-in payment step (amount in ₹, plus mode/reference).
 type CheckInPayment = { amount: number; mode: string; reference: string };
@@ -47,7 +64,7 @@ type WalkInResume = {
   bookingNo: string;
   name?: string; phone?: string; email?: string; nationality?: string;
   checkInDate?: string; nights?: number; adults?: number; children?: number;
-  roomNumber?: string; ratePlan?: string;
+  roomType?: string; ratePlan?: string;
   docs?: { guest_photo?: string | null; id_front?: string | null; id_back?: string | null; signature?: string | null };
 };
 
@@ -55,57 +72,80 @@ type WalkInResume = {
 // payment was collected at the desk, record it on the folio and roll the
 // booking's advance / balance / paymentStatus forward — same flow checkout uses,
 // so the collected money is actually reflected at checkout instead of "unpaid".
-async function persistCheckIn(bookingNo: string, roomNumber?: string, payment?: CheckInPayment) {
+async function persistCheckIn(reservation: Reservation, roomNumber?: string, payment?: CheckInPayment) {
+  const bookingNo = reservation.bookingNo;
+  const collected = payment && payment.amount > 0 ? payment.amount : 0;
+  const today = new Date().toISOString().slice(0, 10);
   try {
     const list = await apiGet<{ id: number; bookingNo: string; advance?: number; balance?: number }[]>("/bookings");
     const bk = list.find(b => b.bookingNo === bookingNo);
-    if (!bk) return;
+
+    if (!bk) {
+      // A fresh walk-in has no booking row yet (it lived only in memory). Persist it
+      // as a checked-in booking so the room is recorded as occupied — otherwise a
+      // later walk-in for overlapping dates would still offer the same room. Other
+      // sources always already have a booking, so only create for walk-ins.
+      if (reservation.source !== "Walk-in") return;
+      const advance = (reservation.advance ?? 0) + collected;
+      const balance = Math.max(0, (reservation.total ?? 0) - advance);
+      await apiPost("/bookings", {
+        bookingNo,
+        guestName: reservation.guestName,
+        roomNumber: roomNumber || reservation.roomNumber,
+        roomType: reservation.roomType,
+        source: reservation.source ?? "Walk-in",
+        checkIn: reservation.checkIn,
+        checkOut: reservation.checkOut,
+        nights: reservation.nights,
+        adults: reservation.adults,
+        children: reservation.children,
+        ratePlan: reservation.ratePlan,
+        total: reservation.total,
+        advance,
+        balance,
+        paymentStatus: balance === 0 ? "paid" : advance > 0 ? "partial" : "unpaid",
+        status: "checked-in",
+      });
+      if (collected > 0) {
+        await apiPost("/folio-payments", { bookingNo, date: today, mode: payment!.mode, reference: payment!.reference.trim() || null, amount: collected });
+      }
+      return;
+    }
 
     const patch: Record<string, string | number> = { status: "checked-in" };
     if (roomNumber) patch.roomNumber = roomNumber;   // write the room assigned at check-in
 
-    if (payment && payment.amount > 0) {
-      const newAdvance = (bk.advance ?? 0) + payment.amount;
-      const newBalance = Math.max(0, (bk.balance ?? 0) - payment.amount);
+    if (collected > 0) {
+      const newAdvance = (bk.advance ?? 0) + collected;
+      const newBalance = Math.max(0, (bk.balance ?? 0) - collected);
       patch.advance = newAdvance;
       patch.balance = newBalance;
       patch.paymentStatus = newBalance === 0 ? "paid" : "partial";
       // Record the actual payment line on the folio (mode + reference for reconciliation).
-      await apiPost("/folio-payments", {
-        bookingNo,
-        date: new Date().toISOString().slice(0, 10),
-        mode: payment.mode,
-        reference: payment.reference.trim() || null,
-        amount: payment.amount,
-      });
+      await apiPost("/folio-payments", { bookingNo, date: today, mode: payment!.mode, reference: payment!.reference.trim() || null, amount: collected });
     }
 
     await apiPut(`/bookings/${bk.id}`, patch);
   } catch { /* offline — UI still reflects the check-in locally */ }
 }
 
-// KYC captured at check-in (base64 data URLs + ID details) — persist it onto the
-// guest record so it shows on the profile and the next stay starts with ID on file.
-type KycCapture = {
-  idType: string; idNumber: string; address?: string;
-  idFront: string | null; idBack: string | null;
-  photo: string | null; signature: string | null;
+// Guest-profile patch saved at check-in — edited contact/personal details plus,
+// when collected here, the KYC captures (base64 data URLs + ID details). Persisting
+// it shows the data on the profile and lets the next stay start with ID on file.
+type GuestProfilePatch = {
+  name?: string; phone?: string; email?: string; nationality?: string; gender?: string;
+  idType?: string; idNumber?: string; address?: string;
+  idFront?: string | null; idBack?: string | null;
+  photo?: string | null; signature?: string | null;
 };
-async function persistKyc(guestName: string, kyc: KycCapture) {
+// Look up by the ORIGINAL booked name (the patch may rename the guest), then PUT.
+async function persistGuestProfile(guestName: string, patch: GuestProfilePatch) {
   try {
     const list = await apiGet<{ id: number; name: string }[]>("/guests");
     const g = list.find(x => x.name === guestName);
     if (!g) return;   // no matching profile — booking-only guest, nothing to attach to
-    await apiPut(`/guests/${g.id}`, {
-      idType: kyc.idType,
-      idNumber: kyc.idNumber,
-      address: kyc.address ?? "",
-      idFront: kyc.idFront ?? "",
-      idBack: kyc.idBack ?? "",
-      photo: kyc.photo ?? "",
-      signature: kyc.signature ?? "",
-    });
-  } catch { /* offline — captures stay in the UI for this session */ }
+    await apiPut(`/guests/${g.id}`, patch);
+  } catch { /* offline — edits stay in the UI for this session */ }
 }
 
 /** Join a reservation with its guest profile to enable phone/email/ID search */
@@ -253,7 +293,7 @@ export default function CheckinPage() {
     let cancelled = false;
     (async () => {
       try {
-        const rows = await apiGet<Array<{ id: number; bookingNo: string; status?: string; checkIn?: string; nights?: number; adults?: number; children?: number; roomNumber?: string; ratePlan?: string; guestName?: string; draftData?: unknown }>>("/bookings");
+        const rows = await apiGet<Array<{ id: number; bookingNo: string; status?: string; checkIn?: string; nights?: number; adults?: number; children?: number; roomType?: string; ratePlan?: string; guestName?: string; draftData?: unknown }>>("/bookings");
         const matches = rows.filter(r => r.bookingNo === resumeParam && (r.status ?? "") === "pending");
         const b = matches.find(r => r.draftData) ?? [...matches].sort((a, z) => z.id - a.id)[0];
         if (cancelled || !b) return;
@@ -265,7 +305,7 @@ export default function CheckinPage() {
           name: dd.name ?? b.guestName ?? "", phone: dd.phone ?? "", email: dd.email ?? "", nationality: dd.nationality ?? "India",
           checkInDate: (b.checkIn ?? "").slice(0, 10) || undefined,
           nights: b.nights, adults: b.adults, children: b.children,
-          roomNumber: b.roomNumber && b.roomNumber !== "Unassigned" ? b.roomNumber : undefined,
+          roomType: b.roomType,
           ratePlan: b.ratePlan,
           docs: full?.documents ?? undefined,
         });
@@ -660,7 +700,7 @@ export default function CheckinPage() {
             setCheckingIn(null);
             setToast(msg);
             setTimeout(() => setToast(null), 3000);
-            persistCheckIn(res.bookingNo, room, payment);
+            persistCheckIn(res, room, payment);
           }}
         />
       )}
@@ -833,6 +873,12 @@ function CheckinProcessModal({
     { id: 4, label: "Complete", icon: CheckCircle2, hint: "Finalize" },
   ] as const;
 
+  // Walk-ins settle payment in the express wizard — skip the check-in Payment
+  // step for them (any balance is collected at checkout). Pre-booked arrivals keep it.
+  const isWalkIn = reservation.source === "Walk-in";
+  const flowSteps = isWalkIn ? STEPS.filter(s => s.id !== 2) : STEPS;
+  const flowIds = flowSteps.map(s => s.id) as Step[];
+
   const guests = useGuests();
   const rooms = useRooms();
   const guest = guests.find(g => g.name === reservation.guestName);
@@ -840,6 +886,8 @@ function CheckinProcessModal({
   // attached to the reservation by the bookings-list "Complete" deep-link.
   const syncedDocs = (reservation as { documents?: { guest_photo?: string | null; id_front?: string | null; id_back?: string | null; signature?: string | null } }).documents;
   const syncedHasDocs = !!(syncedDocs && (syncedDocs.guest_photo || syncedDocs.id_front || syncedDocs.id_back || syncedDocs.signature));
+  // Identity captured upstream (walk-in Create-New-Guest form / tablet sync).
+  const syncedIdentity = (reservation as { identity?: { id_type?: string; id_number?: string; address?: string; phone?: string; email?: string; nationality?: string; dob?: string; gender?: string } }).identity;
   // ID on file? Walk-ins from /bookings/new have KYC captured. Express walk-ins from /checkin do NOT — they capture here.
   // OTA/Website/Phone/Agent/Corporate pre-bookings typically don't capture KYC at booking.
   const idOnFile = forceKycCapture ? false : reservation.source === "Walk-in";
@@ -849,17 +897,40 @@ function CheckinProcessModal({
   // Step 1 — Identity verification (existing ID)
   const [idVerified, setIdVerified] = React.useState(false);
 
+  // Step 0 — editable guest details (pre-filled from the booked guest's profile,
+  // saved back on check-in). Mirrors the Express Walk-in wizard's Step 1 form.
+  const [gName, setGName] = React.useState(guest?.name ?? reservation.guestName);
+  const [gPhone, setGPhone] = React.useState(guest?.phone || syncedIdentity?.phone || "");
+  const [gEmail, setGEmail] = React.useState((guest?.email && guest.email !== "—" ? guest.email : "") || syncedIdentity?.email || "");
+  const [gNationality, setGNationality] = React.useState(guest?.nationality || syncedIdentity?.nationality || "India");
+  const [gDob, setGDob] = React.useState(syncedIdentity?.dob ?? "");
+  const [gGender, setGGender] = React.useState(guest?.gender || syncedIdentity?.gender || "Male");
+
   // Step 1 — KYC collection (pre-booked guest, no ID on file)
   const [collectedIdType, setCollectedIdType] = React.useState<string>(
-    guest?.nationality && guest.nationality !== "India" ? "Passport" : "Aadhaar"
+    syncedIdentity?.id_type || (guest?.nationality && guest.nationality !== "India" ? "Passport" : "Aadhaar")
   );
-  const [collectedIdNumber, setCollectedIdNumber] = React.useState<string>("");
-  const [collectedAddress, setCollectedAddress] = React.useState<string>("");
-  const [idFrontFile, setIdFrontFile] = React.useState<string | null>(null);
-  const [idBackFile, setIdBackFile] = React.useState<string | null>(null);
-  const [facePhoto, setFacePhoto] = React.useState<string | null>(null);
-  const [signature, setSignature] = React.useState<string | null>(null);
+  const [collectedIdNumber, setCollectedIdNumber] = React.useState<string>(syncedIdentity?.id_number ?? "");
+  const [collectedAddress, setCollectedAddress] = React.useState<string>(syncedIdentity?.address ?? guest?.address ?? "");
+  const [idFrontFile, setIdFrontFile] = React.useState<string | null>(syncedDocs?.id_front || null);
+  const [idBackFile, setIdBackFile] = React.useState<string | null>(syncedDocs?.id_back || null);
+  const [facePhoto, setFacePhoto] = React.useState<string | null>(syncedDocs?.guest_photo || null);
+  const [signature, setSignature] = React.useState<string | null>(syncedDocs?.signature || null);
   const [kycConsent, setKycConsent] = React.useState(false);
+
+  // The guest directory loads async — hydrate the editable fields once the matching
+  // profile arrives (guarded so it never clobbers an edit the user already made).
+  const hydratedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!guest || hydratedRef.current) return;
+    hydratedRef.current = true;
+    setGName(guest.name ?? reservation.guestName);
+    setGPhone(guest.phone ?? "");
+    setGEmail(guest.email && guest.email !== "—" ? guest.email : "");
+    setGNationality(guest.nationality ?? "India");
+    setGGender(guest.gender ?? "Male");
+    setCollectedAddress(a => a || guest.address || "");
+  }, [guest, reservation.guestName]);
 
   // ----- mobile capture sync (capture this arrival's KYC on the tablet) -----
   type SyncedBooking = {
@@ -963,6 +1034,9 @@ function CheckinProcessModal({
   const kycComplete = idOnFile
     ? idVerified
     : (idLengthOk && idFrontFile !== null && (!needsBackSide || idBackFile !== null) && facePhoto !== null && signature !== null && kycConsent);
+  // Edited guest details must stay valid before leaving Step 0 (phone/email only
+  // checked when present, since they may be blank on an older profile).
+  const detailsValid = gName.trim() !== "" && (gPhone === "" || isValidPhone(gPhone)) && (gEmail === "" || isValidEmail(gEmail));
 
   // Step 2 — Room assignment. Booking reserves a room TYPE; here we pick a
   // currently-available room of that type (plus the pre-assigned one if any).
@@ -973,42 +1047,25 @@ function CheckinProcessModal({
   // so a room pre-assigned to a future/overlapping booking would otherwise look
   // free here and get double-booked. We compute the overlap against all active
   // (non-cancelled, non-checked-out) bookings.
-  const [allBookings, setAllBookings] = React.useState<
-    { bookingNo?: string; roomNumber?: string; status?: string; checkIn?: string; checkOut?: string }[]
-  >([]);
+  // Fetch room availability for this booking's stay window from the backend, which
+  // cross-checks individual bookings AND group rooming assignments. The pre-assigned
+  // room is always kept as an option so reception can re-confirm or swap it.
+  const [checkinAvailRooms, setCheckinAvailRooms] = React.useState<{ number: string; available: boolean }[]>([]);
   React.useEffect(() => {
-    apiGet<typeof allBookings>("/bookings").then(setAllBookings).catch(() => {});
-  }, []);
-  const blockedRooms = React.useMemo(() => {
-    const day = (s?: string) => (s ?? "").slice(0, 10);
-    const rIn = day(reservation.checkIn);
-    const rOut = day(reservation.checkOut);
-    const blocked = new Set<string>();
-    allBookings.forEach(b => {
-      const st = b.status ?? "confirmed";
-      if (st === "cancelled" || st === "checked-out") return;       // freed rooms
-      if (b.bookingNo === reservation.bookingNo) return;            // ignore this booking itself
-      if (!b.roomNumber || b.roomNumber === "Unassigned") return;
-      const bIn = day(b.checkIn);
-      const bOut = day(b.checkOut);
-      if (!bIn || !bOut || !rIn || !rOut) return;
-      // Half-open overlap: [bIn, bOut) intersects [rIn, rOut). Same-day turnover is allowed.
-      if (bIn < rOut && bOut > rIn) blocked.add(b.roomNumber);
-    });
-    return blocked;
-  }, [allBookings, reservation.bookingNo, reservation.checkIn, reservation.checkOut]);
+    const from = (reservation.checkIn ?? "").slice(0, 10);
+    const to   = (reservation.checkOut ?? "").slice(0, 10);
+    if (!from || !to) return;
+    apiGet<typeof checkinAvailRooms>(`/room-availability?from=${from}&to=${to}`)
+      .then(setCheckinAvailRooms).catch(() => {});
+  }, [reservation.checkIn, reservation.checkOut]);
 
-  // Assignable at check-in = only rooms that are free for this stay. Rooms that
-  // are occupied/blocked/out-of-order/in-housekeeping (via the board) or already
-  // assigned to another overlapping booking are excluded. The pre-assigned room
-  // is always kept so it can be reassigned. Type is matched case-insensitively
-  // because a booking's roomType ("deluxe") may not match the category ("Deluxe").
-  const availableForType = React.useMemo(
-    () => rooms.filter(r => r.type.toLowerCase() === reservation.roomType.toLowerCase()
-      && (r.number === reservation.roomNumber
-        || (r.status === "available" && !blockedRooms.has(r.number)))),
-    [rooms, reservation.roomType, reservation.roomNumber, blockedRooms],
-  );
+  // Assignable at check-in = rooms of this type that are available for the stay,
+  // plus the pre-assigned room (always kept so the desk can re-confirm or swap).
+  const availableForType = React.useMemo(() => {
+    const avail = new Set(checkinAvailRooms.filter(r => r.available).map(r => r.number));
+    return rooms.filter(r => r.type.toLowerCase() === reservation.roomType.toLowerCase()
+      && (r.number === reservation.roomNumber || avail.has(r.number)));
+  }, [rooms, reservation.roomType, reservation.roomNumber, checkinAvailRooms]);
   const [assignedRoom, setAssignedRoom] = React.useState(isUnassigned ? "" : reservation.roomNumber);
   const selectedRoomObj = availableForType.find(r => r.number === assignedRoom);
   const selectedHkPending = !!selectedRoomObj && (selectedRoomObj.status === "dirty" || selectedRoomObj.status === "cleaning");
@@ -1039,7 +1096,7 @@ function CheckinProcessModal({
   }, [onClose]);
 
   const canAdvance = () => {
-    if (step === 0) return kycComplete;
+    if (step === 0) return kycComplete && detailsValid;
     if (step === 1) return assignedRoom && keyCardEncoded;
     // Step 2: allow partial advance — collectAmount can be anything from 0 to balance (or more).
     // Front-desk staff can defer remaining balance to checkout.
@@ -1054,19 +1111,26 @@ function CheckinProcessModal({
 
   const handleComplete = () => {
     setDone(true);
-    // Save the KYC we just collected (ID details + scans + live face + signature)
-    // onto the guest profile. Only when KYC was captured here (pre-booked guest).
-    if (!idOnFile) {
-      persistKyc(reservation.guestName, {
+    // Persist the edited guest details to the profile for every arrival, plus the
+    // KYC we just collected (ID details + scans + live face + signature) when it was
+    // captured here (pre-booked guest with no ID on file). DOB has no profile column,
+    // so it's collected but not stored.
+    persistGuestProfile(reservation.guestName, {
+      name: gName.trim(),
+      phone: gPhone,
+      email: gEmail,
+      nationality: gNationality,
+      gender: gGender,
+      address: collectedAddress,
+      ...(idOnFile ? {} : {
         idType: collectedIdType,
         idNumber: collectedIdNumber,
-        address: collectedAddress,
         idFront: idFrontFile,
         idBack: idBackFile,
         photo: facePhoto,
         signature,
-      });
-    }
+      }),
+    });
 
     // Send the welcome email if the guest chose the Email channel. Until now the
     // channel toggles were cosmetic — nothing was actually dispatched.
@@ -1096,7 +1160,7 @@ function CheckinProcessModal({
       }
     }
 
-    const collectedPayment: CheckInPayment = { amount: collectAmount, mode: paymentMode, reference: paymentRef };
+    const collectedPayment: CheckInPayment = { amount: isWalkIn ? 0 : collectAmount, mode: paymentMode, reference: isWalkIn ? "" : paymentRef };
     setTimeout(() => onComplete(reservation, `${reservation.guestName} checked in · Room ${assignedRoom}${emailNote}`, assignedRoom, collectedPayment), 1600);
   };
 
@@ -1127,6 +1191,49 @@ function CheckinProcessModal({
     );
   }
 
+  // Editable guest-detail fields shown at the top of Step 0, in both the
+  // ID-on-file and capture-needed branches. Mirrors the walk-in wizard's Step 1.
+  const guestDetails = (
+    <div className="rounded-md border border-border p-4 space-y-3">
+      <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Guest details</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Full name <span className="text-danger">*</span></Label>
+          <Input value={gName} onChange={e => setGName(e.target.value)} placeholder="Full name as on ID" className="h-10" />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Phone</Label>
+          <PhoneInput value={gPhone} onChange={setGPhone} size="md" invalid={gPhone !== "" && !isValidPhone(gPhone)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Email <span className="text-muted-foreground font-normal">(optional)</span></Label>
+          <EmailInput value={gEmail} onChange={setGEmail} className="h-10" />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs"><Globe className="h-3 w-3 inline mr-1" />Nationality</Label>
+          <Select value={gNationality} onChange={e => setGNationality(e.target.value)} className="h-10">
+            <option>India</option><option>UAE</option><option>USA</option><option>UK</option>
+            <option>Russia</option><option>Singapore</option><option>Japan</option><option>Other</option>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Date of birth</Label>
+          <Input type="date" value={gDob} onChange={e => setGDob(e.target.value)} min={DOB_MIN} max={DOB_MAX} className="h-10 tabular" />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Gender</Label>
+          <Select value={gGender} onChange={e => setGGender(e.target.value)} className="h-10">
+            <option>Male</option><option>Female</option><option>Other</option>
+          </Select>
+        </div>
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label className="text-xs">Address</Label>
+          <Input value={collectedAddress} onChange={e => setCollectedAddress(e.target.value)} placeholder="Street, Building, City, Country" className="h-10" />
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" onClick={onClose} />
@@ -1153,7 +1260,7 @@ function CheckinProcessModal({
           {/* Stepper */}
           <div className="px-5 py-3 border-b border-border bg-surface">
             <div className="flex items-center justify-between">
-              {STEPS.map((s, i) => {
+              {flowSteps.map((s, i) => {
                 const Icon = s.icon;
                 const isDone = step > s.id;
                 const isActive = step === s.id;
@@ -1190,6 +1297,7 @@ function CheckinProcessModal({
                   <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-2">Step 1 · Verify Guest Identity</p>
                   <h2 className="text-base font-semibold">Confirm the ID matches the booking</h2>
                 </div>
+                {guestDetails}
                 <div className="rounded-md border border-border p-4 grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">ID Type</p>
@@ -1261,6 +1369,8 @@ function CheckinProcessModal({
                   <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-2">Step 1 · Collect Guest KYC</p>
                   <h2 className="text-base font-semibold">ID documents not on file — capture now</h2>
                 </div>
+
+                {guestDetails}
 
                 {/* Compliance banner */}
                 <div className="rounded-md bg-warning-soft border border-warning/30 p-3 text-xs flex items-start gap-2">
@@ -1346,16 +1456,6 @@ function CheckinProcessModal({
                       </p>
                     )}
                   </div>
-                </div>
-
-                {/* Address — auto-filled from the scanned ID when present */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Address</Label>
-                  <Input
-                    value={collectedAddress}
-                    onChange={e => setCollectedAddress(e.target.value)}
-                    placeholder="Auto-filled from the scanned ID (or enter it)"
-                  />
                 </div>
 
                 {/* Document uploads (front + back) */}
@@ -1742,17 +1842,17 @@ function CheckinProcessModal({
           {/* Footer */}
           <div className="px-5 py-3 border-t border-border bg-surface-elevated flex items-center justify-between">
             <div className="flex items-center gap-2">
-              {step > 0 && (
-                <Button variant="outline" size="sm" onClick={() => setStep((step - 1) as Step)}>
+              {flowIds.indexOf(step) > 0 && (
+                <Button variant="outline" size="sm" onClick={() => setStep(flowIds[flowIds.indexOf(step) - 1] as Step)}>
                   <ChevronLeft className="h-3.5 w-3.5" />Back
                 </Button>
               )}
               <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
             </div>
-            {step < 4 ? (
+            {flowIds.indexOf(step) < flowIds.length - 1 ? (
               <Button
                 disabled={!canAdvance()}
-                onClick={() => setStep((step + 1) as Step)}
+                onClick={() => setStep(flowIds[flowIds.indexOf(step) + 1] as Step)}
               >
                 Next<ChevronRight className="h-4 w-4" />
               </Button>
@@ -1855,31 +1955,28 @@ function KYCUploadSlot({
 }
 
 // ===================== EXPRESS WALK-IN MODAL =====================
-// F&B add-on packages — mirrors the F&B catalog from Master Setup
-const WALKIN_FB = [
-  { id: "fb1", name: "Continental Breakfast", icon: "☕", price: 450, kind: "Breakfast" },
-  { id: "fb2", name: "Buffet Lunch",          icon: "🍽", price: 850, kind: "Lunch"     },
-  { id: "fb3", name: "Buffet Dinner",         icon: "🍽", price: 1200, kind: "Dinner"    },
-  { id: "fb4", name: "High Tea Platter",      icon: "🍪", price: 650, kind: "High Tea"  },
-];
 
-// Indian-hotel rate-plan catalog driven by the F&B menu
+// Rate-plan catalog for the walk-in selector (display: code/name/description).
+// Meal INCLUSIONS + PRICES are the configured ones from Configuration → Rate
+// Plans, fetched at runtime and keyed by plan code (see mealCfg below).
 // EP = Room only · CP = Room + Breakfast · MAP = Room + Breakfast + Dinner · AP = All meals
 type RatePlanCode = "EP" | "CP" | "MAP" | "AP";
 type RatePlan = {
   code: RatePlanCode;
   name: string;
   description: string;
-  includes: string[];           // human-readable meal list
-  fbIds: string[];              // WALKIN_FB ids auto-included per pax × nights
-  surchargePerNight: number;    // rate-plan supplement on top of room rate (e.g. 0 for EP)
+  includes: string[];           // human-readable meal list (display only)
 };
 const RATE_PLANS: RatePlan[] = [
-  { code: "EP",  name: "European Plan",          description: "Room only · no meals",                           includes: [],                                          fbIds: [],                       surchargePerNight: 0     },
-  { code: "CP",  name: "Continental Plan",       description: "Room + breakfast",                              includes: ["Continental breakfast"],                   fbIds: ["fb1"],                  surchargePerNight: 0     },
-  { code: "MAP", name: "Modified American Plan", description: "Room + breakfast + dinner",                     includes: ["Continental breakfast", "Buffet dinner"],  fbIds: ["fb1", "fb3"],           surchargePerNight: 200   },
-  { code: "AP",  name: "American Plan",          description: "Room + all meals (breakfast / lunch / dinner)", includes: ["Continental breakfast", "Buffet lunch", "Buffet dinner"], fbIds: ["fb1", "fb2", "fb3"], surchargePerNight: 400 },
+  { code: "EP",  name: "European Plan",          description: "Room only · no meals",                           includes: [] },
+  { code: "CP",  name: "Continental Plan",       description: "Room + breakfast",                              includes: ["Continental breakfast"] },
+  { code: "MAP", name: "Modified American Plan", description: "Room + breakfast + dinner",                     includes: ["Continental breakfast", "Buffet dinner"] },
+  { code: "AP",  name: "American Plan",          description: "Room + all meals (breakfast / lunch / dinner)", includes: ["Continental breakfast", "Buffet lunch", "Buffet dinner"] },
 ];
+
+// Per-plan meal inclusions + prices from Configuration, keyed by plan code.
+type WalkinMealCfg = { inclB: boolean; inclL: boolean; inclD: boolean; breakfastPrice: number; lunchPrice: number; dinnerPrice: number };
+const EMPTY_MEAL_CFG: WalkinMealCfg = { inclB: false, inclL: false, inclD: false, breakfastPrice: 0, lunchPrice: 0, dinnerPrice: 0 };
 
 type PayMode = "Cash" | "Card" | "UPI" | "Bank" | "Online";
 type AdvancePayment = {
@@ -1907,6 +2004,13 @@ function WalkInModal({
   const [phone, setPhone] = React.useState(initialData?.phone ?? "");
   const [email, setEmail] = React.useState(initialData?.email ?? "");
   const [nationality, setNationality] = React.useState(initialData?.nationality ?? "India");
+  // Fuller personal details, matching the New Booking "Create New Guest" form.
+  const [dob, setDob] = React.useState("");
+  const [gender, setGender] = React.useState("Male");
+  const [address, setAddress] = React.useState("");
+  // Full new-guest data (incl. photo / ID scans / signature) captured in the
+  // create form — carried onto the reservation so check-in pre-fills, not re-captures.
+  const [newGuest, setNewGuest] = React.useState<NewGuestData | null>(null);
 
   // ----- existing-guest lookup (mirrors the New Booking wizard's step 1) -----
   // A resumed draft already has its fields loaded → start in "create" (review) mode.
@@ -1916,8 +2020,6 @@ function WalkInModal({
   const filteredGuests = guests
     .filter(g => `${g.name} ${g.phone} ${g.email}`.toLowerCase().includes(guestSearch.toLowerCase()))
     .slice(0, 5);
-  // Loaded an existing guest into the fields → show a subtle review note in create mode.
-  const [loadedFromExisting, setLoadedFromExisting] = React.useState(false);
 
   // ----- stay -----
   const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local TZ — blocks past dates
@@ -1928,20 +2030,26 @@ function WalkInModal({
     return d.toISOString().slice(0, 10);
   };
   const [checkInDate, setCheckInDate] = React.useState(initialData?.checkInDate ?? today);
-  // Check-out is the source of truth for nights now; seed it from the resumed
-  // draft's nights (default 1) so a resume still lands on the right range.
+  // Check-out starts EMPTY for a fresh walk-in so it is deliberately entered;
+  // a resumed draft that carries `nights` still seeds the right range.
   const [checkOutDate, setCheckOutDate] = React.useState(
-    addDays(initialData?.checkInDate ?? today, Math.max(1, initialData?.nights ?? 1)),
+    initialData?.nights ? addDays(initialData.checkInDate ?? today, Math.max(1, initialData.nights)) : "",
   );
-  // Nights derived from the date range (>= 1), like booking's "Stay duration".
-  const nights = Math.max(1, Math.round((new Date(checkOutDate).getTime() - new Date(checkInDate).getTime()) / 86400000));
+  // A valid checkout is non-empty and strictly after check-in. Until then
+  // `nights` is 0 so pricing/breakdown/totals resolve to 0 instead of NaN.
+  const hasCheckout = !!checkOutDate && checkOutDate > checkInDate;
+  const nights = hasCheckout
+    ? Math.max(1, Math.round((new Date(checkOutDate).getTime() - new Date(checkInDate).getTime()) / 86400000))
+    : 0;
   const minCheckout = addDays(checkInDate, 1); // checkout must be at least 1 day after check-in
-  // Auto-push checkout forward if check-in moves on/past it.
+  // Auto-push checkout forward if check-in moves on/past it — but only when a
+  // checkout is already set. An empty checkout stays empty.
   const handleCheckInChange = (val: string) => {
     setCheckInDate(val);
-    if (checkOutDate <= val) setCheckOutDate(addDays(val, Math.max(1, nights)));
+    if (checkOutDate && checkOutDate <= val) setCheckOutDate(addDays(val, Math.max(1, nights)));
   };
   const handleCheckOutChange = (val: string) => {
+    if (!val) { setCheckOutDate(""); return; }
     if (val <= checkInDate) setCheckOutDate(addDays(checkInDate, 1));
     else setCheckOutDate(val);
   };
@@ -1960,63 +2068,120 @@ function WalkInModal({
       .catch(() => {});
   }, []);
 
+  // Room-type occupancy limits + extra-adult rates (for the auto extra-person charge).
+  const [roomTypeDefs, setRoomTypeDefs] = React.useState<Array<{ name: string; baseTariff?: number; maxAdults?: number; maxChildren?: number; extraAdultRate?: number }>>([]);
+  React.useEffect(() => {
+    apiGet<Array<{ name: string; baseTariff?: number; maxAdults?: number; maxChildren?: number; extraAdultRate?: number }>>("/room-types")
+      .then(r => Array.isArray(r) && setRoomTypeDefs(r))
+      .catch(() => {});
+  }, []);
+
   // ----- room -----
   const rooms = useRooms();
-  const availableRooms = React.useMemo(() => rooms.filter(r => r.status === "available"), [rooms]);
-  const [roomNumber, setRoomNumber] = React.useState(initialData?.roomNumber ?? availableRooms[0]?.number ?? "");
-  const room = availableRooms.find(r => r.number === roomNumber);
+  // Fetch room availability for the walk-in's stay window — backend cross-checks
+  // individual bookings AND group rooming so the same room can't be offered twice.
+  const [walkInAvailRooms, setWalkInAvailRooms] = React.useState<{ number: string; available: boolean }[]>([]);
+  React.useEffect(() => {
+    const from = (checkInDate ?? "").slice(0, 10);
+    const to   = (checkOutDate ?? "").slice(0, 10);
+    if (!from || !to || from >= to) return;
+    apiGet<typeof walkInAvailRooms>(`/room-availability?from=${from}&to=${to}`)
+      .then(setWalkInAvailRooms).catch(() => {});
+  }, [checkInDate, checkOutDate]);
+  const availableRooms = React.useMemo(() => {
+    if (!walkInAvailRooms.length) return rooms.filter(r => r.status === "available");
+    const avail = new Set(walkInAvailRooms.filter(r => r.available).map(r => r.number));
+    return rooms.filter(r => avail.has(r.number));
+  }, [rooms, walkInAvailRooms]);
+  // Booking-style: pick a room TYPE first, then a specific available room of that
+  // type. Nothing is pre-selected — the guest chooses both.
+  const [selectedRoomType, setSelectedRoomType] = React.useState(initialData?.roomType ?? "");
+  // Available room types (only those with a free room) + count and min rate.
+  const typeBaseTariff = React.useCallback((name: string) =>
+    roomTypeDefs.find(t => t.name === name)?.baseTariff
+      ?? (name === "Suite" ? 1200 : name === "King" ? 850 : name === "Deluxe" ? 650 : 450),
+    [roomTypeDefs]);
+  const availableTypes = React.useMemo(() => {
+    const m = new Map<string, { name: string; count: number }>();
+    availableRooms.forEach(r => {
+      const e = m.get(r.type) ?? { name: r.type, count: 0 };
+      e.count++;
+      m.set(r.type, e);
+    });
+    return Array.from(m.values()).map(e => ({ ...e, rate: typeBaseTariff(e.name) }));
+  }, [availableRooms, typeBaseTariff]);
+
+  // Auto extra-person charge for ADULTS beyond the room type's max (children never charged) — matches booking.
+  const selectedType = roomTypeDefs.find(t => t.name === selectedRoomType);
+  // Per-night rate is the selected TYPE's base tariff (room is assigned later, at check-in) — exactly like the booking wizard.
+  const typeRate = selectedRoomType ? typeBaseTariff(selectedRoomType) : 0;
+  const extraOcc = extraOccupancyCharge({
+    adults, children,
+    maxAdults: selectedType?.maxAdults ?? Infinity,
+    maxChildren: Infinity,
+    extraAdultRate: selectedType?.extraAdultRate ?? 0,
+    extraChildRate: 0,
+    nights,
+  });
+  // The extra-bed charge for adults beyond the room max applies ONLY when the
+  // "Extra bed" toggle (shown on Pax & Room) is enabled — opt-in, like booking.
+  const [extraBedForExtra, setExtraBedForExtra] = React.useState(false);
+  const extraBedCharge = (extraOcc.extraAdults > 0 && extraBedForExtra) ? extraOcc.total : 0;
+
+  // Occupancy is hard-capped at the selected room type's included adults/children.
+  // The opt-in "Extra bed" toggle lifts the ADULT cap by one (and charges the rate).
+  // Before a room is picked, fall back to a neutral 6/4.
+  const inclAdults = selectedType?.maxAdults ?? 6;
+  const inclChildren = selectedType?.maxChildren ?? 4;
+  const adultsMax = inclAdults + (extraBedForExtra ? 1 : 0);
+  const childrenMax = inclChildren;
+  const enableExtraBed = (on: boolean) => {
+    setExtraBedForExtra(on);
+    if (on) setAdults(a => Math.max(a, inclAdults + 1));   // fill the extra bed so the charge shows
+  };
+  React.useEffect(() => {
+    setAdults(a => Math.min(a, adultsMax));
+    setChildren(c => Math.min(c, childrenMax));
+  }, [adultsMax, childrenMax]);
 
   // ----- per-day room price breakdown (seasonal / weekend / holiday) -----
   // Drives roomSubtotal so the walk-in matches booking's nightly pricing.
   const breakdown = React.useMemo(
-    () => buildNightlyBreakdown(checkInDate, nights, room?.rate ?? 0, seasons, holidays, WEEKEND_MULTIPLIER),
-    [checkInDate, nights, room?.rate, seasons, holidays],
+    () => buildNightlyBreakdown(checkInDate, nights, typeRate, seasons, holidays, WEEKEND_MULTIPLIER),
+    [checkInDate, nights, typeRate, seasons, holidays],
   );
 
   // ----- stay add-ons -----
   const [earlyCheckIn, setEarlyCheckIn] = React.useState(false);
   const [lateCheckOut, setLateCheckOut] = React.useState(false);
-  const [extraBed, setExtraBed] = React.useState(false);
 
-  // ----- F&B add-ons (per-pax count × nights) -----
-  const [fbAddons, setFbAddons] = React.useState<Record<string, number>>({});
-  const setFb = (id: string, n: number) => setFbAddons(a => ({ ...a, [id]: Math.max(0, n) }));
 
-  // ----- rate plan (drives F&B inclusions) -----
+  // ----- rate plan -----
   const [ratePlanCode, setRatePlanCode] = React.useState<RatePlanCode>((initialData?.ratePlan as RatePlanCode) ?? "EP");
   const ratePlan = RATE_PLANS.find(r => r.code === ratePlanCode)!;
 
-  // Applying a rate plan: each included meal = 1 per pax (adults+children) per night
-  const applyRatePlan = (code: RatePlanCode) => {
-    setRatePlanCode(code);
-    const plan = RATE_PLANS.find(r => r.code === code)!;
-    setFbAddons(prev => {
-      const next = { ...prev };
-      // Clear meals previously set by any rate plan; user-added counts above 1×pax are preserved
-      WALKIN_FB.forEach(f => {
-        const planSlots = RATE_PLANS.flatMap(r => r.fbIds).includes(f.id);
-        if (planSlots) next[f.id] = 0;
-      });
-      // Set new plan meals — 1 per pax per night is the default for plan-included meals
-      plan.fbIds.forEach(id => { next[id] = adults + children; });
-      return next;
-    });
-  };
-
-  // If pax count changes after a plan is selected, re-apply to keep meal counts in sync
+  // Meal inclusions + prices per plan code, from Configuration → Rate Plans.
+  const [mealCfg, setMealCfg] = React.useState<Record<string, WalkinMealCfg>>({});
   React.useEffect(() => {
-    if (ratePlanCode === "EP") return;
-    setFbAddons(prev => {
-      const next = { ...prev };
-      ratePlan.fbIds.forEach(id => { next[id] = adults + children; });
-      return next;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adults, children, ratePlanCode]);
+    apiGet<{ code: string; inclBreakfast?: boolean; inclLunch?: boolean; inclDinner?: boolean; breakfastPrice?: number; lunchPrice?: number; dinnerPrice?: number }[]>("/rate-plans")
+      .then(rows => {
+        const m: Record<string, WalkinMealCfg> = {};
+        rows.forEach(r => { m[r.code] = { inclB: !!r.inclBreakfast, inclL: !!r.inclLunch, inclD: !!r.inclDinner, breakfastPrice: r.breakfastPrice ?? 0, lunchPrice: r.lunchPrice ?? 0, dinnerPrice: r.dinnerPrice ?? 0 }; });
+        setMealCfg(m);
+      }).catch(() => {});
+  }, []);
+  // Configured per-guest-per-night meal price for a plan code.
+  const planMealPerGuestNight = (code: string) => mealPerNightPerGuest(mealCfg[code] ?? EMPTY_MEAL_CFG);
+
+  // Selecting a plan only sets the code. The plan's included meals are priced
+  // from Configuration (planMealsTotal below); the F&B section is manual extras.
+  const applyRatePlan = (code: RatePlanCode) => setRatePlanCode(code);
 
   // ----- advance payment -----
   const [pay, setPay] = React.useState<AdvancePayment>({ amount: 0, mode: "UPI" });
+  const [instructions, setInstructions] = React.useState("");
   const setP = <K extends keyof AdvancePayment>(k: K, v: AdvancePayment[K]) => setPay(p => ({ ...p, [k]: v }));
+  const [customAdvance, setCustomAdvance] = React.useState(false);   // "Custom" advance toggle → reveals an amount input
 
   // ----- receipt preview -----
   const [showReceipt, setShowReceipt] = React.useState(false);
@@ -2043,7 +2208,7 @@ function WalkInModal({
     { n: 1, title: "Guest", icon: User, desc: "Name, contact & captures" },
     { n: 2, title: "Dates", icon: Calendar, desc: "Check-in & nights" },
     { n: 3, title: "Pax & Room", icon: BedIcon, desc: "Adults, children & room" },
-    { n: 4, title: "Rate & Add-ons", icon: UtensilsCrossed, desc: "Plan, stay extras & F&B" },
+    { n: 4, title: "Rate & Add-ons", icon: UtensilsCrossed, desc: "Plan & stay extras" },
     { n: 5, title: "Payment", icon: CreditCard, desc: "Advance & mode" },
     { n: 6, title: "Confirm", icon: CheckCircle2, desc: "Review & start" },
   ];
@@ -2053,10 +2218,9 @@ function WalkInModal({
   const roomSubtotal = breakdown.total;
   const earlyFee = earlyCheckIn ? 500 : 0;     // ₹500 flat
   const lateFee = lateCheckOut ? 500 : 0;      // ₹500 flat
-  const extraBedFee = extraBed ? 900 * nights : 0;
-  const fbTotal = WALKIN_FB.reduce((t, p) => t + p.price * (fbAddons[p.id] ?? 0) * nights, 0);
-  const ratePlanSupplement = ratePlan.surchargePerNight * nights * (adults + children);
-  const extras = earlyFee + lateFee + extraBedFee + fbTotal + ratePlanSupplement;
+  // Plan meals: configured meal prices × guests × nights (Configuration → Rate Plans).
+  const ratePlanSupplement = planMealPerGuestNight(ratePlanCode) * (adults + children) * nights;
+  const extras = earlyFee + lateFee + ratePlanSupplement + extraBedCharge;
   const subtotal = roomSubtotal + extras;
   const tax = Math.round(subtotal * 0.05);
   const grandTotal = subtotal + tax;
@@ -2064,7 +2228,7 @@ function WalkInModal({
 
   // Default advance suggestion = 30% on first nights compute
   React.useEffect(() => {
-    if (pay.amount === 0 && grandTotal > 0) {
+    if (!customAdvance && pay.amount === 0 && grandTotal > 0) {
       setPay(p => ({ ...p, amount: Math.round(grandTotal * 0.3) }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2084,25 +2248,30 @@ function WalkInModal({
     (pay.mode === "UPI" && !!pay.upiVPA && pay.upiVPA.includes("@")) ||
     (pay.mode === "Bank" && !!pay.bankName && !!pay.reference) ||
     (pay.mode === "Online" && !!pay.txnId);
-  const valid = name.trim() !== "" && isValidPhone(phone) && isValidEmail(email) && roomNumber !== "" && adults >= 1 && nights >= 1 && advanceModeValid;
+  const valid = name.trim() !== "" && isValidPhone(phone) && isValidEmail(email) && selectedRoomType !== "" && adults >= 1 && nights >= 1 && advanceModeValid;
 
   // ----- per-step gating: Next is disabled until the current step's required
   // fields are valid. The final Start stays gated on the full `valid` above. -----
   const canNext = () => {
     if (step === 1) return name.trim() !== "" && isValidPhone(phone) && isValidEmail(email);
-    if (step === 2) return nights >= 1;
-    if (step === 3) return roomNumber !== "" && adults >= 1;
+    if (step === 2) return hasCheckout;
+    if (step === 3) return !!selectedRoomType && adults >= 1;
     if (step === 5) return advanceModeValid;
     return true;
   };
 
   // ----- generated booking number -----
-  const seed = name.length + phone.length + nights + (room?.rate ?? 0);
+  const seed = name.length + phone.length + nights + typeRate;
   const bookingNo = syncBooking?.bookingNo ?? `WK${100000 + (seed % 9000)}`;
   const receiptNo = `ADV-2026-${bookingNo.slice(2)}`;
 
-  const start = () => {
-    if (!room) return;
+  const start = async () => {
+    if (!selectedRoomType) return;
+    // A first-time guest entered via "Create New Guest" only lived in component
+    // state — persist them to the registry now (same as the booking wizard) so
+    // the walk-in actually creates a reusable guest profile, not just a booking
+    // row with a bare name. Resilient: a failure here still lets check-in proceed.
+    if (newGuest) await saveNewGuest(newGuest);
     const ci = new Date(checkInDate + "T12:00:00");
     const co = new Date(ci);
     co.setDate(co.getDate() + nights);
@@ -2111,8 +2280,8 @@ function WalkInModal({
       id: `walkin-${bookingNo.slice(2)}`,
       bookingNo,
       guestName: name.trim(),
-      roomNumber: room.number,
-      roomType: room.type,
+      roomNumber: "Unassigned",      // a specific room is assigned during check-in
+      roomType: selectedRoomType,
       checkIn: ci.toISOString(),
       checkOut: co.toISOString(),
       nights,
@@ -2126,6 +2295,17 @@ function WalkInModal({
       balance,
       bookedBy: "Reception · Walk-in",
       ratePlan: ratePlanCode, // EP / CP / MAP / AP from selected plan
+      // KYC captured in the Create-New-Guest form flows to the check-in process
+      // so staff confirm rather than re-capture.
+      ...(newGuest ? {
+        documents: {
+          guest_photo: newGuest.photo ?? "",
+          id_front: newGuest.idFront ?? "",
+          id_back: newGuest.idBack ?? "",
+          signature: newGuest.signature ?? "",
+        },
+        identity: { id_type: newGuest.idType, id_number: newGuest.idNumber, address: newGuest.address, phone: newGuest.phone, email: newGuest.email, nationality: newGuest.nationality, dob: newGuest.dob, gender: newGuest.gender },
+      } : {}),
     } as unknown as Reservation;
     onStart(reservation);
   };
@@ -2142,8 +2322,8 @@ function WalkInModal({
       setSyncErr("Enter the guest's name and phone first.");
       return;
     }
-    if (!room) {
-      setSyncErr("Pick an available room first.");
+    if (!selectedRoomType) {
+      setSyncErr("Pick a room type first.");
       return;
     }
     setSyncErr(null);
@@ -2158,8 +2338,8 @@ function WalkInModal({
       bookingNo,
       guestName: name.trim(),
       phone, email, nationality,   // saved as draftData so an abandoned walk-in resumes fully
-      roomNumber: room.number,
-      roomType: room.type,
+      roomNumber: "Unassigned",      // assigned during check-in
+      roomType: selectedRoomType,
       checkIn: ci.toISOString(),
       checkOut: co.toISOString(),
       nights,
@@ -2290,7 +2470,7 @@ function WalkInModal({
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setGuestMode("create"); setLoadedFromExisting(false); }}
+                    onClick={() => setGuestMode("create")}
                     className={cn(
                       "flex-1 sm:flex-initial h-9 px-4 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2 justify-center",
                       guestMode === "create" ? "bg-surface text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
@@ -2302,97 +2482,106 @@ function WalkInModal({
 
                 {/* SEARCH MODE — find a returning guest and pre-fill their details */}
                 {guestMode === "search" && (
-                  <div className="space-y-4">
+                  <div className="space-y-5">
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Search existing guest</Label>
+                      <Label>Search existing guest</Label>
                       <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-subtle-foreground" />
                         <Input
                           placeholder="Phone, name, email, or ID number…"
                           value={guestSearch}
                           onChange={e => setGuestSearch(e.target.value)}
-                          className="pl-9 h-10"
+                          className="pl-9"
                           autoFocus
                         />
                       </div>
                     </div>
+
+                    {name.trim() && (
+                      <div className="flex items-center gap-3 p-3 rounded-md border-2 border-brand bg-brand-soft">
+                        <Avatar name={name.trim()} size={36} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-sm truncate">{name.trim()}</p>
+                            <Badge tone="brand">Selected</Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5 truncate">{[phone, email, nationality].filter(Boolean).join(" · ")}</p>
+                        </div>
+                        <button type="button" onClick={() => setGuestMode("create")} className="text-xs text-brand hover:underline">Edit</button>
+                      </div>
+                    )}
 
                     {guestSearch && (
                       <div className="space-y-2">
                         {filteredGuests.length === 0 ? (
                           <div className="rounded-md border border-dashed border-border p-4 text-center">
                             <p className="text-sm text-muted-foreground mb-2">No matches found for &ldquo;{guestSearch}&rdquo;</p>
-                            <Button size="sm" onClick={() => { setGuestMode("create"); setLoadedFromExisting(false); }}>
+                            <Button size="sm" onClick={() => setGuestMode("create")}>
                               <Plus className="h-3.5 w-3.5" />Create new guest
                             </Button>
                           </div>
-                        ) : filteredGuests.map(g => (
-                          <button
-                            key={g.id}
-                            type="button"
-                            onClick={() => {
-                              setName(g.name ?? "");
-                              setPhone(g.phone ?? "");
-                              setEmail(g.email ?? "");
-                              setNationality(g.nationality ?? "India");
-                              setLoadedFromExisting(true);
-                              setGuestMode("create");
-                            }}
-                            className="w-full flex items-center gap-3 p-3 rounded-md border border-border text-left transition-colors hover:bg-surface-sunken"
-                          >
-                            <Avatar name={g.name} size={36} vip={g.vip} />
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm truncate">
-                                {g.name} {g.vip && <Badge tone="brand" className="ml-1">VIP</Badge>}
-                              </p>
-                              <p className="text-xs text-muted-foreground truncate">{g.phone}{g.nationality ? ` · ${g.nationality}` : ""}</p>
-                            </div>
-                            {g.idNumber && (
-                              <Badge tone="success"><IdCard className="h-3 w-3" />ID on file</Badge>
-                            )}
-                          </button>
-                        ))}
+                        ) : filteredGuests.map(g => {
+                          const gx = g as { dob?: string; gender?: string; address?: string };
+                          const selected = name.trim() === (g.name ?? "").trim() && phone === (g.phone ?? "");
+                          return (
+                            <button
+                              key={g.id}
+                              type="button"
+                              onClick={() => {
+                                setName(g.name ?? "");
+                                setPhone(g.phone ?? "");
+                                setEmail(g.email ?? "");
+                                setNationality(g.nationality ?? "India");
+                                setDob(gx.dob ?? "");
+                                setGender(gx.gender ?? "Male");
+                                setAddress(gx.address ?? "");
+                                setNewGuest(null);
+                              }}
+                              className={cn(
+                                "w-full flex items-center gap-3 p-3 rounded-md border text-left transition-colors",
+                                selected ? "bg-brand-soft border-brand" : "border-border hover:bg-surface-sunken"
+                              )}
+                            >
+                              <Avatar name={g.name} size={36} vip={g.vip} />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm truncate">
+                                  {g.name} {g.vip && <Badge tone="brand" className="ml-1">VIP</Badge>}
+                                </p>
+                                <p className="text-xs text-muted-foreground truncate">{g.phone} · {g.nationality} · {g.lifetimeNights}N lifetime</p>
+                              </div>
+                              {selected && <CheckCircle2 className="h-5 w-5 text-brand shrink-0" />}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
 
                     <p className="text-[11px] text-muted-foreground pt-2 border-t border-border">
                       First-time visitor? Switch to the{" "}
-                      <button type="button" onClick={() => { setGuestMode("create"); setLoadedFromExisting(false); }} className="text-foreground font-medium hover:underline">Create New Guest</button>{" "}
+                      <button type="button" onClick={() => setGuestMode("create")} className="text-foreground font-medium hover:underline">Create New Guest</button>{" "}
                       tab above to enter their details.
                     </p>
                   </div>
                 )}
 
-                {/* CREATE MODE — enter / review the guest fields (also used after a prefill) */}
+                {/* CREATE MODE — Booking's shared guest form. KYC capture is done later in the check-in process. */}
                 {guestMode === "create" && (
-                  <div className="space-y-3">
-                    {loadedFromExisting && (
-                      <div className="rounded-md bg-success-soft/30 border border-success/30 p-2.5 text-xs inline-flex items-center gap-2">
-                        <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-                        <span>Loaded from an existing guest — review &amp; edit below.</span>
-                      </div>
-                    )}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Full name <span className="text-danger">*</span></Label>
-                        <Input value={name} onChange={e => setName(e.target.value)} placeholder="Full name as on ID" className="h-10" autoFocus />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Phone <span className="text-danger">*</span></Label>
-                        <PhoneInput value={phone} onChange={v => setPhone(v)} size="md" invalid={phone !== "" && !isValidPhone(phone)} />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Email <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                        <EmailInput value={email} onChange={setEmail} className="h-10" />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs"><Globe className="h-3 w-3 inline mr-1" />Nationality</Label>
-                        <Select value={nationality} onChange={e => setNationality(e.target.value)} className="h-10">
-                          <option>India</option><option>UAE</option><option>USA</option><option>UK</option>
-                          <option>Russia</option><option>Singapore</option><option>Japan</option><option>Other</option>
-                        </Select>
-                      </div>
-                    </div>
+                  <div className="mt-1">
+                    <NewGuestForm
+                      initialData={newGuest ?? { name, phone, email, nationality, dob, gender, address }}
+                      onCancel={() => setGuestMode("search")}
+                      onSave={data => {
+                        setNewGuest(data);
+                        setName(data.name);
+                        setPhone(data.phone);
+                        setEmail(data.email);
+                        setNationality(data.nationality);
+                        setDob(data.dob);
+                        setGender(data.gender);
+                        setAddress(data.address);
+                        setGuestMode("search");
+                      }}
+                    />
                   </div>
                 )}
               </div>
@@ -2404,48 +2593,62 @@ function WalkInModal({
                 <p className="text-sm text-muted-foreground">One night = 12:00 PM check-in → next-day 11:00 AM checkout</p>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Check-in</Label>
+                    <Label>Check-in</Label>
                     <Input type="date" value={checkInDate} min={today} onChange={e => handleCheckInChange(e.target.value)} className="h-10 tabular" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Check-out</Label>
+                    <Label>Check-out</Label>
                     <Input type="date" value={checkOutDate} min={minCheckout > today ? minCheckout : today} onChange={e => handleCheckOutChange(e.target.value)} className="h-10 tabular" />
                     <p className="text-[11px] text-muted-foreground">Must be after check-in · auto-adjusts if you change dates</p>
                   </div>
                 </div>
 
-                <div className="rounded-md bg-brand-soft text-brand-soft-foreground p-4 flex items-center gap-3">
-                  <Calendar className="h-5 w-5" />
-                  <div className="text-sm">
-                    <span className="font-semibold">{nights} {nights === 1 ? "night" : "nights"}</span> · {new Date(checkInDate).toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })} → {new Date(checkOutDate).toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })}
+                {!hasCheckout ? (
+                  <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground flex items-center gap-3">
+                    <Calendar className="h-5 w-5 shrink-0" />
+                    Pick a check-out date to see nights &amp; pricing.
                   </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="rounded-md bg-brand-soft text-brand-soft-foreground p-4 flex items-center gap-3">
+                      <Calendar className="h-5 w-5" />
+                      <div className="text-sm">
+                        <span className="font-semibold">{nights} {nights === 1 ? "night" : "nights"}</span> · {new Date(checkInDate).toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })} → {new Date(checkOutDate).toLocaleDateString(undefined, { day: "2-digit", month: "short", weekday: "short" })}
+                      </div>
+                    </div>
 
-                {/* Day-type breakdown — weekday vs weekend vs holiday */}
-                <div className="rounded-md border border-border p-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-muted-foreground uppercase tracking-wider">Rate by day type</span>
-                    <span className="text-muted-foreground">{breakdown.counts.weekday}W · {breakdown.counts.weekend}WE · {breakdown.counts.holiday}H</span>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {breakdown.lines.map((ln, i) => {
-                      const tone = ln.kind === "holiday" ? "bg-warning-soft text-warning border-warning/30"
-                                : ln.kind === "weekend" ? "bg-accent-soft text-accent border-accent/30"
-                                : "bg-success-soft text-success border-success/30";
-                      return (
-                        <span key={i} className={cn("inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-medium", tone)}>
-                          <span className="font-semibold tabular">{ln.date.toLocaleDateString(undefined, { day: "2-digit", month: "short" })}</span>
-                          <span className="opacity-70">·</span>
-                          <span className="tabular">{money(ln.rate)}</span>
-                        </span>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[10px] text-muted-foreground mt-2 flex items-center gap-3">
-                    <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" />Weekday</span>
-                    <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-accent" />Weekend +20%</span>
-                    <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" />Holiday +30%</span>
-                  </p>
+                    {/* Day-type breakdown — weekday vs weekend vs holiday */}
+                    <div className="rounded-md border border-border p-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-muted-foreground uppercase tracking-wider">Rate by day type</span>
+                        <span className="text-muted-foreground">{breakdown.counts.weekday}W · {breakdown.counts.weekend}WE · {breakdown.counts.holiday}H</span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {breakdown.lines.map((ln, i) => {
+                          const tone = ln.kind === "holiday" ? "bg-warning-soft text-warning border-warning/30"
+                                    : ln.kind === "weekend" ? "bg-accent-soft text-accent border-accent/30"
+                                    : "bg-success-soft text-success border-success/30";
+                          return (
+                            <span key={i} className={cn("inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-medium", tone)}>
+                              <span className="font-semibold tabular">{ln.date.toLocaleDateString(undefined, { day: "2-digit", month: "short" })}</span>
+                              <span className="opacity-70">·</span>
+                              <span className="tabular">{money(ln.rate)}</span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-2 flex items-center gap-3">
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" />Weekday</span>
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-accent" />Weekend +20%</span>
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" />Holiday +30%</span>
+                      </p>
+                    </div>
+                  </>
+                )}
+                {/* Stay add-ons (priced toggle cards, like the booking wizard) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <PricedToggleCard label="Early check-in" hint="Before 12:00 PM · subject to availability" price={500} checked={earlyCheckIn} onChange={setEarlyCheckIn} />
+                  <PricedToggleCard label="Late check-out" hint="Until 4:00 PM · housekeeping reschedules" price={500} checked={lateCheckOut} onChange={setLateCheckOut} />
                 </div>
               </div>
             )}
@@ -2454,44 +2657,57 @@ function WalkInModal({
             {step === 3 && (
               <div className="space-y-5">
                 <div className="grid grid-cols-2 gap-4">
-                  <NumStepper label="Adults" value={adults} onChange={setAdults} min={1} />
-                  <NumStepper label="Children" value={children} onChange={setChildren} min={0} />
+                  <NumStepper label="Adults" value={adults} onChange={setAdults} min={1} max={adultsMax} />
+                  <NumStepper label="Children" value={children} onChange={setChildren} min={0} max={childrenMax} />
                 </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 inline-flex items-center gap-1.5">
-                    <BedIcon className="h-3 w-3" />Room ({availableRooms.length} available)
-                  </p>
-                  {availableRooms.length === 0 ? (
-                    <div className="rounded-md border border-dashed border-warning/40 bg-warning-soft/40 p-4 text-center">
-                      <AlertCircle className="h-5 w-5 text-warning mx-auto mb-1" />
-                      <p className="text-sm font-medium text-warning">No rooms available right now</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {availableRooms.map(r => {
-                        const isActive = roomNumber === r.number;
-                        return (
-                          <button
-                            key={r.id}
-                            type="button"
-                            onClick={() => setRoomNumber(r.number)}
-                            className={cn(
-                              "rounded-md border p-3 text-left transition-colors",
-                              isActive ? "bg-brand-soft border-brand text-brand-soft-foreground" : "border-border hover:bg-surface-sunken"
-                            )}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-sm font-semibold">Room {r.number}</span>
-                              {isActive && <CheckCircle2 className="h-4 w-4 text-brand shrink-0" />}
-                            </div>
-                            <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{r.type} · Floor {r.floor}</p>
-                            <p className="text-[11px] font-medium tabular mt-0.5">{money(r.rate)}/night</p>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
+                <div className="space-y-3">
+                  <div>
+                    <Label>Room type</Label>
+                    {availableTypes.length === 0 ? (
+                      <div className="rounded-md border border-dashed border-warning/40 bg-warning-soft/40 p-4 text-center mt-1.5">
+                        <AlertCircle className="h-5 w-5 text-warning mx-auto mb-1" />
+                        <p className="text-sm font-medium text-warning">No rooms available right now</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1.5">
+                        {availableTypes.map(t => {
+                          const active = selectedRoomType === t.name;
+                          return (
+                            <button
+                              key={t.name}
+                              type="button"
+                              onClick={() => setSelectedRoomType(t.name)}
+                              className={cn(
+                                "rounded-md border p-3 text-left transition-colors",
+                                active ? "bg-brand-soft border-brand text-brand-soft-foreground" : "border-border hover:bg-surface-sunken"
+                              )}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-sm font-semibold">{t.name}</span>
+                                {active && <CheckCircle2 className="h-4 w-4 text-brand shrink-0" />}
+                              </div>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">{t.count} available · {money(t.rate)}/night</p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
                 </div>
+
+                {!!selectedRoomType && (
+                  <div className="mt-3">
+                    <ToggleAddon
+                      icon={BedDouble}
+                      label="Extra bed"
+                      hint={`Seat 1 more guest beyond the room's ${inclAdults}-adult limit · ${money(selectedType?.extraAdultRate ?? 0)}/night`}
+                      priceText={`+ ${money(selectedType?.extraAdultRate ?? 0)}/night`}
+                      on={extraBedForExtra}
+                      onChange={enableExtraBed}
+                    />
+                  </div>
+                )}
 
                 {/* Capture on the mobile app — after a room is picked (sync needs the room) */}
                 {syncState !== "done" ? (
@@ -2566,8 +2782,8 @@ function WalkInModal({
                               "h-7 px-2 rounded-md inline-flex items-center justify-center text-[11px] font-bold tracking-wider",
                               isActive ? "bg-brand text-brand-foreground" : "bg-surface-sunken text-muted-foreground"
                             )}>{p.code}</span>
-                            {p.surchargePerNight > 0 && (
-                              <span className="text-[10px] text-muted-foreground tabular">+{money(p.surchargePerNight)}/pax/N</span>
+                            {planMealPerGuestNight(p.code) > 0 && (
+                              <span className="text-[10px] text-muted-foreground tabular">+{money(planMealPerGuestNight(p.code))}/pax/N</span>
                             )}
                           </div>
                           <p className="text-xs font-semibold leading-tight">{p.name}</p>
@@ -2585,68 +2801,13 @@ function WalkInModal({
                         <p className="font-semibold">{ratePlan.code} includes</p>
                         <p className="text-muted-foreground">{ratePlan.includes.join(" · ")} for {adults + children} pax × {nights}N</p>
                         {ratePlanSupplement > 0 && (
-                          <p className="text-[11px] text-info mt-0.5 tabular">Plan supplement: {money(ratePlanSupplement)} ({money(ratePlan.surchargePerNight)} × {adults + children} pax × {nights}N)</p>
+                          <p className="text-[11px] text-info mt-0.5 tabular">Plan meals: {money(ratePlanSupplement)} ({money(planMealPerGuestNight(ratePlanCode))} × {adults + children} pax × {nights}N)</p>
                         )}
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* Stay add-ons */}
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 inline-flex items-center gap-1.5">
-                    <Sparkles className="h-3 w-3" />Stay add-ons
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <ToggleAddon
-                      icon={CalendarPlus} label="Early check-in"
-                      hint="Before 12 PM · subject to availability"
-                      priceText={`+ ${money(500)} flat`}
-                      on={earlyCheckIn} onChange={setEarlyCheckIn}
-                    />
-                    <ToggleAddon
-                      icon={CalendarMinus} label="Late check-out"
-                      hint="Until 4 PM · HK reschedules"
-                      priceText={`+ ${money(500)} flat`}
-                      on={lateCheckOut} onChange={setLateCheckOut}
-                    />
-                    <ToggleAddon
-                      icon={Bed} label="Extra bed"
-                      hint="Incl. breakfast"
-                      priceText={`+ ${money(900)} / night`}
-                      on={extraBed} onChange={setExtraBed}
-                    />
-                  </div>
-                </div>
-
-                {/* F&B add-ons */}
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2 inline-flex items-center gap-1.5">
-                    <UtensilsCrossed className="h-3 w-3" />Extra F&amp;B (above rate plan)
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {WALKIN_FB.map(pkg => {
-                      const count = fbAddons[pkg.id] ?? 0;
-                      return (
-                        <div key={pkg.id} className={cn(
-                          "rounded-md border p-3 flex items-center gap-3 transition-colors",
-                          count > 0 ? "bg-brand-soft/40 border-brand" : "border-border"
-                        )}>
-                          <span className="text-2xl shrink-0">{pkg.icon}</span>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium leading-tight truncate">{pkg.name}</p>
-                            <p className="text-[11px] text-muted-foreground tabular">{money(pkg.price)}/pax × {nights}N</p>
-                          </div>
-                          <div className="flex items-center border border-border rounded-md h-8 bg-surface shrink-0">
-                            <button type="button" onClick={() => setFb(pkg.id, count - 1)} disabled={count === 0} className="w-7 h-7 inline-flex items-center justify-center hover:bg-surface-sunken disabled:opacity-40"><Minus className="h-3 w-3" /></button>
-                            <span className="w-7 text-center text-sm tabular font-medium">{count}</span>
-                            <button type="button" onClick={() => setFb(pkg.id, count + 1)} className="w-7 h-7 inline-flex items-center justify-center hover:bg-surface-sunken"><Plus className="h-3 w-3" /></button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
               </div>
             )}
 
@@ -2655,49 +2816,71 @@ function WalkInModal({
               <div className="space-y-5">
                 <div className="space-y-3">
                   {/* Quick presets + amount */}
-                  <Label className="text-xs">Advance payment</Label>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+                  <Label>Advance payment</Label>
+                  <div className="flex flex-wrap gap-2">
                     {[0, 30, 50, 100].map(p => (
                       <button
                         key={p}
                         type="button"
-                        onClick={() => setP("amount", Math.round(grandTotal * p / 100))}
+                        onClick={() => { setCustomAdvance(false); setP("amount", Math.round(grandTotal * p / 100)); }}
                         className={cn(
-                          "h-9 rounded-md border text-xs font-medium transition-colors",
-                          Math.abs(pay.amount - Math.round(grandTotal * p / 100)) < 5
+                          "h-10 px-4 rounded-md border text-sm font-medium transition-colors",
+                          !customAdvance && Math.abs(pay.amount - Math.round(grandTotal * p / 100)) < 5
                             ? "bg-brand text-brand-foreground border-brand"
                             : "border-border hover:bg-surface-sunken"
                         )}
                       >
-                        {p === 0 ? "No advance" : p === 100 ? "Full" : `${p}%`}
+                        {p === 0 ? "No advance" : p === 100 ? "Full payment" : `${p}%`}
                       </button>
                     ))}
-                    <Input type="number" min={0} max={grandTotal} value={pay.amount} onChange={e => setP("amount", Number(e.target.value))} className="h-9 tabular text-center font-semibold" />
+                    <button
+                      type="button"
+                      onClick={() => { setCustomAdvance(true); setP("amount", 0); }}
+                      className={cn(
+                        "h-10 px-4 rounded-md border text-sm font-medium transition-colors",
+                        customAdvance ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
+                      )}
+                    >
+                      Custom amount
+                    </button>
                   </div>
+                  {customAdvance && (
+                    <div className="mt-2.5 flex items-center gap-2 animate-in">
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={grandTotal}
+                          value={pay.amount || ""}
+                          onChange={e => setP("amount", Math.min(grandTotal, Math.max(0, Math.round(Number(e.target.value)))))}
+                          placeholder="0"
+                          className="h-10 w-44 pl-7 tabular"
+                          autoFocus
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        of {money(grandTotal)} · {grandTotal > 0 ? Math.round((pay.amount / grandTotal) * 100) : 0}% advance
+                      </span>
+                    </div>
+                  )}
 
                   {/* Mode selector — visual icons */}
                   {pay.amount > 0 && (
                     <>
-                      <Label className="text-xs">Payment mode</Label>
-                      <div className="grid grid-cols-5 gap-1.5">
-                        {([
-                          { mode: "Cash"   as PayMode, icon: Banknote   },
-                          { mode: "Card"   as PayMode, icon: CreditCard },
-                          { mode: "UPI"    as PayMode, icon: Smartphone },
-                          { mode: "Bank"   as PayMode, icon: Building2  },
-                          { mode: "Online" as PayMode, icon: Wallet     },
-                        ]).map(({ mode, icon: Icon }) => (
+                      <Label>Payment mode</Label>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {(["Cash", "Card", "UPI", "Bank", "Online"] as PayMode[]).map(mode => (
                           <button
                             key={mode}
                             type="button"
                             onClick={() => setP("mode", mode)}
                             className={cn(
-                              "h-14 rounded-md border flex flex-col items-center justify-center gap-1 transition-colors",
-                              pay.mode === mode ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken text-muted-foreground"
+                              "h-10 rounded-md border text-sm font-medium transition-colors",
+                              pay.mode === mode ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
                             )}
                           >
-                            <Icon className="h-4 w-4" />
-                            <span className="text-[10px] font-medium leading-none">{mode}</span>
+                            {mode}
                           </button>
                         ))}
                       </div>
@@ -2713,21 +2896,21 @@ function WalkInModal({
                       {pay.mode === "Card" && (
                         <div className="grid grid-cols-2 gap-2">
                           <div className="space-y-1">
-                            <Label className="text-xs">Card type</Label>
+                            <Label>Card type</Label>
                             <Select value={pay.cardType ?? "Visa"} onChange={e => setP("cardType", e.target.value as AdvancePayment["cardType"])} className="h-9">
                               <option>Visa</option><option>MasterCard</option><option>Amex</option><option>RuPay</option>
                             </Select>
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs">Last 4 digits <span className="text-danger">*</span></Label>
+                            <Label>Last 4 digits <span className="text-danger">*</span></Label>
                             <Input value={pay.cardLast4 ?? ""} onChange={e => setP("cardLast4", e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="••••" maxLength={4} className="h-9 font-mono tabular text-center" />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs">Auth / Approval code</Label>
+                            <Label>Auth / Approval code</Label>
                             <Input value={pay.authCode ?? ""} onChange={e => setP("authCode", e.target.value.toUpperCase())} placeholder="e.g. 123456" className="h-9 font-mono tabular" />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs">POS slip ref</Label>
+                            <Label>POS slip ref</Label>
                             <Input value={pay.reference ?? ""} onChange={e => setP("reference", e.target.value)} placeholder="Slip #" className="h-9 font-mono tabular" />
                           </div>
                         </div>
@@ -2736,11 +2919,11 @@ function WalkInModal({
                       {pay.mode === "UPI" && (
                         <div className="grid grid-cols-2 gap-2">
                           <div className="space-y-1">
-                            <Label className="text-xs">Payer UPI ID (VPA) <span className="text-danger">*</span></Label>
+                            <Label>Payer UPI ID (VPA) <span className="text-danger">*</span></Label>
                             <Input value={pay.upiVPA ?? ""} onChange={e => setP("upiVPA", e.target.value)} placeholder="guest@upi" className="h-9 font-mono tabular" />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs">UPI Txn reference</Label>
+                            <Label>UPI Txn reference</Label>
                             <Input value={pay.reference ?? ""} onChange={e => setP("reference", e.target.value)} placeholder="e.g. 4123-4567-8901" className="h-9 font-mono tabular" />
                           </div>
                         </div>
@@ -2749,11 +2932,11 @@ function WalkInModal({
                       {pay.mode === "Bank" && (
                         <div className="grid grid-cols-2 gap-2">
                           <div className="space-y-1">
-                            <Label className="text-xs">Bank name <span className="text-danger">*</span></Label>
+                            <Label>Bank name <span className="text-danger">*</span></Label>
                             <Input value={pay.bankName ?? ""} onChange={e => setP("bankName", e.target.value)} placeholder="HDFC / ICICI / SBI …" className="h-9" />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs">NEFT / RTGS / IMPS UTR <span className="text-danger">*</span></Label>
+                            <Label>NEFT / RTGS / IMPS UTR <span className="text-danger">*</span></Label>
                             <Input value={pay.reference ?? ""} onChange={e => setP("reference", e.target.value)} placeholder="UTR / Ref no." className="h-9 font-mono tabular" />
                           </div>
                         </div>
@@ -2762,13 +2945,13 @@ function WalkInModal({
                       {pay.mode === "Online" && (
                         <div className="grid grid-cols-2 gap-2">
                           <div className="space-y-1">
-                            <Label className="text-xs">Gateway</Label>
+                            <Label>Gateway</Label>
                             <Select value={pay.gateway ?? "Razorpay"} onChange={e => setP("gateway", e.target.value as AdvancePayment["gateway"])} className="h-9">
                               <option>Razorpay</option><option>PayU</option><option>Cashfree</option><option>Stripe</option>
                             </Select>
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs">Transaction ID <span className="text-danger">*</span></Label>
+                            <Label>Transaction ID <span className="text-danger">*</span></Label>
                             <Input value={pay.txnId ?? ""} onChange={e => setP("txnId", e.target.value)} placeholder="pay_LqRz…" className="h-9 font-mono tabular" />
                           </div>
                         </div>
@@ -2798,6 +2981,18 @@ function WalkInModal({
                     </>
                   )}
                 </div>
+                <div className="space-y-1.5 pt-4 border-t border-border">
+                  <Label htmlFor="walkin-instructions">Special instructions / guest requests <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <textarea
+                    id="walkin-instructions"
+                    value={instructions}
+                    onChange={e => setInstructions(e.target.value)}
+                    placeholder="e.g. Quiet room away from elevator · Allergic to peanuts · Anniversary — please arrange cake · Early breakfast at 6 AM …"
+                    rows={3}
+                    maxLength={500}
+                    className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 outline-hidden transition-shadow resize-y min-h-[72px]"
+                  />
+                </div>
               </div>
             )}
 
@@ -2826,14 +3021,13 @@ function WalkInModal({
                     sub={[
                       earlyCheckIn && "Early check-in",
                       lateCheckOut && "Late check-out",
-                      extraBed && "Extra bed",
                     ].filter(Boolean).join(" · ") || "12 PM → 11 AM"}
                     onEdit={() => setStep(2)}
                   />
                   <WalkInReviewRow
-                    label="Room"
-                    value={room ? `Room ${room.number} · ${room.type}` : "—"}
-                    sub={`${adults}A${children ? ` + ${children}C` : ""}${room ? ` · ${money(room.rate)}/night` : ""}`}
+                    label="Room type"
+                    value={selectedRoomType ? `${selectedRoomType} · room assigned at check-in` : "—"}
+                    sub={`${adults}A${children ? ` + ${children}C` : ""}${selectedRoomType ? ` · ${money(typeRate)}/night` : ""}`}
                     onEdit={() => setStep(3)}
                   />
                   <WalkInReviewRow
@@ -2841,7 +3035,6 @@ function WalkInModal({
                     value={`${ratePlan.code} · ${ratePlan.name}`}
                     sub={[
                       ratePlan.includes.length > 0 && ratePlan.includes.join(" · "),
-                      WALKIN_FB.some(p => (fbAddons[p.id] ?? 0) > 0) && `+ ${WALKIN_FB.filter(p => (fbAddons[p.id] ?? 0) > 0).map(p => `${fbAddons[p.id]}× ${p.name}`).join(" · ")}`,
                     ].filter(Boolean).join(" · ") || "Room only"}
                     onEdit={() => setStep(4)}
                   />
@@ -2851,6 +3044,12 @@ function WalkInModal({
                     sub={`${money(grandTotal)} total · ${money(balance)} balance`}
                     onEdit={() => setStep(5)}
                   />
+                  {instructions.trim() && (
+                    <div className="p-3">
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Special instructions</p>
+                      <p className="text-sm leading-snug whitespace-pre-wrap">{instructions}</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* What happens next */}
@@ -2887,11 +3086,20 @@ function WalkInModal({
               <p className="mb-3 text-sm text-muted-foreground">No guest entered</p>
             )}
 
+            {!hasCheckout ? (
+              <p className="text-sm text-muted-foreground py-2">Pick a check-out date to see pricing.</p>
+            ) : (
             <dl className="space-y-1.5 text-xs">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Room · {nights}N {breakdown.avgRate > 0 ? `· avg ${money(breakdown.avgRate)}/night` : ""}</span>
                 <span className="font-medium tabular">{money(roomSubtotal)}</span>
               </div>
+              {extraBedCharge > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Extra bed · {extraOcc.extraAdults} extra adult{extraOcc.extraAdults > 1 ? "s" : ""}</span>
+                  <span className="tabular">{money(extraBedCharge)}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground inline-flex items-center gap-1.5">
                   <span className="px-1 py-0 rounded bg-brand-soft text-brand-soft-foreground text-[9px] font-bold">{ratePlan.code}</span>
@@ -2901,20 +3109,6 @@ function WalkInModal({
               </div>
               {earlyFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Early check-in</span><span className="tabular">{money(earlyFee)}</span></div>}
               {lateFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Late check-out</span><span className="tabular">{money(lateFee)}</span></div>}
-              {extraBedFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Extra bed × {nights}N</span><span className="tabular">{money(extraBedFee)}</span></div>}
-              {fbTotal > 0 && (
-                <>
-                  <div className="pt-1.5 mt-1.5 border-t border-border">
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">F&B add-ons</p>
-                  </div>
-                  {WALKIN_FB.filter(p => (fbAddons[p.id] ?? 0) > 0).map(p => (
-                    <div key={p.id} className="flex justify-between">
-                      <span className="text-muted-foreground">{fbAddons[p.id]}× {p.name} × {nights}N</span>
-                      <span className="tabular">{money(p.price * fbAddons[p.id] * nights)}</span>
-                    </div>
-                  ))}
-                </>
-              )}
               <div className="pt-1.5 mt-1.5 border-t border-border flex justify-between">
                 <span className="text-muted-foreground">Tax (5%)</span>
                 <span className="tabular">{money(tax)}</span>
@@ -2936,6 +3130,7 @@ function WalkInModal({
                 </>
               )}
             </dl>
+            )}
 
             {/* Back / Next (Start on final step) */}
             <div className="mt-5 flex gap-2">
@@ -2988,7 +3183,7 @@ function WalkInModal({
           bookingNo={bookingNo}
           guestName={name}
           phone={phone}
-          room={room ? `${room.number} · ${room.type}` : "—"}
+          room={selectedRoomType ? `${selectedRoomType} (assigned at check-in)` : "—"}
           checkInDate={checkInDate}
           nights={nights}
           grandTotal={grandTotal}
@@ -3016,16 +3211,63 @@ function WalkInReviewRow({ label, value, sub, onEdit }: { label: string; value: 
   );
 }
 
-function NumStepper({ label, value, onChange, min = 0 }: { label: string; value: number; onChange: (n: number) => void; min?: number }) {
+function NumStepper({ label, value, onChange, min = 0, max = Infinity }: { label: string; value: number; onChange: (n: number) => void; min?: number; max?: number }) {
+  const atMin = value <= min;
+  const atMax = value >= max;
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs">{label}</Label>
+      <Label>{label}</Label>
       <div className="flex items-center border border-border rounded-md h-10">
-        <button type="button" onClick={() => onChange(Math.max(min, value - 1))} className="w-10 h-full hover:bg-surface-sunken inline-flex items-center justify-center"><Minus className="h-3.5 w-3.5" /></button>
+        <button type="button" disabled={atMin} onClick={() => onChange(Math.max(min, value - 1))} className={cn("w-10 h-full inline-flex items-center justify-center", atMin ? "opacity-40 cursor-not-allowed" : "hover:bg-surface-sunken")}><Minus className="h-3.5 w-3.5" /></button>
         <span className="flex-1 text-center font-medium tabular">{value}</span>
-        <button type="button" onClick={() => onChange(value + 1)} className="w-10 h-full hover:bg-surface-sunken inline-flex items-center justify-center"><Plus className="h-3.5 w-3.5" /></button>
+        <button type="button" disabled={atMax} onClick={() => onChange(Math.min(max, value + 1))} className={cn("w-10 h-full inline-flex items-center justify-center", atMax ? "opacity-40 cursor-not-allowed" : "hover:bg-surface-sunken")}><Plus className="h-3.5 w-3.5" /></button>
       </div>
     </div>
+  );
+}
+
+// Booking-style priced toggle card (used by the walk-in's Dates step add-ons).
+function PricedToggleCard({
+  label, hint, price, pricePct, checked, onChange, disabled, disabledHint,
+}: {
+  label: string;
+  hint: string;
+  price?: number;
+  pricePct?: string;
+  checked: boolean;
+  onChange: (b: boolean) => void;
+  disabled?: boolean;
+  disabledHint?: string;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => { if (!disabled) onChange(!checked); }}
+      className={cn(
+        "p-3 rounded-md border text-left transition-all relative",
+        disabled
+          ? "opacity-50 cursor-not-allowed border-border"
+          : checked ? "bg-brand-soft border-brand shadow-xs" : "border-border hover:bg-surface-sunken"
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">{label}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{disabled && disabledHint ? disabledHint : hint}</p>
+        </div>
+        {checked && !disabled && <CheckCircle2 className="h-4 w-4 text-brand shrink-0" />}
+      </div>
+      <div className="mt-2 pt-2 border-t border-border/50">
+        <span className={cn(
+          "text-[11px] font-semibold tabular",
+          pricePct ? "text-success" : "text-foreground"
+        )}>
+          {price !== undefined && `+ ${money(price)} flat`}
+          {pricePct && pricePct}
+        </span>
+      </div>
+    </button>
   );
 }
 

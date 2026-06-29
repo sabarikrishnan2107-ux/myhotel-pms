@@ -15,14 +15,16 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { Input, Label, Select } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { isValidPhone } from "@/lib/phone";
-import { GROUP_BOOKINGS, SAMPLE_ROOMING_LIST, GROUP_TIMELINE, type GroupStatus, type GroupBooking } from "@/lib/mock-data-ext";
+import { GROUP_TIMELINE, type GroupStatus, type GroupBooking } from "@/lib/mock-data-ext";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
+import { computeGroupTotals, type GstSlab } from "@/lib/group-pricing";
+import { mealPerNightPerGuest } from "@/lib/booking-pricing";
 
 type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string };
 type AuditRow = { id: string; action: string; entity: string; module: string; user: string; date: string; time: string };
 type RoomBoardRow = { number: string; status: string; type?: string; floor?: number };
-type BookingLite = { roomNumber?: string; status?: string; checkIn?: string; checkOut?: string };
 import { cn, money, formatDate } from "@/lib/utils";
+import { useProperty, hotelName } from "@/lib/use-property";
 
 const STATUS_TONE: Record<GroupStatus, "neutral" | "info" | "success" | "brand" | "warning" | "danger"> = {
   draft: "neutral", tentative: "warning", confirmed: "info",
@@ -40,7 +42,11 @@ const TABS = [
 
 export default function GroupDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const [group, setGroup] = React.useState<GroupBooking>(() => GROUP_BOOKINGS.find(g => g.code === id) ?? GROUP_BOOKINGS[0]);
+  const hotel = hotelName(useProperty());
+  // SSR-safe gate for the print-only summary portal (needs document.body).
+  const [printMounted, setPrintMounted] = React.useState(false);
+  React.useEffect(() => setPrintMounted(true), []);
+  const [group, setGroup] = React.useState<GroupBooking | null>(null);
   const [payAmount, setPayAmount] = React.useState(0);
   const [payMode, setPayMode] = React.useState("Cash");
   React.useEffect(() => {
@@ -57,7 +63,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const [tab, setTab] = React.useState("overview");
 
   // Rooming list — group-scoped, loaded from the API.
-  const [rooming, setRooming] = React.useState<RoomingEntry[]>(SAMPLE_ROOMING_LIST);
+  const [rooming, setRooming] = React.useState<RoomingEntry[]>([]);
   const [assignId, setAssignId] = React.useState<string | null>(null);
   const [addGuestOpen, setAddGuestOpen] = React.useState(false);
   // Per-row "..." actions menu, portalled to <body> (the table card clips overflow).
@@ -73,12 +79,30 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     return () => { document.removeEventListener("click", onClick); window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
   }, [rowMenuFor]);
 
-  // Room inventory + bookings, to offer only rooms free for the group's stay.
+  // Room inventory (for room details / type filtering) + availability for this group's
+  // stay window. The backend cross-checks individual bookings AND group_rooming so
+  // no room can be offered if it's already committed to any other booking or group.
   const [board, setBoard] = React.useState<RoomBoardRow[]>([]);
-  const [allBookings, setAllBookings] = React.useState<BookingLite[]>([]);
   React.useEffect(() => {
     apiGet<RoomBoardRow[]>("/room-board").then(setBoard).catch(() => {});
-    apiGet<BookingLite[]>("/bookings").then(setAllBookings).catch(() => {});
+  }, []);
+  const [availRoomData, setAvailRoomData] = React.useState<{ number: string; available: boolean; type: string }[]>([]);
+  React.useEffect(() => {
+    const from = (group?.arrival ?? "").slice(0, 10);
+    const to   = (group?.departure ?? "").slice(0, 10);
+    if (!from || !to || from >= to) return;
+    apiGet<typeof availRoomData>(`/room-availability?from=${from}&to=${to}`)
+      .then(setAvailRoomData).catch(() => {});
+  }, [group?.arrival, group?.departure]);
+  type RoomTypeCfg = { name: string; extraAdultRate?: number };
+  type RatePlanCfg = { code: string; name: string; inclBreakfast?: boolean; inclLunch?: boolean; inclDinner?: boolean; breakfastPrice?: number; lunchPrice?: number; dinnerPrice?: number };
+  const [roomTypes, setRoomTypes] = React.useState<RoomTypeCfg[]>([]);
+  const [ratePlans, setRatePlans] = React.useState<RatePlanCfg[]>([]);
+  const [gstSlabs, setGstSlabs] = React.useState<GstSlab[]>([]);
+  React.useEffect(() => {
+    apiGet<RoomTypeCfg[]>("/room-types").then(r => Array.isArray(r) && setRoomTypes(r)).catch(() => {});
+    apiGet<RatePlanCfg[]>("/rate-plans").then(r => Array.isArray(r) && setRatePlans(r)).catch(() => {});
+    apiGet<GstSlab[]>("/gst-slabs").then(r => Array.isArray(r) && setGstSlabs(r)).catch(() => {});
   }, []);
   const [toast, setToast] = React.useState<string | null>(null);
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
@@ -96,24 +120,12 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     flash(`Room ${roomNo} assigned to ${entry.lead}`);
   };
 
-  // Rooms physically free for the group's stay window: not blocked/out-of-order
-  // and not held by another booking overlapping [arrival, departure). Today's
-  // dirty/cleaning/occupied state doesn't apply to a future window.
+  // Rooms free for this group's stay: server availability already excludes rooms
+  // committed via individual bookings OR other group rooming assignments.
   const freeRooms = React.useMemo(() => {
-    const day = (s?: string) => (s ?? "").slice(0, 10);
-    const rIn = day(group.arrival), rOut = day(group.departure);
-    const occupied = new Set<string>();
-    if (rIn && rOut && rIn < rOut) {
-      allBookings.forEach(b => {
-        const st = b.status ?? "confirmed";
-        if (st === "cancelled" || st === "checked-out") return;
-        if (!b.roomNumber || b.roomNumber === "Unassigned") return;
-        const bIn = day(b.checkIn), bOut = day(b.checkOut);
-        if (bIn && bOut && bIn < rOut && bOut > rIn) occupied.add(b.roomNumber);
-      });
-    }
-    return board.filter(r => r.status !== "blocked" && r.status !== "maintenance" && !occupied.has(r.number));
-  }, [board, allBookings, group.arrival, group.departure]);
+    const avail = new Set(availRoomData.filter(r => r.available).map(r => r.number));
+    return board.filter(r => avail.has(r.number));
+  }, [board, availRoomData]);
 
   // Rooms a given rooming entry can be assigned: free rooms of the matching type
   // that aren't already taken by another guest in THIS group (no duplicates).
@@ -155,12 +167,13 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const timeline = React.useMemo(() => {
     if (!auditRows) return null;
     return auditRows
-      .filter(r => /group/i.test(r.module) && (r.entity === group.name || r.entity === group.code))
+      .filter(r => /group/i.test(r.module) && (r.entity === group?.name || r.entity === group?.code))
       .map(r => ({ id: r.id, action: `${r.action}${r.entity ? " · " + r.entity : ""}`, time: `${r.date} ${r.time}`.trim(), actor: r.user }));
-  }, [auditRows, group.name, group.code]);
+  }, [auditRows, group?.name, group?.code]);
 
   // Receive payment — persists a master-folio payment + updates the group balance.
   const receivePayment = () => {
+    if (!group) return;
     const amt = Math.round(Number(payAmount) || 0);
     if (amt <= 0) { flash("Enter a valid amount"); return; }
     const today = new Date().toISOString().slice(0, 10);
@@ -168,7 +181,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
       .catch(() => flash("⚠ Payment not saved — backend offline"));
     const advance = group.advance + amt;
     const balance = Math.max(0, group.balance - amt);
-    setGroup(g => ({ ...g, advance, balance }));
+    setGroup(g => g ? { ...g, advance, balance } : g);
     setPayAmount(balance);
     apiPut(`/group-bookings/${group.id}`, { advance, balance }).catch(() => {});
     flash(`Payment of ${money(amt)} recorded via ${payMode}`);
@@ -176,9 +189,10 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
 
   // Add a service — persists onto the group record.
   const addService = (name: string) => {
+    if (!group) return;
     if (group.services.includes(name)) { flash(`${name} already added`); return; }
     const services = [...group.services, name];
-    setGroup(g => ({ ...g, services }));
+    setGroup(g => g ? { ...g, services } : g);
     apiPut(`/group-bookings/${group.id}`, { services }).catch(() => flash("⚠ Save failed — backend offline"));
     flash(`${name} added to the group`);
   };
@@ -206,16 +220,117 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
 
   // Check the whole group in.
   const checkInGroup = () => {
-    setGroup(g => ({ ...g, status: "in-house" }));
+    if (!group) return;
+    setGroup(g => g ? { ...g, status: "in-house" } : g);
     apiPut(`/group-bookings/${group.id}`, { status: "in-house" }).catch(() => flash("⚠ Save failed — backend offline"));
     flash("Group checked in");
   };
 
+  if (!group) {
+    return (
+      <div className="p-4 sm:p-6 lg:p-8">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-6">
+          <Link href="/groups" className="hover:text-foreground inline-flex items-center gap-1"><ChevronLeft className="h-3.5 w-3.5" />Groups</Link>
+        </div>
+        <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">Loading group…</div>
+      </div>
+    );
+  }
+
   const allocated = group.block.reduce((s, b) => s + b.assigned, 0);
   const allocPct = Math.round((allocated / group.totalRooms) * 100);
 
+  // Recompute the folio from the stored block + rate plan so the displayed total
+  // matches what was quoted at creation (replaces the old hardcoded 5%/10% math).
+  const planCfg = ratePlans.find(p => p.code === group.ratePlan || p.name === group.ratePlan);
+  const planMeals = mealPerNightPerGuest({
+    inclB: !!planCfg?.inclBreakfast, inclL: !!planCfg?.inclLunch, inclD: !!planCfg?.inclDinner,
+    breakfastPrice: planCfg?.breakfastPrice ?? 0, lunchPrice: planCfg?.lunchPrice ?? 0, dinnerPrice: planCfg?.dinnerPrice ?? 0,
+  }) * (group.totalPax || 0) * (group.nights || 0);
+  const extraBedRateFor = (typeName: string) => roomTypes.find(t => t.name === typeName)?.extraAdultRate ?? 0;
+  // Prefer the extra-bed rate frozen onto the block at creation (like room rate);
+  // fall back to live Setup for legacy groups saved before it was persisted.
+  const extraBedRateOf = (b: { type: string; extraBedRate?: number }) => b.extraBedRate ?? extraBedRateFor(b.type);
+  const folio = computeGroupTotals(
+    group.block.map(b => ({ rate: b.rate, qty: b.qty, extraBeds: b.extraBeds ?? 0, extraBedRate: extraBedRateOf(b) })),
+    group.nights, [], group.totalPax || 0, gstSlabs, planMeals,
+  );
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
+      {/* Print-only group summary. Portaled to <body> so the global print CSS
+          reveals it; without a .print-doc, window.print() hides the whole dark
+          page (body * { visibility:hidden }) and produces a blank sheet. Explicit
+          colors so it stays readable on white paper regardless of the dark theme. */}
+      {printMounted && createPortal(
+        <div className="print-doc">
+          <div style={{ color: "#111", padding: "6mm", fontSize: "12px", lineHeight: 1.5, fontFamily: "system-ui, Arial, sans-serif" }}>
+            <div style={{ textAlign: "center", borderBottom: "2px solid #999", paddingBottom: "10px", marginBottom: "14px" }}>
+              <div style={{ fontSize: "18px", fontWeight: 600 }}>{hotel}</div>
+              <div style={{ fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", color: "#666", marginTop: "2px" }}>Group Booking Summary</div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px" }}>
+              <div>
+                <div style={{ fontSize: "15px", fontWeight: 600 }}>{group.name}</div>
+                <div style={{ fontSize: "11px", color: "#666", textTransform: "capitalize" }}>{group.type} · {group.status}</div>
+              </div>
+              <div style={{ textAlign: "right", fontSize: "11px", color: "#666" }}>
+                <div>Ref <span style={{ fontFamily: "monospace", color: "#111", fontWeight: 600 }}>{group.code}</span></div>
+                <div>{new Date().toLocaleString(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
+              </div>
+            </div>
+
+            <table style={{ width: "100%", fontSize: "11px", marginBottom: "16px", borderCollapse: "collapse" }}>
+              <tbody>
+                <tr><td style={{ color: "#666", padding: "2px 0", width: "30%", verticalAlign: "top" }}>Contact</td><td style={{ padding: "2px 0", fontWeight: 500 }}>{group.contactName}</td></tr>
+                <tr><td style={{ color: "#666", padding: "2px 0", verticalAlign: "top" }}>Phone</td><td style={{ padding: "2px 0" }}>{group.contactPhone}</td></tr>
+                <tr><td style={{ color: "#666", padding: "2px 0", verticalAlign: "top" }}>Email</td><td style={{ padding: "2px 0" }}>{group.contactEmail}</td></tr>
+                <tr><td style={{ color: "#666", padding: "2px 0", verticalAlign: "top" }}>Stay</td><td style={{ padding: "2px 0", fontWeight: 500 }}>{formatDate(group.arrival)} → {formatDate(group.departure)} · {group.nights} night{group.nights === 1 ? "" : "s"}</td></tr>
+                <tr><td style={{ color: "#666", padding: "2px 0", verticalAlign: "top" }}>Rooms / Pax</td><td style={{ padding: "2px 0" }}>{group.totalRooms} rooms · {group.totalPax} pax</td></tr>
+                <tr><td style={{ color: "#666", padding: "2px 0", verticalAlign: "top" }}>Rate plan</td><td style={{ padding: "2px 0" }}>{group.ratePlan}</td></tr>
+                {group.bookedBy && <tr><td style={{ color: "#666", padding: "2px 0", verticalAlign: "top" }}>Booked by</td><td style={{ padding: "2px 0" }}>{group.bookedBy}</td></tr>}
+              </tbody>
+            </table>
+
+            <div style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#666", marginBottom: "4px" }}>Room block</div>
+            <table style={{ width: "100%", fontSize: "11px", borderCollapse: "collapse", marginBottom: "16px" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid #ccc" }}>
+                  <th style={{ textAlign: "left", padding: "4px 0" }}>Type</th>
+                  <th style={{ textAlign: "right", padding: "4px 0" }}>Qty</th>
+                  <th style={{ textAlign: "right", padding: "4px 0" }}>Rate/night</th>
+                  <th style={{ textAlign: "right", padding: "4px 0" }}>Nights</th>
+                  <th style={{ textAlign: "right", padding: "4px 0" }}>Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {group.block.map((b, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
+                    <td style={{ padding: "4px 0" }}>{b.type}{b.extraBeds ? ` · +${b.extraBeds} extra bed${b.extraBeds === 1 ? "" : "s"}` : ""}</td>
+                    <td style={{ textAlign: "right", padding: "4px 0" }}>{b.qty}</td>
+                    <td style={{ textAlign: "right", padding: "4px 0" }}>{money(b.rate)}</td>
+                    <td style={{ textAlign: "right", padding: "4px 0" }}>{group.nights}</td>
+                    <td style={{ textAlign: "right", padding: "4px 0", fontWeight: 600 }}>{money(b.qty * b.rate * group.nights + (b.extraBeds ?? 0) * extraBedRateOf(b) * group.nights)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div style={{ marginLeft: "auto", width: "55%", fontSize: "12px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#666" }}>Total</span><span style={{ fontWeight: 600 }}>{money(group.total)}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#666" }}>Advance paid</span><span>− {money(group.advance)}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderTop: "1px solid #ccc", fontWeight: 700 }}><span>Balance due</span><span>{money(group.balance)}</span></div>
+            </div>
+
+            <div style={{ marginTop: "20px", paddingTop: "8px", borderTop: "1px solid #eee", fontSize: "9px", color: "#999", textAlign: "center" }}>
+              Computer-generated group booking summary · {hotel} · {group.code}
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link href="/groups" className="hover:text-foreground inline-flex items-center gap-1">
@@ -367,7 +482,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                   <div className="flex items-start justify-between">
                     <div>
                       <p className="font-semibold">{b.type}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5 tabular">{money(b.rate)} per night · group rate</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 tabular">{money(b.rate)} per night · group rate{b.extraBeds ? ` · +${b.extraBeds} extra bed${b.extraBeds > 1 ? "s" : ""}` : ""}</p>
                     </div>
                     <Badge tone={pct === 100 ? "success" : pct > 0 ? "warning" : "neutral"}>
                       {b.assigned}/{b.qty}
@@ -496,7 +611,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                       <p className="text-xs text-muted-foreground mt-0.5">Booked · confirmed for the group window</p>
                     </div>
                     <Badge tone="success">Active</Badge>
-                    <button onClick={() => { const services = group.services.filter(x => x !== s); setGroup(g => ({ ...g, services })); apiPut(`/group-bookings/${group.id}`, { services }).catch(() => flash("⚠ Save failed")); flash(`${s} removed`); }} className="text-muted-foreground hover:text-danger" title="Remove"><X className="h-4 w-4" /></button>
+                    <button onClick={() => { const services = group.services.filter(x => x !== s); setGroup(g => g ? { ...g, services } : null); apiPut(`/group-bookings/${group.id}`, { services }).catch(() => flash("⚠ Save failed")); flash(`${s} removed`); }} className="text-muted-foreground hover:text-danger" title="Remove"><X className="h-4 w-4" /></button>
                   </li>
                 ))}
               </ul>
@@ -545,27 +660,43 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                     <td className="px-5 py-3 text-right tabular font-medium">{money(b.qty * b.rate * group.nights)}</td>
                   </tr>
                 ))}
+                {group.block.filter(b => b.extraBeds).map((b, i) => (
+                  <tr key={`eb${i}`}>
+                    <td className="px-5 py-3">{b.type} · extra bed · {group.nights} nights</td>
+                    <td className="px-5 py-3 text-right tabular">{b.extraBeds}</td>
+                    <td className="px-5 py-3 text-right tabular">{money(extraBedRateOf(b) * group.nights)}</td>
+                    <td className="px-5 py-3 text-right tabular font-medium">{money((b.extraBeds ?? 0) * extraBedRateOf(b) * group.nights)}</td>
+                  </tr>
+                ))}
+                {folio.mealsSubtotal > 0 && (
+                  <tr>
+                    <td className="px-5 py-3">Plan meals ({group.ratePlan}) · {group.totalPax} pax × {group.nights} nights</td>
+                    <td className="px-5 py-3 text-right tabular">{group.totalPax}</td>
+                    <td className="px-5 py-3 text-right tabular text-muted-foreground">—</td>
+                    <td className="px-5 py-3 text-right tabular font-medium">{money(folio.mealsSubtotal)}</td>
+                  </tr>
+                )}
                 {group.services.map((s, i) => (
                   <tr key={`s${i}`}>
                     <td className="px-5 py-3">{s}</td>
                     <td className="px-5 py-3 text-right tabular">1</td>
                     <td className="px-5 py-3 text-right tabular text-muted-foreground">—</td>
-                    <td className="px-5 py-3 text-right tabular font-medium">{money(Math.round((group.total * 0.1) / Math.max(1, group.services.length)))}</td>
+                    <td className="px-5 py-3 text-right tabular text-muted-foreground">—</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot className="bg-surface-elevated border-t border-border">
                 <tr>
                   <td colSpan={3} className="px-5 py-2 text-right text-xs uppercase tracking-wider font-semibold text-muted-foreground">Subtotal</td>
-                  <td className="px-5 py-2 text-right tabular">{money(group.total / 1.05)}</td>
+                  <td className="px-5 py-2 text-right tabular">{money(folio.roomSubtotal + folio.extraBedSubtotal + folio.mealsSubtotal)}</td>
                 </tr>
                 <tr>
-                  <td colSpan={3} className="px-5 py-2 text-right text-xs uppercase tracking-wider font-semibold text-muted-foreground">Tax (5%)</td>
-                  <td className="px-5 py-2 text-right tabular text-muted-foreground">{money(group.total - group.total / 1.05)}</td>
+                  <td colSpan={3} className="px-5 py-2 text-right text-xs uppercase tracking-wider font-semibold text-muted-foreground">Tax (GST)</td>
+                  <td className="px-5 py-2 text-right tabular text-muted-foreground">{money(folio.gst)}</td>
                 </tr>
                 <tr>
                   <td colSpan={3} className="px-5 py-3 text-right text-xs uppercase tracking-wider font-semibold">Total</td>
-                  <td className="px-5 py-3 text-right tabular font-semibold text-base">{money(group.total)}</td>
+                  <td className="px-5 py-3 text-right tabular font-semibold text-base">{money(folio.grandTotal)}</td>
                 </tr>
               </tfoot>
             </table>
