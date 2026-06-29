@@ -17,8 +17,9 @@ import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
 import { computeGroupTotals, type GstSlab } from "@/lib/group-pricing";
+import { mealPerNightPerGuest } from "@/lib/booking-pricing";
 
-interface BlockRow { id: string; type: string; qty: number; rate: number; }
+interface BlockRow { id: string; type: string; qty: number; rate: number; extraBeds: number; }
 
 const TYPES = ["Wedding", "Conference", "Tour Group", "Sports Team", "Corporate Retreat", "Other"];
 
@@ -104,7 +105,7 @@ export default function NewGroupPage() {
   // Start with one empty room-block row so the structure is visible; the user
   // fills in the quantity. Rate is set by suggestRate once room types load.
   const [block, setBlock] = React.useState<BlockRow[]>([
-    { id: "b1", type: "Deluxe", qty: 0, rate: 0 },
+    { id: "b1", type: "Deluxe", qty: 0, rate: 0, extraBeds: 0 },
   ]);
 
   // Live room inventory + bookings, so the block can only reserve rooms that are
@@ -119,8 +120,8 @@ export default function NewGroupPage() {
   }, []);
 
   // Config state — room types, rate plans, agents, service catalog, GST slabs
-  type RoomType = { name: string; baseTariff: number };
-  type RatePlan = { code: string; name: string; discountPct?: number };
+  type RoomType = { name: string; baseTariff: number; maxAdults?: number; extraAdultRate?: number };
+  type RatePlan = { code: string; name: string; discountPct?: number; inclBreakfast?: boolean; inclLunch?: boolean; inclDinner?: boolean; breakfastPrice?: number; lunchPrice?: number; dinnerPrice?: number };
   type AgentRow = { name: string; type?: string };
   type GroupSvc = { id: number | string; name: string; category: string; price: number; perPax: boolean; gst: number; active: boolean };
   const [roomTypes, setRoomTypes] = React.useState<RoomType[]>([]);
@@ -248,14 +249,31 @@ export default function NewGroupPage() {
     .map(id => svcCatalog.find(s => String(s.id) === id))
     .filter((s): s is GroupSvc => !!s)
     .map(s => ({ price: s.price, perPax: s.perPax, gst: s.gst }));
+
+  const extraBedRateFor = (typeName: string) => roomTypes.find(t => t.name === typeName)?.extraAdultRate ?? 0;
+  const maxAdultsFor = (typeName: string) => roomTypes.find(t => t.name === typeName)?.maxAdults ?? 2;
+
+  // Configured rate-plan meals: same per-guest-per-night math as booking/walk-in.
+  const planMeals = mealPerNightPerGuest({
+    inclB: !!selectedPlan?.inclBreakfast, inclL: !!selectedPlan?.inclLunch, inclD: !!selectedPlan?.inclDinner,
+    breakfastPrice: selectedPlan?.breakfastPrice ?? 0, lunchPrice: selectedPlan?.lunchPrice ?? 0, dinnerPrice: selectedPlan?.dinnerPrice ?? 0,
+  }) * pax * nights;
+
   const totals = computeGroupTotals(
-    block.map(b => ({ rate: b.rate, qty: b.qty })), nights, selectedSvcLines, pax, gstSlabs,
+    block.map(b => ({ rate: b.rate, qty: b.qty, extraBeds: b.extraBeds, extraBedRate: extraBedRateFor(b.type) })),
+    nights, selectedSvcLines, pax, gstSlabs, planMeals,
   );
   const roomSubtotal = totals.roomSubtotal;
+  const extraBedTotal = totals.extraBedSubtotal;
+  const mealsTotal = totals.mealsSubtotal;
   const servicesTotal = totals.servicesSubtotal;
-  const subtotal = roomSubtotal + servicesTotal;
+  const subtotal = roomSubtotal + extraBedTotal + mealsTotal + servicesTotal;
   const tax = totals.gst;
   const total = totals.grandTotal;
+
+  // Soft occupancy check: rooms (× included adults) + extra beds vs expected pax.
+  const blockCapacity = block.reduce((s, b) => s + b.qty * maxAdultsFor(b.type) + b.extraBeds, 0);
+  const overCapacity = pax > 0 && pax > blockCapacity;
 
   const advance = paymentTerm === "custom" ? 0 : Math.round((total * Number(paymentTerm)) / 100);
 
@@ -264,11 +282,13 @@ export default function NewGroupPage() {
       if (r.id !== id) return r;
       if (key === "rate") { editedRates.current.add(id); return { ...r, rate: Number(value) || 0 }; }
       if (key === "type") { const next = { ...r, type: String(value) }; if (!editedRates.current.has(id)) next.rate = suggestRate(String(value)) || r.rate; return next; }
-      return { ...r, [key]: value };
+      if (key === "qty") { const qty = Number(value) || 0; return { ...r, qty, extraBeds: Math.min(r.extraBeds, qty) }; }
+      if (key === "extraBeds") { return { ...r, extraBeds: Math.max(0, Math.min(Number(value) || 0, r.qty)) }; }
+      return r; // id is never updated through this handler; all editable keys are handled above
     }));
   };
   const removeBlock = (id: string) => setBlock(b => b.filter(r => r.id !== id));
-  const addBlock = () => setBlock(b => [...b, { id: `b${Date.now()}`, type: "Deluxe", qty: 0, rate: 0 }]);
+  const addBlock = () => setBlock(b => [...b, { id: `b${Date.now()}`, type: "Deluxe", qty: 0, rate: 0, extraBeds: 0 }]);
 
   const router = useRouter();
   const [saving, setSaving] = React.useState(false);
@@ -281,7 +301,7 @@ export default function NewGroupPage() {
     apiPost("/group-bookings", {
       code, name, type, contactName, contactPhone, contactEmail,
       bookedBy, arrival, departure, nights,
-      block: block.map(b => ({ type: b.type, qty: b.qty, rate: b.rate, assigned: 0 })),
+      block: block.map(b => ({ type: b.type, qty: b.qty, rate: b.rate, assigned: 0, extraBeds: b.extraBeds })),
       totalRooms, totalPax: pax, ratePlan,
       services: services.map(id => svcCatalog.find(s => String(s.id) === id)?.name ?? id),
       total: Math.round(total), advance: Math.round(advance), balance: Math.round(total - advance),
@@ -388,6 +408,11 @@ export default function NewGroupPage() {
               <Field label="Departure *"><Input type="date" value={departure} min={arrival > todayISO ? arrival : todayISO} onChange={e => setDeparture(e.target.value)} /></Field>
               <Field label="Total expected pax *"><Input type="number" value={pax} onChange={e => setPax(Number(e.target.value))} /></Field>
             </div>
+            {overCapacity && (
+              <p className="text-xs text-warning inline-flex items-center gap-1.5">
+                <UsersRound className="h-3.5 w-3.5" />Blocked rooms seat up to {blockCapacity}. Add rooms or extra beds to fit {pax - blockCapacity} more.
+              </p>
+            )}
             <div className="rounded-md bg-brand-soft text-brand-soft-foreground p-3 flex items-center gap-3 text-sm">
               <Calendar className="h-4 w-4" />
               <span><span className="font-semibold">{nights} nights</span> · {arrival} → {departure}</span>
@@ -443,6 +468,19 @@ export default function NewGroupPage() {
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
+                  {datesChosen && row.qty > 0 && (
+                    <div className="col-span-12 flex items-center gap-3 pt-1 text-xs">
+                      <span className="text-muted-foreground">Extra bed</span>
+                      <div className="flex items-center border border-border rounded-md h-8 bg-surface">
+                        <button type="button" onClick={() => updateBlock(row.id, "extraBeds", row.extraBeds - 1)} className="h-full w-8 hover:bg-surface-sunken inline-flex items-center justify-center border-r border-border disabled:opacity-40 disabled:cursor-not-allowed" disabled={row.extraBeds <= 0}><Minus className="h-3 w-3" /></button>
+                        <span className="w-8 text-center font-medium tabular">{row.extraBeds}</span>
+                        <button type="button" onClick={() => updateBlock(row.id, "extraBeds", row.extraBeds + 1)} className="h-full w-8 hover:bg-surface-sunken inline-flex items-center justify-center border-l border-border disabled:opacity-40 disabled:cursor-not-allowed" disabled={row.extraBeds >= row.qty} title={row.extraBeds >= row.qty ? "One extra bed per room max" : "Add an extra bed"}><Plus className="h-3 w-3" /></button>
+                      </div>
+                      <span className="text-muted-foreground">
+                        {extraBedRateFor(row.type) > 0 ? `+${money(extraBedRateFor(row.type))}/night each` : "No extra-bed rate set for this type"}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 );
               })}
@@ -644,6 +682,8 @@ export default function NewGroupPage() {
 
           <div className="border-t border-border pt-3 space-y-2 text-sm">
             <Row k="Room subtotal" v={money(roomSubtotal)} muted />
+            {extraBedTotal > 0 && <Row k="Extra beds" v={money(extraBedTotal)} muted />}
+            {mealsTotal > 0 && <Row k="Plan meals" v={money(mealsTotal)} muted />}
             <Row k="Services" v={money(servicesTotal)} muted />
             <Row k="Tax (GST)" v={money(tax)} muted />
             <div className="border-t border-border pt-2 mt-2">
