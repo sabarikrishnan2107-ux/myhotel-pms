@@ -418,7 +418,7 @@ class ResourceController extends Controller
         'group-rooming' => [
             'groupCode' => 'string|max:50', 'roomNo' => 'string|max:50|nullable', 'roomType' => 'string|max:100',
             'lead' => 'string|max:255', 'pax' => 'integer|min:1', 'phone' => 'string|max:50|nullable',
-            'remarks' => 'string|max:500|nullable',
+            'remarks' => 'string|max:500|nullable', 'checkedOut' => 'boolean',
         ],
         'compliance-licenses' => [
             'name' => 'string|max:255', 'authority' => 'string|max:255', 'number' => 'string|max:100|nullable',

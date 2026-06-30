@@ -16,6 +16,13 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { HALLS, HALL_BOOKINGS } from "@/lib/mock-data-ext";
 import { money, cn, formatDate } from "@/lib/utils";
 import { apiGet, apiPut, apiPost } from "@/lib/api";
+import { computeHallTotals } from "@/lib/hall-pricing";
+
+// Hour-only slots — must match the new-booking form so re-pricing on modify
+// keys off the same whole-hour slot tiers (≥5h half-day, ≥9h full-day).
+const TIME_SLOTS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00"];
+// Venue shape the modify dialog needs to re-price a booking.
+type VenueRates = { name: string; capacity: number; hourly: number; halfDay: number; fullDay: number; setupFee: number; gst: number; extraPaxFee: number };
 
 type Hall = typeof HALLS[number];
 type HallStatus = "confirmed" | "pending" | "in-progress" | "completed" | "cancelled";
@@ -32,7 +39,7 @@ const STATUS_TONE: Record<HallBooking["status"] | "cancelled" | "completed", "su
 type HallOverride = {
   date?: string; start?: string; end?: string;
   guests?: number; package?: string; status?: HallBooking["status"];
-  notes?: string; advance?: number;
+  notes?: string; advance?: number; total?: number;
 };
 
 export default function HallsPage() {
@@ -654,11 +661,16 @@ function ModifyHallDialog({ booking, notes, onClose, onSave }: {
     package: booking.package,
     status: booking.status as HallBooking["status"],
     notes: notes,
+    total: booking.total,
   });
 
-  // Banquet packages drive the package dropdown — no more free-text / invalid names.
-  const [pkgs, setPkgs] = React.useState<{ name: string }[]>([]);
-  React.useEffect(() => { apiGet<{ name: string }[]>("/banquet-packages").then(setPkgs).catch(() => {}); }, []);
+  // Master data for live re-pricing: the booking's venue rates + banquet prices.
+  const [pkgs, setPkgs] = React.useState<{ name: string; pricePerPax: number }[]>([]);
+  const [venues, setVenues] = React.useState<VenueRates[]>([]);
+  React.useEffect(() => {
+    apiGet<{ name: string; pricePerPax: number }[]>("/banquet-packages").then(setPkgs).catch(() => {});
+    apiGet<VenueRates[]>("/hall-packages").then(setVenues).catch(() => {});
+  }, []);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -669,7 +681,22 @@ function ModifyHallDialog({ booking, notes, onClose, onSave }: {
 
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft(d => ({ ...d, [k]: v }));
   const todayISO = new Date().toLocaleDateString("en-CA"); // blocks past dates on event date
-  const valid = draft.guests >= 1 && draft.start < draft.end;
+  const valid = draft.guests >= 1 && draft.start < draft.end && draft.total >= 0;
+
+  // Live re-price from venue rates + package + guests + slot — same formula as the
+  // new-booking form, so editing guests/package/time no longer leaves a stale total.
+  // Stored bookings don't keep the à-la-carte extras, so this excludes them; the
+  // total stays editable for staff to add those back or apply a special rate.
+  const venue = venues.find(v => v.name === booking.hall);
+  const hours = Math.max(3, parseInt(draft.end) - parseInt(draft.start));
+  const slotType: "hourly" | "halfDay" | "fullDay" = hours >= 9 ? "fullDay" : hours >= 5 ? "halfDay" : "hourly";
+  const hallCost = venue ? (slotType === "fullDay" ? venue.fullDay : slotType === "halfDay" ? venue.halfDay : venue.hourly * hours) : 0;
+  const pkgPrice = pkgs.find(p => p.name === draft.package)?.pricePerPax ?? 0;
+  const extraPax = venue && draft.guests > venue.capacity ? draft.guests - venue.capacity : 0;
+  const reprice = venue
+    ? computeHallTotals({ hallCost, setupFee: venue.setupFee, foodCost: pkgPrice * draft.guests, extrasCost: 0, extraPax, extraPaxFee: venue.extraPaxFee, gstPct: venue.gst }).total
+    : null;
+  const repriceDiffers = reprice != null && reprice !== draft.total;
 
   return (
     <>
@@ -695,11 +722,17 @@ function ModifyHallDialog({ booking, notes, onClose, onSave }: {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Start time</Label>
-                <Input type="time" value={draft.start} onChange={e => set("start", e.target.value)} className="h-9 tabular" />
+                <Select value={draft.start} onChange={e => set("start", e.target.value)} className="h-9 tabular">
+                  {!TIME_SLOTS.includes(draft.start) && <option value={draft.start}>{draft.start}</option>}
+                  {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">End time</Label>
-                <Input type="time" value={draft.end} onChange={e => set("end", e.target.value)} className="h-9 tabular" />
+                <Select value={draft.end} onChange={e => set("end", e.target.value)} className="h-9 tabular">
+                  {!TIME_SLOTS.includes(draft.end) && <option value={draft.end}>{draft.end}</option>}
+                  {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                </Select>
               </div>
             </div>
 
@@ -720,6 +753,25 @@ function ModifyHallDialog({ booking, notes, onClose, onSave }: {
                   {pkgs.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
                 </Select>
               </div>
+            </div>
+
+            {/* Re-priced total — editing guests / package / time recomputes this so the
+                balance and revenue never go stale. Editable for extras / special rates. */}
+            <div className="rounded-md border border-border p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Total (₹)</Label>
+                {repriceDiffers && (
+                  <button type="button" onClick={() => set("total", reprice!)} className="text-[11px] font-medium text-brand hover:underline inline-flex items-center gap-1">
+                    <Sparkles className="h-3 w-3" />Apply re-priced {money(reprice!)}
+                  </button>
+                )}
+              </div>
+              <Input type="number" min={0} value={draft.total} onChange={e => set("total", Math.max(0, Number(e.target.value)))} className="h-9 tabular" />
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                {venue
+                  ? <>Re-priced: {slotType === "fullDay" ? "full-day" : slotType === "halfDay" ? "half-day" : `${hours}h`} · {draft.guests} pax{extraPax > 0 ? ` (+${extraPax} over capacity)` : ""} = <span className="font-medium tabular text-foreground">{money(reprice ?? 0)}</span>{repriceDiffers ? ` · current ${money(draft.total)}` : " · matches current"}. Excludes à-la-carte add-on services.</>
+                  : <>Couldn&apos;t find venue &ldquo;{booking.hall}&rdquo; to re-price — total stays editable.</>}
+              </p>
             </div>
 
             <div className="space-y-1.5">

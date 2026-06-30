@@ -6,7 +6,7 @@ import { use } from "react";
 import {
   ChevronLeft, UsersRound, BedDouble, Receipt, Calendar, MessageSquare, Activity,
   Printer, Send, CreditCard, Sparkles, Phone, Mail, Briefcase, UserPlus, Upload,
-  CheckCircle2, ArrowRight, Plus, Building2, MoreVertical, X,
+  CheckCircle2, ArrowRight, Plus, Building2, MoreVertical, X, LogOut,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,9 +20,9 @@ import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { computeGroupTotals, type GstSlab } from "@/lib/group-pricing";
 import { mealPerNightPerGuest } from "@/lib/booking-pricing";
 
-type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string };
+type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string; checkedOut?: boolean };
 type AuditRow = { id: string; action: string; entity: string; module: string; user: string; date: string; time: string };
-type RoomBoardRow = { number: string; status: string; type?: string; floor?: number };
+type RoomBoardRow = { id?: string | number; number: string; status: string; type?: string; floor?: number };
 import { cn, money, formatDate } from "@/lib/utils";
 import { useProperty, hotelName } from "@/lib/use-property";
 
@@ -49,6 +49,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const [group, setGroup] = React.useState<GroupBooking | null>(null);
   const [payAmount, setPayAmount] = React.useState(0);
   const [payMode, setPayMode] = React.useState("Cash");
+  const [checkoutOpen, setCheckoutOpen] = React.useState(false);
   React.useEffect(() => {
     apiGet<GroupBooking[]>("/group-bookings")
       .then(rows => {
@@ -226,6 +227,45 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     flash("Group checked in");
   };
 
+  // Release one room back to housekeeping (dirty → ready for turnover).
+  const releaseRoom = (roomNo?: string | null) => {
+    if (!roomNo) return;
+    const room = board.find(b => b.number === roomNo);
+    if (room?.id != null) apiPut(`/rooms/${room.id}`, { hkStatus: "dirty" }).catch(() => {});
+  };
+
+  // ONE-BY-ONE check-out: mark this guest departed + release their room. Persists.
+  const checkOutGuest = (entry: RoomingEntry) => {
+    setRooming(prev => prev.map(r => r.id === entry.id ? { ...r, checkedOut: true } : r));
+    apiPut(`/group-rooming/${entry.id}`, { checkedOut: true }).catch(() => flash("⚠ Save failed — backend offline"));
+    releaseRoom(entry.roomNo);
+    flash(`${entry.lead} checked out${entry.roomNo ? ` · Room ${entry.roomNo} → housekeeping` : ""}`);
+  };
+
+  // QUICK check-out: collect any final payment (→ master folio), check out every
+  // remaining guest + release their room, then move the group to "completed".
+  const checkOutGroup = (finalAmt: number, finalMode: string) => {
+    if (!group) return;
+    setCheckoutOpen(false);
+    const today = new Date().toISOString().slice(0, 10);
+    let advance = group.advance, balance = group.balance;
+    if (finalAmt > 0) {
+      advance = group.advance + finalAmt;
+      balance = Math.max(0, group.balance - finalAmt);
+      apiPost("/folio-payments", { bookingNo: group.code, date: today, mode: finalMode, amount: finalAmt, reference: `Group ${group.code} · checkout` }).catch(() => {});
+    }
+    const remaining = rooming.filter(r => !r.checkedOut);
+    remaining.forEach(r => {
+      apiPut(`/group-rooming/${r.id}`, { checkedOut: true }).catch(() => {});
+      releaseRoom(r.roomNo);
+    });
+    const released = remaining.filter(r => r.roomNo).length;
+    setRooming(prev => prev.map(r => ({ ...r, checkedOut: true })));
+    setGroup(g => g ? { ...g, status: "completed", advance, balance } : g);
+    apiPut(`/group-bookings/${group.id}`, { status: "completed", advance, balance }).catch(() => flash("⚠ Checkout not fully saved — backend offline"));
+    flash(`${group.name} checked out · ${released} room${released === 1 ? "" : "s"} released to housekeeping`);
+  };
+
   if (!group) {
     return (
       <div className="p-4 sm:p-6 lg:p-8">
@@ -379,6 +419,9 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
           <Button variant="outline" onClick={() => flash(`Folio emailed to ${group.contactEmail}`)}><Send className="h-4 w-4" />Email Contact</Button>
           {(group.status === "confirmed" || group.status === "tentative") && (
             <Button variant="success" onClick={checkInGroup}><CheckCircle2 className="h-4 w-4" />Check-in Group<ArrowRight className="h-4 w-4" /></Button>
+          )}
+          {group.status === "in-house" && (
+            <Button variant="success" onClick={() => setCheckoutOpen(true)}><LogOut className="h-4 w-4" />Check-out Group<ArrowRight className="h-4 w-4" /></Button>
           )}
         </div>
       </Card>
@@ -563,7 +606,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                     )}
                   </td>
                   <td className="px-5 py-3"><Badge tone="neutral">{g.roomType}</Badge></td>
-                  <td className="px-5 py-3">{g.lead}</td>
+                  <td className="px-5 py-3">{g.lead}{g.checkedOut && <Badge tone="success" className="ml-2"><LogOut className="h-3 w-3" />Checked out</Badge>}</td>
                   <td className="px-5 py-3 text-right tabular">{g.pax}</td>
                   <td className="px-5 py-3 text-xs text-muted-foreground tabular">{g.phone ?? "—"}</td>
                   <td className="px-5 py-3 text-xs text-muted-foreground">{g.remarks ?? "—"}</td>
@@ -756,6 +799,15 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
       )}
 
       {addGuestOpen && <AddGuestModal onClose={() => setAddGuestOpen(false)} onSave={addGuest} />}
+      {checkoutOpen && (
+        <CheckOutGroupDialog
+          group={group}
+          remainingGuests={rooming.filter(r => !r.checkedOut).length}
+          roomsToRelease={rooming.filter(r => !r.checkedOut && r.roomNo).length}
+          onClose={() => setCheckoutOpen(false)}
+          onConfirm={(amt, mode) => checkOutGroup(amt, mode)}
+        />
+      )}
 
       {/* Rooming row actions — portalled so the table card's overflow can't clip it. */}
       {rowMenuFor && rowMenuRect && typeof document !== "undefined" && (() => {
@@ -777,6 +829,11 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                 <X className="h-3.5 w-3.5 text-muted-foreground" />Clear room
               </button>
             )}
+            {entry.roomNo && !entry.checkedOut && (
+              <button type="button" onClick={() => { checkOutGuest(entry); setRowMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                <LogOut className="h-3.5 w-3.5 text-success" />Check out guest
+              </button>
+            )}
             <div className="my-1 h-px bg-border" />
             <button type="button" onClick={() => removeGuest(entry)} className="w-full px-3 py-2 text-sm hover:bg-danger-soft text-danger inline-flex items-center gap-2.5 text-left">
               <X className="h-3.5 w-3.5" />Remove from list
@@ -792,6 +849,64 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
         </div>
       )}
     </div>
+  );
+}
+
+// ===================== CHECK-OUT GROUP DIALOG =====================
+function CheckOutGroupDialog({ group, remainingGuests, roomsToRelease, onClose, onConfirm }: {
+  group: GroupBooking; remainingGuests: number; roomsToRelease: number;
+  onClose: () => void; onConfirm: (amount: number, mode: string) => void;
+}) {
+  const balance = Math.max(0, group.balance);
+  const [amount, setAmount] = React.useState(balance);
+  const [mode, setMode] = React.useState("Cash");
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [onClose]);
+  const row = (k: string, v: string, tone?: string) => (
+    <div className="flex items-center justify-between"><span className={cn("text-muted-foreground", tone)}>{k}</span><span className={cn("tabular font-medium", tone)}>{v}</span></div>
+  );
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <Card className="pointer-events-auto w-full max-w-md p-0 animate-in shadow-xl overflow-hidden">
+          <div className="px-5 py-4 bg-surface-elevated border-b border-border flex items-center gap-3">
+            <span className="h-10 w-10 rounded-md bg-success-soft text-success inline-flex items-center justify-center shrink-0"><LogOut className="h-5 w-5" /></span>
+            <div className="flex-1 min-w-0"><h3 className="font-semibold truncate">Check out group</h3><p className="text-xs text-muted-foreground truncate">{group.name} · {group.code}</p></div>
+            <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="px-5 py-4 space-y-4">
+            <div className="rounded-md bg-surface-sunken/40 border border-border p-3 text-xs text-muted-foreground leading-relaxed">
+              Checks out the <span className="font-medium text-foreground">{remainingGuests} remaining guest{remainingGuests === 1 ? "" : "s"}</span>, releases <span className="font-medium text-foreground">{roomsToRelease} room{roomsToRelease === 1 ? "" : "s"}</span> to housekeeping, and marks the group <span className="font-medium text-foreground">completed</span>.
+            </div>
+            <div className="rounded-md border border-border p-3 space-y-1.5 text-sm">
+              {row("Total", money(group.total))}
+              {row("Received", money(group.advance))}
+              <div className="border-t border-border pt-1.5 mt-1.5">
+                {row(balance > 0 ? "Balance due" : "Settled", money(balance), balance > 0 ? "text-warning" : "text-success")}
+              </div>
+            </div>
+            {balance > 0 && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5"><Label className="text-xs">Collect now (₹)</Label><Input type="number" min={0} value={amount} onChange={e => setAmount(Math.max(0, Number(e.target.value)))} className="h-9 tabular" /></div>
+                  <div className="space-y-1.5"><Label className="text-xs">Mode</Label><Select value={mode} onChange={e => setMode(e.target.value)} className="h-9"><option>Cash</option><option>Card</option><option>UPI</option><option>Bank</option><option>Online</option></Select></div>
+                </div>
+                {amount < balance && <p className="text-[11px] text-warning">Checking out with {money(balance - amount)} still outstanding.</p>}
+              </>
+            )}
+          </div>
+          <div className="px-5 py-3 border-t border-border bg-surface-elevated flex items-center justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+            <Button variant="success" onClick={() => onConfirm(Math.min(amount, balance), mode)}><CheckCircle2 className="h-4 w-4" />Check out &amp; complete</Button>
+          </div>
+        </Card>
+      </div>
+    </>
   );
 }
 
