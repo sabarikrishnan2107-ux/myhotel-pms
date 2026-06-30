@@ -3086,9 +3086,15 @@ function WalkInModal({
               <p className="mb-3 text-sm text-muted-foreground">No guest entered</p>
             )}
 
-            {!hasCheckout ? (
-              <p className="text-sm text-muted-foreground py-2">Pick a check-out date to see pricing.</p>
-            ) : (
+            {/* Stay details — always visible, fills in as the walk-in is built. */}
+            <dl className="space-y-1.5 text-xs mb-3">
+              <div className="flex justify-between"><span className="text-muted-foreground">Check-in</span><span className="font-medium tabular">{new Date(checkInDate).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Check-out</span><span className="font-medium tabular">{hasCheckout ? new Date(checkOutDate).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }) : "—"}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Nights</span><span className="font-medium tabular">{hasCheckout ? nights : 0}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Pax</span><span className="font-medium tabular">{adults}A{children ? ` + ${children}C` : ""}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Room type</span><span className="font-medium tabular">{selectedRoomType || "—"}</span></div>
+            </dl>
+            <div className="border-t border-border mb-3" />
             <dl className="space-y-1.5 text-xs">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Room · {nights}N {breakdown.avgRate > 0 ? `· avg ${money(breakdown.avgRate)}/night` : ""}</span>
@@ -3117,20 +3123,15 @@ function WalkInModal({
                 <span className="font-semibold text-sm">Grand total</span>
                 <span className="font-semibold text-base tabular">{money(grandTotal)}</span>
               </div>
-              {pay.amount > 0 && (
-                <>
-                  <div className="flex justify-between text-success">
-                    <span className="font-medium">Advance ({pay.mode})</span>
-                    <span className="tabular font-semibold">- {money(pay.amount)}</span>
-                  </div>
-                  <div className="pt-1.5 mt-1.5 border-t border-border flex justify-between">
-                    <span className="font-semibold text-sm">Balance</span>
-                    <span className={cn("font-semibold text-base tabular", balance > 0 ? "text-warning" : "text-success")}>{money(balance)}</span>
-                  </div>
-                </>
-              )}
+              <div className="flex justify-between text-success">
+                <span className="font-medium">Advance{pay.amount > 0 ? ` (${pay.mode})` : ""}</span>
+                <span className="tabular font-semibold">- {money(pay.amount)}</span>
+              </div>
+              <div className="pt-1.5 mt-1.5 border-t border-border flex justify-between">
+                <span className="font-semibold text-sm">Balance</span>
+                <span className={cn("font-semibold text-base tabular", balance > 0 ? "text-warning" : "text-success")}>{money(balance)}</span>
+              </div>
             </dl>
-            )}
 
             {/* Back / Next (Start on final step) */}
             <div className="mt-5 flex gap-2">

@@ -336,8 +336,10 @@ export default function BookingWizardPage() {
   // relevant. Dates appear from the Dates step (2), pax from the Pax & Type
   // step (3); a chosen room type / rate plan also implies the guest has reached
   // those steps, so the rows stay visible even after navigating back.
-  const showDates = step >= 2 || !!roomType || !!ratePlan;
-  const showPax = step >= 3 || !!roomType || !!ratePlan;
+  // Live summary mirrors the group style: the full skeleton (dates / pax / room /
+  // pricing) is always visible and fills in as data is entered. Prices stay ₹0
+  // until a room type is actually picked (no phantom number from the default rate).
+  const priced = !!roomType;
 
   const filteredGuests = guests.filter(g => `${g.name} ${g.phone} ${g.email}`.toLowerCase().includes(search.toLowerCase())).slice(0, 5);
 
@@ -1000,21 +1002,19 @@ export default function BookingWizardPage() {
             <p className="mt-3 text-sm text-muted-foreground">No guest selected</p>
           )}
 
-          <dl className="mt-5 space-y-2.5 text-sm empty:mt-0">
-            {showDates && <Row k="Check-in" v={new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />}
-            {showDates && hasCheckout && <Row k="Check-out" v={new Date(checkOut).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />}
-            {showDates && hasCheckout && <Row k="Nights" v={`${nights}`} />}
-            {showPax && <Row k="Pax" v={`${adults}A${children ? ` + ${children}C` : ""}`} />}
-            {!!roomType && <Row k="Room type" v={roomType} />}
-            {!!ratePlan && <Row k="Rate plan" v={ratePlan} />}
+          <dl className="mt-5 space-y-2.5 text-sm">
+            <Row k="Check-in" v={new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} />
+            <Row k="Check-out" v={hasCheckout ? new Date(checkOut).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }) : "—"} />
+            <Row k="Nights" v={`${hasCheckout ? nights : 0}`} />
+            <Row k="Pax" v={`${adults}A${children ? ` + ${children}C` : ""}`} />
+            <Row k="Room type" v={roomType || "—"} />
+            <Row k="Rate plan" v={ratePlan || "—"} />
           </dl>
 
-          {hasCheckout ? (
-          <>
           <div className="border-t border-border my-4" />
 
           <dl className="space-y-2 text-sm">
-            {roomType && (
+            {roomType ? (
               <>
                 <div className="flex items-center justify-between">
                   <button
@@ -1027,7 +1027,7 @@ export default function BookingWizardPage() {
                   </button>
                   <span className="tabular text-sm text-muted-foreground">{money(subtotal)}</span>
                 </div>
-                {rateBreakdownOpen && !halfDay && (
+                {rateBreakdownOpen && hasCheckout && !halfDay && (
                   <div className="ml-2 pl-2 border-l-2 border-border space-y-1 animate-in">
                     {breakdown.lines.map((ln, i) => (
                       <div key={i} className="flex items-center justify-between text-[11px]">
@@ -1048,38 +1048,24 @@ export default function BookingWizardPage() {
                   <p className="ml-2 pl-2 border-l-2 border-border text-[11px] text-muted-foreground animate-in">Half-day rate · 50% of {money(rate)} base</p>
                 )}
               </>
+            ) : (
+              <Row k="Room subtotal" v={money(0)} muted />
             )}
-            {extraBedCharge > 0 && (
+            {priced && extraBedCharge > 0 && (
               <Row k={`Extra bed · ${extraOcc.extraAdults} extra adult${extraOcc.extraAdults > 1 ? "s" : ""}`} v={money(extraBedCharge)} muted />
             )}
-            {earlyFee > 0 && <Row k="Early check-in" v={money(earlyFee)} muted />}
-            {lateFee > 0 && <Row k="Late check-out" v={money(lateFee)} muted />}
-            {planMealsTotal > 0 && <Row k={`Plan meals (${selectedPlan?.meals.join("/")}) × ${adults + children} guest${adults + children > 1 ? "s" : ""} × ${nights}N`} v={money(planMealsTotal)} muted />}
-            {extraBed && <Row k="Extra bed" v={money(extraBedRate * nights)} muted />}
-            {airportTransfer && <Row k="Airport transfer" v={money(175)} muted />}
-            {roomType ? (
-              <>
-                <Row k="Tax (5%)" v={money(tax)} muted />
-                <div className="border-t border-border pt-2 mt-2">
-                  <Row k={<span className="font-semibold">Total</span>} v={<span className="font-semibold tabular text-base">{money(total)}</span>} />
-                </div>
-                {advance > 0 && (
-                  <>
-                    <Row k={`Advance (${advanceLabel})`} v={<span className="text-brand font-medium">{money(advance)}</span>} />
-                    <Row k="Balance at checkout" v={money(total - advance)} muted />
-                  </>
-                )}
-              </>
-            ) : (
-              <p className="text-[11px] text-muted-foreground pt-1 border-t border-border mt-1">Pick a room type (Pax &amp; Type) to see the room rate &amp; total.</p>
-            )}
-          </dl>
-          </>
-          ) : showPax ? (
-            <div className="mt-4 border-t border-border pt-4">
-              <p className="text-sm text-muted-foreground">Select a room type to see pricing.</p>
+            {priced && earlyFee > 0 && <Row k="Early check-in" v={money(earlyFee)} muted />}
+            {priced && lateFee > 0 && <Row k="Late check-out" v={money(lateFee)} muted />}
+            {priced && planMealsTotal > 0 && <Row k={`Plan meals (${selectedPlan?.meals.join("/")}) × ${adults + children} guest${adults + children > 1 ? "s" : ""} × ${nights}N`} v={money(planMealsTotal)} muted />}
+            {priced && extraBed && <Row k="Extra bed" v={money(extraBedRate * nights)} muted />}
+            {priced && airportTransfer && <Row k="Airport transfer" v={money(175)} muted />}
+            <Row k="Tax (5%)" v={money(priced ? tax : 0)} muted />
+            <div className="border-t border-border pt-2 mt-2">
+              <Row k={<span className="font-semibold">Total</span>} v={<span className="font-semibold tabular text-base">{money(priced ? total : 0)}</span>} />
             </div>
-          ) : null}
+            <Row k={`Advance (${advanceLabel})`} v={<span className="text-brand font-medium">{money(priced ? advance : 0)}</span>} />
+            <Row k="Balance at checkout" v={money(priced ? total - advance : 0)} muted />
+          </dl>
 
           <div className="mt-5 flex gap-2">
             <Button variant="outline" disabled={step === 1} onClick={() => setStep(s => s - 1)} className="flex-1">
