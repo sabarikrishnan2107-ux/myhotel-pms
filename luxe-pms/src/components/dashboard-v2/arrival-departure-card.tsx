@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import type { ArrivalDepartureRowV2 } from "./types";
+import { initials } from "@/lib/utils";
 
 interface Props {
   title: string;
@@ -31,7 +32,7 @@ export function ArrivalDepartureCardV2({ title, icon: Icon, summary, rows, viewA
           {rows.map(row => (
             <li key={row.id} className="flex items-center gap-3 rounded-xl border border-[#E5E7EB] px-3 py-2.5">
               <span className="h-9 w-9 rounded-full bg-[#F5B800] text-[#101A33] flex items-center justify-center text-xs font-bold shrink-0">
-                {row.guestName.split(" ").map(p => p[0]).slice(0, 2).join("")}
+                {initials(row.guestName)}
               </span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">

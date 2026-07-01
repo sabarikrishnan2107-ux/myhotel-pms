@@ -2,6 +2,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { Search, Plus, Bell } from "lucide-react";
+import { initials } from "@/lib/utils";
 
 interface Props {
   notificationCount: number;
@@ -49,7 +50,7 @@ export function TopHeaderV2({ notificationCount, currentUser }: Props) {
       </button>
       <div className="flex items-center gap-2.5 pl-2 border-l border-[#E5E7EB] shrink-0">
         <span className="h-10 w-10 rounded-full bg-[#EEEAFF] text-[#6D4AFF] flex items-center justify-center text-sm font-bold">
-          {currentUser.name.split(" ").map(p => p[0]).slice(0, 2).join("")}
+          {initials(currentUser.name)}
         </span>
         <div className="hidden sm:block leading-tight">
           <p className="text-sm font-semibold text-[#111827]">{currentUser.name}</p>
