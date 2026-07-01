@@ -24,20 +24,20 @@ interface Props {
 
 export function RoomStatusGridV2({ floors, legend }: Props) {
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgb(0_0_0_/_0.04),0_4px_16px_-6px_rgb(0_0_0_/_0.08)] h-full">
+    <div className="rounded-2xl bg-white dark:bg-[#141B2E] p-5 shadow-[0_1px_2px_rgb(0_0_0_/_0.04),0_4px_16px_-6px_rgb(0_0_0_/_0.08)] h-full">
       <div className="flex items-center justify-between mb-4">
-        <p className="flex items-center gap-2 text-sm font-bold text-[#111827] uppercase tracking-[0.08em]">
-          <RefreshCw className="h-3.5 w-3.5 text-[#6B7280]" />
+        <p className="flex items-center gap-2 text-sm font-bold text-[#111827] dark:text-[#E8ECF4] uppercase tracking-[0.08em]">
+          <RefreshCw className="h-3.5 w-3.5 text-[#6B7280] dark:text-[#8B94A8]" />
           Live Room Status
         </p>
-        <button type="button" className="flex items-center gap-1 text-[11px] font-medium text-[#6B7280] border border-[#E5E7EB] rounded-lg px-2.5 py-1 hover:bg-[#F7F8FC] transition-colors">
+        <button type="button" className="flex items-center gap-1 text-[11px] font-medium text-[#6B7280] dark:text-[#8B94A8] border border-[#E5E7EB] dark:border-[#26304A] rounded-lg px-2.5 py-1 hover:bg-[#F7F8FC] dark:hover:bg-[#1B2338] transition-colors">
           All Floors <ChevronDown className="h-3 w-3" />
         </button>
       </div>
       <div className="space-y-2">
         {floors.map(row => (
           <div key={row.floor} className="flex items-center gap-2.5">
-            <span className="w-7 text-[11px] font-bold text-[#6B7280] shrink-0">{row.floor}</span>
+            <span className="w-7 text-[11px] font-bold text-[#6B7280] dark:text-[#8B94A8] shrink-0">{row.floor}</span>
             <div className="grid grid-cols-5 gap-1.5 flex-1">
               {row.rooms.map(room => (
                 <span
@@ -51,7 +51,7 @@ export function RoomStatusGridV2({ floors, legend }: Props) {
           </div>
         ))}
       </div>
-      <div className="mt-4 pt-3 border-t border-[#E5E7EB] flex flex-wrap gap-x-3 gap-y-1.5 text-[11px] text-[#6B7280]">
+      <div className="mt-4 pt-3 border-t border-[#E5E7EB] dark:border-[#26304A] flex flex-wrap gap-x-3 gap-y-1.5 text-[11px] text-[#6B7280] dark:text-[#8B94A8]">
         {legend.map(l => (
           <span key={l.status} className="inline-flex items-center gap-1.5">
             <span className={`h-2.5 w-2.5 rounded-sm ${LEGEND_DOT[l.status]}`} />
