@@ -2,6 +2,7 @@ import { SidebarV2 } from "@/components/dashboard-v2/sidebar";
 import { TopHeaderV2 } from "@/components/dashboard-v2/top-header";
 import { OccupancyHeroV2 } from "@/components/dashboard-v2/occupancy-hero";
 import { KpiCardV2 } from "@/components/dashboard-v2/kpi-card";
+import { QuickActionTileV2 } from "@/components/dashboard-v2/quick-action-tile";
 import { MOCK_DASHBOARD_V2_DATA } from "@/components/dashboard-v2/mock-data";
 
 export default function DashboardV2Page() {
@@ -22,6 +23,12 @@ export default function DashboardV2Page() {
             />
             {data.kpis.map(kpi => (
               <KpiCardV2 key={kpi.id} {...kpi} />
+            ))}
+          </section>
+
+          <section className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4">
+            {data.quickActions.map(action => (
+              <QuickActionTileV2 key={action.id} {...action} />
             ))}
           </section>
         </main>
