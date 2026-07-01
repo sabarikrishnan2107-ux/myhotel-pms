@@ -13,7 +13,7 @@ interface Props {
 export function KpiCardV2({ label, value, badge, caption, icon: Icon, tone }: Props) {
   const s = TONE_STYLES[tone];
   return (
-    <div className="relative rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgb(0_0_0_/_0.04),0_4px_16px_-6px_rgb(0_0_0_/_0.08)]">
+    <div className="relative rounded-2xl bg-white dark:bg-[#141B2E] p-5 shadow-[0_1px_2px_rgb(0_0_0_/_0.04),0_4px_16px_-6px_rgb(0_0_0_/_0.08)]">
       {badge && (
         <span className={`absolute top-5 right-5 text-[11px] font-bold rounded-md px-1.5 py-0.5 ${s.soft} ${s.text}`}>{badge}</span>
       )}
@@ -26,8 +26,8 @@ export function KpiCardV2({ label, value, badge, caption, icon: Icon, tone }: Pr
       >
         {label}
       </p>
-      <p className="mt-3 text-3xl font-semibold tracking-tight text-[#111827] text-right">{value}</p>
-      <p className="text-[11px] text-[#111827] mt-2 text-right">{caption}</p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight text-[#111827] dark:text-[#E8ECF4] text-right">{value}</p>
+      <p className="text-[11px] text-[#111827] dark:text-[#E8ECF4] mt-2 text-right">{caption}</p>
     </div>
   );
 }
