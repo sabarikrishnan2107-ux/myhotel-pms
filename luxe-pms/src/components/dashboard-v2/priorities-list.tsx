@@ -7,7 +7,7 @@ interface Props {
 
 export function PrioritiesListV2({ items }: Props) {
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgb(0_0_0_/_0.04),0_4px_16px_-6px_rgb(0_0_0_/_0.08)]">
+    <div className="rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgb(0_0_0_/_0.04),0_4px_16px_-6px_rgb(0_0_0_/_0.08)] h-full">
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm font-bold text-[#111827] uppercase tracking-[0.08em]">Today&apos;s Priorities</p>
         <span className="text-[11px] font-bold rounded-full bg-[#F7F8FC] text-[#6B7280] px-2.5 py-1">{items.length} Items</span>

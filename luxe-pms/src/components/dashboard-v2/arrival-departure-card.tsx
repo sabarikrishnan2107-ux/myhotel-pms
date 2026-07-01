@@ -28,7 +28,10 @@ export function ArrivalDepartureCardV2({ title, icon: Icon, summary, rows, viewA
       {rows.length === 0 ? (
         <p className="text-sm text-[#6B7280] text-center py-6">{emptyLabel}</p>
       ) : (
-        <ul className="space-y-2">
+        <ul
+          className="space-y-2 max-h-[198px] overflow-y-auto pr-1 [&::-webkit-scrollbar]:hidden"
+          style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+        >
           {rows.map(row => (
             <li key={row.id} className="flex items-center gap-3 rounded-xl border border-[#E5E7EB] px-3 py-2.5">
               <span className="h-9 w-9 rounded-full bg-[#F5B800] text-[#101A33] flex items-center justify-center text-xs font-bold shrink-0">

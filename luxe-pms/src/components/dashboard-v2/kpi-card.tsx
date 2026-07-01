@@ -20,9 +20,14 @@ export function KpiCardV2({ label, value, badge, caption, icon: Icon, tone }: Pr
       <span className={`absolute top-5 left-5 h-12 w-12 rounded-full flex items-center justify-center shrink-0 ${s.soft} ${s.text}`}>
         <Icon className="h-6 w-6" />
       </span>
-      <p className={`text-sm uppercase tracking-[0.1em] font-semibold truncate text-right ${s.text}`}>{label}</p>
-      <p className="mt-3 text-3xl font-bold tracking-tight text-[#111827] text-center">{value}</p>
-      <p className="text-[11px] text-[#6B7280] mt-2 text-center">{caption}</p>
+      <p
+        className={`text-sm uppercase tracking-[0.1em] font-medium truncate text-right ${s.text}`}
+        style={{ fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" }}
+      >
+        {label}
+      </p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight text-[#111827] text-right">{value}</p>
+      <p className="text-[11px] text-[#111827] mt-2 text-right">{caption}</p>
     </div>
   );
 }

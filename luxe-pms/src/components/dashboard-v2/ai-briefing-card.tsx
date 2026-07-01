@@ -9,7 +9,7 @@ interface Props {
 
 export function AiBriefingCardV2({ lines }: Props) {
   return (
-    <div className="rounded-2xl bg-gradient-to-br from-[#101A33] to-[#1E2A4A] p-5 text-white shadow-lg flex flex-col">
+    <div className="rounded-2xl bg-gradient-to-br from-[#101A33] to-[#1E2A4A] p-5 text-white shadow-lg flex flex-col h-full">
       <div className="flex items-center gap-2.5 mb-4">
         <span className="h-9 w-9 rounded-xl bg-[#F5B800] text-[#101A33] flex items-center justify-center shrink-0">
           <Sparkles className="h-[18px] w-[18px]" />

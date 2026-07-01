@@ -57,17 +57,34 @@ export const MOCK_DASHBOARD_V2_DATA: DashboardV2Data = {
     { icon: TrendingUp, tone: "blue", text: "Top source Website — ₹6,08,500 from 32 bookings." },
   ],
   arrivals: {
-    summary: "0 rooms · ₹0 to collect · 1 hall",
+    summary: "4 rooms · ₹0 to collect · 1 hall",
     rows: [
       { id: "hall-1", guestName: "Banquet A — Wedding", tag: "Hall", meta: "Francis · 18:00–23:00 · Non-Veg Premium", actionLabel: "Open" },
+      { id: "arr-1", guestName: "Ananya Sharma", meta: "BK-10234 · Room 204 · Deluxe · 2A · 3N", actionLabel: "Check-in" },
+      { id: "arr-2", guestName: "Rahul Mehta", meta: "BK-10235 · Room 301 · Suite · 2A+1C · 2N", actionLabel: "Check-in" },
+      { id: "arr-3", guestName: "Priya Nair", meta: "BK-10236 · Room 105 · Standard · 1A · 1N", actionLabel: "Check-in" },
+      { id: "arr-4", guestName: "James Carter", meta: "BK-10237 · Room 502 · Deluxe · 2A · 4N", actionLabel: "Check-in" },
     ],
   },
   departures: {
-    summary: "1 room checking out",
+    summary: "5 rooms checking out",
     rows: [
       { id: "dep-1", guestName: "Test E2E Guest", meta: "Room 201", status: "settled", actionLabel: "Checkout" },
+      { id: "dep-2", guestName: "Meera Iyer", meta: "Room 302", status: "settled", actionLabel: "Checkout" },
+      { id: "dep-3", guestName: "Karan Verma", meta: "Room 108", status: "balance", actionLabel: "Checkout" },
+      { id: "dep-4", guestName: "Sofia Rossi", meta: "Room 210", status: "settled", actionLabel: "Checkout" },
+      { id: "dep-5", guestName: "Arjun Patel", meta: "Room 405", status: "balance", actionLabel: "Checkout" },
     ],
   },
+  weeklyArrivalsDepartures: [
+    { day: "Mon", arrivals: 3, departures: 2 },
+    { day: "Tue", arrivals: 2, departures: 4 },
+    { day: "Wed", arrivals: 5, departures: 1 },
+    { day: "Thu", arrivals: 1, departures: 3 },
+    { day: "Fri", arrivals: 4, departures: 2 },
+    { day: "Sat", arrivals: 6, departures: 5 },
+    { day: "Sun", arrivals: 0, departures: 1 },
+  ],
   activity: [
     { id: "a1", icon: Bell, tone: "blue", title: "Updated · #12", actor: "Hotel Admin", time: "4h ago" },
     { id: "a2", icon: CheckCircle2, tone: "green", title: "Created · OF-00102", actor: "Hotel Admin", time: "4h ago" },

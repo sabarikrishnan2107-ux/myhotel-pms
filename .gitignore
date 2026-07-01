@@ -23,3 +23,6 @@ hotel-pms-api/public/uploads/
 .DS_Store
 Thumbs.db
 *.log
+
+# Claude Code local state (worktrees, session data) — never shared/committed
+.claude/

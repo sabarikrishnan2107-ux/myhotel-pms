@@ -65,6 +65,12 @@ export interface AiBriefingLineV2 {
   text: string;
 }
 
+export interface WeeklyArrivalsDeparturesV2 {
+  day: string;
+  arrivals: number;
+  departures: number;
+}
+
 export interface DashboardV2Data {
   hotelName: string;
   hotelTagline: string;
@@ -79,5 +85,6 @@ export interface DashboardV2Data {
   aiBriefing: AiBriefingLineV2[];
   arrivals: { summary: string; rows: ArrivalDepartureRowV2[] };
   departures: { summary: string; rows: ArrivalDepartureRowV2[] };
+  weeklyArrivalsDepartures: WeeklyArrivalsDeparturesV2[];
   activity: ActivityItemV2[];
 }

@@ -15,11 +15,22 @@ export function OccupancyHeroV2({ pct, occupiedRooms, totalRooms, trendPct }: Pr
   const size = (radius + thickness) * 2;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1E2761] to-[#2D1B69] p-5 text-white shadow-lg flex flex-col items-center text-center gap-1.5 h-full">
+    <div
+      className="relative overflow-hidden rounded-2xl p-5 text-white shadow-lg flex items-center gap-3 h-full bg-cover bg-center"
+      style={{ backgroundImage: "url(/login-bg.jpg)" }}
+    >
+      <div className="absolute inset-0 bg-black/40" />
+      <div className="absolute inset-0 bg-gradient-to-br from-[#1E2761]/95 via-[#1E2761]/85 to-[#2D1B69]/95" />
       <div className="absolute -right-8 -bottom-8 h-32 w-32 rounded-full bg-white/5 blur-2xl pointer-events-none" />
-      <p className="text-[10px] uppercase tracking-[0.12em] text-white/70 font-semibold inline-flex items-center gap-1 relative z-10">
-        Occupancy <Info className="h-3 w-3" />
-      </p>
+      <div className="flex-1 min-w-0 text-left relative z-10">
+        <p className="text-[10px] uppercase tracking-[0.12em] text-white/70 font-semibold inline-flex items-center gap-1">
+          Occupancy <Info className="h-3 w-3" />
+        </p>
+        <p className="text-[11px] text-white/70 mt-1">{occupiedRooms} of {totalRooms} occupied</p>
+        <p className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#4ADE80] mt-1">
+          <ArrowUp className="h-3 w-3" /> {trendPct}%
+        </p>
+      </div>
       <div className="relative z-10 shrink-0">
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
           <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth={thickness} />
@@ -34,10 +45,6 @@ export function OccupancyHeroV2({ pct, occupiedRooms, totalRooms, trendPct }: Pr
           {pct}%
         </div>
       </div>
-      <p className="text-[11px] text-white/70 relative z-10">{occupiedRooms} of {totalRooms} occupied</p>
-      <p className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#4ADE80] relative z-10">
-        <ArrowUp className="h-3 w-3" /> {trendPct}%
-      </p>
     </div>
   );
 }

@@ -1,11 +1,12 @@
+import { RefreshCw, ChevronDown } from "lucide-react";
 import type { FloorRowV2, RoomStatusV2 } from "./types";
 
 const STATUS_STYLE: Record<RoomStatusV2, string> = {
-  available: "bg-[#DCFCE7] text-[#16A34A]",
+  available: "bg-[#22C55E] text-white",
   occupied: "bg-[#F5B800] text-white",
-  reserved: "bg-[#DBEAFE] text-[#2563EB]",
+  reserved: "bg-[#3B82F6] text-white",
   "out-of-order": "bg-[#F43F5E] text-white",
-  blocked: "bg-[#E5E7EB] text-[#6B7280]",
+  blocked: "bg-[#9CA3AF] text-white",
 };
 
 const LEGEND_DOT: Record<RoomStatusV2, string> = {
@@ -23,10 +24,15 @@ interface Props {
 
 export function RoomStatusGridV2({ floors, legend }: Props) {
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgb(0_0_0_/_0.04),0_4px_16px_-6px_rgb(0_0_0_/_0.08)]">
+    <div className="rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgb(0_0_0_/_0.04),0_4px_16px_-6px_rgb(0_0_0_/_0.08)] h-full">
       <div className="flex items-center justify-between mb-4">
-        <p className="text-sm font-bold text-[#111827] uppercase tracking-[0.08em]">Live Room Status</p>
-        <span className="text-[11px] font-medium text-[#6B7280] border border-[#E5E7EB] rounded-lg px-2.5 py-1">All Floors</span>
+        <p className="flex items-center gap-2 text-sm font-bold text-[#111827] uppercase tracking-[0.08em]">
+          <RefreshCw className="h-3.5 w-3.5 text-[#6B7280]" />
+          Live Room Status
+        </p>
+        <button type="button" className="flex items-center gap-1 text-[11px] font-medium text-[#6B7280] border border-[#E5E7EB] rounded-lg px-2.5 py-1 hover:bg-[#F7F8FC] transition-colors">
+          All Floors <ChevronDown className="h-3 w-3" />
+        </button>
       </div>
       <div className="space-y-2">
         {floors.map(row => (
