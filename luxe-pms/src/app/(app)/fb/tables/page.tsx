@@ -173,7 +173,7 @@ export default function TablesPage() {
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
-  const [date, setDate] = React.useState("2026-06-02");
+  const [date, setDate] = React.useState(() => new Date().toISOString().slice(0, 10));
   const [zone, setZone] = React.useState<string>("All");
   const [statusFilter, setStatusFilter] = React.useState<"all" | ResStatus>("all");
   const [search, setSearch] = React.useState("");
@@ -411,7 +411,7 @@ export default function TablesPage() {
           {/* CONTROLS */}
           <Card className="p-3 flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="ghost" onClick={() => showToast("Showing previous day")}>
+              <Button size="sm" variant="ghost" onClick={() => setDate(d => { const dt = new Date(d); dt.setDate(dt.getDate() - 1); return dt.toISOString().slice(0, 10); })}>
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-surface-sunken">
@@ -423,7 +423,7 @@ export default function TablesPage() {
                   className="h-7 border-0 bg-transparent px-1 text-sm w-[140px]"
                 />
               </div>
-              <Button size="sm" variant="ghost" onClick={() => showToast("Showing next day")}>
+              <Button size="sm" variant="ghost" onClick={() => setDate(d => { const dt = new Date(d); dt.setDate(dt.getDate() + 1); return dt.toISOString().slice(0, 10); })}>
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
@@ -700,19 +700,30 @@ export default function TablesPage() {
           </Card>
 
           {/* Quick floor summary */}
-          <Card className="p-4 space-y-3">
-            <CardTitle className="text-sm flex items-center gap-2"><MapPin className="h-4 w-4" /> Floor at a glance</CardTitle>
-            <div className="space-y-2 text-xs">
-              <FloorRow zone="Main Hall" total={8} occupied={5} />
-              <FloorRow zone="Garden"    total={6} occupied={3} />
-              <FloorRow zone="Private"   total={4} occupied={2} />
-              <FloorRow zone="Terrace"   total={2} occupied={1} />
-            </div>
-            <div className="pt-3 border-t border-border flex items-center justify-between text-xs">
-              <span className="text-muted-foreground">Occupancy</span>
-              <span className="tabular font-semibold">55% &middot; 11/20 tables</span>
-            </div>
-          </Card>
+          {(() => {
+            const seatedNow = new Set(reservations.filter(r => r.status === "seated").map(r => r.table));
+            const zones = ["Main Hall", "Garden", "Private", "Terrace"] as const;
+            const zoneData = zones.map(zone => {
+              const total = TABLES.filter(t => TABLE_META[t]?.zone === zone).length;
+              const occupied = TABLES.filter(t => TABLE_META[t]?.zone === zone && seatedNow.has(t)).length;
+              return { zone, total, occupied };
+            });
+            const totalTables = TABLES.length;
+            const totalSeated = seatedNow.size;
+            const occPct = totalTables > 0 ? Math.round(totalSeated / totalTables * 100) : 0;
+            return (
+              <Card className="p-4 space-y-3">
+                <CardTitle className="text-sm flex items-center gap-2"><MapPin className="h-4 w-4" /> Floor at a glance</CardTitle>
+                <div className="space-y-2 text-xs">
+                  {zoneData.map(z => <FloorRow key={z.zone} zone={z.zone} total={z.total} occupied={z.occupied} />)}
+                </div>
+                <div className="pt-3 border-t border-border flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Occupancy</span>
+                  <span className="tabular font-semibold">{occPct}% &middot; {totalSeated}/{totalTables} tables</span>
+                </div>
+              </Card>
+            );
+          })()}
 
           {/* Reliability — moved to sidebar to use the available vertical space */}
           <Card className="p-5 space-y-4">

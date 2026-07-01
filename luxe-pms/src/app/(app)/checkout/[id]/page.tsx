@@ -455,17 +455,68 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
           <Button
             onClick={() => {
               setDone(true);
-              // Record the settlement payment and mark the booking paid in Postgres.
-              const settle = Math.max(0, balance);
-              if (settle > 0) {
-                apiPost("/folio-payments", {
-                  bookingNo: reservation.bookingNo,
-                  date: new Date().toISOString().slice(0, 10),
-                  mode: paymentMode,
-                  amount: settle,
-                  reference: "Checkout settlement",
-                }).catch(() => {});
+              const today = new Date().toISOString().slice(0, 10);
+              // Persist every split-payment line separately so the folio audit trail is complete.
+              const paymentPromises = payLines
+                .filter(l => l.amount > 0)
+                .map(l => {
+                  const ref = l.reference || l.authCode || l.txnId || l.upiVPA || l.poNumber || "Checkout settlement";
+                  return apiPost("/folio-payments", {
+                    bookingNo: reservation.bookingNo,
+                    date: today,
+                    mode: l.mode,
+                    amount: l.amount,
+                    reference: ref,
+                  }).catch(() => {});
+                });
+              // Persist tip as a folio-charge if non-zero.
+              if (tip > 0) {
+                paymentPromises.push(
+                  apiPost("/folio-charges", {
+                    bookingNo: reservation.bookingNo,
+                    date: today,
+                    description: "Tip / Gratuity",
+                    type: "Other",
+                    qty: 1,
+                    rate: tip,
+                    tax: 0,
+                    amount: tip,
+                    paidBy: "Guest",
+                  }).catch(() => {})
+                );
               }
+              // Persist each line discount as a folio-adjustment.
+              lineDiscount.forEach(ld => {
+                if (ld.amount > 0) {
+                  paymentPromises.push(
+                    apiPost("/folio-adjustments", {
+                      bookingNo: reservation.bookingNo,
+                      date: today,
+                      type: "Discount",
+                      description: ld.note || "Line discount",
+                      amount: -ld.amount,
+                      approver: "Front Desk",
+                    }).catch(() => {})
+                  );
+                }
+              });
+              // Persist overall % discount as a folio-adjustment if applied.
+              if (discount > 0) {
+                const discOnlyPct = (charges * discount) / 100;
+                if (discOnlyPct > 0) {
+                  paymentPromises.push(
+                    apiPost("/folio-adjustments", {
+                      bookingNo: reservation.bookingNo,
+                      date: today,
+                      type: "Discount",
+                      description: `${discount}% checkout discount`,
+                      amount: -Math.round(discOnlyPct),
+                      approver: "Front Desk",
+                    }).catch(() => {})
+                  );
+                }
+              }
+              Promise.all(paymentPromises).catch(() => {});
               apiGet<Reservation[]>("/bookings")
                 .then(list => {
                   const bk = list.find(b => b.bookingNo === reservation.bookingNo);

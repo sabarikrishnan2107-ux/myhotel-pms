@@ -9,6 +9,8 @@ import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 
 type Row = { id: number | string; fromIso: string; toIso: string; roomType: string; kind: string; value: string; channels: string[] };
 const KINDS = ["Min stay", "Max stay", "Closed to arrival", "Closed to departure", "Stop sell"];
+const KIND_MAP: Record<string, string> = { minlos: "Min stay", maxlos: "Max stay", cta: "Closed to arrival", ctd: "Closed to departure", stopsell: "Stop sell" };
+const normalizeKind = (k: string) => KIND_MAP[k] ?? k;
 const blank = (): Row => ({ id: "", fromIso: "", toIso: "", roomType: "", kind: "Min stay", value: "", channels: [] });
 
 export function RateRestrictionsManager({ onToast }: { onToast?: (m: string) => void }) {
@@ -20,7 +22,7 @@ export function RateRestrictionsManager({ onToast }: { onToast?: (m: string) => 
 
   React.useEffect(() => {
     let cancelled = false;
-    apiGet<Row[]>("/rate-restrictions").then(r => { if (!cancelled && Array.isArray(r)) setRows(r.map(x => ({ ...x, channels: Array.isArray(x.channels) ? x.channels : [] }))); }).catch(() => {});
+    apiGet<Row[]>("/rate-restrictions").then(r => { if (!cancelled && Array.isArray(r)) setRows(r.map(x => ({ ...x, kind: normalizeKind(x.kind), channels: Array.isArray(x.channels) ? x.channels : [] }))); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
 

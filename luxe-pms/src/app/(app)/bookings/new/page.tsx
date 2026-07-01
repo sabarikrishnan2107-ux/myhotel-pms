@@ -341,6 +341,124 @@ export default function BookingWizardPage() {
   // until a room type is actually picked (no phantom number from the default rate).
   const priced = !!roomType;
 
+  const handleConfirm = async () => {
+    if (!selectedGuestDisplay) return;
+    setSubmitting(true);
+    const seed = (selectedGuestDisplay.name ?? "X").length * 137 + roomType.length * 53 + nights * 7;
+    const bookingNo = syncBooking?.bookingNo ?? `BK${100400 + (seed % 9000)}`;
+    try {
+      if (newGuest) await saveNewGuest(newGuest);
+      const bookingPayload = {
+        bookingNo,
+        guestName: selectedGuestDisplay.name,
+        roomNumber: "Unassigned",
+        roomType,
+        source,
+        checkIn,
+        checkOut,
+        nights,
+        adults,
+        children,
+        paymentStatus: advance <= 0 ? "unpaid" : advance >= total ? "paid" : "partial",
+        ratePlan,
+        mealPlan: selectedPlan?.meals.join("+") ?? "",
+        total: Math.round(total),
+        advance: Math.round(advance),
+        balance: Math.round(total - advance),
+        status: "confirmed",
+        vip: false,
+        draftData: null,
+      };
+      let savedBookingNo = bookingNo;
+      if (syncBooking) {
+        await apiPut(`/bookings/${syncBooking.id}`, bookingPayload);
+      } else {
+        const created = await apiPost<{ id: number; bookingNo: string }>("/bookings", bookingPayload);
+        if (created?.bookingNo) savedBookingNo = created.bookingNo;
+      }
+      if (advance > 0) {
+        await apiPost("/folio-payments", {
+          bookingNo: savedBookingNo,
+          date: new Date().toISOString().slice(0, 10),
+          mode: paymentMode,
+          amount: Math.round(advance),
+          reference: paymentRef.trim() || `${paymentMode} · booking advance`,
+        }).catch(() => {});
+      }
+    } catch { /* show confirmation anyway */ }
+    if (channels.email) {
+      const to = (newGuest?.email || guests.find(x => x.id === guest)?.email || "").trim()
+        || (typeof window !== "undefined" ? (window.prompt("No email on file. Send confirmation to:", "") || "").trim() : "");
+      if (to) {
+        sendEmail({
+          to,
+          subject: `Booking Confirmed · ${bookingNo}`,
+          heading: "Booking Confirmed",
+          greeting: selectedGuestDisplay.name,
+          intro: "Your booking is confirmed — we look forward to welcoming you. Your details are below.",
+          rows: [
+            { label: "Booking No", value: bookingNo },
+            { label: "Room", value: roomType },
+            { label: "Check-in", value: String(checkIn) },
+            { label: "Check-out", value: String(checkOut) },
+            { label: "Nights", value: String(nights) },
+            { label: "Total", value: money(total) },
+            { label: "Advance", value: money(advance) },
+            { label: "Balance", value: money(total - advance) },
+          ],
+          context: "Booking confirmation",
+        }).catch(() => {});
+      }
+    }
+    setConfirmed({
+      bookingNo,
+      guestName: selectedGuestDisplay.name,
+      guestPhone: selectedGuestDisplay.phone,
+      roomNumber: "Assigned at check-in",
+      roomType,
+      checkIn,
+      checkOut,
+      nights,
+      pax: `${adults}A${children ? ` + ${children}C` : ""}`,
+      total,
+      advance,
+      balance: total - advance,
+      paymentMode: advance <= 0 ? "Pay at hotel" : paymentMode,
+      channels,
+      createdAt: new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }),
+    });
+    setSubmitting(false);
+  };
+
+  const handleSaveTentative = async () => {
+    if (!selectedGuestDisplay || !priced) return;
+    const seed = (selectedGuestDisplay.name ?? "X").length * 137 + roomType.length * 53 + nights * 7;
+    const bookingNo = `TN${100400 + (seed % 9000)}`;
+    try {
+      if (newGuest) await saveNewGuest(newGuest);
+      await apiPost("/bookings", {
+        bookingNo,
+        guestName: selectedGuestDisplay.name,
+        roomNumber: "Unassigned",
+        roomType,
+        source,
+        checkIn,
+        checkOut,
+        nights,
+        adults,
+        children,
+        paymentStatus: "unpaid",
+        ratePlan,
+        total: Math.round(total),
+        advance: 0,
+        balance: Math.round(total),
+        status: "tentative",
+        vip: false,
+      });
+      router.push("/bookings");
+    } catch { alert("⚠ Could not save — backend offline"); }
+  };
+
   const filteredGuests = guests.filter(g => `${g.name} ${g.phone} ${g.email}`.toLowerCase().includes(search.toLowerCase())).slice(0, 5);
 
   // "Sync to mobile app" — create the booking now so it appears on the tablet
@@ -1063,128 +1181,76 @@ export default function BookingWizardPage() {
             <div className="border-t border-border pt-2 mt-2">
               <Row k={<span className="font-semibold">Total</span>} v={<span className="font-semibold tabular text-base">{money(priced ? total : 0)}</span>} />
             </div>
-            <Row k={`Advance (${advanceLabel})`} v={<span className="text-brand font-medium">{money(priced ? advance : 0)}</span>} />
-            <Row k="Balance at checkout" v={money(priced ? total - advance : 0)} muted />
           </dl>
 
-          <div className="mt-5 flex gap-2">
-            <Button variant="outline" disabled={step === 1} onClick={() => setStep(s => s - 1)} className="flex-1">
+          {/* Advance payment quick-picks */}
+          <div className="mt-4 pt-4 border-t border-border space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Advance payment</p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {([30, 50, 100] as const).map(p => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => { setPaymentPct(p); setCustomAdvance(null); }}
+                  className={cn(
+                    "h-9 rounded-md border text-sm font-semibold transition-colors",
+                    customAdvance === null && paymentPct === p
+                      ? "bg-brand text-brand-foreground border-brand"
+                      : "border-border hover:bg-surface-sunken"
+                  )}
+                >
+                  {p === 100 ? "Full" : `${p}%`}
+                </button>
+              ))}
+            </div>
+            <div className="rounded-md bg-surface-sunken/60 px-3 py-2.5 space-y-1.5">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-muted-foreground">Advance ({advanceLabel})</span>
+                <span className="font-semibold tabular text-brand">{money(priced ? advance : 0)}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-muted-foreground">Balance at checkout</span>
+                <span className="tabular text-muted-foreground">{money(priced ? total - advance : 0)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation */}
+          <div className="mt-4 flex gap-2">
+            <Button variant="outline" size="sm" disabled={step === 1} onClick={() => setStep(s => s - 1)} className="flex-1">
               <ChevronLeft className="h-4 w-4" />Back
             </Button>
-            {step < STEPS.length ? (
-              <Button onClick={() => setStep(s => Math.min(STEPS.length, s + 1))} disabled={!canNext()} className="flex-1">
+            {step < STEPS.length && (
+              <Button size="sm" onClick={() => setStep(s => Math.min(STEPS.length, s + 1))} disabled={!canNext()} className="flex-1">
                 Next<ChevronRight className="h-4 w-4" />
-              </Button>
-            ) : (
-              <Button
-                className="flex-1"
-                variant="success"
-                disabled={submitting || !selectedGuestDisplay}
-                onClick={async () => {
-                  setSubmitting(true);
-                  // Deterministic-ish booking number (no Date.now() to avoid hydration drift if rendered server-side)
-                  const seed = (selectedGuestDisplay?.name ?? "X").length * 137 + roomType.length * 53 + nights * 7;
-                  // Reuse the reference from the early "Sync to mobile" booking if one exists.
-                  const bookingNo = syncBooking?.bookingNo ?? `BK${100400 + (seed % 9000)}`;
-                  // Persist the booking (and the guest, if a brand-new one was entered).
-                  // NOTE: don't gate on step1Mode here — saving the new-guest form flips
-                  // the mode back to "search", so checking it dropped every new profile.
-                  try {
-                    // A brand-new guest from the form is persisted to the registry
-                    // (core profile first, then KYC captures) via the shared helper
-                    // the walk-in flow uses too, so every path stores guests alike.
-                    if (newGuest) {
-                      await saveNewGuest(newGuest);
-                    }
-                    const bookingPayload = {
-                      bookingNo,
-                      guestName: selectedGuestDisplay!.name,
-                      roomNumber: "Unassigned",   // specific room assigned at check-in
-                      roomType,
-                      source,
-                      checkIn,
-                      checkOut,
-                      nights,
-                      adults,
-                      children,
-                      paymentStatus: advance <= 0 ? "unpaid" : advance >= total ? "paid" : "partial",
-                      ratePlan,
-                      total: Math.round(total),
-                      advance: Math.round(advance),
-                      balance: Math.round(total - advance),
-                      status: "confirmed",     // reservation; room assigned at check-in
-                      vip: false,
-                      draftData: null,         // promoted — clear the resume payload
-                    };
-                    // If this booking was already created via "Sync to mobile app",
-                    // update it (keeping the captured documents) instead of duplicating.
-                    if (syncBooking) {
-                      await apiPut(`/bookings/${syncBooking.id}`, bookingPayload);
-                    } else {
-                      await apiPost("/bookings", bookingPayload);
-                    }
-                  } catch {
-                    /* show the confirmation anyway; the booking just didn't persist */
-                  }
-                  // Send the real booking-confirmation email when the Email channel is on.
-                  // Falls back to a prompt when the guest has no email on file (e.g. walk-ins).
-                  if (channels.email) {
-                    const to = (newGuest?.email || guests.find(x => x.id === guest)?.email || "").trim()
-                      || (typeof window !== "undefined" ? (window.prompt("No email on file for this guest. Send the booking confirmation to:", "") || "").trim() : "");
-                    if (to) {
-                      sendEmail({
-                        to,
-                        subject: `Booking Confirmed · ${bookingNo}`,
-                        heading: "Booking Confirmed",
-                        greeting: selectedGuestDisplay!.name,
-                        intro: "Your booking is confirmed — we look forward to welcoming you. Your details are below.",
-                        rows: [
-                          { label: "Booking No", value: bookingNo },
-                          { label: "Room", value: roomType },
-                          { label: "Check-in", value: String(checkIn) },
-                          { label: "Check-out", value: String(checkOut) },
-                          { label: "Nights", value: String(nights) },
-                          { label: "Total", value: money(total) },
-                          { label: "Advance", value: money(advance) },
-                          { label: "Balance", value: money(total - advance) },
-                        ],
-                        context: "Booking confirmation",
-                      }).catch(() => {});
-                    }
-                  }
-                  setConfirmed({
-                    bookingNo,
-                    guestName: selectedGuestDisplay!.name,
-                    guestPhone: selectedGuestDisplay!.phone,
-                    roomNumber: "Assigned at check-in",
-                    roomType,
-                    checkIn,
-                    checkOut,
-                    nights,
-                    pax: `${adults}A${children ? ` + ${children}C` : ""}`,
-                    total,
-                    advance,
-                    balance: total - advance,
-                    paymentMode: advance <= 0 ? "Pay at hotel" : paymentMode,
-                    channels,
-                    createdAt: new Date(checkIn).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }),
-                  });
-                  setSubmitting(false);
-                }}
-              >
-                {submitting ? (
-                  <>
-                    <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                    Creating…
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-4 w-4" />Confirm booking
-                  </>
-                )}
               </Button>
             )}
           </div>
+
+          {/* Primary CTAs — always visible */}
+          <div className="mt-3 space-y-2">
+            <Button
+              variant="success"
+              className="w-full"
+              disabled={submitting || !selectedGuestDisplay || step < STEPS.length}
+              onClick={handleConfirm}
+            >
+              {submitting ? (
+                <><span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />Creating…</>
+              ) : (
+                <><Send className="h-4 w-4" />Confirm &amp; Send Quote</>
+              )}
+            </Button>
+            <button
+              type="button"
+              disabled={!selectedGuestDisplay || !priced}
+              onClick={handleSaveTentative}
+              className="w-full h-9 rounded-md border border-border text-sm font-medium hover:bg-surface-sunken disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1"
+            >
+              Save as Tentative <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
         </Card>
       </div>
 

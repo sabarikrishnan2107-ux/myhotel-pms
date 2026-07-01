@@ -56,7 +56,7 @@ export function TablesManager({ onToast }: { onToast?: (m: string) => void }) {
   const save = async (payload: { code: string; seats: number; zone: string }) => {
     setSaving(true);
     try {
-      const body = { code: payload.code, seats: payload.seats, zone: payload.zone || null };
+      const body = { code: payload.code, seats: payload.seats, zone: payload.zone || null, status: dialog?.row?.status ?? "free" };
       if (dialog?.mode === "edit" && dialog.row) {
         const updated = await apiPut<PosTable>(`/pos-tables/${dialog.row.id}`, body);
         setRows(rs => rs.map(r => (r.id === dialog.row!.id ? { ...r, ...updated } : r)));

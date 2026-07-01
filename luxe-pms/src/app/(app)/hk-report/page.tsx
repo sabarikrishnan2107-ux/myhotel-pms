@@ -9,8 +9,9 @@ import { Sparkles, Timer, CheckCircle2, Users, RefreshCw, Loader2, ClipboardList
 import { apiGet } from "@/lib/api";
 
 type Task = {
-  id: number; room?: string; roomType?: string; assignee?: string; status?: string;
-  assignedAt?: string; startedAt?: string; completedAt?: string; durationMin?: number;
+  id: number; room?: string; roomType?: string; type?: string; assignee?: string; status?: string;
+  priority?: string; assignedAt?: string; startedAt?: string; completedAt?: string;
+  durationMin?: number; notes?: string;
 };
 
 type Range = "today" | "week";
@@ -136,7 +137,7 @@ export default function HkReportPage() {
               <BedDouble className="h-6 w-6" />
             </span>
             <p className="font-medium">No housekeeping activity yet</p>
-            <p className="mt-1 text-xs text-muted-foreground">Assign rooms from the mobile app — productivity will appear here as staff start and complete cleans.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Assign rooms from the Housekeeping board — productivity will appear here as staff start and complete cleans.</p>
           </div>
         ) : (
           <div className="divide-y divide-border">

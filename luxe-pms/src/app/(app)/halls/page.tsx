@@ -108,9 +108,14 @@ export default function HallsPage() {
     setCancelTarget(null);
     showToast(`${b.customer} cancelled · ${money(refund)} refund processed (${reason})`);
   };
-  // Mark a held event as completed (terminal state) — persists to the DB so past
-  // events stop showing as "in-progress" forever.
+  // Mark a held event as completed (terminal state) — only when fully paid.
   const handleComplete = (b: HallBooking) => {
+    const balance = b.total - b.advance;
+    if (balance > 0) {
+      showToast(`⚠ Cannot complete — ${money(balance)} balance still outstanding`);
+      setActionMenuFor(null);
+      return;
+    }
     setOverrides(o => ({ ...o, [b.id]: { ...(o[b.id] ?? {}), status: "completed" } }));
     apiPut(`/hall-bookings/${b.id}`, { status: "completed" }).catch(() => showToast("Could not update status"));
     setActionMenuFor(null);
@@ -433,8 +438,9 @@ export default function HallsPage() {
               </button>
             )}
             {(b.status === "confirmed" || b.status === "in-progress") && (
-              <button type="button" onClick={() => handleComplete(b)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+              <button type="button" onClick={() => handleComplete(b)} disabled={b.total - b.advance > 0} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left disabled:opacity-40 disabled:cursor-not-allowed">
                 <CheckCircle2 className="h-3.5 w-3.5 text-success" />Mark completed
+                {b.total - b.advance > 0 && <span className="ml-auto text-[10px] text-danger">balance due</span>}
               </button>
             )}
             <button type="button" disabled={isCancelled} onClick={() => { setModifyTarget(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left disabled:opacity-40 disabled:cursor-not-allowed">
@@ -599,7 +605,7 @@ function HallDetailDrawer({ booking, notes, onClose, onModify, onCancel, onPay, 
               <Button variant="success" size="sm" onClick={onPay} disabled={booking.total - booking.advance <= 0}>
                 <Wallet className="h-3.5 w-3.5" />{booking.total - booking.advance > 0 ? "Receive payment" : "Fully paid"}
               </Button>
-              <Button variant="outline" size="sm" onClick={onComplete} disabled={booking.status === "pending"}>
+              <Button variant="outline" size="sm" onClick={onComplete} disabled={booking.status === "pending" || booking.total - booking.advance > 0} title={booking.total - booking.advance > 0 ? `Clear balance first (${money(booking.total - booking.advance)} due)` : undefined}>
                 <CheckCircle2 className="h-3.5 w-3.5" />Mark completed
               </Button>
             </div>

@@ -704,7 +704,20 @@ export default function HousekeepingPage() {
                 disabled={inspectionItems.size < 16 || !inspectRoomId}
                 onClick={() => {
                   const t = tasks.find(x => roomIdOf(x.id) === inspectRoomId);
-                  markInspected(inspectRoomId, t?.room ?? "");
+                  const roomNo = t?.room ?? "";
+                  const nowIso = new Date().toISOString();
+                  // Persist inspection result as a housekeeping task so the report tracks it.
+                  apiPost("/housekeeping-tasks", {
+                    room: roomNo,
+                    type: "Inspection",
+                    assignee: t?.assignee ?? "Supervisor",
+                    status: "done",
+                    assignedAt: nowIso.slice(0, 10),
+                    completedAt: nowIso.slice(0, 16),
+                    durationMin: 10,
+                    notes: `Inspection complete: ${inspectionItems.size}/16 items passed`,
+                  }).catch(() => {});
+                  markInspected(inspectRoomId, roomNo);
                   setInspectionItems(new Set(Array.from({ length: 12 }, (_, i) => i)));
                   setInspectRoomId("");
                 }}
@@ -821,7 +834,7 @@ export default function HousekeepingPage() {
 
       {/* Log lost item modal */}
       {logItemOpen && (
-        <LogItemModal onClose={() => setLogItemOpen(false)} onSave={(payload) => {
+        <LogItemModal housekeepers={housekeepers} onClose={() => setLogItemOpen(false)} onSave={(payload) => {
           setLogItemOpen(false);
           showToast(`Logged: ${payload.name} · auto-archive in 90 days`);
           apiPost("/found-items", payload).then(refreshLost).catch(() => showToast("⚠ Save failed — backend offline"));
@@ -908,11 +921,11 @@ function TaskRowActions({
 }
 
 // ===================== LOG LOST ITEM MODAL =====================
-function LogItemModal({ onClose, onSave }: { onClose: () => void; onSave: (payload: Record<string, unknown>) => void }) {
+function LogItemModal({ housekeepers, onClose, onSave }: { housekeepers: Housekeeper[]; onClose: () => void; onSave: (payload: Record<string, unknown>) => void }) {
   const [item, setItem] = React.useState("");
   const [room, setRoom] = React.useState("");
   const [where, setWhere] = React.useState("Bedside drawer");
-  const [foundBy, setFoundBy] = React.useState("Maria Lopez");
+  const [foundBy, setFoundBy] = React.useState(housekeepers[0]?.name ?? "");
   const [photoTaken, setPhotoTaken] = React.useState(false);
   const [contact, setContact] = React.useState<"None" | "Email" | "WhatsApp">("WhatsApp");
 
@@ -970,10 +983,10 @@ function LogItemModal({ onClose, onSave }: { onClose: () => void; onSave: (paylo
             <div className="space-y-1.5">
               <Label className="text-xs">Found by (housekeeper)</Label>
               <Select value={foundBy} onChange={e => setFoundBy(e.target.value)} className="h-9">
-                <option>Maria Lopez</option>
-                <option>Aisha Mohamed</option>
-                <option>Joseph D&apos;Souza</option>
-                <option>Sunil Verma (Sup.)</option>
+                {housekeepers.length > 0
+                  ? housekeepers.map(h => <option key={h.id} value={h.name}>{h.name}</option>)
+                  : <option value={foundBy}>{foundBy || "No housekeepers found"}</option>
+                }
               </Select>
             </div>
 

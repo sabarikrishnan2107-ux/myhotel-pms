@@ -62,8 +62,8 @@ export default function VendorsPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KPICard label="Vendors" value={vendors.length} icon={Truck} accent="brand" />
         <KPICard label="Outstanding" value={money(outstanding)} icon={Wallet} accent="warning" />
-        <KPICard label="Due This Week" value={money(8400)} icon={FileText} accent="info" />
-        <KPICard label="Paid This Month" value={money(42100)} icon={Wallet} accent="success" />
+        <KPICard label="Pending Vendors" value={counts.outstanding} icon={FileText} accent="info" />
+        <KPICard label="Settled Vendors" value={counts.settled} icon={CheckCircle2} accent="success" />
       </div>
 
       {/* Tabs */}

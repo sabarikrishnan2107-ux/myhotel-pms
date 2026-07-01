@@ -260,7 +260,7 @@ const HOLIDAYS_SEED: Holiday[] = [
 ];
 
 // ============ F&B + HALL PACKAGES ============
-type FBPackage = { id: string; name: string; type: "Breakfast" | "Lunch" | "Dinner" | "High Tea" | "Buffet"; pax: number; price: number; gst: number; active: boolean };
+type FBPackage = { id: string; name: string; type: "Breakfast" | "Lunch" | "Dinner" | "High Tea" | "Buffet" | "Banquet"; pax: number; price: number; gst: number; active: boolean };
 type HallPackage = { id: string; name: string; capacity: number; hourly: number; halfDay: number; fullDay: number; setupFee: number; gst: number; extraPaxFee: number; active: boolean };
 type BanquetPkg = { id: string; name: string; desc: string; pricePerPax: number; veg: boolean; active: boolean };
 type ExtraSvc = { id: string; label: string; price: number; active: boolean };
@@ -2074,7 +2074,7 @@ function FoodHallManager({ fb, halls, banquet, extras, onFbChange, onHallsChange
                   <td className="px-3 py-2"><Input value={p.name} onChange={e => updFb(p.id, { name: e.target.value })} className="h-8" /></td>
                   <td className="px-3 py-2">
                     <Select value={p.type} onChange={e => updFb(p.id, { type: e.target.value as FBPackage["type"] })} className="h-8">
-                      <option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>High Tea</option><option>Buffet</option>
+                      <option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>High Tea</option><option>Buffet</option><option>Banquet</option>
                     </Select>
                   </td>
                   <td className="px-3 py-2 text-right"><Input type="number" value={p.price} onChange={e => updFb(p.id, { price: Number(e.target.value) })} className="h-8 w-24 tabular text-right" /></td>
@@ -2884,6 +2884,7 @@ function BrandingManager({ onToast, onMarkComplete }: { onToast: (m: string) => 
 type Integration = {
   id: string; name: string; category: "Channel Manager" | "OTA" | "Messaging" | "Payment" | "Accounting" | "POS" | "Email";
   description: string; connected: boolean; status: "live" | "test" | "error" | "off"; lastSync?: string;
+  apiKey?: string; endpoint?: string; syncFreq?: string;
 };
 
 // Catalog of integrations the app supports. Connection state (connected/status/
@@ -2988,8 +2989,10 @@ function IntegrationsManager({ onToast, onMarkComplete }: { onToast: (m: string)
         <Button variant="success" onClick={() => { save(onToast); onMarkComplete(); }}><Save className="h-4 w-4" />Save</Button>
       </div>
 
-      {configFor && <IntegrationConfigModal integration={configFor} onClose={() => setConfigFor(null)} onSave={() => {
-        const updated = integrations.map(i => i.id === configFor.id ? { ...i, connected: true, status: "live" as Integration["status"] } : i);
+      {configFor && <IntegrationConfigModal integration={configFor} onClose={() => setConfigFor(null)} onSave={(creds) => {
+        const updated = integrations.map(i => i.id === configFor.id
+          ? { ...i, connected: true, status: "live" as Integration["status"], ...creds }
+          : i);
         setIntegrations(updated);
         apiPut("/settings/integrations", { integrations: updated })
           .then(() => onToast(`${configFor.name} connected & saved ✓`))
@@ -3005,7 +3008,7 @@ function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
 }
 
 function IntegrationConfigModal({ integration, onClose, onSave, onTest, onToast }: {
-  integration: Integration; onClose: () => void; onSave: () => void; onTest: () => void; onToast: (m: string) => void;
+  integration: Integration; onClose: () => void; onSave: (creds: {apiKey?: string; endpoint?: string; syncFreq?: string}) => void; onTest: () => void; onToast: (m: string) => void;
 }) {
   const isSmtp = integration.category === "Email";
 
@@ -3038,7 +3041,7 @@ function IntegrationConfigModal({ integration, onClose, onSave, onTest, onToast 
     setBusy(true);
     try {
       await apiPut("/settings/smtp", smtpBody());
-      onSave();
+      onSave({});
     } catch {
       onToast("⚠ Save failed — backend offline");
     } finally {
@@ -3170,7 +3173,7 @@ function IntegrationConfigModal({ integration, onClose, onSave, onTest, onToast 
           <Button variant="outline" disabled={busy} onClick={isSmtp ? testSmtp : onTest}><RefreshCw className="h-3.5 w-3.5" />Test connection</Button>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button disabled={busy} onClick={isSmtp ? saveSmtp : onSave}><Save className="h-3.5 w-3.5" />Save</Button>
+            <Button disabled={busy} onClick={isSmtp ? saveSmtp : () => onSave({ apiKey: apiKey || undefined, endpoint: endpoint || undefined, syncFreq })}><Save className="h-3.5 w-3.5" />Save</Button>
           </div>
         </div>
       </div>
@@ -3224,7 +3227,13 @@ function BackupManager({ onToast, onMarkComplete }: { onToast: (m: string) => vo
   type BackupFile = { name: string; size: number; created_at: string };
   const [backups, setBackups] = React.useState<BackupFile[]>([]);
   const [busy, setBusy] = React.useState(false);
-  React.useEffect(() => { apiGet<BackupFile[]>("/backups").then(setBackups).catch(() => {}); }, []);
+  // Real audit log from the API.
+  type AuditLogRow = { id: string | number; time?: string; date?: string; user?: string; module?: string; action?: string; entity?: string; severity?: string };
+  const [auditLog, setAuditLog] = React.useState<AuditLogRow[]>([]);
+  React.useEffect(() => {
+    apiGet<BackupFile[]>("/backups").then(setBackups).catch(() => {});
+    apiGet<AuditLogRow[]>("/audit-logs").then(rows => setAuditLog(rows.slice(0, 50))).catch(() => {});
+  }, []);
   const fmtSize = (b: number) => (b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`);
   const fmtWhen = (iso: string) => { const d = new Date(iso); return isNaN(d.getTime()) ? iso : d.toLocaleString(); };
   const lastBackup = backups[0];
@@ -3359,64 +3368,34 @@ function BackupManager({ onToast, onMarkComplete }: { onToast: (m: string) => vo
         </div>
       </Card>
 
-      {/* Backup history */}
-      <Card className="p-0 overflow-hidden">
-        <div className="px-5 py-3 bg-surface-elevated border-b border-border flex items-center justify-between">
-          <p className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">Recent backups</p>
-          <Badge tone="neutral">{SEED_BACKUPS.length} runs</Badge>
-        </div>
-        <table className="w-full text-sm">
-          <thead className="bg-surface-sunken/30 border-b border-border">
-            <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-              <th className="px-4 py-2.5 font-semibold">When</th>
-              <th className="px-4 py-2.5 font-semibold">Size</th>
-              <th className="px-4 py-2.5 font-semibold">Duration</th>
-              <th className="px-4 py-2.5 font-semibold">Destinations</th>
-              <th className="px-4 py-2.5 font-semibold">Status</th>
-              <th className="px-4 py-2.5 font-semibold text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {SEED_BACKUPS.map(b => (
-              <tr key={b.id} className="hover:bg-surface-sunken/30">
-                <td className="px-4 py-2.5 font-medium tabular">{b.at}</td>
-                <td className="px-4 py-2.5 tabular">{b.size}</td>
-                <td className="px-4 py-2.5 tabular text-muted-foreground">{b.duration}</td>
-                <td className="px-4 py-2.5 text-muted-foreground">{b.destination}</td>
-                <td className="px-4 py-2.5"><Badge tone={b.status === "ok" ? "success" : "warning"}>{b.status === "ok" ? "complete" : "partial"}</Badge></td>
-                <td className="px-4 py-2.5 text-right">
-                  <Button size="sm" variant="ghost" onClick={() => onToast(`Restoring ${b.at} backup · this will replace current state`)}>Restore</Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
-
-      {/* Audit trail */}
+      {/* Audit trail — real data from /audit-logs */}
       <Card className="p-0 overflow-hidden">
         <div className="px-5 py-3 bg-surface-elevated border-b border-border flex items-center justify-between">
           <p className="text-xs uppercase tracking-wider font-semibold text-muted-foreground inline-flex items-center gap-1.5"><ShieldCheck className="h-3 w-3" />Setup audit trail</p>
-          <Badge tone="neutral">{SEED_AUDIT_LOG.length} entries</Badge>
+          <Badge tone="neutral">{auditLog.length > 0 ? `${auditLog.length} entries` : "loading…"}</Badge>
         </div>
-        <ol className="divide-y divide-border">
-          {SEED_AUDIT_LOG.map(e => (
-            <li key={e.id} className="px-5 py-3 flex items-start gap-3">
-              <span className="h-7 w-7 rounded-md bg-brand-soft text-brand-soft-foreground inline-flex items-center justify-center text-[10px] font-bold shrink-0">{e.actor.charAt(0)}</span>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-baseline justify-between gap-2">
-                  <p className="text-sm">
-                    <span className="font-medium">{e.actor}</span>{" "}
-                    <span className="text-muted-foreground">{e.action.toLowerCase()} in</span>{" "}
-                    <Badge tone="neutral">{e.section}</Badge>
-                  </p>
-                  <p className="text-[10px] text-muted-foreground tabular shrink-0">{e.at}</p>
+        {auditLog.length === 0 ? (
+          <p className="px-5 py-8 text-sm text-muted-foreground text-center">No audit entries yet — activity will appear here.</p>
+        ) : (
+          <ol className="divide-y divide-border max-h-72 overflow-y-auto">
+            {auditLog.map(e => (
+              <li key={String(e.id)} className="px-5 py-3 flex items-start gap-3">
+                <span className="h-7 w-7 rounded-md bg-brand-soft text-brand-soft-foreground inline-flex items-center justify-center text-[10px] font-bold shrink-0">{(e.user ?? "?").charAt(0)}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="text-sm">
+                      <span className="font-medium">{e.user ?? "System"}</span>{" "}
+                      <span className="text-muted-foreground">{(e.action ?? "").toLowerCase()} in</span>{" "}
+                      <Badge tone="neutral">{e.module ?? "—"}</Badge>
+                    </p>
+                    <p className="text-[10px] text-muted-foreground tabular shrink-0">{e.date} {e.time}</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{e.entity ?? ""}</p>
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{e.detail}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
+              </li>
+            ))}
+          </ol>
+        )}
       </Card>
 
       <div className="flex items-center justify-end pt-3 border-t border-border">

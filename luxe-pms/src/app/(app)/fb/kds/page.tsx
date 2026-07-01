@@ -245,15 +245,13 @@ export default function KDSPage() {
   const overdueCount = overdue.length;
 
   // Load live kitchen orders from the POS (placed via the real fb_orders API).
-  React.useEffect(() => {
-    let cancelled = false;
-    type ApiOrder = { id: number; orderNo: string; tableNo: string; server?: string; status: string; items?: { name: string; qty: number }[]; created_at?: string };
-    apiGet<ApiOrder[]>("/fb-orders").then(rows => {
-      if (cancelled) return;
+  type ApiOrder = { id: number; orderNo: string; tableNo: string; server?: string; status: string; items?: { name: string; qty: number }[]; created_at?: string };
+  const loadOrders = React.useCallback(async () => {
+    try {
+      const rows = await apiGet<ApiOrder[]>("/fb-orders");
       const live = rows
         .filter(r => r.status !== "paid")
         .map(r => {
-          // Real elapsed: minutes since the order was placed (created_at).
           const minsAgo = r.created_at
             ? Math.max(0, Math.round((Date.now() - new Date(r.created_at).getTime()) / 60000))
             : 0;
@@ -273,9 +271,11 @@ export default function KDSPage() {
           };
         });
       if (live.length) setOrders(live);
-    }).catch(() => {});
-    return () => { cancelled = true; };
+    } catch {
+      // keep existing orders on error
+    }
   }, []);
+  React.useEffect(() => { loadOrders(); }, [loadOrders]);
 
   // Persist a KDS column change to the backing fb_order (id is numeric for real orders).
   const persistStatus = (id: string, status: string) => {
@@ -336,7 +336,7 @@ export default function KDSPage() {
             <Button size="sm" variant="outline" onClick={() => showToast("Reprinting all open KOTs")}>
               <Printer className="h-4 w-4 mr-1.5" /> Reprint KOTs
             </Button>
-            <Button size="sm" onClick={() => showToast("Display refreshed")}>
+            <Button size="sm" onClick={() => { loadOrders(); showToast("Display refreshed"); }}>
               <RotateCcw className="h-4 w-4 mr-1.5" /> Refresh
             </Button>
           </div>

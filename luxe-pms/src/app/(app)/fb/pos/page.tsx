@@ -6,6 +6,7 @@ import {
   ChefHat, Users, Clock, TrendingUp, Flame, Salad, Cookie, Wine, Coffee,
   Beef, Soup, ImageIcon, Search,
 } from "lucide-react";
+import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
@@ -311,9 +312,11 @@ export default function RestaurantPOSPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => showToast("Kitchen Display sent to KDS monitor")}>
-            <ChefHat className="h-4 w-4" />KDS
-          </Button>
+          <Link href="/fb/kds">
+            <Button variant="outline" size="sm">
+              <ChefHat className="h-4 w-4" />KDS
+            </Button>
+          </Link>
           <Button variant="outline" size="sm" onClick={() => showToast("End-of-day Z-report queued for shift close")}>
             <Receipt className="h-4 w-4" />Z-Report
           </Button>

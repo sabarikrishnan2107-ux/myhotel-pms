@@ -27,6 +27,7 @@ export default function StaffPage() {
   const [deptFilter, setDeptFilter] = React.useState<"all" | string>("all");
   const [statusFilter, setStatusFilter] = React.useState<"all" | "active" | "inactive">("all");
   const [addOpen, setAddOpen] = React.useState(false);
+  const [editFor, setEditFor] = React.useState<Staff | null>(null);
   const [detail, setDetail] = React.useState<Staff | null>(null);
   const [actionFor, setActionFor] = React.useState<string | null>(null);
   const [toast, setToast] = React.useState<string | null>(null);
@@ -50,7 +51,8 @@ export default function StaffPage() {
 
   const totalSalary = staff.filter(s => s.active).reduce((t, s) => t + s.salary, 0);
   const activeCount = staff.filter(s => s.active).length;
-  const newThisMonth = staff.filter(s => s.joined >= "2026-05-01").length;
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const newThisMonth = staff.filter(s => s.joined?.startsWith(thisMonth)).length;
   const activeFilters = (search ? 1 : 0) + (deptFilter !== "all" ? 1 : 0) + (statusFilter !== "all" ? 1 : 0);
 
   const toggleActive = (id: string) => {
@@ -180,7 +182,7 @@ export default function StaffPage() {
                         <>
                           <div className="fixed inset-0 z-30" onClick={() => setActionFor(null)} />
                           <div className="absolute right-0 top-full mt-1 w-44 bg-surface border border-border rounded-md shadow-xl z-40 py-1 text-sm">
-                            <button onClick={() => { showToast(`Edit profile for ${s.name}`); setActionFor(null); }} className="w-full px-3 py-1.5 hover:bg-surface-sunken text-left inline-flex items-center gap-2"><Edit className="h-3.5 w-3.5" />Edit profile</button>
+                            <button onClick={() => { setEditFor(s); setActionFor(null); }} className="w-full px-3 py-1.5 hover:bg-surface-sunken text-left inline-flex items-center gap-2"><Edit className="h-3.5 w-3.5" />Edit profile</button>
                             <button onClick={() => { showToast(`Salary slip for ${s.name} generated`); setActionFor(null); }} className="w-full px-3 py-1.5 hover:bg-surface-sunken text-left inline-flex items-center gap-2"><IndianRupee className="h-3.5 w-3.5" />Generate salary slip</button>
                             <button onClick={() => { showToast(`Leave request opened for ${s.name}`); setActionFor(null); }} className="w-full px-3 py-1.5 hover:bg-surface-sunken text-left inline-flex items-center gap-2"><Calendar className="h-3.5 w-3.5" />Mark leave</button>
                             <button onClick={() => { showToast(`Attendance log opened for ${s.name}`); setActionFor(null); }} className="w-full px-3 py-1.5 hover:bg-surface-sunken text-left inline-flex items-center gap-2"><Clock className="h-3.5 w-3.5" />Attendance</button>
@@ -209,6 +211,13 @@ export default function StaffPage() {
           .catch(() => showToast("⚠ Save failed — backend offline"));
       }} departments={depts} />}
       {detail && <StaffDetailDrawer staff={detail} onClose={() => setDetail(null)} onToggleActive={() => { toggleActive(detail.id); setDetail(null); }} onToast={showToast} />}
+      {editFor && <EditStaffModal staff={editFor} departments={depts} onClose={() => setEditFor(null)} onSave={(patch) => {
+        setEditFor(null);
+        showToast(`${patch.name} updated`);
+        apiPut<Staff>(`/staff/${editFor.id}`, patch)
+          .then(updated => setStaff(prev => prev.map(x => x.id === editFor.id ? updated : x)))
+          .catch(() => showToast("⚠ Save failed — backend offline"));
+      }} />}
 
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 bg-foreground text-background rounded-lg px-4 py-3 text-sm shadow-2xl animate-in slide-in-from-bottom-2 inline-flex items-center gap-2.5 ring-1 ring-foreground/20">
@@ -272,6 +281,67 @@ function AddStaffModal({ onClose, onSave, departments }: {
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button onClick={() => onSave({ name, role, dept, phone, email, salary })} disabled={!valid}>
             <CheckCircle2 className="h-3.5 w-3.5" />Add to payroll
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// EDIT STAFF MODAL
+// ============================================================
+function EditStaffModal({ staff, departments, onClose, onSave }: {
+  staff: Staff;
+  departments: string[];
+  onClose: () => void;
+  onSave: (patch: Partial<Staff>) => void;
+}) {
+  const [name, setName] = React.useState(staff.name);
+  const [role, setRole] = React.useState(staff.role);
+  const [dept, setDept] = React.useState(staff.dept);
+  const [phone, setPhone] = React.useState(staff.phone);
+  const [email, setEmail] = React.useState(staff.email);
+  const [salary, setSalary] = React.useState(staff.salary);
+
+  React.useEffect(() => {
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKey); };
+  }, [onClose]);
+
+  const valid = name.trim().length > 1 && email.trim() !== "" && isValidEmail(email) && salary > 0 && isValidPhone(phone);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-surface rounded-xl shadow-2xl w-full max-w-lg max-h-[92vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
+          <div className="flex items-center gap-2">
+            <span className="h-9 w-9 rounded-md bg-brand-soft text-brand-soft-foreground inline-flex items-center justify-center"><UserCog className="h-4 w-4" /></span>
+            <div><h3 className="font-semibold">Edit profile</h3><p className="text-xs text-muted-foreground">{staff.name}</p></div>
+          </div>
+          <button type="button" onClick={onClose} className="h-7 w-7 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="px-5 py-4 space-y-3 overflow-y-auto">
+          <div className="space-y-1.5"><Label className="text-xs">Full name *</Label><Input value={name} onChange={e => setName(e.target.value)} className="h-9" autoFocus /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5"><Label className="text-xs">Role *</Label><Input value={role} onChange={e => setRole(e.target.value)} className="h-9" /></div>
+            <div className="space-y-1.5"><Label className="text-xs">Department *</Label>
+              <Select value={dept} onChange={e => setDept(e.target.value)} className="h-9">
+                {departments.map(d => <option key={d}>{d}</option>)}
+                <option>Front Office</option><option>Housekeeping</option><option>F&amp;B</option><option>Engineering</option><option>Finance</option><option>Sales</option><option>HR</option>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-1.5"><Label className="text-xs">Phone *</Label><PhoneInput value={phone} onChange={v => setPhone(v)} size="sm" invalid={phone !== "" && !isValidPhone(phone)} /></div>
+          <div className="space-y-1.5"><Label className="text-xs">Email *</Label><EmailInput value={email} onChange={setEmail} className="h-9" /></div>
+          <div className="space-y-1.5"><Label className="text-xs">Monthly salary (₹) *</Label><Input type="number" min={0} value={salary} onChange={e => setSalary(Math.max(0, Number(e.target.value) || 0))} className="h-9 tabular text-lg font-semibold" /></div>
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-3 border-t border-border bg-surface-sunken/30">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => onSave({ name, role, dept, phone, email, salary })} disabled={!valid}>
+            <CheckCircle2 className="h-3.5 w-3.5" />Save changes
           </Button>
         </div>
       </div>

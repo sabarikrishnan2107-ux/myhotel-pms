@@ -189,15 +189,24 @@ class ResourceController extends Controller
         'group-services'         => GroupService::class,
     ];
 
-    /** Resources whose index can be scoped by a query param → column. */
+    /**
+     * Resources whose index can be scoped by query params.
+     * Each value is an array of filterable column names — any present query
+     * param matching a listed column is applied as an exact-match WHERE clause.
+     */
     private const FILTER_BY = [
-        'folio-charges'  => 'bookingNo',
-        'folio-payments' => 'bookingNo',
-        'folio-adjustments' => 'bookingNo',
-        'einvoices' => 'bookingNo',
-        'housekeeping-tasks' => 'assignee',
-        'competitor-rates' => 'competitorId',
-        'group-rooming'  => 'groupCode',
+        'folio-charges'     => ['bookingNo'],
+        'folio-payments'    => ['bookingNo'],
+        'folio-adjustments' => ['bookingNo'],
+        'einvoices'         => ['bookingNo'],
+        'housekeeping-tasks'=> ['assignee', 'status', 'room'],
+        'competitor-rates'  => ['competitorId'],
+        'group-rooming'     => ['groupCode'],
+        'bookings'          => ['status'],
+        'fb-orders'         => ['status', 'room'],
+        'guest-requests'    => ['status', 'room'],
+        'maintenance-tickets' => ['status'],
+        'hall-bookings'     => ['status'],
     ];
 
     /** Resource slugs, for the route constraint. */
@@ -363,6 +372,7 @@ class ResourceController extends Controller
             'orderNo' => 'string|max:50', 'tableNo' => 'string|max:50', 'server' => 'string|max:100|nullable',
             'items' => 'array', 'total' => 'integer|min:0', 'status' => 'string|max:50',
             'paymentMethod' => 'string|max:100|nullable', 'room' => 'string|max:50|nullable',
+            'instructions' => 'string|max:2000|nullable',
         ],
         'maintenance-tickets' => [
             'code' => 'string|max:50', 'room' => 'string|max:50|nullable', 'title' => 'string|max:255',
@@ -375,9 +385,12 @@ class ResourceController extends Controller
             'assignee' => 'string|max:100|nullable', 'requestedAt' => 'string|max:50', 'notes' => 'string|max:1000|nullable',
         ],
         'housekeeping-tasks' => [
-            'room' => 'string|max:50', 'roomType' => 'string|max:50', 'assignee' => 'string|max:100',
-            'assignedBy' => 'string|max:100|nullable', 'status' => 'string|max:50', 'assignedAt' => 'string|max:50',
-            'startedAt' => 'string|max:50|nullable', 'completedAt' => 'string|max:50|nullable', 'durationMin' => 'integer|min:0',
+            'room' => 'string|max:50', 'roomType' => 'string|max:50', 'type' => 'string|max:100',
+            'assignee' => 'string|max:100', 'assignedBy' => 'string|max:100|nullable',
+            'status' => 'string|max:50', 'priority' => 'string|max:50',
+            'assignedAt' => 'string|max:50', 'startedAt' => 'string|max:50|nullable',
+            'completedAt' => 'string|max:50|nullable', 'durationMin' => 'integer|min:0',
+            'notes' => 'string|max:2000|nullable',
         ],
         'enquiries' => [
             'enqNo' => 'string|max:50', 'type' => 'string|max:50', 'name' => 'string|max:255',
@@ -990,8 +1003,7 @@ class ResourceController extends Controller
     {
         $query = $this->model($resource)::query();
 
-        if (isset(self::FILTER_BY[$resource])) {
-            $col = self::FILTER_BY[$resource];
+        foreach (self::FILTER_BY[$resource] ?? [] as $col) {
             if ($request->filled($col)) {
                 $query->where($col, $request->query($col));
             }

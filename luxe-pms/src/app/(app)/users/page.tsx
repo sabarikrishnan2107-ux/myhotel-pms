@@ -400,7 +400,7 @@ export default function UsersPage() {
       {editUser && <EditUserModal user={editUser} roles={roleNames} onClose={() => setEditUser(null)} onSave={handleEditSave} />}
       {newRoleOpen && <NewRoleModal existing={roleNames} onClose={() => setNewRoleOpen(false)} onSave={createRole} />}
       {orgOpen && <OrgChartModal roles={roleNames} users={users} onClose={() => setOrgOpen(false)} />}
-      {detailUser && <UserDetailDrawer user={detailUser} onClose={() => setDetailUser(null)} onEdit={() => { setEditUser(detailUser); setDetailUser(null); }} onSuspend={() => { handleSuspend(detailUser); setDetailUser(null); }} onKillSessions={() => { handleKillSessions(detailUser); setDetailUser(prev => prev ? { ...prev, sessions: [] } : null); }} onToast={showToast} />}
+      {detailUser && <UserDetailDrawer user={detailUser} onClose={() => setDetailUser(null)} onEdit={() => { setEditUser(detailUser); setDetailUser(null); }} onSuspend={() => { handleSuspend(detailUser); setDetailUser(null); }} onKillSessions={() => { handleKillSessions(detailUser); setDetailUser(prev => prev ? { ...prev, sessions: [] } : null); }} onResetPassword={() => { setResetUser(detailUser); setDetailUser(null); }} onToast={showToast} />}
       {resetUser && <ResetPasswordModal user={resetUser} onClose={() => setResetUser(null)} onConfirm={(method) => {
         const target = resetUser;
         setResetUser(null);
@@ -741,12 +741,13 @@ function ResetPasswordModal({ user, onClose, onConfirm }: {
 }
 
 // ============== USER DETAIL DRAWER ==============
-function UserDetailDrawer({ user, onClose, onEdit, onSuspend, onKillSessions, onToast }: {
+function UserDetailDrawer({ user, onClose, onEdit, onSuspend, onKillSessions, onResetPassword, onToast }: {
   user: UserExt;
   onClose: () => void;
   onEdit: () => void;
   onSuspend: () => void;
   onKillSessions: () => void;
+  onResetPassword: () => void;
   onToast: (m: string) => void;
 }) {
   const [tab, setTab] = React.useState<"profile" | "sessions" | "history">("profile");
@@ -834,7 +835,7 @@ function UserDetailDrawer({ user, onClose, onEdit, onSuspend, onKillSessions, on
                 <Button variant="outline" onClick={onSuspend} className={cn(user.status === "active" ? "border-danger/30 text-danger" : "border-success/30 text-success")}>
                   <Power className="h-3.5 w-3.5" />{user.status === "active" ? "Suspend" : "Reactivate"}
                 </Button>
-                <Button variant="outline" onClick={() => onToast(`Reset link sent to ${user.email}`)}>
+                <Button variant="outline" onClick={onResetPassword}>
                   <Lock className="h-3.5 w-3.5" />Reset password
                 </Button>
               </div>

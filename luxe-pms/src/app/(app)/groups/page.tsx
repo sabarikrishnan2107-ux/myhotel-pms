@@ -96,7 +96,7 @@ export default function GroupsPage() {
 
   const inWindow = (iso: string) => {
     if (dateWindow === "all") return true;
-    const today = new Date("2026-05-24");
+    const today = new Date();
     const d = new Date(iso);
     const diffDays = Math.floor((d.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
     if (dateWindow === "this-week") return diffDays >= 0 && diffDays <= 7;
@@ -131,7 +131,23 @@ export default function GroupsPage() {
     showToast(`${g.name} cancelled · ${money(refund)} refund processed (${reason})`);
   };
   const handleExport = () => {
-    showToast(`CSV export ready · ${list.length} groups`);
+    const headers = ["Code", "Name", "Type", "Status", "Arrival", "Departure", "Nights", "Rooms", "Pax", "Contact", "Phone", "Total", "Balance"];
+    const rows = list.map(g => [
+      g.code, `"${g.name}"`, g.type, g.status,
+      g.arrival, g.departure, g.nights,
+      g.totalRooms, g.totalPax,
+      `"${g.contactName}"`, g.contactPhone,
+      g.total, g.balance,
+    ].join(","));
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `group-bookings-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Exported ${list.length} group${list.length === 1 ? "" : "s"} to CSV`);
   };
 
   // Close menu on outside click, or when the page scrolls/resizes (the menu is

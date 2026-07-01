@@ -714,13 +714,19 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
   const orderTotal = orderSubtotal + orderTax;
   const orderItemCount = Object.values(orderCart).reduce((t, n) => t + n, 0);
 
+  // Effective nightly rate = what was actually billed per night on this booking
+  // (not the room's base tariff, which may differ from the rate plan charged).
+  const effectiveRate = room.nights && room.total
+    ? Math.round(room.total / room.nights)
+    : room.rate;
+
   // Reduce: a stay must keep at least 1 night, so cap how many can be removed.
   // reduceCut is the effective nights removed (0 for a 1-night stay → can't reduce);
   // reduceLess is the bill reduction; reduceRefundDue is the already-paid portion
   // owed back to the guest (when the reduction exceeds the outstanding balance).
   const maxReduce = Math.max(0, (room.nights ?? 1) - 1);
   const reduceCut = Math.min(Math.max(1, reduceNights), maxReduce);
-  const reduceLess = room.rate * reduceCut;
+  const reduceLess = effectiveRate * reduceCut;
   const reduceRefundDue = Math.max(0, reduceLess - (room.balance ?? 0));
 
   // Persist each action to the backend, then let the caller refresh the live board.
@@ -731,7 +737,7 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
     const today = new Date().toISOString().slice(0, 10);
     try {
       if (kind === "extend") {
-        const extra = room.rate * extraNights;
+        const extra = effectiveRate * extraNights;
         if (room.bookingId) {
           await apiPut(`/bookings/${room.bookingId}`, {
             checkOut: shiftDate(room.checkOut, extraNights),
@@ -742,7 +748,7 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
           await apiPost("/folio-charges", {
             bookingNo: room.bookingNo, date: today,
             description: `Room charge · extension ${extraNights} night${extraNights === 1 ? "" : "s"}`,
-            type: "Room", qty: extraNights, rate: room.rate, tax: 0, amount: extra, paidBy: "Guest",
+            type: "Room", qty: extraNights, rate: effectiveRate, tax: 0, amount: extra, paidBy: "Guest",
           });
         }
         onDone(`Room ${room.number} extended by ${extraNights} night${extraNights === 1 ? "" : "s"}`);
@@ -761,7 +767,7 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
           await apiPost("/folio-charges", {
             bookingNo: room.bookingNo, date: today,
             description: `Room charge reversal · reduced ${reduceCut} night${reduceCut === 1 ? "" : "s"}`,
-            type: "Room", qty: -reduceCut, rate: room.rate, tax: 0, amount: -reduceLess, paidBy: "Guest",
+            type: "Room", qty: -reduceCut, rate: effectiveRate, tax: 0, amount: -reduceLess, paidBy: "Guest",
           });
         }
         onDone(`Room ${room.number} stay reduced by ${reduceCut} night${reduceCut === 1 ? "" : "s"}${reduceRefundDue > 0 ? ` · refund due ${money(reduceRefundDue)}` : ""}`);
@@ -773,9 +779,17 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
         }
         onDone(`Moved Room ${room.number} → ${newRoom} · ${changeReason}${issues}${notifyHK || notifyMaint ? " · HK/Maint notified" : ""}`);
       } else if (kind === "payment") {
-        if (room.bookingNo) {
+        if (room.bookingNo && room.bookingId) {
           await apiPost("/folio-payments", {
             bookingNo: room.bookingNo, date: today, mode: payMode, amount: payAmount, reference: "Front desk · Room Rack",
+          });
+          const newBalance = Math.max(0, (room.balance ?? 0) - payAmount);
+          const newAdvance = (room.total ?? 0) - newBalance;
+          const newPaymentStatus = newBalance === 0 ? "paid" : newAdvance > 0 ? "partial" : "unpaid";
+          await apiPut(`/bookings/${room.bookingId}`, {
+            advance: newAdvance,
+            balance: newBalance,
+            paymentStatus: newPaymentStatus,
           });
         }
         onDone(`${money(payAmount)} collected via ${payMode} · Room ${room.number}`);
@@ -818,7 +832,7 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
             </span>
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold truncate">{titles[kind]}</h3>
-              <p className="text-xs text-muted-foreground">{room.guestName ?? "Vacant"} · {room.type} · {money(room.rate)}/night</p>
+              <p className="text-xs text-muted-foreground">{room.guestName ?? "Vacant"} · {room.type} · {money(effectiveRate)}/night</p>
             </div>
             <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
           </div>
@@ -831,7 +845,7 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
                   <Input type="number" min={1} max={30} value={extraNights} onChange={e => setExtraNights(Math.max(1, Number(e.target.value)))} className="h-10 tabular text-base" />
                 </div>
                 <div className="rounded-md bg-surface-sunken p-3 text-xs space-y-1">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Extra charge</span><span className="font-medium tabular">{money(room.rate * extraNights)}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Extra charge</span><span className="font-medium tabular">{money(effectiveRate * extraNights)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">New checkout</span><span className="font-medium">Auto-calculated</span></div>
                 </div>
               </>

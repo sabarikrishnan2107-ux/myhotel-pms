@@ -2181,7 +2181,8 @@ function WalkInModal({
   const [pay, setPay] = React.useState<AdvancePayment>({ amount: 0, mode: "UPI" });
   const [instructions, setInstructions] = React.useState("");
   const setP = <K extends keyof AdvancePayment>(k: K, v: AdvancePayment[K]) => setPay(p => ({ ...p, [k]: v }));
-  const [customAdvance, setCustomAdvance] = React.useState(false);   // "Custom" advance toggle → reveals an amount input
+  const [customAdvance, setCustomAdvance] = React.useState(false);
+  const [advancePct, setAdvancePct] = React.useState<0 | 30 | 50 | 100>(30);
 
   // ----- receipt preview -----
   const [showReceipt, setShowReceipt] = React.useState(false);
@@ -2229,6 +2230,7 @@ function WalkInModal({
   // Default advance suggestion = 30% on first nights compute
   React.useEffect(() => {
     if (!customAdvance && pay.amount === 0 && grandTotal > 0) {
+      setAdvancePct(30);
       setPay(p => ({ ...p, amount: Math.round(grandTotal * 0.3) }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2818,14 +2820,14 @@ function WalkInModal({
                   {/* Quick presets + amount */}
                   <Label>Advance payment</Label>
                   <div className="flex flex-wrap gap-2">
-                    {[0, 30, 50, 100].map(p => (
+                    {([0, 30, 50, 100] as const).map(p => (
                       <button
                         key={p}
                         type="button"
-                        onClick={() => { setCustomAdvance(false); setP("amount", Math.round(grandTotal * p / 100)); }}
+                        onClick={() => { setCustomAdvance(false); setAdvancePct(p); setP("amount", Math.round(grandTotal * p / 100)); }}
                         className={cn(
                           "h-10 px-4 rounded-md border text-sm font-medium transition-colors",
-                          !customAdvance && Math.abs(pay.amount - Math.round(grandTotal * p / 100)) < 5
+                          !customAdvance && advancePct === p
                             ? "bg-brand text-brand-foreground border-brand"
                             : "border-border hover:bg-surface-sunken"
                         )}
@@ -3080,6 +3082,7 @@ function WalkInModal({
                     <Badge tone="brand">Walk-in</Badge>
                   </div>
                   {phone && <p className="text-xs text-muted-foreground truncate">{phone}</p>}
+                  {email && <p className="text-xs text-muted-foreground truncate">{email}</p>}
                 </div>
               </div>
             ) : (
@@ -3123,30 +3126,65 @@ function WalkInModal({
                 <span className="font-semibold text-sm">Grand total</span>
                 <span className="font-semibold text-base tabular">{money(grandTotal)}</span>
               </div>
-              <div className="flex justify-between text-success">
-                <span className="font-medium">Advance{pay.amount > 0 ? ` (${pay.mode})` : ""}</span>
-                <span className="tabular font-semibold">- {money(pay.amount)}</span>
-              </div>
-              <div className="pt-1.5 mt-1.5 border-t border-border flex justify-between">
-                <span className="font-semibold text-sm">Balance</span>
-                <span className={cn("font-semibold text-base tabular", balance > 0 ? "text-warning" : "text-success")}>{money(balance)}</span>
-              </div>
             </dl>
 
-            {/* Back / Next (Start on final step) */}
-            <div className="mt-5 flex gap-2">
-              <Button variant="outline" disabled={step === 1} onClick={() => setStep(s => s - 1)} className="flex-1">
+            {/* Advance payment quick-picks */}
+            <div className="mt-4 pt-4 border-t border-border space-y-3">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Advance payment</p>
+              <div className="grid grid-cols-3 gap-1.5">
+                {([30, 50, 100] as const).map(p => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => { setCustomAdvance(false); setAdvancePct(p); setP("amount", p === 100 ? grandTotal : Math.round(grandTotal * p / 100)); }}
+                    className={cn(
+                      "h-8 rounded-md border text-xs font-semibold transition-colors",
+                      !customAdvance && advancePct === p
+                        ? "bg-brand text-brand-foreground border-brand"
+                        : "border-border hover:bg-surface-sunken"
+                    )}
+                  >
+                    {p === 100 ? "Full" : `${p}%`}
+                  </button>
+                ))}
+              </div>
+              <div className="rounded-md bg-surface-sunken/60 px-3 py-2.5 space-y-1.5">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-muted-foreground">Advance{pay.amount > 0 ? ` (${pay.mode})` : ""}</span>
+                  <span className="font-semibold tabular text-brand">{money(pay.amount)}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-muted-foreground">Balance</span>
+                  <span className={cn("tabular font-medium", balance > 0 ? "text-warning" : "text-success")}>{money(balance)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Special instructions — shown once entered on step 5 */}
+            {instructions.trim() && (
+              <div className="mt-3 pt-3 border-t border-border">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Instructions</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">{instructions.trim()}</p>
+              </div>
+            )}
+
+            {/* Navigation */}
+            <div className="mt-4 flex gap-2">
+              <Button variant="outline" size="sm" disabled={step === 1} onClick={() => setStep(s => s - 1)} className="flex-1">
                 <ChevronLeft className="h-4 w-4" />Back
               </Button>
-              {step < STEPS.length ? (
-                <Button onClick={() => setStep(s => Math.min(STEPS.length, s + 1))} disabled={!canNext()} className="flex-1">
+              {step < STEPS.length && (
+                <Button size="sm" onClick={() => setStep(s => Math.min(STEPS.length, s + 1))} disabled={!canNext()} className="flex-1">
                   Next<ChevronRight className="h-4 w-4" />
                 </Button>
-              ) : (
-                <Button onClick={start} disabled={!valid} variant="success" className="flex-1">
-                  <ChevronsRight className="h-4 w-4" />Start check-in
-                </Button>
               )}
+            </div>
+
+            {/* Primary CTA — always visible */}
+            <div className="mt-3">
+              <Button onClick={start} disabled={!valid} variant="success" className="w-full">
+                <ChevronsRight className="h-4 w-4" />Start Check-in
+              </Button>
             </div>
 
             {/* Receipt — available once an advance has been entered */}

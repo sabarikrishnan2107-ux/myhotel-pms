@@ -11,7 +11,6 @@ import { Input, Select } from "@/components/ui/input";
 import { Badge, PaymentBadge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KPICard } from "@/components/ui/kpi-card";
-import { GUESTS } from "@/lib/mock-data";
 import type { Reservation, PaymentStatus, BookingSource, Guest } from "@/lib/types";
 import { cn, money, formatTime } from "@/lib/utils";
 import { apiGet } from "@/lib/api";
@@ -21,12 +20,14 @@ export default function CheckoutListPage() {
   const [q, setQ] = React.useState("");
   // In-house guests = checked-in bookings, ready to check out.
   const [departures, setDepartures] = React.useState<Reservation[]>([]);
+  const [guests, setGuests] = React.useState<Guest[]>([]);
   React.useEffect(() => {
     apiGet<(Reservation & { status?: string })[]>("/bookings")
       .then(rows => setDepartures(
         rows.filter(b => (b.status ?? "") === "checked-in").map(b => ({ ...b, id: String(b.id) })),
       ))
       .catch(() => {});
+    apiGet<Guest[]>("/guests").then(setGuests).catch(() => {});
   }, []);
   const [view, setView] = React.useState<"cards" | "list">("cards");
   const [source, setSource] = React.useState<"all" | BookingSource>("all");
@@ -48,14 +49,14 @@ export default function CheckoutListPage() {
   }, [departures, q, source, payment, balanceOnly, vipOnly]);
 
   const exactMatch = q.trim() && matched.length === 1 ? matched[0] : null;
-  const totalOutstanding = departures.reduce((s, r) => s + r.balance, 0);
-  const cleared = departures.filter(r => r.balance === 0).length;
+  const totalOutstanding = departures.reduce((s, r) => s + (r.balance ?? 0), 0);
+  const cleared = departures.filter(r => (r.balance ?? 0) === 0).length;
   const sources = Array.from(new Set(departures.map(r => r.source)));
   const activeFilters = (source !== "all" ? 1 : 0) + (payment !== "all" ? 1 : 0) + (balanceOnly ? 1 : 0) + (vipOnly ? 1 : 0);
 
   const guestForSelected: Guest | null = React.useMemo(() => {
     if (!selected) return null;
-    return GUESTS.find(g => g.name === selected.guestName) ?? {
+    return guests.find(g => g.name === selected.guestName) ?? {
       id: `g-${selected.id}`,
       name: selected.guestName,
       phone: "—",
@@ -69,7 +70,7 @@ export default function CheckoutListPage() {
       lifetimeSpend: selected.total,
       lastStay: selected.checkIn,
     };
-  }, [selected]);
+  }, [selected, guests]);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">

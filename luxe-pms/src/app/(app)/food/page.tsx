@@ -74,6 +74,8 @@ export default function FoodPage() {
     setModifyOrder(null);
     const body: Record<string, unknown> = {};
     if (patch.total !== undefined) body.total = Math.round(patch.total);
+    if (patch.status !== undefined) body.status = patch.status;
+    if (patch.instructions !== undefined) body.instructions = patch.instructions;
     if (Object.keys(body).length) apiPut(`/fb-orders/${id}`, body).catch(() => showToast("⚠ Save failed — backend offline"));
     showToast(`Order updated · KOT reprinted`);
   };

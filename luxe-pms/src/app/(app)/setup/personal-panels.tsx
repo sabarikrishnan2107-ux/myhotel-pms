@@ -368,7 +368,7 @@ export function WebhooksPanel() {
           <div className="flex items-center justify-between gap-2">
             <code className="font-mono text-xs text-muted-foreground truncate">{w.url}</code>
             <div className="flex items-center gap-1.5 shrink-0">
-              <Badge tone="success">{w.status}</Badge>
+              <Badge tone={w.status === "active" ? "success" : w.status === "paused" ? "warning" : "neutral"}>{w.status}</Badge>
               <button type="button" onClick={() => showToast(`Webhook URL revealed · ${w.url}`)} className="h-7 w-7 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center text-muted-foreground" title="View full URL">
                 <Eye className="h-3 w-3" />
               </button>

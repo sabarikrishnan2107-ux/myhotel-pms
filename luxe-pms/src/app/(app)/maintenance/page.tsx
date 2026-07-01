@@ -59,8 +59,7 @@ type ScheduleItem = {
   durationMin: number;
 };
 
-// Today reference for the demo
-const TODAY = new Date("2026-05-24");
+const TODAY = new Date();
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 const daysFromNow = (n: number) => { const d = new Date(TODAY); d.setDate(d.getDate() + n); return isoDate(d); };
 
@@ -1141,7 +1140,7 @@ function NewTicketModal({ onClose, onSave }: {
           <div className="px-5 py-3 border-t border-border bg-surface-elevated flex items-center justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
             <Button
-              onClick={() => onSave({ code: nextTicketCode(), room, title, priority, status: "open" as TicketStatus, assignee: assignee === "Unassigned" ? null : assignee, reported: "Just now", category })}
+              onClick={() => onSave({ code: nextTicketCode(), room, title, priority, status: "open" as TicketStatus, assignee: assignee === "Unassigned" ? null : assignee, reported: new Date().toISOString(), category })}
               disabled={!valid}
               variant="success"
             >
