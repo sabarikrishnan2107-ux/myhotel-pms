@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import * as React from "react";
 import {
   Plus, Search, Briefcase, Building2, Phone, Mail, FileText, Wallet,
@@ -262,7 +262,7 @@ export default function AgentsPage() {
       asOf: new Date().toISOString().slice(0, 10),
       creditLimit: a.credit,
       outstanding: a.outstanding,
-      utilization: ((a.outstanding / a.credit) * 100).toFixed(1) + "%",
+      utilization: (a.credit > 0 ? (a.outstanding / a.credit) * 100 : 0).toFixed(1) + "%",
       paymentTerms: a.paymentTerms,
       bookings: a.bookings,
       commissionRate: a.commission + "%",

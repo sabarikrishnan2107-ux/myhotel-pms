@@ -91,6 +91,7 @@ use App\Models\NotifLog;
 use App\Models\KitchenAmenity;
 use App\Models\RoomAmenity;
 use App\Models\GroupService;
+use App\Models\CashierShift;
 use Illuminate\Http\Request;
 
 /**
@@ -187,6 +188,7 @@ class ResourceController extends Controller
         'room-amenities'         => RoomAmenity::class,
         'vendor-bills'           => VendorBill::class,
         'group-services'         => GroupService::class,
+        'cashier-shifts'         => CashierShift::class,
     ];
 
     /**
@@ -892,6 +894,15 @@ class ResourceController extends Controller
             'price' => 'integer|min:0', 'perPax' => 'boolean',
             'gst' => 'integer|min:0|max:100', 'active' => 'boolean',
         ],
+        'cashier-shifts' => [
+            'staffName'      => 'string|max:255',
+            'openedAt'       => 'string|max:50|nullable',
+            'openingBalance' => 'integer|min:0',
+            'status'         => 'string|max:50',
+            'closingBalance' => 'integer|min:0|nullable',
+            'closedAt'       => 'string|max:50|nullable',
+            'notes'          => 'string|max:2000|nullable',
+        ],
     ];
 
     /** Fields that must be present (and non-empty) when creating a row. */
@@ -964,7 +975,8 @@ class ResourceController extends Controller
         'kitchen-amenities' => ['name'],
         'room-amenities' => ['name'],
         'vendor-bills' => ['billNo', 'vendor'],
-        'group-services' => ['name'],
+        'group-services'  => ['name'],
+        'cashier-shifts'  => ['staffName'],
     ];
 
     private function model(string $resource): string
@@ -997,6 +1009,12 @@ class ResourceController extends Controller
         }
 
         return $data;
+    }
+
+    public function show(string $resource, $id)
+    {
+        $row = $this->model($resource)::findOrFail($id);
+        return response()->json($row);
     }
 
     public function index(string $resource, Request $request)

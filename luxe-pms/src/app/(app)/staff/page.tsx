@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import * as React from "react";
 import {
   Plus, Search, UserCog, Users, Calendar, IndianRupee, Phone, Mail, MessageSquare,
@@ -366,7 +366,7 @@ function StaffDetailDrawer({ staff, onClose, onToggleActive, onToast }: {
   }, [onClose]);
 
   // Mock derived data
-  const tenure = Math.max(0, Math.floor((new Date("2026-05-25").getTime() - new Date(staff.joined).getTime()) / (1000 * 60 * 60 * 24 * 365.25) * 10) / 10);
+  const tenure = Math.max(0, Math.floor((new Date().getTime() - new Date(staff.joined).getTime()) / (1000 * 60 * 60 * 24 * 365.25) * 10) / 10);
   const annualSalary = staff.salary * 12;
 
   return (

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import * as React from "react";
 import {
   Search, Plus, MessageCircle, CheckCheck, Send, Trash2, Copy, Phone,
@@ -253,7 +253,7 @@ const SEED_TEMPLATES: Template[] = [
 
 function formatEdited(iso: string) {
   const d = new Date(iso);
-  const now = new Date("2026-06-02T12:00:00");
+  const now = new Date();
   const diff = Math.floor((now.getTime() - d.getTime()) / 1000);
   if (diff < 60) return "just now";
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;

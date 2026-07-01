@@ -122,6 +122,7 @@ Route::middleware(['auth:sanctum', 'company.active'])->group(function () {
     Route::middleware('company.module')->group(function () use ($resources) {
         Route::get('/{resource}', [ResourceController::class, 'index'])->where('resource', $resources);
         Route::post('/{resource}', [ResourceController::class, 'store'])->where('resource', $resources);
+        Route::get('/{resource}/{id}', [ResourceController::class, 'show'])->where('resource', $resources)->whereNumber('id');
         Route::put('/{resource}/{id}', [ResourceController::class, 'update'])->where('resource', $resources);
         Route::delete('/{resource}/{id}', [ResourceController::class, 'destroy'])->where('resource', $resources);
     });

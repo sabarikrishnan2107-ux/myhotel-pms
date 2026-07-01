@@ -272,6 +272,7 @@ class StatsController extends Controller
                 'bookingId'     => $bk->id ?? null,
                 'nights'        => $bk ? (int) $bk->nights : null,
                 'total'         => $bk ? (int) $bk->total : null,
+                'advance'       => $bk ? (int) $bk->advance : null,
                 'balance'       => $bk ? (int) $bk->balance : null,
             ];
         });

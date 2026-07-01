@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import * as React from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
@@ -682,7 +682,7 @@ function CancelBookingDialog({ reservation, onClose, onConfirm }: {
   }, [onClose]);
 
   // Refund policy preview: days-to-arrival driven
-  const today = new Date("2026-05-24");
+  const today = new Date();
   const ci = new Date(reservation.checkIn);
   const daysUntil = Math.floor((ci.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
   let refundPct = 100;

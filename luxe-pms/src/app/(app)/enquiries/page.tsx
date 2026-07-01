@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import * as React from "react";
 import Link from "next/link";
 import {
@@ -68,7 +68,7 @@ type Enquiry = {
 };
 
 // ============ SEED DATA ============
-const TODAY = new Date("2026-05-24");
+const TODAY = new Date();
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 const daysFromNow = (n: number) => { const d = new Date(TODAY); d.setDate(d.getDate() + n); return isoDate(d); };
 

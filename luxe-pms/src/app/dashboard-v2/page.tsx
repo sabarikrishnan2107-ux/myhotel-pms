@@ -15,9 +15,9 @@ export default function DashboardV2Page() {
   const data = MOCK_DASHBOARD_V2_DATA;
 
   return (
-    <div className="min-h-svh bg-[#F7F8FC]">
+    <div className="flex min-h-svh bg-[#F7F8FC]">
       <SidebarV2 />
-      <div className="lg:pl-64">
+      <div className="flex-1 min-w-0">
         <TopHeaderV2 notificationCount={data.notificationCount} currentUser={data.currentUser} />
         <main className="max-w-[1600px] mx-auto px-6 py-6 space-y-6">
           <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-5">

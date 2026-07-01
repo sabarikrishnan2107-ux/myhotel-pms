@@ -103,8 +103,8 @@
     --sidebar-fg: 40 27% 97%;           /* ivory text */
     --sidebar-muted: 218 20% 65%;       /* muted ivory */
     --sidebar-border: 218 40% 22%;
-    --sidebar-active: 40 74% 44%;       /* gold accent */
-    --sidebar-active-bg: 40 60% 18%;    /* dark gold tint */
+    --sidebar-active: 252 100% 65%;     /* #6D4AFF purple accent */
+    --sidebar-active-bg: 252 55% 18%;   /* dark purple tint */
   }
 
   .dark {
@@ -171,8 +171,8 @@
     --sidebar-fg: 40 27% 96%;
     --sidebar-muted: 218 18% 62%;
     --sidebar-border: 218 50% 18%;
-    --sidebar-active: 40 80% 55%;
-    --sidebar-active-bg: 40 60% 16%;
+    --sidebar-active: 252 100% 65%;
+    --sidebar-active-bg: 252 55% 18%;
   }
 
   html, body {

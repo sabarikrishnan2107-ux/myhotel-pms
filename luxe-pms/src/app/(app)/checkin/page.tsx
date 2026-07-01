@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import * as React from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
@@ -3357,7 +3357,7 @@ function AdvanceReceiptModal({
   const coDate = new Date(ciDate);
   coDate.setDate(coDate.getDate() + nights);
   const fmt = (d: Date) => d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
-  const dateNow = new Date("2026-05-24T14:22:00").toLocaleString(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const dateNow = new Date().toLocaleString(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
   // Gate the print portal on mount so document.body exists (SSR-safe).
   const [mounted, setMounted] = React.useState(false);

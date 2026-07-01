@@ -30,29 +30,31 @@ type AuditRun = AuditRunRow & {
 // ================== ENRICHED SEED ==================
 // Derive the display rows (timeline steps, anomalies, compliance flags) from the
 // base audit-runs rows. Used for both the offline seed and the live API rows.
+// API fields (cashVariance, anomalies, steps) are trusted when present; safe
+// defaults are applied only when the DB column is absent.
 function enrichRuns(rows: AuditRunRow[]): AuditRun[] {
-  return rows.map((r, i) => ({
-    ...r,
-    // Backend numeric columns can arrive as strings — coerce so the UI math
-    // (revenue/ADR/RevPAR, noShows > 0, occupancy %) stays correct.
-    occupancy: Number(r.occupancy),
-    revenue: Number(r.revenue),
-    noShows: Number(r.noShows),
-    cashVariance: r.status === "anomaly" ? -500 : 0,
-    anomalies: r.status === "anomaly"
-      ? ["Cash drawer short ₹500 (Shift #4214 · Priya M.)", "2 no-show charges not posted"]
-      : [],
-    irn: true,
-    backup: true,
-    steps: [
-      { name: "Pre-checks (cashier · HK · folios)", duration: "8s", status: "ok" },
-      { name: "Post nightly room charges + GST", duration: "12s", status: "ok" },
-      { name: "No-show check", duration: r.noShows > 0 ? "11s" : "5s", status: r.noShows > 0 ? (i === 3 ? "warn" : "ok") : "ok" },
-      { name: "Roll system date forward", duration: "3s", status: "ok" },
-      { name: "Generate Manager Flash + email", duration: "9s", status: "ok" },
-      { name: "Lock books · backup database", duration: "10s", status: i === 3 ? "warn" : "ok" },
-    ],
-  }));
+  return rows.map((r) => {
+    const api = r as unknown as Partial<AuditRun>;
+    const noShows = Number(r.noShows);
+    return {
+      ...r,
+      occupancy: Number(r.occupancy),
+      revenue: Number(r.revenue),
+      noShows,
+      cashVariance: api.cashVariance ?? 0,
+      anomalies: api.anomalies ?? [],
+      irn: api.irn ?? true,
+      backup: api.backup ?? true,
+      steps: api.steps ?? [
+        { name: "Pre-checks (cashier · HK · folios)", duration: "8s",  status: "ok"  as const },
+        { name: "Post nightly room charges + GST",    duration: "12s", status: "ok"  as const },
+        { name: "No-show check",                      duration: noShows > 0 ? "11s" : "5s", status: noShows > 0 ? "warn" as const : "ok" as const },
+        { name: "Roll system date forward",            duration: "3s",  status: "ok"  as const },
+        { name: "Generate Manager Flash + email",      duration: "9s",  status: "ok"  as const },
+        { name: "Lock books · backup database",        duration: "10s", status: "ok"  as const },
+      ],
+    };
+  });
 }
 
 const WIZARD_STEPS = [
@@ -95,15 +97,23 @@ export default function NightAuditPage() {
   const passingChecks = preChecks.filter(c => c.status === "ok").length;
   const auditReady = passingChecks >= 4; // soft gate
 
-  // Manager Flash (today's DTD)
-  const flash = {
-    revenue: 142850,        revenueDelta: 12,
-    adr:     8450,          adrDelta: -3,
-    revpar:  5240,          revparDelta: 8,
-    occupancy: 62,          occupancyDelta: 5,
-    cashCollected: 184500,  cashDelta: 18,
-    taxLiability: 21630,
-  };
+  // Manager Flash — derived from the most recent audit run so it reflects real DB data.
+  // Deltas vs last week are static (no historical comparison endpoint exists yet).
+  const flash = React.useMemo(() => {
+    const totalRooms = DASHBOARD_KPIS.totalRooms || 45;
+    const occupiedRooms = Math.max(1, Math.round(totalRooms * last.occupancy / 100));
+    const adr = Math.floor(last.revenue / occupiedRooms);
+    const revpar = Math.floor(last.revenue / totalRooms);
+    const taxLiability = Math.round(last.revenue * 0.12);
+    return {
+      revenue: last.revenue,       revenueDelta: 12,
+      adr,                         adrDelta: -3,
+      revpar,                      revparDelta: 8,
+      occupancy: last.occupancy,   occupancyDelta: 5,
+      cashCollected: Math.round(last.revenue * 1.12),  cashDelta: 18,
+      taxLiability,
+    };
+  }, [last]);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
@@ -308,7 +318,13 @@ export default function NightAuditPage() {
       {showWizard && (
         <RunAuditWizard
           onClose={() => setShowWizard(false)}
-          onComplete={() => { setShowWizard(false); showToast("Night audit completed successfully · 0 anomalies"); }}
+          onComplete={() => {
+            setShowWizard(false);
+            showToast("Night audit completed successfully");
+            apiGet<AuditRunRow[]>("/audit-runs")
+              .then(rows => { if (rows.length) setAuditRuns(rows); })
+              .catch(() => {});
+          }}
           flash={flash}
         />
       )}
@@ -544,6 +560,10 @@ function WizardStepBody({ step, flash, working, completed, postResult }: {
     );
   }
   if (step === "roll") {
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const fmtDate = (d: Date) => d.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
     return (
       <div className="space-y-3">
         <h4 className="font-semibold">Roll system date forward</h4>
@@ -551,10 +571,10 @@ function WizardStepBody({ step, flash, working, completed, postResult }: {
         <Card className="p-4 bg-brand-soft/20 border-brand/30 text-center">
           <Calendar className="h-8 w-8 mx-auto text-brand mb-2" />
           <p className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">Business day</p>
-          <p className="text-2xl font-bold tabular mt-1">24 May 2026</p>
+          <p className="text-2xl font-bold tabular mt-1">{fmtDate(today)}</p>
           <ArrowRight className="h-5 w-5 mx-auto my-2 text-brand" />
           <p className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">Will become</p>
-          <p className="text-2xl font-bold tabular mt-1 text-brand">25 May 2026</p>
+          <p className="text-2xl font-bold tabular mt-1 text-brand">{fmtDate(tomorrow)}</p>
         </Card>
       </div>
     );
@@ -586,7 +606,7 @@ function WizardStepBody({ step, flash, working, completed, postResult }: {
     return (
       <div className="space-y-3">
         <h4 className="font-semibold">Lock books · backup database</h4>
-        <p className="text-xs text-muted-foreground">After lock, transactions for 24 May 2026 become read-only. A full encrypted backup is uploaded to S3 + local NAS.</p>
+        <p className="text-xs text-muted-foreground">After lock, transactions for {new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })} become read-only. A full encrypted backup is uploaded to S3 + local NAS.</p>
         <div className="space-y-2">
           <Card className="p-3 bg-info-soft/15 border-info/20">
             <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Today&apos;s flash</p>

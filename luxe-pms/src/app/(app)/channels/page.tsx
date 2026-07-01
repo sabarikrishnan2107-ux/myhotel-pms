@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import * as React from "react";
 import {
   Globe, RefreshCw, Plus, Link2, Wifi, WifiOff, Calendar, Tag, Percent,
@@ -49,7 +49,7 @@ const RATE_MAP: RateMapRow[] = ROOM_TYPES.map(t => ({
 }));
 
 const AVAILABILITY = Array.from({ length: 7 }, (_, i) => {
-  const d = new Date("2026-05-25"); d.setDate(d.getDate() + i);
+  const d = new Date(); d.setDate(d.getDate() + i);
   return {
     date: d.toLocaleDateString(undefined, { weekday: "short", day: "2-digit", month: "short" }),
     Queen: 12 - (i % 4), Deluxe: 18 - (i % 5), Suite: 4 - (i % 2),

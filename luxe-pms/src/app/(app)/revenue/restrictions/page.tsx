@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import * as React from "react";
 import {
   Lock, Calendar, Calendar as CalendarIcon, Radio, Sparkles, Info, Zap, Layers,
@@ -54,7 +54,7 @@ const ROOM_TYPES: { key: RoomTypeKey; label: string; rate: number; rooms: number
 
 const CHANNELS = ["Booking.com", "Agoda", "MakeMyTrip", "Expedia", "Direct"];
 
-const TODAY = new Date("2026-06-02");
+const TODAY = new Date();
 
 function addDays(d: Date, n: number): Date {
   const r = new Date(d);
