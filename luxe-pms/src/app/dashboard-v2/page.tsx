@@ -6,6 +6,9 @@ import { QuickActionTileV2 } from "@/components/dashboard-v2/quick-action-tile";
 import { PrioritiesListV2 } from "@/components/dashboard-v2/priorities-list";
 import { RoomStatusGridV2 } from "@/components/dashboard-v2/room-status-grid";
 import { AiBriefingCardV2 } from "@/components/dashboard-v2/ai-briefing-card";
+import { ArrivalsCardV2 } from "@/components/dashboard-v2/arrivals-card";
+import { DeparturesCardV2 } from "@/components/dashboard-v2/departures-card";
+import { ActivityFeedV2 } from "@/components/dashboard-v2/activity-feed";
 import { MOCK_DASHBOARD_V2_DATA } from "@/components/dashboard-v2/mock-data";
 
 export default function DashboardV2Page() {
@@ -39,6 +42,12 @@ export default function DashboardV2Page() {
             <PrioritiesListV2 items={data.priorities} />
             <RoomStatusGridV2 floors={data.floors} legend={data.roomLegend} />
             <AiBriefingCardV2 lines={data.aiBriefing} />
+          </section>
+
+          <section className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+            <ArrivalsCardV2 summary={data.arrivals.summary} rows={data.arrivals.rows} />
+            <DeparturesCardV2 summary={data.departures.summary} rows={data.departures.rows} />
+            <ActivityFeedV2 items={data.activity} />
           </section>
         </main>
       </div>
