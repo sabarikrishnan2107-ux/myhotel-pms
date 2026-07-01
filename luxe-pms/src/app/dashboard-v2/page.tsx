@@ -16,7 +16,7 @@ export default function DashboardV2Page() {
   const data = MOCK_DASHBOARD_V2_DATA;
 
   return (
-    <div className="flex min-h-svh bg-[#F7F8FC]">
+    <div className="flex min-h-svh bg-[#F7F8FC] dark:bg-[#0B0F1D]">
       <SidebarV2 />
       <div className="flex-1 min-w-0">
         <TopHeaderV2 notificationCount={data.notificationCount} currentUser={data.currentUser} />
