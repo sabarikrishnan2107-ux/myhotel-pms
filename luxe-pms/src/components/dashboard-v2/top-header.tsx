@@ -3,6 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Search, Plus, Bell, Clock, ChevronDown } from "lucide-react";
 import { initials } from "@/lib/utils";
+import { ThemeToggleV2 } from "./theme-toggle";
 
 interface Props {
   notificationCount: number;
@@ -23,20 +24,20 @@ export function TopHeaderV2({ notificationCount, currentUser }: Props) {
     : "";
 
   return (
-    <header className="sticky top-0 z-20 h-20 flex items-center gap-4 bg-white px-6 border-b border-[#E5E7EB]">
+    <header className="sticky top-0 z-20 h-20 flex items-center gap-4 bg-white dark:bg-[#141B2E] px-6 border-b border-[#E5E7EB] dark:border-[#26304A]">
       <div className="w-80 shrink-0">
-        <div className="flex items-center gap-2 rounded-xl bg-[#F7F8FC] px-3.5 py-2.5 text-sm text-[#6B7280]">
+        <div className="flex items-center gap-2 rounded-xl bg-[#F7F8FC] dark:bg-[#1B2338] px-3.5 py-2.5 text-sm text-[#6B7280] dark:text-[#8B94A8]">
           <Search className="h-4 w-4 shrink-0" />
           <span className="flex-1 truncate">Search by guest, booking, room...</span>
-          <kbd className="text-[10px] font-semibold text-[#6B7280]/70 border border-[#E5E7EB] rounded px-1.5 py-0.5">⌘K</kbd>
+          <kbd className="text-[10px] font-semibold text-[#6B7280]/70 dark:text-[#8B94A8]/70 border border-[#E5E7EB] dark:border-[#26304A] rounded px-1.5 py-0.5">⌘K</kbd>
         </div>
       </div>
       <div className="ml-auto flex items-center gap-4">
         <div className="hidden md:flex items-center gap-2 pr-2">
-          <Clock className="h-4 w-4 text-[#6B7280]" />
+          <Clock className="h-4 w-4 text-[#6B7280] dark:text-[#8B94A8]" />
           <div className="leading-tight">
-            <p className="text-sm font-semibold text-[#111827] tabular-nums">{timeLabel}</p>
-            <p className="text-[11px] text-[#6B7280]">{dateLabel}</p>
+            <p className="text-sm font-semibold text-[#111827] dark:text-[#E8ECF4] tabular-nums">{timeLabel}</p>
+            <p className="text-[11px] text-[#6B7280] dark:text-[#8B94A8]">{dateLabel}</p>
           </div>
         </div>
         <Link
@@ -45,7 +46,8 @@ export function TopHeaderV2({ notificationCount, currentUser }: Props) {
         >
           <Plus className="h-4 w-4" /> New Booking
         </Link>
-        <button type="button" className="relative h-10 w-10 rounded-xl flex items-center justify-center text-[#6B7280] hover:bg-[#F7F8FC] hover:text-[#111827] transition-colors shrink-0" aria-label="Notifications">
+        <ThemeToggleV2 />
+        <button type="button" className="relative h-10 w-10 rounded-xl flex items-center justify-center text-[#6B7280] dark:text-[#8B94A8] hover:bg-[#F7F8FC] dark:hover:bg-[#1B2338] hover:text-[#111827] dark:hover:text-[#E8ECF4] transition-colors shrink-0" aria-label="Notifications">
           <Bell className="h-[18px] w-[18px]" />
           {notificationCount > 0 && (
             <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-[#F43F5E] text-white text-[10px] font-bold flex items-center justify-center">
@@ -53,15 +55,15 @@ export function TopHeaderV2({ notificationCount, currentUser }: Props) {
             </span>
           )}
         </button>
-        <button type="button" className="flex items-center gap-2.5 pl-2 border-l border-[#E5E7EB] shrink-0">
-          <span className="h-10 w-10 rounded-full bg-[#EEEAFF] text-[#6D4AFF] flex items-center justify-center text-sm font-bold">
+        <button type="button" className="flex items-center gap-2.5 pl-2 border-l border-[#E5E7EB] dark:border-[#26304A] shrink-0">
+          <span className="h-10 w-10 rounded-full bg-[#EEEAFF] dark:bg-[#2A2152] text-[#6D4AFF] dark:text-[#B4A3FF] flex items-center justify-center text-sm font-bold">
             {initials(currentUser.name)}
           </span>
           <div className="hidden xl:block leading-tight text-left">
-            <p className="text-sm font-semibold text-[#111827]">{currentUser.name}</p>
+            <p className="text-sm font-semibold text-[#111827] dark:text-[#E8ECF4]">{currentUser.name}</p>
             <p className="text-[11px] text-[#6D4AFF]/70">{currentUser.role} · {currentUser.shift}</p>
           </div>
-          <ChevronDown className="h-4 w-4 text-[#6B7280] hidden xl:block" />
+          <ChevronDown className="h-4 w-4 text-[#6B7280] dark:text-[#8B94A8] hidden xl:block" />
         </button>
       </div>
     </header>
