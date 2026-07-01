@@ -11,6 +11,7 @@ interface Props {
 export function TopHeaderV2({ notificationCount, currentUser }: Props) {
   const [now, setNow] = React.useState<Date | null>(null);
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clock value only exists client-side
     setNow(new Date());
     const id = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(id);
