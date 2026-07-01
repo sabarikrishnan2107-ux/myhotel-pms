@@ -3,6 +3,9 @@ import { TopHeaderV2 } from "@/components/dashboard-v2/top-header";
 import { OccupancyHeroV2 } from "@/components/dashboard-v2/occupancy-hero";
 import { KpiCardV2 } from "@/components/dashboard-v2/kpi-card";
 import { QuickActionTileV2 } from "@/components/dashboard-v2/quick-action-tile";
+import { PrioritiesListV2 } from "@/components/dashboard-v2/priorities-list";
+import { RoomStatusGridV2 } from "@/components/dashboard-v2/room-status-grid";
+import { AiBriefingCardV2 } from "@/components/dashboard-v2/ai-briefing-card";
 import { MOCK_DASHBOARD_V2_DATA } from "@/components/dashboard-v2/mock-data";
 
 export default function DashboardV2Page() {
@@ -30,6 +33,12 @@ export default function DashboardV2Page() {
             {data.quickActions.map(action => (
               <QuickActionTileV2 key={action.id} {...action} />
             ))}
+          </section>
+
+          <section className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+            <PrioritiesListV2 items={data.priorities} />
+            <RoomStatusGridV2 floors={data.floors} legend={data.roomLegend} />
+            <AiBriefingCardV2 lines={data.aiBriefing} />
           </section>
         </main>
       </div>
