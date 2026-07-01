@@ -1,5 +1,7 @@
 import { SidebarV2 } from "@/components/dashboard-v2/sidebar";
 import { TopHeaderV2 } from "@/components/dashboard-v2/top-header";
+import { OccupancyHeroV2 } from "@/components/dashboard-v2/occupancy-hero";
+import { KpiCardV2 } from "@/components/dashboard-v2/kpi-card";
 import { MOCK_DASHBOARD_V2_DATA } from "@/components/dashboard-v2/mock-data";
 
 export default function DashboardV2Page() {
@@ -10,8 +12,18 @@ export default function DashboardV2Page() {
       <SidebarV2 />
       <div className="lg:pl-64">
         <TopHeaderV2 notificationCount={data.notificationCount} currentUser={data.currentUser} />
-        <main className="max-w-[1600px] mx-auto px-6 py-6">
-          <p className="text-sm text-[#6B7280]">DashboardV2 — content coming soon.</p>
+        <main className="max-w-[1600px] mx-auto px-6 py-6 space-y-6">
+          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-5">
+            <OccupancyHeroV2
+              pct={data.occupancy.pct}
+              occupiedRooms={data.occupancy.occupiedRooms}
+              totalRooms={data.occupancy.totalRooms}
+              trendPct={data.occupancy.trendPct}
+            />
+            {data.kpis.map(kpi => (
+              <KpiCardV2 key={kpi.id} {...kpi} />
+            ))}
+          </section>
         </main>
       </div>
     </div>
