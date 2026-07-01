@@ -19,8 +19,8 @@ export default function DashboardV2Page() {
       <SidebarV2 />
       <div className="flex-1 min-w-0">
         <TopHeaderV2 notificationCount={data.notificationCount} currentUser={data.currentUser} />
-        <main className="max-w-[1600px] mx-auto px-6 py-6 space-y-6">
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-5">
+        <main className="px-6 py-6 space-y-6">
+          <section className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-5">
             <OccupancyHeroV2
               pct={data.occupancy.pct}
               occupiedRooms={data.occupancy.occupiedRooms}
@@ -39,15 +39,15 @@ export default function DashboardV2Page() {
           </section>
 
           <section className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-            <PrioritiesListV2 items={data.priorities} />
-            <RoomStatusGridV2 floors={data.floors} legend={data.roomLegend} />
-            <AiBriefingCardV2 lines={data.aiBriefing} />
-          </section>
-
-          <section className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
             <ArrivalsCardV2 summary={data.arrivals.summary} rows={data.arrivals.rows} />
             <DeparturesCardV2 summary={data.departures.summary} rows={data.departures.rows} />
             <ActivityFeedV2 items={data.activity} />
+          </section>
+
+          <section className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+            <PrioritiesListV2 items={data.priorities} />
+            <RoomStatusGridV2 floors={data.floors} legend={data.roomLegend} />
+            <AiBriefingCardV2 lines={data.aiBriefing} />
           </section>
         </main>
       </div>

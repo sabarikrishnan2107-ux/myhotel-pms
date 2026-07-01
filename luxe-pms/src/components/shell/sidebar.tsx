@@ -119,27 +119,19 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                           prefetch
                           title={!expanded ? item.label : undefined}
                           className={cn(
-                            "group flex items-center gap-3 rounded-md pl-3 pr-3 py-2 text-sm relative",
+                            "group flex items-center gap-3 rounded-lg pl-3 pr-3 py-2 text-sm relative",
                             "transition-[background-color,color,transform] duration-150 ease-out",
                             "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[hsl(var(--sidebar-active))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--sidebar-bg))]",
                             active
-                              ? "bg-gradient-to-r from-[hsl(var(--sidebar-active))]/18 via-[hsl(var(--sidebar-active))]/8 to-transparent text-[hsl(var(--sidebar-active))] font-semibold"
+                              ? "bg-[hsl(var(--sidebar-active))] text-white font-semibold shadow-md shadow-[hsl(var(--sidebar-active))]/30"
                               : "text-[hsl(var(--sidebar-fg))] hover:bg-[hsl(var(--sidebar-bg-elevated))]/60 active:scale-[0.98]"
                           )}
                         >
-                          {/* Left gold indicator on active */}
-                          <span
-                            aria-hidden="true"
-                            className={cn(
-                              "absolute left-0 top-1/2 -translate-y-1/2 w-1 rounded-r-full bg-[hsl(var(--sidebar-active))] shadow-[0_0_8px_hsl(var(--sidebar-active))] transition-all duration-200 ease-out",
-                              active ? "h-7 opacity-100" : "h-0 opacity-0"
-                            )}
-                          />
                           <Icon
                             strokeWidth={2}
                             className={cn(
                               "h-[18px] w-[18px] shrink-0 transition-colors",
-                              active ? "text-[hsl(var(--sidebar-active))]" : "text-[hsl(var(--sidebar-fg))]"
+                              active ? "text-white" : "text-[hsl(var(--sidebar-fg))]"
                             )}
                           />
                           <span className={cn(
@@ -154,7 +146,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                             <span className={cn(
                               "ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-semibold transition-colors",
                               active
-                                ? "bg-[hsl(var(--sidebar-active))] text-[hsl(var(--sidebar-bg))]"
+                                ? "bg-white text-[hsl(var(--sidebar-active))]"
                                 : "bg-[hsl(var(--sidebar-bg-elevated))] text-[hsl(var(--sidebar-muted))] group-hover:bg-[hsl(var(--sidebar-active))]/20 group-hover:text-[hsl(var(--sidebar-active))]"
                             )}>
                               {item.badge}

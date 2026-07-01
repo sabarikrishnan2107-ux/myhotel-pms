@@ -16,7 +16,7 @@ export interface FloorRowV2 {
 export interface KpiV2 {
   id: string;
   label: string;
-  value: number;
+  value: number | string;
   badge?: string;
   caption: string;
   icon: LucideIcon;

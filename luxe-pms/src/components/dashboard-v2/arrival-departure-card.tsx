@@ -17,14 +17,14 @@ export function ArrivalDepartureCardV2({ title, icon: Icon, summary, rows, viewA
     <div className="rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgb(0_0_0_/_0.04),0_4px_16px_-6px_rgb(0_0_0_/_0.08)]">
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2.5">
-          <span className="h-9 w-9 rounded-xl bg-[#EEEAFF] text-[#6D4AFF] flex items-center justify-center shrink-0">
-            <Icon className="h-[18px] w-[18px]" />
+          <span className="h-12 w-12 rounded-xl bg-[#EEEAFF] text-[#6D4AFF] flex items-center justify-center shrink-0">
+            <Icon className="h-6 w-6" />
           </span>
           <p className="text-sm font-bold text-[#111827] uppercase tracking-[0.06em]">{title}</p>
         </div>
         <Link href={viewAllHref} className="text-xs font-semibold text-[#6D4AFF] hover:underline">View all</Link>
       </div>
-      <p className="text-xs text-[#6B7280] mb-3 pl-[46px]">{summary}</p>
+      <p className="text-xs text-[#6B7280] mb-3 pl-[58px]">{summary}</p>
       {rows.length === 0 ? (
         <p className="text-sm text-[#6B7280] text-center py-6">{emptyLabel}</p>
       ) : (

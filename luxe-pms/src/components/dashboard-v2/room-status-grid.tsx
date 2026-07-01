@@ -1,9 +1,9 @@
 import type { FloorRowV2, RoomStatusV2 } from "./types";
 
 const STATUS_STYLE: Record<RoomStatusV2, string> = {
-  available: "bg-[#22C55E] text-white",
-  occupied: "bg-[#F5B800] text-[#101A33]",
-  reserved: "bg-[#3B82F6] text-white",
+  available: "bg-[#DCFCE7] text-[#16A34A]",
+  occupied: "bg-[#F5B800] text-white",
+  reserved: "bg-[#DBEAFE] text-[#2563EB]",
   "out-of-order": "bg-[#F43F5E] text-white",
   blocked: "bg-[#E5E7EB] text-[#6B7280]",
 };
@@ -13,7 +13,7 @@ const LEGEND_DOT: Record<RoomStatusV2, string> = {
   occupied: "bg-[#F5B800]",
   reserved: "bg-[#3B82F6]",
   "out-of-order": "bg-[#F43F5E]",
-  blocked: "bg-[#E5E7EB]",
+  blocked: "bg-[#9CA3AF]",
 };
 
 interface Props {
@@ -32,11 +32,11 @@ export function RoomStatusGridV2({ floors, legend }: Props) {
         {floors.map(row => (
           <div key={row.floor} className="flex items-center gap-2.5">
             <span className="w-7 text-[11px] font-bold text-[#6B7280] shrink-0">{row.floor}</span>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="grid grid-cols-5 gap-1.5 flex-1">
               {row.rooms.map(room => (
                 <span
                   key={room.number}
-                  className={`h-8 min-w-[44px] px-1 rounded-lg flex items-center justify-center text-[11px] font-bold ${STATUS_STYLE[room.status]}`}
+                  className={`h-8 rounded-lg flex items-center justify-center text-[11px] font-bold ${STATUS_STYLE[room.status]}`}
                 >
                   {room.number}
                 </span>

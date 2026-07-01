@@ -2,35 +2,42 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard, DoorOpen, CalendarRange, Users, Sparkles, Wrench,
-  Wallet, FileBarChart, SlidersHorizontal, Globe, UserCog, Settings,
-  type LucideIcon,
-} from "lucide-react";
+import { NAV, GROUP_LABEL, moduleAllowed, type NavItem } from "@/lib/nav";
+import { getRole, rolesFor, canAccessPage, getModules, type Role } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
-const NAV_V2: { label: string; href: string; icon: LucideIcon }[] = [
-  { label: "Dashboard", href: "/dashboard-v2", icon: LayoutDashboard },
-  { label: "Front Desk", href: "/rack", icon: DoorOpen },
-  { label: "Reservations", href: "/bookings", icon: CalendarRange },
-  { label: "Guests", href: "/guests", icon: Users },
-  { label: "Housekeeping", href: "/housekeeping", icon: Sparkles },
-  { label: "Maintenance", href: "/maintenance", icon: Wrench },
-  { label: "Finance", href: "/accounts", icon: Wallet },
-  { label: "Reports", href: "/reports", icon: FileBarChart },
-  { label: "Rooms & Rates", href: "/setup", icon: SlidersHorizontal },
-  { label: "Channel Manager", href: "/channels", icon: Globe },
-  { label: "Staff", href: "/staff", icon: UserCog },
-  { label: "Settings", href: "/setup", icon: Settings },
-];
+const NAV_GROUPS = ["operations", "billing", "people", "erp", "system", "demo"] as const;
 
 export function SidebarV2() {
   const pathname = usePathname();
   const [expanded, setExpanded] = React.useState(false);
+
+  // Role + modules are read client-side after mount to avoid SSR/localStorage mismatch.
+  const [role, setRoleState] = React.useState<Role>("manager");
+  const [modules, setModules] = React.useState<string[]>([]);
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- role/modules only exist client-side
+    setRoleState(getRole());
+    setModules(getModules());
+  }, [pathname]);
+
+  const grouped = React.useMemo(() => {
+    const groups: Record<string, NavItem[]> = {};
+    for (const item of NAV) {
+      const href = item.href === "/dashboard" ? "/dashboard-v2" : item.href;
+      groups[item.group] ??= [];
+      groups[item.group].push({ ...item, href });
+    }
+    return groups;
+  }, []);
+
   return (
     <>
-      {/* Layout spacer — reserves the collapsed rail width in document flow */}
-      <div className="hidden lg:block w-14 shrink-0 h-svh" aria-hidden />
+      {/* Layout spacer — tracks the sidebar's width so content compresses instead of being covered */}
+      <div className={cn(
+        "hidden lg:block shrink-0 h-svh transition-[width] duration-200 ease-out",
+        expanded ? "w-64" : "w-14"
+      )} aria-hidden />
 
       <aside
         onMouseEnter={() => setExpanded(true)}
@@ -51,27 +58,58 @@ export function SidebarV2() {
               <p className="text-[11px] text-white/50 truncate">Luxury Hotel &amp; Resort</p>
             </div>
           </div>
-          <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-            {NAV_V2.map(item => {
-              const active = pathname === item.href;
-              const Icon = item.icon;
+          <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-4">
+            {NAV_GROUPS.map(group => {
+              const items = (grouped[group] ?? []).filter(item => rolesFor(item).includes(role) && canAccessPage(item.href === "/dashboard-v2" ? "/dashboard" : item.href) && moduleAllowed(item, modules));
+              if (items.length === 0) return null;
               return (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  title={!expanded ? item.label : undefined}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
-                    active
-                      ? "bg-[#6D4AFF] text-white font-semibold shadow-md shadow-[#6D4AFF]/30"
-                      : "text-white/70 hover:bg-white/5 hover:text-white"
-                  )}
-                >
-                  <Icon className="h-[18px] w-[18px] shrink-0" />
-                  <span className={cn("truncate transition-opacity duration-150", expanded ? "opacity-100" : "opacity-0")}>
-                    {item.label}
-                  </span>
-                </Link>
+                <div key={group}>
+                  <p className={cn(
+                    "px-3 text-[10px] uppercase tracking-[0.16em] text-white/40 font-semibold mb-1.5 transition-opacity duration-150 whitespace-nowrap",
+                    expanded ? "opacity-100" : "opacity-0"
+                  )}>
+                    {GROUP_LABEL[group]}
+                  </p>
+                  <ul className="space-y-1">
+                    {items.map(item => {
+                      const active = pathname === item.href;
+                      const Icon = item.icon;
+                      return (
+                        <li key={item.href}>
+                          <Link
+                            href={item.href}
+                            title={!expanded ? item.label : undefined}
+                            className={cn(
+                              "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors relative",
+                              active
+                                ? "bg-[#6D4AFF] text-white font-semibold shadow-md shadow-[#6D4AFF]/30"
+                                : "text-white/70 hover:bg-white/5 hover:text-white"
+                            )}
+                          >
+                            <Icon className="h-[18px] w-[18px] shrink-0" />
+                            <span className={cn("flex-1 truncate transition-opacity duration-150", expanded ? "opacity-100" : "opacity-0")}>
+                              {item.label}
+                            </span>
+                            {item.badge && expanded && (
+                              <span className={cn(
+                                "ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-semibold",
+                                active ? "bg-white text-[#6D4AFF]" : "bg-white/10 text-white/70"
+                              )}>
+                                {item.badge}
+                              </span>
+                            )}
+                            {item.badge && !expanded && (
+                              <span
+                                aria-hidden
+                                className="absolute top-1 left-7 h-1.5 w-1.5 rounded-full bg-[#F5B800] ring-2 ring-[#101A33]"
+                              />
+                            )}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               );
             })}
           </nav>

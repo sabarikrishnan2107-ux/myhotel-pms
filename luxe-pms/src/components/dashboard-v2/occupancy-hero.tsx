@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
+import { Info, ArrowUp } from "lucide-react";
 
 interface Props {
   pct: number;
@@ -9,37 +8,36 @@ interface Props {
 }
 
 export function OccupancyHeroV2({ pct, occupiedRooms, totalRooms, trendPct }: Props) {
-  const radius = 70;
-  const thickness = 14;
+  const radius = 24;
+  const thickness = 6;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (pct / 100) * circumference;
   const size = (radius + thickness) * 2;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#101A33] to-[#1E2A4A] p-6 text-white shadow-lg lg:col-span-2 flex items-center gap-6">
-      <div className="flex-1 min-w-0">
-        <p className="text-xs uppercase tracking-[0.14em] text-white/60 font-semibold">Occupancy Today</p>
-        <p className="text-5xl font-bold tracking-tight mt-2">{pct}%</p>
-        <p className="text-sm text-white/70 mt-2">{occupiedRooms} of {totalRooms} rooms occupied</p>
-        <p className="text-xs text-[#22C55E] font-semibold mt-3 inline-flex items-center gap-1">
-          <ArrowUpRight className="h-3.5 w-3.5" /> {trendPct}% vs yesterday
-        </p>
-        <Link
-          href="/reports"
-          className="mt-5 inline-flex items-center rounded-lg border border-white/20 px-3.5 py-2 text-xs font-medium text-white/90 hover:bg-white/10 transition-colors"
-        >
-          View detailed report
-        </Link>
+    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1E2761] to-[#2D1B69] p-5 text-white shadow-lg flex flex-col items-center text-center gap-1.5 h-full">
+      <div className="absolute -right-8 -bottom-8 h-32 w-32 rounded-full bg-white/5 blur-2xl pointer-events-none" />
+      <p className="text-[10px] uppercase tracking-[0.12em] text-white/70 font-semibold inline-flex items-center gap-1 relative z-10">
+        Occupancy <Info className="h-3 w-3" />
+      </p>
+      <div className="relative z-10 shrink-0">
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth={thickness} />
+          <circle
+            cx={size / 2} cy={size / 2} r={radius} fill="none"
+            stroke="#F5B800" strokeWidth={thickness} strokeLinecap="round"
+            strokeDasharray={circumference} strokeDashoffset={offset}
+            transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center text-sm font-bold text-white">
+          {pct}%
+        </div>
       </div>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0 hidden sm:block">
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth={thickness} />
-        <circle
-          cx={size / 2} cy={size / 2} r={radius} fill="none"
-          stroke="#F5B800" strokeWidth={thickness} strokeLinecap="round"
-          strokeDasharray={circumference} strokeDashoffset={offset}
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />
-      </svg>
+      <p className="text-[11px] text-white/70 relative z-10">{occupiedRooms} of {totalRooms} occupied</p>
+      <p className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#4ADE80] relative z-10">
+        <ArrowUp className="h-3 w-3" /> {trendPct}%
+      </p>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import {
   Wallet, LogOut, Sparkles, Wrench, DoorOpen, BedDouble, PlaneLanding, PlaneTakeoff,
   CalendarPlus, LogIn, LayoutGrid, CalendarRange, Banknote, FileBarChart, Bell,
-  CheckCircle2, Percent, TrendingUp,
+  CheckCircle2, Percent, TrendingUp, Building2,
 } from "lucide-react";
 import type { DashboardV2Data } from "./types";
 
@@ -10,13 +10,14 @@ export const MOCK_DASHBOARD_V2_DATA: DashboardV2Data = {
   hotelTagline: "Luxury Hotel & Resort",
   notificationCount: 3,
   currentUser: { name: "Khalid R.", role: "Reception", shift: "Shift #4218" },
-  occupancy: { pct: 8, occupiedRooms: 1, totalRooms: 12, trendPct: 12 },
+  occupancy: { pct: 3, occupiedRooms: 1, totalRooms: 30, trendPct: 12 },
   kpis: [
-    { id: "available", label: "Available Rooms", value: 9, badge: "75%", caption: "ready to sell", icon: DoorOpen, tone: "blue" },
-    { id: "occupied", label: "Occupied Rooms", value: 1, badge: "8%", caption: "in-house now", icon: BedDouble, tone: "green" },
-    { id: "arrivals", label: "Arrivals", value: 0, caption: "today expected", icon: PlaneLanding, tone: "gold" },
-    { id: "departures", label: "Departures", value: 1, caption: "today checking out", icon: PlaneTakeoff, tone: "purple" },
-    { id: "ooo", label: "Out of Order", value: 1, caption: "rooms under maintenance", icon: Wrench, tone: "pink" },
+    { id: "available", label: "Available", value: 21, caption: "Ready", icon: DoorOpen, tone: "blue" },
+    { id: "occupied", label: "Occupied", value: 1, caption: "In-house", icon: BedDouble, tone: "gold" },
+    { id: "arrivals", label: "Arrivals", value: 0, caption: "Today", icon: PlaneLanding, tone: "gold" },
+    { id: "departures", label: "Departures", value: 1, caption: "Expected", icon: PlaneTakeoff, tone: "purple" },
+    { id: "ooo", label: "Out of Order", value: 2, caption: "Maint.", icon: Wrench, tone: "pink" },
+    { id: "total", label: "Total Rooms", value: 30, caption: "Inventory", icon: Building2, tone: "purple" },
   ],
   quickActions: [
     { id: "new-booking", label: "New Booking", href: "/bookings/new", icon: CalendarPlus, tone: "purple" },

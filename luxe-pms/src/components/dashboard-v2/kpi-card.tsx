@@ -3,7 +3,7 @@ import { TONE_STYLES, type ToneV2 } from "./tokens";
 
 interface Props {
   label: string;
-  value: number;
+  value: number | string;
   badge?: string;
   caption: string;
   icon: LucideIcon;
@@ -13,20 +13,16 @@ interface Props {
 export function KpiCardV2({ label, value, badge, caption, icon: Icon, tone }: Props) {
   const s = TONE_STYLES[tone];
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgb(0_0_0_/_0.04),0_4px_16px_-6px_rgb(0_0_0_/_0.08)]">
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] uppercase tracking-[0.1em] font-semibold text-[#6B7280]">{label}</p>
-        <span className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 ${s.soft} ${s.text}`}>
-          <Icon className="h-[18px] w-[18px]" />
-        </span>
-      </div>
-      <div className="mt-3 flex items-baseline gap-2">
-        <p className="text-3xl font-bold tracking-tight text-[#111827]">{value}</p>
-        {badge && (
-          <span className={`text-[11px] font-bold rounded-md px-1.5 py-0.5 ${s.soft} ${s.text}`}>{badge}</span>
-        )}
-      </div>
-      <p className="text-[11px] text-[#6B7280] mt-2">{caption}</p>
+    <div className="relative rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgb(0_0_0_/_0.04),0_4px_16px_-6px_rgb(0_0_0_/_0.08)]">
+      {badge && (
+        <span className={`absolute top-5 right-5 text-[11px] font-bold rounded-md px-1.5 py-0.5 ${s.soft} ${s.text}`}>{badge}</span>
+      )}
+      <span className={`absolute top-5 left-5 h-12 w-12 rounded-full flex items-center justify-center shrink-0 ${s.soft} ${s.text}`}>
+        <Icon className="h-6 w-6" />
+      </span>
+      <p className={`text-sm uppercase tracking-[0.1em] font-semibold truncate text-right ${s.text}`}>{label}</p>
+      <p className="mt-3 text-3xl font-bold tracking-tight text-[#111827] text-center">{value}</p>
+      <p className="text-[11px] text-[#6B7280] mt-2 text-center">{caption}</p>
     </div>
   );
 }
