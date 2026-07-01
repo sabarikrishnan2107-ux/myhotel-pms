@@ -8,10 +8,10 @@ export function ArrivalDepartureChartV2({ data }: Props) {
   const max = Math.max(1, ...data.flatMap(d => [d.arrivals, d.departures]));
 
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgb(0_0_0_/_0.04),0_4px_16px_-6px_rgb(0_0_0_/_0.08)] h-full flex flex-col">
+    <div className="rounded-2xl bg-white dark:bg-[#141B2E] p-5 shadow-[0_1px_2px_rgb(0_0_0_/_0.04),0_4px_16px_-6px_rgb(0_0_0_/_0.08)] h-full flex flex-col">
       <div className="flex items-center justify-between mb-6">
-        <p className="text-sm font-bold text-[#111827] uppercase tracking-[0.06em]">Arrivals vs Departures</p>
-        <div className="flex items-center gap-3 text-[11px] text-[#6B7280]">
+        <p className="text-sm font-bold text-[#111827] dark:text-[#E8ECF4] uppercase tracking-[0.06em]">Arrivals vs Departures</p>
+        <div className="flex items-center gap-3 text-[11px] text-[#6B7280] dark:text-[#8B94A8]">
           <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#6D4AFF]" /> Arrivals</span>
           <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#F5B800]" /> Departures</span>
         </div>
