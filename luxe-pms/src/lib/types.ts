@@ -107,7 +107,7 @@ export interface FolioCharge {
   rate: number;
   tax: number;
   amount: number;
-  paidBy: "Guest" | "Agent" | "Company";
+  paidBy: "Guest" | "Agent" | "Company" | "Room";
   created_at?: string;
   postedBy?: string;
 }
