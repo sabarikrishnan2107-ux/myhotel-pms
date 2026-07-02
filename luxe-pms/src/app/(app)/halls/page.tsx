@@ -156,7 +156,10 @@ export default function HallsPage() {
           <h1 className="text-2xl font-display font-medium tracking-tight">Hall Booking</h1>
           <p className="text-muted-foreground text-sm mt-1">Function halls, banquets &amp; meeting rooms · billed by the hour</p>
         </div>
-        <Link href="/halls/new"><Button><Plus className="h-4 w-4" />New Hall Booking</Button></Link>
+        <div className="flex gap-2">
+          <Link href="/halls/calendar"><Button variant="outline">Reservation Calendar</Button></Link>
+          <Link href="/halls/new"><Button><Plus className="h-4 w-4" />New Hall Booking</Button></Link>
+        </div>
       </div>
 
       {/* KPI bar */}

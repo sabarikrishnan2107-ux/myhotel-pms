@@ -46,6 +46,7 @@ export const NAV: NavItem[] = [
   { href: "/loyalty", label: "Loyalty Program", icon: Award, group: "people" },
   { href: "/folio", label: "Guest Folio", icon: Receipt, group: "billing", module: "front_office" },
   { href: "/halls", label: "Hall Booking", icon: Building2, group: "operations", module: "banquets" },
+  { href: "/halls/calendar", label: "Hall Calendar", icon: CalendarRange, group: "operations", module: "banquets" },
   { href: "/food", label: "Food & Room Service", icon: UtensilsCrossed, group: "operations" },
 
   // ---- Housekeeping ----
