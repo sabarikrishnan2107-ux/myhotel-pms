@@ -12,68 +12,25 @@ import { Input, Label } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { useProperty, hotelName } from "@/lib/use-property";
+import { apiGet, apiPost, apiDelete } from "@/lib/api";
+import type { Room } from "@/lib/types";
 
 // ---------- Menu data ----------
-type MenuCategory = "Breakfast" | "Mains" | "Indian" | "Continental" | "Sides" | "Desserts" | "Beverages";
-
-type MenuItem = {
+type MenuRow = {
   id: string;
   name: string;
-  desc: string;
   price: number;
-  category: MenuCategory;
-  veg: boolean;
-  spicy?: boolean;
-  badge?: string;
+  cat: string;
+  veg?: boolean;
+  spice?: "mild" | "medium" | "hot" | null;
+  tag?: string | null;
 };
-
-const MENU: MenuItem[] = [
-  // Breakfast
-  { id: "b1", name: "Masala Dosa", desc: "Crispy rice crepe with spiced potato filling, sambar & coconut chutney", price: 280, category: "Breakfast", veg: true, badge: "Chef's pick" },
-  { id: "b2", name: "Avocado Toast", desc: "Sourdough, smashed avocado, poached egg, chilli flakes", price: 420, category: "Breakfast", veg: true },
-  { id: "b3", name: "Poha Tadka", desc: "Flattened rice tempered with curry leaves, peanuts & lime", price: 220, category: "Breakfast", veg: true },
-  { id: "b4", name: "Eggs Benedict", desc: "Toasted muffin, ham, two poached eggs, hollandaise", price: 480, category: "Breakfast", veg: false },
-
-  // Mains / Indian
-  { id: "i1", name: "Butter Chicken", desc: "Tandoor-roasted chicken in silky tomato-cream gravy", price: 520, category: "Indian", veg: false, badge: "Bestseller" },
-  { id: "i2", name: "Paneer Tikka Masala", desc: "Charred cottage cheese in rich onion-tomato masala", price: 460, category: "Indian", veg: true },
-  { id: "i3", name: "Dal Makhani", desc: "Slow-cooked black lentils, butter & cream, 24-hour simmered", price: 380, category: "Indian", veg: true },
-  { id: "i4", name: "Mutton Rogan Josh", desc: "Kashmiri lamb curry with aromatic spices & saffron", price: 620, category: "Indian", veg: false, spicy: true },
-  { id: "i5", name: "Hyderabadi Biryani", desc: "Fragrant basmati layered with marinated chicken, served with raita", price: 540, category: "Indian", veg: false, spicy: true },
-  { id: "i6", name: "Veg Biryani", desc: "Dum-cooked basmati, mixed vegetables, fried onion, mint", price: 420, category: "Indian", veg: true },
-
-  // Continental Mains
-  { id: "c1", name: "Grilled Atlantic Salmon", desc: "Lemon-herb butter, sautéed greens, mashed potato", price: 980, category: "Continental", veg: false },
-  { id: "c2", name: "Margherita Pizza", desc: "San Marzano tomato, fior di latte, fresh basil, EVOO", price: 540, category: "Continental", veg: true },
-  { id: "c3", name: "Penne Arrabbiata", desc: "Spicy tomato sugo, garlic, chilli, parmesan", price: 480, category: "Continental", veg: true, spicy: true },
-  { id: "c4", name: "Mushroom Risotto", desc: "Arborio rice, wild mushrooms, truffle oil, aged pecorino", price: 620, category: "Continental", veg: true },
-  { id: "c5", name: "Caesar Salad", desc: "Romaine, parmesan, croutons, anchovy dressing", price: 380, category: "Continental", veg: false },
-  { id: "c6", name: "Club Sandwich", desc: "Triple-decker with chicken, bacon, egg, lettuce, fries", price: 460, category: "Continental", veg: false },
-
-  // Sides
-  { id: "s1", name: "Garlic Naan", desc: "Tandoor-fresh, brushed with butter & garlic", price: 80, category: "Sides", veg: true },
-  { id: "s2", name: "Steamed Basmati Rice", desc: "Long grain, fluffy, fragrant", price: 140, category: "Sides", veg: true },
-  { id: "s3", name: "French Fries", desc: "Hand-cut, sea salt, peri-peri dip", price: 220, category: "Sides", veg: true },
-  { id: "s4", name: "Papad Platter", desc: "Roasted & fried, mint chutney, onion salad", price: 120, category: "Sides", veg: true },
-
-  // Desserts
-  { id: "d1", name: "Gulab Jamun", desc: "Warm milk dumplings in cardamom-rose syrup (2 pcs)", price: 240, category: "Desserts", veg: true },
-  { id: "d2", name: "Tiramisu", desc: "Layered mascarpone, espresso-soaked savoiardi, cocoa", price: 360, category: "Desserts", veg: true },
-  { id: "d3", name: "Chocolate Fondant", desc: "Warm molten centre, vanilla bean ice cream", price: 380, category: "Desserts", veg: true, badge: "New" },
-
-  // Beverages
-  { id: "v1", name: "Masala Chai", desc: "Cardamom, ginger, fresh milk, brewed strong", price: 120, category: "Beverages", veg: true },
-  { id: "v2", name: "Fresh Lime Soda", desc: "Sweet, salty or mixed — your choice", price: 180, category: "Beverages", veg: true },
-  { id: "v3", name: "Cold Brew Coffee", desc: "12-hour steeped, smooth & low acid", price: 280, category: "Beverages", veg: true },
-  { id: "v4", name: "Mango Lassi", desc: "Alphonso pulp, hung curd, saffron", price: 220, category: "Beverages", veg: true },
-];
-
-const CATEGORIES: ("All" | MenuCategory)[] = ["All", "Breakfast", "Mains", "Indian", "Continental", "Sides", "Desserts", "Beverages"];
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
-  All: Utensils, Breakfast: Coffee, Mains: ChefHat, Indian: Soup,
-  Continental: Salad, Sides: Cookie, Desserts: IceCream, Beverages: Coffee,
+  All: Utensils, Starters: Soup, Breakfast: Coffee, Mains: ChefHat, Indian: Soup,
+  Continental: Salad, Sides: Cookie, Desserts: IceCream, Beverages: Coffee, Bar: Coffee,
 };
+const iconFor = (c: string) => CATEGORY_ICONS[c] ?? Utensils;
 
 type OrderStage = "Received" | "Preparing" | "Out" | "Delivered";
 const STAGES: OrderStage[] = ["Received", "Preparing", "Out", "Delivered"];
@@ -89,12 +46,18 @@ const STAGE_ICONS: Record<OrderStage, React.ElementType> = {
 export default function MenuRoomPage({ params }: { params: Promise<{ room: string }> }) {
   const { room } = use(params);
 
-  const [cat, setCat] = React.useState<(typeof CATEGORIES)[number]>("All");
+  const [menu, setMenu] = React.useState<MenuRow[]>([]);
+  const [bookingNo, setBookingNo] = React.useState<string | null>(null);
+
+  const [cat, setCat] = React.useState<string>("All");
   const [cart, setCart] = React.useState<Record<string, number>>({});
   const [checkoutOpen, setCheckoutOpen] = React.useState(false);
-  const [success, setSuccess] = React.useState<{ orderNo: string; eta: number } | null>(null);
+  const [placing, setPlacing] = React.useState(false);
+  const [success, setSuccess] = React.useState<{ orderNo: string; eta: number; chargeId: number | string } | null>(null);
   const [trackOpen, setTrackOpen] = React.useState(false);
   const [trackStage, setTrackStage] = React.useState<number>(0);
+  const [confirmCancel, setConfirmCancel] = React.useState(false);
+  const [cancelling, setCancelling] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
 
   // Checkout form fields
@@ -104,32 +67,60 @@ export default function MenuRoomPage({ params }: { params: Promise<{ room: strin
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
+  // Real, Settings-managed dish catalog — same source as Menu Items and the
+  // Room Rack order dialog's Food & Drinks tab.
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<{ id: number | string; name: string; price: number; cat: string; veg?: boolean; spice?: string | null; tag?: string | null }[]>("/menu-items")
+      .then(rows => { if (!cancelled && Array.isArray(rows)) setMenu(rows.map(r => ({ ...r, id: String(r.id) })) as MenuRow[]); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Which booking this room's charges should land on — only orderable while
+  // the room is actually occupied (live /room-board, same endpoint Room Rack uses).
+  React.useEffect(() => {
+    let cancelled = false;
+    apiGet<Room[]>("/room-board")
+      .then(rows => {
+        if (cancelled) return;
+        const match = rows.find(r => r.number === room);
+        setBookingNo(match && match.status === "occupied" && match.bookingNo ? match.bookingNo : null);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [room]);
+
+  const categories = React.useMemo(() => {
+    const seen = new Set(menu.map(m => m.cat).filter(Boolean));
+    return ["All", ...Array.from(seen)];
+  }, [menu]);
+
   const filtered = React.useMemo(() => {
-    if (cat === "All") return MENU;
-    if (cat === "Mains") return MENU.filter(m => m.category === "Indian" || m.category === "Continental");
-    return MENU.filter(m => m.category === cat);
-  }, [cat]);
+    if (cat === "All") return menu;
+    return menu.filter(m => m.cat === cat);
+  }, [cat, menu]);
 
   const cartCount = React.useMemo(() => Object.values(cart).reduce((a, b) => a + b, 0), [cart]);
   const cartTotal = React.useMemo(() => {
     return Object.entries(cart).reduce((sum, [id, qty]) => {
-      const item = MENU.find(m => m.id === id);
+      const item = menu.find(m => m.id === id);
       return sum + (item ? item.price * qty : 0);
     }, 0);
-  }, [cart]);
+  }, [cart, menu]);
 
   const cartItems = React.useMemo(() => {
     return Object.entries(cart)
-      .map(([id, qty]) => ({ item: MENU.find(m => m.id === id)!, qty }))
+      .map(([id, qty]) => ({ item: menu.find(m => m.id === id)!, qty }))
       .filter(x => x.item);
-  }, [cart]);
+  }, [cart, menu]);
 
   const gst = Math.round(cartTotal * 0.05); // 5% GST on F&B
   const grandTotal = cartTotal + gst;
 
   const addToCart = (id: string) => {
     setCart(c => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
-    const item = MENU.find(m => m.id === id);
+    const item = menu.find(m => m.id === id);
     if (item) showToast(`${item.name} added`);
   };
 
@@ -142,14 +133,47 @@ export default function MenuRoomPage({ params }: { params: Promise<{ room: strin
     });
   };
 
-  const placeOrder = () => {
-    const orderNo = `RSV-${Math.floor(1000 + Math.random() * 9000)}`;
-    setSuccess({ orderNo, eta: Number(eta) || 30 });
-    setCheckoutOpen(false);
-    setCart({});
-    setInstructions("");
-    setAllergy("");
-    showToast(`Order ${orderNo} sent to kitchen`);
+  const placeOrder = async () => {
+    if (!bookingNo) {
+      showToast("This room has no current guest — orders can't be placed");
+      return;
+    }
+    setPlacing(true);
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      const created = await apiPost<{ id: number | string }>("/folio-charges", {
+        bookingNo, date: today,
+        description: `F&B order (self-service) · ${cartCount} item${cartCount === 1 ? "" : "s"}`,
+        type: "F&B", qty: cartCount, rate: cartTotal, tax: gst, amount: grandTotal, paidBy: "Room",
+      });
+      const orderNo = `RSV-${Math.floor(1000 + Math.random() * 9000)}`;
+      setSuccess({ orderNo, eta: Number(eta) || 30, chargeId: created.id });
+      setCheckoutOpen(false);
+      setCart({});
+      setInstructions("");
+      setAllergy("");
+      showToast(`Order ${orderNo} sent to kitchen`);
+    } catch {
+      showToast("⚠ Couldn't place order — backend offline");
+    } finally {
+      setPlacing(false);
+    }
+  };
+
+  const cancelOrder = async () => {
+    if (!success) return;
+    setCancelling(true);
+    try {
+      await apiDelete(`/folio-charges/${success.chargeId}`);
+      setTrackOpen(false);
+      setSuccess(null);
+      setConfirmCancel(false);
+      showToast("Order cancelled");
+    } catch {
+      showToast("⚠ Couldn't cancel — backend offline");
+    } finally {
+      setCancelling(false);
+    }
   };
 
   // Auto-advance tracker for demo
@@ -289,6 +313,22 @@ export default function MenuRoomPage({ params }: { params: Promise<{ room: strin
           )}
 
           <div className="mt-4 space-y-2">
+            {trackStage < 2 && (
+              confirmCancel ? (
+                <div className="flex gap-2">
+                  <Button variant="danger" className="flex-1" disabled={cancelling} onClick={cancelOrder}>
+                    {cancelling ? "Cancelling…" : "Yes, cancel order"}
+                  </Button>
+                  <Button variant="outline" className="flex-1" disabled={cancelling} onClick={() => setConfirmCancel(false)}>
+                    Keep order
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="ghost" className="w-full text-danger hover:text-danger" onClick={() => setConfirmCancel(true)}>
+                  Cancel order
+                </Button>
+              )
+            )}
             <Button variant="outline" className="w-full" onClick={() => { setSuccess(null); setTrackOpen(false); showToast("Back to menu"); }}>
               Order more items
             </Button>
@@ -347,8 +387,8 @@ export default function MenuRoomPage({ params }: { params: Promise<{ room: strin
         {/* Category strip */}
         <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-md border-b border-border -mt-2 px-1 py-2">
           <div className="flex gap-2 overflow-x-auto no-scrollbar px-3 pb-1">
-            {CATEGORIES.map(c => {
-              const Icon = CATEGORY_ICONS[c];
+            {categories.map(c => {
+              const Icon = iconFor(c);
               const active = cat === c;
               return (
                 <button
@@ -389,20 +429,19 @@ export default function MenuRoomPage({ params }: { params: Promise<{ room: strin
                       <span className={cn("h-1.5 w-1.5 rounded-full", item.veg ? "bg-success" : "bg-danger")} />
                     </span>
                   </div>
-                  {item.badge && (
+                  {item.tag && (
                     <span className="absolute top-2 right-2 text-[9px] font-bold uppercase tracking-wide bg-accent text-accent-foreground rounded-full px-2 py-0.5">
-                      {item.badge}
+                      {item.tag}
                     </span>
                   )}
-                  {item.spicy && (
-                    <span className="absolute bottom-2 left-2 text-[10px] bg-danger-soft text-danger rounded-full px-1.5 py-0.5">
-                      Spicy
+                  {item.spice && (
+                    <span className="absolute bottom-2 left-2 text-[10px] capitalize bg-danger-soft text-danger rounded-full px-1.5 py-0.5">
+                      {item.spice}
                     </span>
                   )}
                 </div>
                 <div className="p-3 flex-1 flex flex-col">
                   <div className="font-semibold text-sm leading-tight">{item.name}</div>
-                  <div className="text-[11px] text-muted-foreground mt-1 line-clamp-2 flex-1">{item.desc}</div>
                   <div className="mt-2 flex items-center justify-between">
                     <span className="font-bold tabular text-sm">{money(item.price)}</span>
                     {qty === 0 ? (
@@ -486,6 +525,13 @@ export default function MenuRoomPage({ params }: { params: Promise<{ room: strin
             </div>
 
             <div className="p-4 space-y-4">
+              {!bookingNo && (
+                <div className="rounded-lg bg-danger-soft border border-danger/20 p-3 text-xs text-danger flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  This room has no current guest — orders can&apos;t be placed.
+                </div>
+              )}
+
               {/* Cart items */}
               <div className="space-y-2">
                 {cartItems.map(({ item, qty }) => (
@@ -578,9 +624,9 @@ export default function MenuRoomPage({ params }: { params: Promise<{ room: strin
             </div>
 
             <div className="sticky bottom-0 bg-surface border-t border-border p-4">
-              <Button className="w-full h-12" onClick={placeOrder}>
+              <Button className="w-full h-12" disabled={placing || !bookingNo} onClick={placeOrder}>
                 <Send className="h-4 w-4" />
-                Send to kitchen
+                {placing ? "Sending…" : "Send to kitchen"}
               </Button>
               <p className="text-[10px] text-muted-foreground text-center mt-2">
                 Charges will be added to your folio · Room {room}
