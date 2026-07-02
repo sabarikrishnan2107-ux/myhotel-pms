@@ -19,6 +19,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { RESERVATIONS, GUESTS, SAMPLE_FOLIO_CHARGES, SAMPLE_PAYMENTS } from "@/lib/mock-data";
 import { cn, money, formatDate, formatDateLong, formatTime } from "@/lib/utils";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
+import { groupChargesByDay } from "@/lib/folio-charges";
 import { useProperty, hotelName } from "@/lib/use-property";
 import { useBranding } from "@/lib/use-branding";
 
@@ -198,11 +199,8 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
   const paymentsTotal = payments.reduce((s, p) => s + p.amount, 0);
   const balance = grandTotal - paymentsTotal;
 
-  // Charges grouped by day
-  const byDay = liveCharges.reduce<Record<string, typeof liveCharges>>((acc, c) => {
-    (acc[c.date] ??= []).push(c);
-    return acc;
-  }, {});
+  // Charges grouped by day, sorted chronologically within each day
+  const chargesByDay = groupChargesByDay(liveCharges);
 
   // Charges grouped by category — for pie/summary
   const byType = liveCharges.reduce<Record<string, number>>((acc, c) => {
@@ -606,19 +604,19 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
           </div>
 
           {groupByDay ? (
-            Object.entries(byDay).sort().map(([date, list]) => {
-              const dayTotal = list.reduce((s, c) => s + c.amount, 0);
+            chargesByDay.map(({ date, items }) => {
+              const dayTotal = items.reduce((s, c) => s + c.amount, 0);
               return (
                 <Card key={date} className="p-0 overflow-hidden">
                   <div className="px-5 py-3 bg-surface-elevated border-b border-border flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
                       <p className="font-semibold text-sm">{formatDateLong(date)}</p>
-                      <Badge tone="neutral">{list.length} items</Badge>
+                      <Badge tone="neutral">{items.length} items</Badge>
                     </div>
                     <p className="text-sm font-semibold tabular">{money(dayTotal)}</p>
                   </div>
-                  <ChargesTable charges={list} voidedIds={voidedIds} onVoid={(c) => setVoidCharge(c)} />
+                  <ChargesTable charges={items} voidedIds={voidedIds} onVoid={(c) => setVoidCharge(c)} />
                 </Card>
               );
             })
@@ -1008,6 +1006,7 @@ function ChargesTable({ charges, voidedIds, onVoid }: {
     <table className="w-full text-sm">
       <thead className="bg-surface-sunken/50 border-b border-border">
         <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+          <th className="px-5 py-2.5 font-semibold">Time</th>
           <th className="px-5 py-2.5 font-semibold">Description</th>
           <th className="px-5 py-2.5 font-semibold">Type</th>
           <th className="px-5 py-2.5 font-semibold text-right">Qty</th>
@@ -1023,6 +1022,7 @@ function ChargesTable({ charges, voidedIds, onVoid }: {
           const isVoid = voidedIds.has(c.id);
           return (
             <tr key={c.id} className={cn("hover:bg-surface-sunken/40", isVoid && "opacity-50 bg-danger-soft/10")}>
+              <td className="px-5 py-3 text-muted-foreground tabular">{c.created_at ? formatTime(c.created_at) : "—"}</td>
               <td className={cn("px-5 py-3", isVoid && "line-through")}>
                 {c.description}
                 {isVoid && <Badge tone="danger" className="ml-2">Voided</Badge>}
