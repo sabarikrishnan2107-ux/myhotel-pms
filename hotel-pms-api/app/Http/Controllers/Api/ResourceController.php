@@ -92,6 +92,7 @@ use App\Models\KitchenAmenity;
 use App\Models\RoomAmenity;
 use App\Models\GroupService;
 use App\Models\CashierShift;
+use App\Models\ServiceItem;
 use Illuminate\Http\Request;
 
 /**
@@ -189,6 +190,7 @@ class ResourceController extends Controller
         'vendor-bills'           => VendorBill::class,
         'group-services'         => GroupService::class,
         'cashier-shifts'         => CashierShift::class,
+        'service-items'          => ServiceItem::class,
     ];
 
     /**
@@ -209,6 +211,7 @@ class ResourceController extends Controller
         'guest-requests'    => ['status', 'room'],
         'maintenance-tickets' => ['status'],
         'hall-bookings'     => ['status'],
+        'service-items'     => ['kind'],
     ];
 
     /** Resource slugs, for the route constraint. */
@@ -903,6 +906,10 @@ class ResourceController extends Controller
             'closedAt'       => 'string|max:50|nullable',
             'notes'          => 'string|max:2000|nullable',
         ],
+        'service-items' => [
+            'kind' => 'string|max:20', 'name' => 'string|max:255',
+            'price' => 'integer|min:0', 'hint' => 'string|max:255|nullable', 'active' => 'boolean',
+        ],
     ];
 
     /** Fields that must be present (and non-empty) when creating a row. */
@@ -977,6 +984,7 @@ class ResourceController extends Controller
         'vendor-bills' => ['billNo', 'vendor'],
         'group-services'  => ['name'],
         'cashier-shifts'  => ['staffName'],
+        'service-items'   => ['name', 'kind'],
     ];
 
     private function model(string $resource): string
