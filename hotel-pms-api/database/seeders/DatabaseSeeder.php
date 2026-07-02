@@ -85,6 +85,7 @@ class DatabaseSeeder extends Seeder
             KitchenAmenitySeeder::class,
             RoomAmenitySeeder::class,
             GroupServiceSeeder::class,
+            ServiceItemSeeder::class,
         ]);
     }
 }
