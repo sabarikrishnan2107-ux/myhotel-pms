@@ -7,7 +7,7 @@ import {
   Mountain, Sun, Trees, Waves, Ruler, Users, Bed, IndianRupee, Layers3,
   Copy, ChevronLeft, ChevronRight, Settings, Palette, Plug, Database,
   Upload, ImageIcon, Mail, Cloud, Lock, RefreshCw, FileText, ShieldCheck,
-  User, Bell, Webhook, RotateCcw,
+  User, Bell, Webhook, RotateCcw, ConciergeBell,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { cn, money } from "@/lib/utils";
 import { apiGet, apiPut, apiPost, apiUpload, apiDownload, syncList } from "@/lib/api";
 import { PreferencesPanel, SecurityPanel, NotificationChannelsPanel, WebhooksPanel, useSettingsPersistence } from "./personal-panels";
 import { MenuItemsManager } from "./menu-items-manager";
+import { ServiceItemsManager } from "./service-items-manager";
 import { GroupServicesManager } from "./group-services-manager";
 import { GroupPoliciesManager } from "./group-policies-manager";
 import { PricingRulesManager } from "./pricing-rules-manager";
@@ -69,6 +70,7 @@ const SECTIONS = [
   { id: "seasons",      group: "Rates & Packages" as SectionGroup,        label: "Seasons & Holidays",       icon: Calendar,     hint: "Define peak / off-peak windows", accent: "accent"  as const },
   { id: "food",         group: "Rates & Packages" as SectionGroup,        label: "Food & Hall Packages",     icon: Utensils,     hint: "4 F&B · 6 hall packages",        accent: "accent"  as const },
   { id: "menu-items",  group: "Rates & Packages" as SectionGroup,        label: "Menu Items",               icon: Utensils,     hint: "Dish catalog · price · photo · POS", accent: "accent"  as const },
+  { id: "service-items", group: "Rates & Packages" as SectionGroup,      label: "Room Service & Requests",  icon: ConciergeBell, hint: "Snacks · laundry · concierge services", accent: "accent" as const },
   { id: "group-services", group: "Rates & Packages" as SectionGroup,     label: "Group Services",           icon: Utensils,     hint: "Halls · meals · decor · transfers for groups", accent: "accent" as const },
   { id: "group-policies", group: "Rates & Packages" as SectionGroup,    label: "Group Policies",            icon: Users,        hint: "Deposit presets · cancellation tiers · volume discounts", accent: "accent" as const },
   { id: "pricing-rules", group: "Rates & Packages" as SectionGroup,      label: "Pricing Rules",            icon: Tag,          hint: "Dynamic rate adjustments · triggers", accent: "accent" as const },
@@ -429,6 +431,7 @@ const INITIAL_DATA: Record<SectionId, Field[]> = {
     { kind: "string", label: "Holidays", value: "Republic Day, Holi, Independence Day, Gandhi Jayanti, Diwali, Christmas" },
   ],
   "menu-items": [],
+  "service-items": [],
   "group-services": [],
   "pricing-rules": [],
   "rate-restrictions": [],
@@ -612,7 +615,7 @@ export function SetupView() {
   };
 
   // List of sections that use a custom manager instead of the generic field grid
-  const CUSTOM_SECTIONS = new Set<SectionId>(["preferences", "security", "channels", "webhooks", "floors", "room-types", "rooms", "pricing", "seasons", "food", "menu-items", "group-services", "group-policies", "pricing-rules", "rate-restrictions", "tables", "agents", "tax", "templates", "roles", "branding", "integrations", "backup"]);
+  const CUSTOM_SECTIONS = new Set<SectionId>(["preferences", "security", "channels", "webhooks", "floors", "room-types", "rooms", "pricing", "seasons", "food", "menu-items", "service-items", "group-services", "group-policies", "pricing-rules", "rate-restrictions", "tables", "agents", "tax", "templates", "roles", "branding", "integrations", "backup"]);
   const isCustom = CUSTOM_SECTIONS.has(active);
 
   const startEdit = () => {
@@ -867,6 +870,7 @@ export function SetupView() {
                 onMarkComplete={() => setCompleted(c => new Set([...c, "food"]))} />
             )}
             {active === "menu-items" && <MenuItemsManager onToast={showToast} />}
+            {active === "service-items" && <ServiceItemsManager onToast={showToast} />}
             {active === "group-services" && <GroupServicesManager onToast={showToast} />}
             {active === "group-policies" && <GroupPoliciesManager onToast={showToast} />}
             {active === "pricing-rules" && <PricingRulesManager onToast={showToast} />}
