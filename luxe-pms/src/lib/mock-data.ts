@@ -130,16 +130,16 @@ export const TODAY_DEPARTURES = RESERVATIONS.slice(-5);
 // Indian GST: Room ₹7,501+ → 18% (CGST 9% + SGST 9%) · F&B → 5% · Services (Spa, Laundry) → 18%
 export const SAMPLE_FOLIO_CHARGES: FolioCharge[] = [
   // Day 1
-  { id: "fc1", date: "2026-05-23", description: "Room — Deluxe (Night 1) · SAC 9963", type: "Room", qty: 1, rate: 8500, tax: 1530, amount: 10030, paidBy: "Guest" },
-  { id: "fc2", date: "2026-05-23", description: "Breakfast Buffet × 2 · SAC 9963", type: "F&B", qty: 2, rate: 850, tax: 85, amount: 1785, paidBy: "Guest" },
-  { id: "fc3", date: "2026-05-23", description: "Mini Bar — Bisleri Water", type: "F&B", qty: 2, rate: 120, tax: 12, amount: 252, paidBy: "Guest" },
+  { id: "fc1", date: "2026-05-23", description: "Room — Deluxe (Night 1) · SAC 9963", type: "Room", qty: 1, rate: 8500, tax: 1530, amount: 10030, paidBy: "Guest", created_at: "2026-05-23T08:15:00Z" },
+  { id: "fc2", date: "2026-05-23", description: "Breakfast Buffet × 2 · SAC 9963", type: "F&B", qty: 2, rate: 850, tax: 85, amount: 1785, paidBy: "Guest", created_at: "2026-05-23T09:40:00Z" },
+  { id: "fc3", date: "2026-05-23", description: "Mini Bar — Bisleri Water", type: "F&B", qty: 2, rate: 120, tax: 12, amount: 252, paidBy: "Guest", created_at: "2026-05-23T20:05:00Z" },
   // Day 2
-  { id: "fc4", date: "2026-05-24", description: "Room — Deluxe (Night 2) · SAC 9963", type: "Room", qty: 1, rate: 8500, tax: 1530, amount: 10030, paidBy: "Guest" },
-  { id: "fc5", date: "2026-05-24", description: "Spa — Couples Massage · SAC 9972", type: "Service", qty: 1, rate: 4500, tax: 810, amount: 5310, paidBy: "Guest" },
-  { id: "fc6", date: "2026-05-24", description: "Laundry Service · SAC 9987", type: "Service", qty: 1, rate: 650, tax: 117, amount: 767, paidBy: "Guest" },
+  { id: "fc4", date: "2026-05-24", description: "Room — Deluxe (Night 2) · SAC 9963", type: "Room", qty: 1, rate: 8500, tax: 1530, amount: 10030, paidBy: "Guest", created_at: "2026-05-24T08:00:00Z" },
+  { id: "fc5", date: "2026-05-24", description: "Spa — Couples Massage · SAC 9972", type: "Service", qty: 1, rate: 4500, tax: 810, amount: 5310, paidBy: "Guest", created_at: "2026-05-24T14:30:00Z" },
+  { id: "fc6", date: "2026-05-24", description: "Laundry Service · SAC 9987", type: "Service", qty: 1, rate: 650, tax: 117, amount: 767, paidBy: "Guest", created_at: "2026-05-24T11:10:00Z" },
   // Day 3
-  { id: "fc7", date: "2026-05-25", description: "Room — Deluxe (Night 3) · SAC 9963", type: "Room", qty: 1, rate: 8500, tax: 1530, amount: 10030, paidBy: "Guest" },
-  { id: "fc8", date: "2026-05-25", description: "Airport Transfer · SAC 9964", type: "Service", qty: 1, rate: 1500, tax: 270, amount: 1770, paidBy: "Guest" },
+  { id: "fc7", date: "2026-05-25", description: "Room — Deluxe (Night 3) · SAC 9963", type: "Room", qty: 1, rate: 8500, tax: 1530, amount: 10030, paidBy: "Guest", created_at: "2026-05-25T08:00:00Z" },
+  { id: "fc8", date: "2026-05-25", description: "Airport Transfer · SAC 9964", type: "Service", qty: 1, rate: 1500, tax: 270, amount: 1770, paidBy: "Guest", created_at: "2026-05-25T06:45:00Z" },
 ];
 
 export const SAMPLE_PAYMENTS: FolioPayment[] = [
