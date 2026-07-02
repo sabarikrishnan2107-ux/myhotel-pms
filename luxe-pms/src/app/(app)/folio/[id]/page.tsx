@@ -1026,6 +1026,7 @@ function ChargesTable({ charges, voidedIds, onVoid }: {
               <td className={cn("px-5 py-3", isVoid && "line-through")}>
                 {c.description}
                 {isVoid && <Badge tone="danger" className="ml-2">Voided</Badge>}
+                {c.postedBy && <span className="block text-[11px] text-muted-foreground font-normal">· by {c.postedBy}</span>}
               </td>
               <td className="px-5 py-3"><Badge tone={TYPE_TONE[c.type] ?? "neutral"}>{c.type}</Badge></td>
               <td className="px-5 py-3 text-right tabular">{c.qty}</td>

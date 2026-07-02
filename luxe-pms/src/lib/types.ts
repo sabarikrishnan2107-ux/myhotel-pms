@@ -109,6 +109,7 @@ export interface FolioCharge {
   amount: number;
   paidBy: "Guest" | "Agent" | "Company";
   created_at?: string;
+  postedBy?: string;
 }
 
 export interface FolioPayment {
