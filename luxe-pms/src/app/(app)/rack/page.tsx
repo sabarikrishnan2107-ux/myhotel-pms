@@ -16,6 +16,8 @@ import { ROOMS, RESERVATIONS, GUESTS } from "@/lib/mock-data";
 import type { Room, RoomStatus, Reservation, Guest } from "@/lib/types";
 import { cn, formatTime, money } from "@/lib/utils";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
+import { buildOrderCatalog, FALLBACK_ORDER_CATALOG } from "@/lib/order-catalog";
+import type { OrderCatalogItem, OrderTab, MenuItemRow, ServiceItemRow } from "@/lib/order-catalog";
 import { GuestDetailDrawer } from "@/components/guests/guest-detail-drawer";
 
 // Status filter metadata — semantic color for each chip
@@ -650,7 +652,6 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
   const [notifyMaint, setNotifyMaint] = React.useState(true);
 
   // Order — tab + cart
-  type OrderTab = "food" | "snacks" | "laundry" | "other";
   const [orderTab, setOrderTab] = React.useState<OrderTab>("food");
   const [orderCart, setOrderCart] = React.useState<Record<string, number>>({});
   const [orderNotes, setOrderNotes] = React.useState("");
@@ -660,52 +661,24 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
     return next;
   });
 
-  const ORDER_CATALOG: Record<OrderTab, { id: string; name: string; price: number; hint?: string }[]> = {
-    food: [
-      { id: "f1", name: "Continental Breakfast", price: 450, hint: "Eggs · juice · toast" },
-      { id: "f2", name: "Eggs Benedict", price: 380 },
-      { id: "f3", name: "Caesar Salad", price: 320 },
-      { id: "f4", name: "Wagyu Burger", price: 850 },
-      { id: "f5", name: "Grilled Salmon", price: 1200 },
-      { id: "f6", name: "Margherita Pizza", price: 650 },
-      { id: "f7", name: "Penne Arrabbiata", price: 480 },
-      { id: "f8", name: "Tiramisu", price: 280 },
-    ],
-    snacks: [
-      { id: "s1", name: "Bottled water (1L)", price: 100 },
-      { id: "s2", name: "Coca-Cola 330ml", price: 150 },
-      { id: "s3", name: "Lays / Chips pack", price: 120 },
-      { id: "s4", name: "Snickers / Mars bar", price: 150 },
-      { id: "s5", name: "Mixed nuts (200g)", price: 350 },
-      { id: "s6", name: "Coffee pod (Nespresso)", price: 180 },
-      { id: "s7", name: "Tea bags (assorted)", price: 80 },
-      { id: "s8", name: "Beer · Kingfisher 330ml", price: 350 },
-      { id: "s9", name: "Wine · House 187ml", price: 650 },
-      { id: "s10", name: "Whiskey · Single peg 30ml", price: 450 },
-    ],
-    laundry: [
-      { id: "l1", name: "Shirt · wash & press", price: 150 },
-      { id: "l2", name: "Trousers / Jeans", price: 180 },
-      { id: "l3", name: "Dress / Saree", price: 250 },
-      { id: "l4", name: "Suit / Jacket (dry-clean)", price: 400 },
-      { id: "l5", name: "Inner wear / Socks", price: 80 },
-      { id: "l6", name: "Pyjamas / Nightwear", price: 150 },
-      { id: "l7", name: "Bedsheet / Pillow cover", price: 200 },
-      { id: "l8", name: "Express (same-day) — surcharge", price: 250, hint: "+ 50% on items" },
-    ],
-    other: [
-      { id: "o1", name: "Wake-up call (set time below)", price: 0 },
-      { id: "o2", name: "Newspaper delivery", price: 0, hint: "Free · daily" },
-      { id: "o3", name: "Spa booking — 60 min", price: 3500 },
-      { id: "o4", name: "Airport drop (sedan)", price: 1800 },
-      { id: "o5", name: "Doctor on call", price: 2000 },
-      { id: "o6", name: "Babysitting (per hour)", price: 800 },
-      { id: "o7", name: "Iron + board to room", price: 0, hint: "Free" },
-      { id: "o8", name: "Extra towels / amenities", price: 0, hint: "Free" },
-    ],
-  };
+  const [orderCatalog, setOrderCatalog] = React.useState<Record<OrderTab, OrderCatalogItem[]>>(FALLBACK_ORDER_CATALOG);
 
-  const ALL_ITEMS = [...ORDER_CATALOG.food, ...ORDER_CATALOG.snacks, ...ORDER_CATALOG.laundry, ...ORDER_CATALOG.other];
+  // Load the real, settings-editable catalogs once when an order dialog
+  // opens; keep showing the hardcoded fallback until they resolve (or if
+  // the API is unreachable).
+  React.useEffect(() => {
+    if (kind !== "order") return;
+    let cancelled = false;
+    Promise.all([
+      apiGet<MenuItemRow[]>("/menu-items"),
+      apiGet<ServiceItemRow[]>("/service-items"),
+    ]).then(([menuItems, serviceItems]) => {
+      if (!cancelled) setOrderCatalog(buildOrderCatalog(menuItems, serviceItems));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [kind]);
+
+  const ALL_ITEMS = [...orderCatalog.food, ...orderCatalog.snacks, ...orderCatalog.laundry, ...orderCatalog.other];
   const orderSubtotal = Object.entries(orderCart).reduce((t, [id, qty]) => {
     const it = ALL_ITEMS.find(x => x.id === id);
     return t + (it?.price ?? 0) * qty;
@@ -993,7 +966,7 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
                   ] as { id: OrderTab; label: string; icon: typeof BedDouble }[]).map(t => {
                     const TabIcon = t.icon;
                     const on = orderTab === t.id;
-                    const count = ORDER_CATALOG[t.id].reduce((c, it) => c + (orderCart[it.id] ?? 0), 0);
+                    const count = orderCatalog[t.id].reduce((c, it) => c + (orderCart[it.id] ?? 0), 0);
                     return (
                       <button
                         key={t.id}
@@ -1021,7 +994,7 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
 
                 {/* Item list — current tab */}
                 <div className="max-h-[300px] overflow-y-auto pr-1 space-y-1">
-                  {ORDER_CATALOG[orderTab].map(it => {
+                  {orderCatalog[orderTab].map(it => {
                     const qty = orderCart[it.id] ?? 0;
                     return (
                       <div key={it.id} className={cn(
