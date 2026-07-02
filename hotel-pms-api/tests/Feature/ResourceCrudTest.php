@@ -81,4 +81,22 @@ class ResourceCrudTest extends TestCase
             ->assertJsonCount(1)
             ->assertJsonFragment(['bookingNo' => 'BK1']);
     }
+
+    public function test_folio_charges_are_stamped_with_posted_by(): void
+    {
+        $staff = User::factory()->create(['name' => 'Priya Krishnan']);
+        $this->actingAs($staff, 'sanctum');
+
+        $created = $this->postJson('/api/folio-charges', [
+            'bookingNo' => 'BK3', 'description' => 'Room service',
+        ])->assertCreated()->json();
+
+        $this->assertSame('Priya Krishnan', $created['postedBy']);
+
+        $explicit = $this->postJson('/api/folio-charges', [
+            'bookingNo' => 'BK4', 'description' => 'Manual entry', 'postedBy' => 'Front Desk Override',
+        ])->assertCreated()->json();
+
+        $this->assertSame('Front Desk Override', $explicit['postedBy']);
+    }
 }

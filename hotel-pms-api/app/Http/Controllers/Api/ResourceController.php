@@ -318,7 +318,7 @@ class ResourceController extends Controller
         'folio-charges' => [
             'bookingNo' => 'string|max:50', 'date' => 'string|max:50', 'description' => 'string|max:500',
             'type' => 'string|max:50', 'qty' => 'integer', 'rate' => 'integer', 'tax' => 'integer',
-            'amount' => 'integer', 'paidBy' => 'string|max:50',
+            'amount' => 'integer', 'paidBy' => 'string|max:50', 'postedBy' => 'string|max:255|nullable',
         ],
         'folio-payments' => [
             'bookingNo' => 'string|max:50', 'date' => 'string|max:50', 'mode' => 'string|max:100',
@@ -1042,6 +1042,15 @@ class ResourceController extends Controller
     {
         $this->model($resource); // 404 if unknown
         $data = $this->validated($resource, $request, true);
+
+        // Every folio charge should record who raised it — auto-fill from the
+        // authenticated user so every creation path (extend, reduce, room
+        // orders, guest self-ordering) gets correct attribution for free,
+        // without each caller having to pass it.
+        if ($resource === 'folio-charges' && empty($data['postedBy']) && $request->user()) {
+            $data['postedBy'] = $request->user()->name;
+        }
+
         $row = $this->model($resource)::create($data);
 
         // Every booking must correspond to a searchable guest profile. Bookings
