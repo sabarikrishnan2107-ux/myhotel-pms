@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Building2, Calendar, Users, UtensilsCrossed, Sparkles,
   ChevronLeft, Send, Plus, Minus, CheckCircle2, User, Mail,
-  ArrowRight, AlertCircle,
+  ArrowRight, AlertCircle, IdCard, Camera, Pen,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,10 @@ import { isValidEmail } from "@/lib/email";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
-import { computeHallTotals } from "@/lib/hall-pricing";
+import { computeHallTotals, hoursBetween, crossesMidnight, dayMultiplier } from "@/lib/hall-pricing";
+import { PhotoCapture } from "@/components/guests/photo-capture";
+import { DocumentUpload } from "@/components/guests/document-upload";
+import { SignaturePad } from "@/components/guests/signature-pad";
 
 type Venue = { id: string; name: string; capacity: number; hourly: number; halfDay: number; fullDay: number; setupFee: number; gst: number; extraPaxFee: number };
 
@@ -28,7 +31,7 @@ const EVENT_TYPES = ["Wedding", "Engagement", "Conference", "Corporate Meeting",
 type BanquetPkg = { id: string; name: string; desc?: string; pricePerPax: number; veg: boolean };
 type ExtraService = { id: string; label: string; price: number };
 
-const TIME_SLOTS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00"];
+const TIME_SLOTS = ["01:00", "02:00", "03:00", "04:00", "05:00", "06:00", "07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00"];
 
 export default function NewHallBookingPage() {
   // Pre-fill from a converted enquiry: /halls/new?customer=&phone=&email=&date=&pax=&hall=
@@ -40,20 +43,19 @@ export default function NewHallBookingPage() {
   const [phone, setPhone] = React.useState(searchParams.get("phone") ?? "");
   const [email, setEmail] = React.useState(searchParams.get("email") ?? "");
   const [eventType, setEventType] = React.useState("Wedding");
+  const [eventName, setEventName] = React.useState("");
   // Venues (master) loaded from Configuration → Food & Hall Packages (/hall-packages).
   const [halls, setHalls] = React.useState<Venue[]>([]);
   const [hallId, setHallId] = React.useState("");
   React.useEffect(() => {
     apiGet<Venue[]>("/hall-packages").then(rows => setHalls(rows.map(h => ({ ...h, id: String(h.id) })))).catch(() => {});
   }, []);
-  React.useEffect(() => {
-    if (!halls.length || halls.some(h => h.id === hallId)) return;
-    // Prefer the venue named in the enquiry pre-fill, else the first available.
-    const qpHall = searchParams.get("hall");
-    const match = qpHall ? halls.find(h => h.name.toLowerCase() === qpHall.toLowerCase()) : undefined;
-    setHallId((match ?? halls[0]).id);
-  }, [halls, hallId, searchParams]);
   const [eventDate, setEventDate] = React.useState(qpDate && qpDate >= todayISO ? qpDate : todayISO);
+  const [eventEndDate, setEventEndDate] = React.useState(eventDate);
+  // Keep the end date from drifting before the start date if the start date moves past it.
+  React.useEffect(() => {
+    setEventEndDate(d => (d < eventDate ? eventDate : d));
+  }, [eventDate]);
   const [startTime, setStartTime] = React.useState("18:00");
   const [endTime, setEndTime] = React.useState("23:00");
   const [pax, setPax] = React.useState(qpPax > 0 ? qpPax : 150);
@@ -71,19 +73,30 @@ export default function NewHallBookingPage() {
   const [advancePct, setAdvancePct] = React.useState(30);
   const [notes, setNotes] = React.useState("");
 
+  // Optional guest ID + captures — mirrors the check-in capture widgets, filled
+  // in directly on this screen (no tablet hand-off for hall bookings).
+  const [idType, setIdType] = React.useState("Aadhaar");
+  const [idNumber, setIdNumber] = React.useState("");
+  const [guestPhoto, setGuestPhoto] = React.useState<string | null>(null);
+  const [idFront, setIdFront] = React.useState<string | null>(null);
+  const [idBack, setIdBack] = React.useState<string | null>(null);
+  const [signature, setSignature] = React.useState<string | null>(null);
+
   const hall = halls.find(h => h.id === hallId);
   const pkg = banquetPkgs.find(p => p.id === packageId);
 
-  // Pricing math
-  const startH = parseInt(startTime);
-  const endH = parseInt(endTime);
-  const hours = Math.max(3, endH - startH); // min 3 hours
+  // Pricing math — end <= start wraps into the next day (e.g. 20:00→02:00 = 6h).
+  const eventCrossesMidnight = crossesMidnight(startTime, endTime);
+  const hours = hoursBetween(startTime, endTime);
   const slotType: "hourly" | "halfDay" | "fullDay" = hours >= 9 ? "fullDay" : hours >= 5 ? "halfDay" : "hourly";
-  const hallCost = slotType === "fullDay" ? (hall?.fullDay ?? 0) : slotType === "halfDay" ? (hall?.halfDay ?? 0) : (hall?.hourly ?? 0) * hours;
-  const foodCost = pkg ? pkg.pricePerPax * pax : 0;
-  const extrasCost = extras.reduce((s, id) => s + (extraServices.find(e => e.id === id)?.price ?? 0), 0);
+  // Charges per day-rate; dayMult folds in any extra calendar days beyond a
+  // single (possibly overnight) session — see dayMultiplier for the rule.
+  const dayMult = dayMultiplier(eventDate, eventEndDate, eventCrossesMidnight);
+  const hallCost = (slotType === "fullDay" ? (hall?.fullDay ?? 0) : slotType === "halfDay" ? (hall?.halfDay ?? 0) : (hall?.hourly ?? 0) * hours) * dayMult;
+  const foodCost = (pkg ? pkg.pricePerPax * pax : 0) * dayMult;
+  const extrasCost = extras.reduce((s, id) => s + (extraServices.find(e => e.id === id)?.price ?? 0), 0); // one-time add-ons
   const capacityWarning = !!hall && pax > hall.capacity;
-  const extraPax = capacityWarning && hall ? pax - hall.capacity : 0;
+  const extraPax = (capacityWarning && hall ? pax - hall.capacity : 0) * dayMult;
   const extraPaxCost = extraPax * (hall?.extraPaxFee ?? 0); // per-hall over-capacity surcharge
   const setupFee = hall?.setupFee ?? 0;
   const gstPct = hall?.gst ?? 0;
@@ -93,7 +106,7 @@ export default function NewHallBookingPage() {
   });
   const advance = Math.round((total * advancePct) / 100);
 
-  const requiredOk = !!(customer && isValidPhone(phone) && isValidEmail(email) && eventDate && startTime && endTime && pax > 0 && pkg);
+  const requiredOk = !!(customer && eventName && isValidPhone(phone) && isValidEmail(email) && eventDate && startTime && endTime && pax > 0 && pkg && hall);
 
   const router = useRouter();
   const [saving, setSaving] = React.useState(false);
@@ -102,11 +115,12 @@ export default function NewHallBookingPage() {
     if (saving || !requiredOk) return;
     setSaving(true);
     apiPost("/hall-bookings", {
-      customer, phone, email, hall: hall?.name ?? "", date: eventDate,
+      customer, phone, email, hall: hall?.name ?? "", eventName, date: eventDate, endDate: eventEndDate,
       start: startTime, end: endTime, guests: pax,
       package: pkg?.name ?? eventType,
       advance: Math.round(advance), total: Math.round(total),
       status, notes,
+      idType, idNumber, guestPhoto, idFront, idBack, signature,
     })
       .then(() => router.push("/halls"))
       .catch(() => setSaving(false));
@@ -125,7 +139,7 @@ export default function NewHallBookingPage() {
         <div>
           <h1 className="text-2xl font-display font-medium tracking-tight">New Hall Booking</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Functions, banquets, conferences · minimum <span className="text-foreground font-medium">3-hour</span> booking
+            Functions, banquets, conferences · billed by the hour
           </p>
         </div>
         <Badge tone="brand"><Sparkles className="h-3 w-3" />AI suggests Pearl Hall for 150 pax</Badge>
@@ -156,14 +170,20 @@ export default function NewHallBookingPage() {
           {/* Event */}
           <Card className="p-6 space-y-4">
             <SectionHead icon={Calendar} title="Event Details" required />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <Field label="Event type *">
                 <Select value={eventType} onChange={e => setEventType(e.target.value)}>
                   {EVENT_TYPES.map(t => <option key={t}>{t}</option>)}
                 </Select>
               </Field>
+              <Field label="Event name *">
+                <Input value={eventName} onChange={e => setEventName(e.target.value)} placeholder="e.g. Sabari's Wedding" />
+              </Field>
               <Field label="Event date *">
                 <Input type="date" value={eventDate} min={todayISO} onChange={e => setEventDate(e.target.value)} />
+              </Field>
+              <Field label="Event end date *">
+                <Input type="date" value={eventEndDate} min={eventDate} onChange={e => setEventEndDate(e.target.value < eventDate ? eventDate : e.target.value)} />
               </Field>
               <Field label="Start time *">
                 <Select value={startTime} onChange={e => setStartTime(e.target.value)}>
@@ -181,6 +201,8 @@ export default function NewHallBookingPage() {
               <span>
                 Duration: <span className="font-semibold">{hours}h</span> · billed at{" "}
                 <span className="font-semibold">{slotType === "fullDay" ? "Full-day rate" : slotType === "halfDay" ? "Half-day rate" : "Hourly rate"}</span>
+                {eventCrossesMidnight && <span className="font-semibold"> · ends next day</span>}
+                {dayMult > 1 && <span className="font-semibold"> · spans {dayMult} days (×{dayMult} charges)</span>}
               </span>
             </div>
           </Card>
@@ -295,6 +317,47 @@ export default function NewHallBookingPage() {
             </div>
           </Card>
 
+          {/* Identification + Captures */}
+          <Card className="p-6 space-y-4">
+            <SectionHead icon={IdCard} title="Identification & Captures" optional />
+            <div className="grid grid-cols-2 gap-3 max-w-md">
+              <Field label="ID type">
+                <Select value={idType} onChange={e => setIdType(e.target.value)}>
+                  <option>Aadhaar</option>
+                  <option>PAN</option>
+                  <option>Driving License</option>
+                  <option>Voter ID</option>
+                  <option>Passport</option>
+                </Select>
+              </Field>
+              <Field label="ID number">
+                <Input value={idNumber} onChange={e => setIdNumber(e.target.value)} placeholder="A12345678" />
+              </Field>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 items-start">
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Camera className="h-4 w-4 text-muted-foreground" />
+                  <Label>Guest face photo</Label>
+                </div>
+                <PhotoCapture value={guestPhoto} onChange={setGuestPhoto} aspect="landscape" />
+              </div>
+              <Field label={`${idType} — front`}>
+                <DocumentUpload label="ID Front" value={idFront} onChange={setIdFront} />
+              </Field>
+              <Field label={`${idType} — back`}>
+                <DocumentUpload label="ID Back" value={idBack} onChange={setIdBack} />
+              </Field>
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Pen className="h-4 w-4 text-muted-foreground" />
+                  <Label>Digital signature</Label>
+                </div>
+                <SignaturePad value={signature} onChange={setSignature} className="aspect-[3/2]" />
+              </div>
+            </div>
+          </Card>
+
           {/* Notes */}
           <Card className="p-6 space-y-3">
             <SectionHead icon={UtensilsCrossed} title="Special Requirements" optional />
@@ -315,13 +378,13 @@ export default function NewHallBookingPage() {
           </div>
 
           <div>
-            <p className="font-semibold text-base">{customer || "Untitled event"}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{eventType}</p>
+            <p className="font-semibold text-base">{eventName || "Untitled event"}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{eventType}{customer ? ` · ${customer}` : ""}</p>
           </div>
 
           <dl className="space-y-2 text-sm border-t border-border pt-3">
-            <Row k="Date" v={eventDate} />
-            <Row k="Time" v={`${startTime} → ${endTime}`} />
+            <Row k="Date" v={eventEndDate !== eventDate ? `${eventDate} → ${eventEndDate}` : eventDate} />
+            <Row k="Time" v={`${startTime} → ${endTime}${eventCrossesMidnight ? " (+1 day)" : ""}`} />
             <Row k="Duration" v={`${hours} hours`} />
             <Row k="Hall" v={hall?.name ?? "—"} />
             <Row k="Capacity" v={`${pax} / ${hall?.capacity ?? 0}`} />
@@ -329,9 +392,9 @@ export default function NewHallBookingPage() {
           </dl>
 
           <div className="border-t border-border pt-3 space-y-2 text-sm">
-            <Row k={`Hall (${slotType})`} v={money(hallCost)} muted />
+            <Row k={`Hall (${slotType})${dayMult > 1 ? ` × ${dayMult}d` : ""}`} v={money(hallCost)} muted />
             {setupFee > 0 && <Row k="Setup fee" v={money(setupFee)} muted />}
-            <Row k={`F&B × ${pax} pax`} v={money(foodCost)} muted />
+            <Row k={`F&B × ${pax} pax${dayMult > 1 ? ` × ${dayMult}d` : ""}`} v={money(foodCost)} muted />
             {extraPaxCost > 0 && <Row k={`Extra pax × ${extraPax}`} v={money(extraPaxCost)} muted warn />}
             {extrasCost > 0 && <Row k={`Extras (${extras.length})`} v={money(extrasCost)} muted />}
             <Row k={`GST (${gstPct}%)`} v={money(tax)} muted />
@@ -371,7 +434,7 @@ export default function NewHallBookingPage() {
               Save as Tentative<ArrowRight className="h-4 w-4" />
             </Button>
             {!requiredOk && (
-              <p className="text-[11px] text-muted-foreground text-center mt-2">Fill customer name, phone, dates and package to enable.</p>
+              <p className="text-[11px] text-muted-foreground text-center mt-2">Fill customer name, phone, dates, hall and package to enable.</p>
             )}
           </div>
         </Card>

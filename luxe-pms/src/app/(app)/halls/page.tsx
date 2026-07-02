@@ -6,9 +6,9 @@ import {
   Plus, Search, Calendar, Users, Clock, Building2,
   Eye, Edit, Ban, MoreHorizontal, X, CheckCircle2, AlertTriangle,
   Phone, Mail, MessageCircle, IndianRupee, Printer, FileText, Sparkles,
-  Wallet,
+  Wallet, LayoutGrid, List,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -16,17 +16,20 @@ import { KPICard } from "@/components/ui/kpi-card";
 import { HALLS, HALL_BOOKINGS } from "@/lib/mock-data-ext";
 import { money, cn, formatDate } from "@/lib/utils";
 import { apiGet, apiPut, apiPost } from "@/lib/api";
-import { computeHallTotals } from "@/lib/hall-pricing";
+import { computeHallTotals, hoursBetween, crossesMidnight, dayMultiplier } from "@/lib/hall-pricing";
 
 // Hour-only slots — must match the new-booking form so re-pricing on modify
 // keys off the same whole-hour slot tiers (≥5h half-day, ≥9h full-day).
-const TIME_SLOTS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00"];
+const TIME_SLOTS = ["01:00", "02:00", "03:00", "04:00", "05:00", "06:00", "07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00"];
 // Venue shape the modify dialog needs to re-price a booking.
 type VenueRates = { name: string; capacity: number; hourly: number; halfDay: number; fullDay: number; setupFee: number; gst: number; extraPaxFee: number };
 
 type Hall = typeof HALLS[number];
 type HallStatus = "confirmed" | "pending" | "in-progress" | "completed" | "cancelled";
-type HallBooking = Omit<typeof HALL_BOOKINGS[number], "status"> & { status: HallStatus; notes?: string; email?: string };
+type HallBooking = Omit<typeof HALL_BOOKINGS[number], "status"> & {
+  status: HallStatus; notes?: string; email?: string; endDate?: string; eventName?: string;
+  idType?: string; idNumber?: string; guestPhoto?: string | null; idFront?: string | null; idBack?: string | null; signature?: string | null;
+};
 
 const STATUS_TONE: Record<HallBooking["status"] | "cancelled" | "completed", "success" | "warning" | "info" | "danger" | "neutral"> = {
   confirmed: "success",
@@ -37,9 +40,9 @@ const STATUS_TONE: Record<HallBooking["status"] | "cancelled" | "completed", "su
 };
 
 type HallOverride = {
-  date?: string; start?: string; end?: string;
+  date?: string; endDate?: string; start?: string; end?: string;
   guests?: number; package?: string; status?: HallBooking["status"];
-  notes?: string; advance?: number; total?: number;
+  notes?: string; advance?: number; total?: number; eventName?: string;
 };
 
 export default function HallsPage() {
@@ -50,6 +53,7 @@ export default function HallsPage() {
   // Anchor rect of the open trigger — the menu is portalled to <body> so the
   // table's overflow doesn't clip it.
   const [menuRect, setMenuRect] = React.useState<DOMRect | null>(null);
+  const [view, setView] = React.useState<"table" | "cards">("table");
 
   // Venues (master) + bookings load from the database; cancel/modify layer over them and persist.
   const [halls, setHalls] = React.useState<Hall[]>([]);
@@ -86,7 +90,7 @@ export default function HallsPage() {
   }, [bookings, overrides, cancelledIds]);
 
   const list = effective.filter(b => {
-    if (search && !`${b.customer} ${b.hall} ${b.package} ${b.phone}`.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search && !`${b.customer} ${b.eventName ?? ""} ${b.hall} ${b.package} ${b.phone}`.toLowerCase().includes(search.toLowerCase())) return false;
     if (hallFilter !== "all" && b.hall !== hallFilter) return false;
     if (statusFilter !== "all" && b.status !== statusFilter) return false;
     return true;
@@ -175,7 +179,7 @@ export default function HallsPage() {
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-display font-medium tracking-tight">Hall Booking</h1>
-          <p className="text-muted-foreground text-sm mt-1">Function halls, banquets &amp; meeting rooms · minimum 3-hour slots</p>
+          <p className="text-muted-foreground text-sm mt-1">Function halls, banquets &amp; meeting rooms · billed by the hour</p>
         </div>
         <Link href="/halls/new"><Button><Plus className="h-4 w-4" />New Hall Booking</Button></Link>
       </div>
@@ -187,51 +191,6 @@ export default function HallsPage() {
         <KPICard label="Hall Revenue" value={money(totalRev)} icon={IndianRupee} accent="success" />
         <KPICard label="Outstanding" value={money(outstanding)} icon={Wallet} accent="warning" hint={`of ${money(totalRev)}`} />
       </div>
-
-      {/* Hall capacities — click to filter to bookings for that hall */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Halls — Capacity &amp; Pricing</CardTitle>
-            <p className="text-xs text-muted-foreground">Click a hall to filter its bookings</p>
-          </div>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {halls.map(h => {
-            const isActive = hallFilter === h.name;
-            const bookCount = effective.filter(b => b.hall === h.name && b.status !== "cancelled").length;
-            return (
-              <button
-                key={h.id}
-                type="button"
-                onClick={() => setHallFilter(isActive ? "all" : h.name)}
-                className={cn(
-                  "rounded-md border p-4 text-left transition-all",
-                  isActive ? "border-brand bg-brand-soft shadow-xs" : "border-border hover:bg-surface-sunken hover:border-brand/30"
-                )}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="font-medium">{h.name}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Up to {h.capacity} guests · {bookCount} booking{bookCount === 1 ? "" : "s"}</p>
-                  </div>
-                  <span className={cn(
-                    "h-8 w-8 rounded-md flex items-center justify-center shrink-0",
-                    isActive ? "bg-brand text-brand-foreground" : "bg-brand-soft text-brand-soft-foreground"
-                  )}>
-                    <Building2 className="h-4 w-4" />
-                  </span>
-                </div>
-                <div className="mt-3 pt-3 border-t border-border space-y-1 text-xs">
-                  <Row label="Hourly" value={money(h.hourly)} />
-                  <Row label="Half-day" value={money(h.halfDay)} />
-                  <Row label="Full-day" value={money(h.fullDay)} />
-                </div>
-              </button>
-            );
-          })}
-        </CardContent>
-      </Card>
 
       {/* Status chips */}
       <div className="flex flex-wrap items-center gap-1.5">
@@ -267,7 +226,7 @@ export default function HallsPage() {
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[240px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-subtle-foreground" />
-            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customer, hall, package, phone…" className="pl-9 h-9" />
+            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search event, customer, hall, package, phone…" className="pl-9 h-9" />
           </div>
           <Select value={hallFilter} onChange={e => setHallFilter(e.target.value)} className="h-9 w-auto">
             <option value="all">All halls</option>
@@ -286,17 +245,43 @@ export default function HallsPage() {
             </Button>
           )}
           <div className="flex-1" />
+          {/* View toggle */}
+          <div className="inline-flex rounded-md border border-border overflow-hidden h-9">
+            <button
+              type="button"
+              onClick={() => setView("table")}
+              className={cn(
+                "h-full px-3 inline-flex items-center gap-1.5 text-xs font-medium border-r border-border transition-colors",
+                view === "table" ? "bg-brand text-brand-foreground" : "hover:bg-surface-sunken text-muted-foreground"
+              )}
+            >
+              <List className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Table</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("cards")}
+              className={cn(
+                "h-full px-3 inline-flex items-center gap-1.5 text-xs font-medium transition-colors",
+                view === "cards" ? "bg-brand text-brand-foreground" : "hover:bg-surface-sunken text-muted-foreground"
+              )}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Cards</span>
+            </button>
+          </div>
           <p className="text-xs text-muted-foreground tabular">{list.length} of {effective.length}</p>
         </div>
       </Card>
 
       {/* Table */}
+      {view === "table" && (
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-surface-elevated border-b border-border">
               <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-                <th className="px-4 py-3 font-semibold">Customer</th>
+                <th className="px-4 py-3 font-semibold">Event</th>
                 <th className="px-4 py-3 font-semibold">Hall</th>
                 <th className="px-4 py-3 font-semibold">Date &amp; Time</th>
                 <th className="px-4 py-3 font-semibold text-right">Guests</th>
@@ -325,15 +310,17 @@ export default function HallsPage() {
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
-                        <p className={cn("font-medium", isCancelled && "line-through")}>{b.customer}</p>
+                        <p className={cn("font-medium", isCancelled && "line-through")}>{b.eventName || b.customer}</p>
                         {isModified && <Badge tone="info">edited</Badge>}
                         {overrides[b.id]?.notes && <FileText className="h-3 w-3 text-brand" aria-label="Has special notes" />}
                       </div>
-                      <p className="text-xs text-muted-foreground tabular">{b.phone}</p>
+                      <p className="text-xs text-muted-foreground tabular">{b.customer}{b.phone ? ` · ${b.phone}` : ""}</p>
                     </td>
                     <td className="px-4 py-3">{b.hall}</td>
                     <td className="px-4 py-3 text-muted-foreground">
-                      <p className="text-foreground">{formatDate(b.date)}</p>
+                      <p className="text-foreground">
+                        {formatDate(b.date)}{b.endDate && b.endDate !== b.date ? ` → ${formatDate(b.endDate)}` : ""}
+                      </p>
                       <p className="text-xs tabular">{b.start} → {b.end}</p>
                     </td>
                     <td className="px-4 py-3 text-right tabular">{b.guests}</td>
@@ -404,6 +391,118 @@ export default function HallsPage() {
           </table>
         </div>
       </Card>
+      )}
+
+      {/* Card view */}
+      {view === "cards" && (
+        list.length === 0 ? (
+          <Card className="p-12 text-center">
+            <Search className="h-8 w-8 mx-auto text-subtle-foreground mb-2" />
+            <p className="font-medium">No hall bookings match your filters</p>
+            <p className="text-xs mt-1 text-muted-foreground">Adjust filters or create a new booking.</p>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {list.map(b => {
+              const isCancelled = b.status === "cancelled";
+              const isModified = !!overrides[b.id];
+              const isOpen = actionMenuFor === b.id;
+              const balance = b.total - b.advance;
+              return (
+                <Card
+                  key={b.id}
+                  onDoubleClick={() => setSelected(b)}
+                  title="Double-click to view full booking"
+                  className={cn("p-4 hover:shadow-md transition-shadow cursor-pointer select-none", isCancelled && "opacity-60")}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className={cn("font-semibold truncate", isCancelled && "line-through")}>{b.customer}</p>
+                        {isModified && <Badge tone="info">edited</Badge>}
+                        {overrides[b.id]?.notes && <FileText className="h-3 w-3 text-brand shrink-0" aria-label="Has special notes" />}
+                      </div>
+                      <p className="text-xs text-muted-foreground tabular">{b.phone}</p>
+                    </div>
+                    <Badge tone={STATUS_TONE[b.status]}>{b.status}</Badge>
+                  </div>
+
+                  <div className="mt-3 space-y-1.5 text-xs text-muted-foreground">
+                    <p className="inline-flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5 shrink-0" />{b.hall}</p>
+                    <p className="inline-flex items-center gap-1.5 flex-wrap">
+                      <Calendar className="h-3.5 w-3.5 shrink-0" />
+                      {formatDate(b.date)}{b.endDate && b.endDate !== b.date ? ` → ${formatDate(b.endDate)}` : ""}
+                      <span className="tabular">· {b.start} → {b.end}</span>
+                    </p>
+                    <p className="inline-flex items-center gap-1.5"><Users className="h-3.5 w-3.5 shrink-0" />{b.guests} guests</p>
+                  </div>
+
+                  <div className="mt-3"><Badge tone="neutral">{b.package}</Badge></div>
+
+                  <div className="mt-3 pt-3 border-t border-border grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <p className="text-muted-foreground uppercase tracking-wider text-[10px] font-semibold">Total</p>
+                      <p className="font-semibold tabular mt-0.5">{money(b.total)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground uppercase tracking-wider text-[10px] font-semibold">Balance</p>
+                      <p className={cn("font-semibold tabular mt-0.5", balance > 0 ? "text-warning" : "text-success")}>
+                        {balance > 0 ? money(balance) : "Paid"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 pt-3 border-t border-border flex items-center gap-1.5" data-action-menu>
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); setSelected(b); }}
+                      className="h-8 w-8 rounded-md border border-border hover:bg-brand hover:text-brand-foreground hover:border-brand inline-flex items-center justify-center text-muted-foreground transition-colors"
+                      title="View booking detail"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isCancelled}
+                      onClick={e => { e.stopPropagation(); setModifyTarget(b); }}
+                      className="h-8 w-8 rounded-md border border-border hover:bg-brand hover:text-brand-foreground hover:border-brand inline-flex items-center justify-center text-muted-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Modify booking"
+                    >
+                      <Edit className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isCancelled}
+                      onClick={e => { e.stopPropagation(); setCancelTarget(b); }}
+                      className="h-8 w-8 rounded-md border border-border hover:bg-danger hover:text-white hover:border-danger inline-flex items-center justify-center text-muted-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Cancel booking"
+                    >
+                      <Ban className="h-3.5 w-3.5" />
+                    </button>
+                    <div className="relative ml-auto">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          if (isOpen) { setActionMenuFor(null); return; }
+                          setMenuRect(e.currentTarget.getBoundingClientRect());
+                          setActionMenuFor(b.id);
+                        }}
+                        className={cn(
+                          "h-8 w-8 rounded-md border inline-flex items-center justify-center transition-colors",
+                          isOpen ? "bg-brand-soft border-brand text-brand-soft-foreground" : "border-border hover:bg-surface-sunken text-muted-foreground"
+                        )}
+                        title="More actions"
+                      >
+                        <MoreHorizontal className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )
+      )}
 
       {/* Row actions menu — portalled to <body> so the table's overflow never
           clips it; positioned from the trigger rect, flipping up near the bottom. */}
@@ -537,8 +636,8 @@ function HallDetailDrawer({ booking, notes, onClose, onModify, onCancel, onPay, 
           </span>
           <div className="flex-1 min-w-0">
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Hall booking · {booking.id.toUpperCase()}</p>
-            <h2 className="text-xl font-semibold truncate">{booking.customer}</h2>
-            <p className="text-xs text-muted-foreground truncate">{booking.phone}{booking.email ? ` · ${booking.email}` : ""}</p>
+            <h2 className="text-xl font-semibold truncate">{booking.eventName || booking.customer}</h2>
+            <p className="text-xs text-muted-foreground truncate">{booking.customer} · {booking.phone}{booking.email ? ` · ${booking.email}` : ""}</p>
           </div>
           <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
         </div>
@@ -549,8 +648,8 @@ function HallDetailDrawer({ booking, notes, onClose, onModify, onCancel, onPay, 
             <div className="grid grid-cols-2 gap-3 text-sm">
               <DetailRow icon={Building2} label="Hall" value={booking.hall} sub={hall ? `Up to ${hall.capacity}` : ""} />
               <DetailRow icon={Users} label="Guests" value={`${booking.guests}`} sub={`Package: ${booking.package}`} />
-              <DetailRow icon={Calendar} label="Date" value={formatDate(booking.date)} />
-              <DetailRow icon={Clock} label="Time" value={`${booking.start} → ${booking.end}`} sub={`${getHours(booking.start, booking.end)} h`} />
+              <DetailRow icon={Calendar} label="Date" value={booking.endDate && booking.endDate !== booking.date ? `${formatDate(booking.date)} → ${formatDate(booking.endDate)}` : formatDate(booking.date)} />
+              <DetailRow icon={Clock} label="Time" value={`${booking.start} → ${booking.end}${crossesMidnight(booking.start, booking.end) ? " (+1 day)" : ""}`} sub={`${getHours(booking.start, booking.end)} h`} />
             </div>
           </div>
 
@@ -576,6 +675,23 @@ function HallDetailDrawer({ booking, notes, onClose, onModify, onCancel, onPay, 
                 </span>
               </div>
             </div>
+          </Section>
+
+          {/* Identification & captures */}
+          <Section title="Identification & captures">
+            {booking.idNumber || booking.guestPhoto || booking.idFront || booking.idBack || booking.signature ? (
+              <div className="rounded-md border border-border p-3 space-y-2 text-sm">
+                {booking.idNumber && <Row label={booking.idType || "ID"} value={booking.idNumber} />}
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {booking.guestPhoto && <Badge tone="success">Photo ✓</Badge>}
+                  {booking.idFront && <Badge tone="success">ID Front ✓</Badge>}
+                  {booking.idBack && <Badge tone="success">ID Back ✓</Badge>}
+                  {booking.signature && <Badge tone="success">Signed ✓</Badge>}
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">No ID or captures on file. Click <span className="text-foreground font-medium">Modify</span> to add.</p>
+            )}
           </Section>
 
           {/* Special notes */}
@@ -650,9 +766,7 @@ function DetailRow({ icon: Icon, label, value, sub }: { icon: typeof Building2; 
 }
 
 function getHours(start: string, end: string) {
-  const [sH, sM] = start.split(":").map(Number);
-  const [eH, eM] = end.split(":").map(Number);
-  return ((eH * 60 + eM) - (sH * 60 + sM)) / 60;
+  return hoursBetween(start, end);
 }
 
 // ===================== MODIFY DIALOG =====================
@@ -660,7 +774,9 @@ function ModifyHallDialog({ booking, notes, onClose, onSave }: {
   booking: HallBooking; notes: string; onClose: () => void; onSave: (patch: HallOverride) => void;
 }) {
   const [draft, setDraft] = React.useState({
+    eventName: booking.eventName ?? "",
     date: booking.date,
+    endDate: booking.endDate ?? booking.date,
     start: booking.start,
     end: booking.end,
     guests: booking.guests,
@@ -687,20 +803,23 @@ function ModifyHallDialog({ booking, notes, onClose, onSave }: {
 
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft(d => ({ ...d, [k]: v }));
   const todayISO = new Date().toLocaleDateString("en-CA"); // blocks past dates on event date
-  const valid = draft.guests >= 1 && draft.start < draft.end && draft.total >= 0;
+  const valid = draft.eventName.trim() !== "" && draft.guests >= 1 && draft.total >= 0;
 
   // Live re-price from venue rates + package + guests + slot — same formula as the
   // new-booking form, so editing guests/package/time no longer leaves a stale total.
   // Stored bookings don't keep the à-la-carte extras, so this excludes them; the
   // total stays editable for staff to add those back or apply a special rate.
+  // end <= start wraps into the next day (e.g. 20:00→02:00 = 6h).
   const venue = venues.find(v => v.name === booking.hall);
-  const hours = Math.max(3, parseInt(draft.end) - parseInt(draft.start));
+  const draftCrossesMidnight = crossesMidnight(draft.start, draft.end);
+  const hours = hoursBetween(draft.start, draft.end);
   const slotType: "hourly" | "halfDay" | "fullDay" = hours >= 9 ? "fullDay" : hours >= 5 ? "halfDay" : "hourly";
-  const hallCost = venue ? (slotType === "fullDay" ? venue.fullDay : slotType === "halfDay" ? venue.halfDay : venue.hourly * hours) : 0;
+  const draftDayMult = dayMultiplier(draft.date, draft.endDate, draftCrossesMidnight);
+  const hallCost = (venue ? (slotType === "fullDay" ? venue.fullDay : slotType === "halfDay" ? venue.halfDay : venue.hourly * hours) : 0) * draftDayMult;
   const pkgPrice = pkgs.find(p => p.name === draft.package)?.pricePerPax ?? 0;
-  const extraPax = venue && draft.guests > venue.capacity ? draft.guests - venue.capacity : 0;
+  const extraPax = (venue && draft.guests > venue.capacity ? draft.guests - venue.capacity : 0) * draftDayMult;
   const reprice = venue
-    ? computeHallTotals({ hallCost, setupFee: venue.setupFee, foodCost: pkgPrice * draft.guests, extrasCost: 0, extraPax, extraPaxFee: venue.extraPaxFee, gstPct: venue.gst }).total
+    ? computeHallTotals({ hallCost, setupFee: venue.setupFee, foodCost: pkgPrice * draft.guests * draftDayMult, extrasCost: 0, extraPax, extraPaxFee: venue.extraPaxFee, gstPct: venue.gst }).total
     : null;
   const repriceDiffers = reprice != null && reprice !== draft.total;
 
@@ -715,16 +834,29 @@ function ModifyHallDialog({ booking, notes, onClose, onSave }: {
             </span>
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold truncate">Modify hall booking</h3>
-              <p className="text-xs text-muted-foreground truncate">{booking.customer} · {booking.hall}</p>
+              <p className="text-xs text-muted-foreground truncate">{booking.eventName || booking.customer} · {booking.hall}</p>
             </div>
             <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
           </div>
 
           <div className="px-5 py-4 space-y-4 max-h-[65vh] overflow-y-auto">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Event name</Label>
+              <Input value={draft.eventName} onChange={e => set("eventName", e.target.value)} placeholder="e.g. Sabari's Wedding" className="h-9" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs">Date</Label>
-                <Input type="date" value={draft.date} min={todayISO} onChange={e => set("date", e.target.value)} className="h-9 tabular" />
+                <Label className="text-xs">Start date</Label>
+                <Input
+                  type="date" value={draft.date} min={todayISO}
+                  onChange={e => setDraft(d => ({ ...d, date: e.target.value, endDate: d.endDate < e.target.value ? e.target.value : d.endDate }))}
+                  className="h-9 tabular"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">End date</Label>
+                <Input type="date" value={draft.endDate} min={draft.date} onChange={e => set("endDate", e.target.value < draft.date ? draft.date : e.target.value)} className="h-9 tabular" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Start time</Label>
@@ -744,7 +876,10 @@ function ModifyHallDialog({ booking, notes, onClose, onSave }: {
 
             <div className="rounded-md bg-surface-sunken/40 border border-border p-3 text-xs flex items-center justify-between">
               <span className="text-muted-foreground">Duration</span>
-              <span className="font-semibold tabular">{getHours(draft.start, draft.end)} hours</span>
+              <span className="font-semibold tabular">
+                {hours} hours{draftCrossesMidnight ? " · ends next day" : ""}
+                {draftDayMult > 1 ? ` · spans ${draftDayMult} days (×${draftDayMult} charges)` : ""}
+              </span>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -844,7 +979,7 @@ function ReceivePaymentDialog({ booking, onClose, onConfirm }: {
             <span className="h-10 w-10 rounded-md bg-success-soft text-success inline-flex items-center justify-center shrink-0"><Wallet className="h-5 w-5" /></span>
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold truncate">Receive payment</h3>
-              <p className="text-xs text-muted-foreground truncate">{booking.customer} · {booking.hall}</p>
+              <p className="text-xs text-muted-foreground truncate">{booking.eventName || booking.customer} · {booking.hall}</p>
             </div>
             <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
           </div>
@@ -927,7 +1062,7 @@ function CancelHallDialog({ booking, onClose, onConfirm }: {
             </span>
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold truncate">Cancel hall booking</h3>
-              <p className="text-xs text-muted-foreground truncate">{booking.customer} · {booking.hall}</p>
+              <p className="text-xs text-muted-foreground truncate">{booking.eventName || booking.customer} · {booking.hall}</p>
             </div>
             <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-white/40 inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
           </div>

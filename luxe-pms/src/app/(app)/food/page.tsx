@@ -60,6 +60,7 @@ export default function FoodPage() {
   const [modifyOrder, setModifyOrder] = React.useState<FoodOrder | null>(null);
   const [cancelOrder, setCancelOrder] = React.useState<FoodOrder | null>(null);
   const [viewOrder, setViewOrder] = React.useState<FoodOrder | null>(null);
+  const [orderSearch, setOrderSearch] = React.useState("");
 
   // Effective orders with overrides applied
   const effectiveOrders = React.useMemo(() => {
@@ -68,6 +69,12 @@ export default function FoodPage() {
       return { ...o, ...ov, status: (ov.status ?? o.status) as OrderStatus };
     });
   }, [orders, orderOverrides]);
+
+  const visibleOrders = React.useMemo(() => {
+    const q = orderSearch.trim().toLowerCase();
+    if (!q) return effectiveOrders;
+    return effectiveOrders.filter(o => `${o.room} ${o.guest} ${o.status}`.toLowerCase().includes(q));
+  }, [effectiveOrders, orderSearch]);
 
   const handleModifyOrder = (id: string, patch: OrderOverride) => {
     setOrderOverrides(o => ({ ...o, [id]: { ...(o[id] ?? {}), ...patch } }));
@@ -134,15 +141,31 @@ export default function FoodPage() {
       {/* Active orders */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <CardTitle>Active Orders</CardTitle>
-            <p className="text-[11px] text-muted-foreground inline-flex items-center gap-1.5">
-              <AlertTriangle className="h-3 w-3 text-warning" />Modify / cancel allowed while status is Preparing
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="text-[11px] text-muted-foreground inline-flex items-center gap-1.5 whitespace-nowrap">
+                <AlertTriangle className="h-3 w-3 text-warning" />Modify / cancel allowed while status is Preparing
+              </p>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-subtle-foreground" />
+                <Input
+                  value={orderSearch}
+                  onChange={e => setOrderSearch(e.target.value)}
+                  placeholder="Search room, guest, status…"
+                  className="pl-8 h-8 w-56 text-xs"
+                />
+              </div>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {effectiveOrders.map(o => {
+          {visibleOrders.length === 0 && (
+            <div className="col-span-full py-10 text-center text-sm text-muted-foreground">
+              No orders match &quot;{orderSearch}&quot;
+            </div>
+          )}
+          {visibleOrders.map(o => {
             const canEdit = o.status === "preparing";
             const isCancelled = o.status === "cancelled";
             const isDelivered = o.status === "delivered";

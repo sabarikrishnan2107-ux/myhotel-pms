@@ -455,9 +455,11 @@ class ResourceController extends Controller
         ],
         'hall-bookings' => [
             'customer' => 'string|max:255', 'phone' => 'string|max:50|nullable', 'email' => 'email|max:255|nullable', 'hall' => 'string|max:255',
-            'date' => 'string|max:50', 'start' => 'string|max:50', 'end' => 'string|max:50',
+            'eventName' => 'string|max:255', 'date' => 'string|max:50', 'endDate' => 'string|max:50|nullable', 'start' => 'string|max:50', 'end' => 'string|max:50',
             'guests' => 'integer|min:0', 'package' => 'string|max:255|nullable', 'advance' => 'integer|min:0',
             'total' => 'integer|min:0', 'status' => 'string|max:50', 'notes' => 'string|max:2000|nullable',
+            'idType' => 'string|max:100|nullable', 'idNumber' => 'string|max:100|nullable',
+            'guestPhoto' => 'string|nullable', 'idFront' => 'string|nullable', 'idBack' => 'string|nullable', 'signature' => 'string|nullable',
         ],
         'app-users' => [
             'name' => 'string|max:255', 'email' => 'email|max:255', 'role' => 'string|max:50',
@@ -937,7 +939,7 @@ class ResourceController extends Controller
         'loyalty-campaigns' => ['name'],
         'account-entries' => ['category', 'description'],
         'app-users' => ['name', 'email'],
-        'hall-bookings' => ['customer'],
+        'hall-bookings' => ['customer', 'eventName'],
         'group-bookings' => ['name'],
         'group-rooming' => ['lead', 'roomType'],
         'compliance-licenses' => ['name', 'authority'],
