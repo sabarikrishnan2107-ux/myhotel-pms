@@ -76,6 +76,14 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const [selfCharges, setSelfCharges] = React.useState<Record<string, { id: string | number; description: string; amount: number; date: string }[]>>({});
   const [selfPayments, setSelfPayments] = React.useState<Record<string, { id: string | number; amount: number; mode: string; date: string }[]>>({});
 
+  // Master-folio extras (ad-hoc charges posted to group.code via Task 3's group-pays path).
+  const [masterExtras, setMasterExtras] = React.useState<{ id: string | number; description: string; amount: number; date: string }[]>([]);
+  React.useEffect(() => {
+    if (!group) return;
+    apiGet<{ id: string | number; description: string; amount: number; date: string }[]>(`/folio-charges?bookingNo=${encodeURIComponent(group.code)}`)
+      .then(setMasterExtras).catch(() => {});
+  }, [group?.code]);
+
   React.useEffect(() => {
     if (!rowMenuFor) return;
     const close = () => setRowMenuFor(null);
@@ -849,6 +857,14 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                     <td className="px-5 py-3 text-right tabular text-muted-foreground">—</td>
                   </tr>
                 ))}
+                {masterExtras.map(c => (
+                  <tr key={`x${c.id}`}>
+                    <td className="px-5 py-3">{c.description}</td>
+                    <td className="px-5 py-3 text-right tabular">1</td>
+                    <td className="px-5 py-3 text-right tabular text-muted-foreground">—</td>
+                    <td className="px-5 py-3 text-right tabular font-medium">{money(c.amount)}</td>
+                  </tr>
+                ))}
               </tbody>
               <tfoot className="bg-surface-elevated border-t border-border">
                 <tr>
@@ -861,7 +877,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                 </tr>
                 <tr>
                   <td colSpan={3} className="px-5 py-3 text-right text-xs uppercase tracking-wider font-semibold">Total</td>
-                  <td className="px-5 py-3 text-right tabular font-semibold text-base">{money(folio.grandTotal)}</td>
+                  <td className="px-5 py-3 text-right tabular font-semibold text-base">{money(folio.grandTotal + masterExtras.reduce((s, c) => s + (c.amount || 0), 0))}</td>
                 </tr>
               </tfoot>
             </table>
