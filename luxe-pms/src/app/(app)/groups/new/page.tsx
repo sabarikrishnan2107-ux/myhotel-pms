@@ -103,7 +103,7 @@ export default function NewGroupPage() {
   const [billingMode, setBillingMode] = React.useState<"master" | "per-room" | "split">("master");
   const [notes, setNotes] = React.useState("");
   const [services, setServices] = React.useState<string[]>([]);
-  const [pax, setPax] = React.useState(0);
+  const [pax, setPax] = React.useState<number | "">("");
 
   // Start with one empty room-block row so the structure is visible; the user
   // fills in the quantity. Rate is set by suggestRate once room types load.
@@ -265,15 +265,17 @@ export default function NewGroupPage() {
   const extraBedRateFor = (typeName: string) => roomTypes.find(t => t.name === typeName)?.extraAdultRate ?? 0;
   const maxAdultsFor = (typeName: string) => roomTypes.find(t => t.name === typeName)?.maxAdults ?? 2;
 
+  const paxNum = typeof pax === "number" ? pax : 0;
+
   // Configured rate-plan meals: same per-guest-per-night math as booking/walk-in.
   const planMeals = mealPerNightPerGuest({
     inclB: !!selectedPlan?.inclBreakfast, inclL: !!selectedPlan?.inclLunch, inclD: !!selectedPlan?.inclDinner,
     breakfastPrice: selectedPlan?.breakfastPrice ?? 0, lunchPrice: selectedPlan?.lunchPrice ?? 0, dinnerPrice: selectedPlan?.dinnerPrice ?? 0,
-  }) * pax * nights;
+  }) * paxNum * nights;
 
   const totals = computeGroupTotals(
     block.map(b => ({ rate: b.rate, qty: b.qty, extraBeds: b.extraBeds, extraBedRate: extraBedRateFor(b.type) })),
-    nights, selectedSvcLines, pax, gstSlabs, planMeals,
+    nights, selectedSvcLines, paxNum, gstSlabs, planMeals,
   );
   const roomSubtotal = totals.roomSubtotal;
   const extraBedTotal = totals.extraBedSubtotal;
@@ -285,7 +287,7 @@ export default function NewGroupPage() {
 
   // Soft occupancy check: rooms (× included adults) + extra beds vs expected pax.
   const blockCapacity = block.reduce((s, b) => s + b.qty * maxAdultsFor(b.type) + b.extraBeds, 0);
-  const overCapacity = pax > 0 && totalRooms > 0 && pax > blockCapacity;
+  const overCapacity = paxNum > 0 && totalRooms > 0 && paxNum > blockCapacity;
 
   const advance = customAdvance !== null
     ? Math.min(Math.max(0, Math.round(customAdvance)), total)
@@ -316,7 +318,7 @@ export default function NewGroupPage() {
       code, name, type, contactName, contactPhone, contactEmail,
       bookedBy, arrival, departure, nights,
       block: block.map(b => ({ type: b.type, qty: b.qty, rate: b.rate, assigned: 0, extraBeds: b.extraBeds, extraBedRate: extraBedRateFor(b.type) })),
-      totalRooms, totalPax: pax, ratePlan,
+      totalRooms, totalPax: paxNum, ratePlan,
       services: services.map(id => svcCatalog.find(s => String(s.id) === id)?.name ?? id),
       total: Math.round(total), advance: Math.round(advance), balance: Math.round(total - advance),
       status, notes, createdAt: new Date().toISOString().slice(0, 10),
@@ -420,11 +422,11 @@ export default function NewGroupPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Field label="Arrival *"><Input type="date" value={arrival} min={todayISO} onChange={e => setArrival(e.target.value)} /></Field>
               <Field label="Departure *"><Input type="date" value={departure} min={arrival > todayISO ? arrival : todayISO} onChange={e => setDeparture(e.target.value)} /></Field>
-              <Field label="Total expected pax *"><Input type="number" value={pax} onChange={e => setPax(Number(e.target.value))} /></Field>
+              <Field label="Total expected pax *"><Input type="number" value={pax} onChange={e => setPax(e.target.value === "" ? "" : Number(e.target.value))} placeholder="Enter number of guests" /></Field>
             </div>
             {overCapacity && (
               <p className="text-xs text-warning inline-flex items-center gap-1.5">
-                <UsersRound className="h-3.5 w-3.5" />Blocked rooms seat up to {blockCapacity}. Add rooms or extra beds to fit {pax - blockCapacity} more.
+                <UsersRound className="h-3.5 w-3.5" />Blocked rooms seat up to {blockCapacity}. Add rooms or extra beds to fit {paxNum - blockCapacity} more.
               </p>
             )}
             <div className="rounded-md bg-brand-soft text-brand-soft-foreground p-3 flex items-center gap-3 text-sm">
@@ -549,31 +551,35 @@ export default function NewGroupPage() {
           {/* Services */}
           <Card className="p-6 space-y-4">
             <SectionHead icon={Building2} title="Services & Add-ons" hint="Halls, F&B, transfers, decoration — anything extra" />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {svcCatalog.map(svc => {
-                const id = String(svc.id);
-                const on = services.includes(id);
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setServices(v => on ? v.filter(x => x !== id) : [...v, id])}
-                    className={cn(
-                      "p-3 rounded-md border text-left transition-colors flex items-start justify-between gap-2",
-                      on ? "bg-brand-soft border-brand" : "border-border hover:bg-surface-sunken"
-                    )}
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{svc.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5 tabular">
-                        {money(svc.price)}{svc.perPax ? "/pax" : ""}
-                      </p>
-                    </div>
-                    {on && <CheckCircle2 className="h-4 w-4 text-brand shrink-0" />}
-                  </button>
-                );
-              })}
-            </div>
+            {svcCatalog.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">No services available. Configure them in Setup → Group Services.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {svcCatalog.map(svc => {
+                  const id = String(svc.id);
+                  const on = services.includes(id);
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setServices(v => on ? v.filter(x => x !== id) : [...v, id])}
+                      className={cn(
+                        "p-3 rounded-md border text-left transition-colors flex items-start justify-between gap-2",
+                        on ? "bg-brand-soft border-brand" : "border-border hover:bg-surface-sunken"
+                      )}
+                    >
+                      <div>
+                        <p className="text-sm font-medium">{svc.name}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 tabular">
+                          {money(svc.price)}{svc.perPax ? "/pax" : ""}
+                        </p>
+                      </div>
+                      {on && <CheckCircle2 className="h-4 w-4 text-brand shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </Card>
 
           {/* Billing setup */}
@@ -723,7 +729,7 @@ export default function NewGroupPage() {
               ))}
               <button
                 type="button"
-                onClick={() => setPaymentTerm("custom")}
+                onClick={() => { setPaymentTerm("custom"); setCustomAdvance(null); }}
                 className={cn(
                   "h-9 px-3 rounded-md border text-xs font-medium transition-colors",
                   paymentTerm === "custom" ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
@@ -750,7 +756,7 @@ export default function NewGroupPage() {
                     min="0"
                     max={total}
                     value={customAdvance || ""}
-                    onChange={e => setCustomAdvance(Number(e.target.value) || 0)}
+                    onChange={e => setCustomAdvance(Math.max(0, Math.min(total, Math.round(Number(e.target.value)))))}
                     placeholder="0"
                     className="flex-1"
                   />
