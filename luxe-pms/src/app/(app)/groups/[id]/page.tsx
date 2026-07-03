@@ -219,12 +219,23 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     flash(assigned ? `Auto-assigned ${assigned} room${assigned > 1 ? "s" : ""}` : "No available rooms to assign");
   };
 
-  // Check the whole group in.
+  // Check the whole group in: checks in every guest that already has a room
+  // assigned (guests still waiting on a room are skipped, not silently
+  // dropped — the toast reports how many of each) and flips group status.
   const checkInGroup = () => {
     if (!group) return;
+    const at = new Date().toISOString();
+    const toCheckIn = rooming.filter(r => r.roomNo && !r.checkedIn);
+    const skipped = rooming.filter(r => !r.roomNo && !r.checkedIn).length;
+    toCheckIn.forEach(r => apiPut(`/group-rooming/${r.id}`, { checkedIn: true, checkedInAt: at }).catch(() => {}));
+    setRooming(prev => prev.map(r => toCheckIn.some(c => c.id === r.id) ? { ...r, checkedIn: true, checkedInAt: at } : r));
     setGroup(g => g ? { ...g, status: "in-house" } : g);
     apiPut(`/group-bookings/${group.id}`, { status: "in-house" }).catch(() => flash("⚠ Save failed — backend offline"));
-    flash("Group checked in");
+    flash(
+      toCheckIn.length
+        ? `${toCheckIn.length} guest${toCheckIn.length === 1 ? "" : "s"} checked in${skipped ? ` · ${skipped} still need${skipped === 1 ? "s" : ""} a room` : ""}`
+        : skipped ? `No guests checked in · ${skipped} still need${skipped === 1 ? "s" : ""} a room` : "Group checked in"
+    );
   };
 
   // Release one room back to housekeeping (dirty → ready for turnover).
