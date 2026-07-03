@@ -98,6 +98,7 @@ export default function NewGroupPage() {
   const [departure, setDeparture] = React.useState("");
   const [ratePlan, setRatePlan] = React.useState("CP");
   const [paymentTerm, setPaymentTerm] = React.useState<number | "custom">(30);
+  const [customAdvance, setCustomAdvance] = React.useState<number | null>(null);
   const [policies, setPolicies] = React.useState<GroupPolicies>(DEFAULT_POLICIES);
   const [billingMode, setBillingMode] = React.useState<"master" | "per-room" | "split">("master");
   const [notes, setNotes] = React.useState("");
@@ -286,7 +287,9 @@ export default function NewGroupPage() {
   const blockCapacity = block.reduce((s, b) => s + b.qty * maxAdultsFor(b.type) + b.extraBeds, 0);
   const overCapacity = pax > 0 && totalRooms > 0 && pax > blockCapacity;
 
-  const advance = paymentTerm === "custom" ? 0 : Math.round((total * paymentTerm) / 100);
+  const advance = customAdvance !== null
+    ? Math.min(Math.max(0, Math.round(customAdvance)), total)
+    : paymentTerm === "custom" ? 0 : Math.round((total * paymentTerm) / 100);
 
   const updateBlock = (id: string, key: keyof BlockRow, value: number | string) => {
     setBlock(b => b.map(r => {
