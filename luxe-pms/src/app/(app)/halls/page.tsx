@@ -6,7 +6,7 @@ import {
   Plus, Search, Calendar, Users, Building2,
   Eye, Edit, Ban, MoreHorizontal, CheckCircle2,
   Mail, MessageCircle, IndianRupee, Printer, FileText,
-  Wallet, LayoutGrid, List,
+  Wallet, LayoutGrid, List, CalendarCheck, CalendarClock,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -70,6 +70,15 @@ export default function HallsPage() {
     if (statusFilter !== "all" && b.status !== statusFilter) return false;
     return true;
   });
+
+  const now = new Date();
+  const today = now.toLocaleDateString("en-CA");
+  const tomorrowDate = new Date(now);
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrow = tomorrowDate.toLocaleDateString("en-CA");
+  const isOnDate = (b: HallBooking, d: string) => b.date <= d && (b.endDate ?? b.date) >= d;
+  const todayCount = effective.filter(b => b.status !== "cancelled" && isOnDate(b, today)).length;
+  const tomorrowCount = effective.filter(b => b.status !== "cancelled" && isOnDate(b, tomorrow)).length;
 
   const totalRev = effective.filter(b => b.status !== "cancelled").reduce((s, b) => s + b.total, 0);
   const advance = effective.filter(b => b.status !== "cancelled").reduce((s, b) => s + b.advance, 0);
@@ -163,9 +172,11 @@ export default function HallsPage() {
       </div>
 
       {/* KPI bar */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <KPICard label="Halls" value={halls.length} icon={Building2} accent="brand" />
         <KPICard label="Active Bookings" value={effective.filter(b => b.status !== "cancelled").length} icon={Calendar} accent="info" />
+        <KPICard label="Today's Bookings" value={todayCount} icon={CalendarCheck} accent="accent" />
+        <KPICard label="Tomorrow's Bookings" value={tomorrowCount} icon={CalendarClock} accent="neutral" />
         <KPICard label="Hall Revenue" value={money(totalRev)} icon={IndianRupee} accent="success" />
         <KPICard label="Outstanding" value={money(outstanding)} icon={Wallet} accent="warning" hint={`of ${money(totalRev)}`} />
       </div>
