@@ -7,5 +7,5 @@ class GroupRooming extends Model {
     protected $table = 'group_rooming';
     protected $guarded = ['id'];
     protected $casts = ['pax'=>'integer','checkedIn'=>'boolean','checkedOut'=>'boolean'];
-    protected $attributes = ['checkedIn' => false, 'checkedOut' => false];
+    protected $attributes = ['checkedIn' => false, 'checkedOut' => false, 'billTo' => 'group'];
 }

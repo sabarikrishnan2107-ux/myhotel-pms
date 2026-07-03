@@ -438,6 +438,7 @@ class ResourceController extends Controller
             'lead' => 'string|max:255', 'pax' => 'integer|min:1', 'phone' => 'string|max:50|nullable',
             'remarks' => 'string|max:500|nullable', 'checkedIn' => 'boolean', 'checkedOut' => 'boolean',
             'checkedInAt' => 'string|max:50|nullable', 'checkedOutAt' => 'string|max:50|nullable',
+            'billTo' => 'string|max:20',
         ],
         'compliance-licenses' => [
             'name' => 'string|max:255', 'authority' => 'string|max:255', 'number' => 'string|max:100|nullable',
@@ -453,6 +454,7 @@ class ResourceController extends Controller
             'ratePlan' => 'string|max:255|nullable', 'services' => 'array', 'total' => 'integer|min:0',
             'advance' => 'integer|min:0', 'balance' => 'integer', 'status' => 'string|max:50',
             'notes' => 'string|max:2000|nullable', 'createdAt' => 'string|max:50|nullable',
+            'billingMode' => 'string|max:20',
         ],
         'hall-bookings' => [
             'customer' => 'string|max:255', 'phone' => 'string|max:50|nullable', 'email' => 'email|max:255|nullable', 'hall' => 'string|max:255',
