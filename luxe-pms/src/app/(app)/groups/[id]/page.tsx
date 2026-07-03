@@ -23,7 +23,7 @@ import { mealPerNightPerGuest } from "@/lib/booking-pricing";
 type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string; checkedIn?: boolean; checkedInAt?: string | null; checkedOut?: boolean; checkedOutAt?: string | null };
 type AuditRow = { id: string; action: string; entity: string; module: string; user: string; date: string; time: string };
 type RoomBoardRow = { id?: string | number; number: string; status: string; type?: string; floor?: number };
-import { cn, money, formatDate } from "@/lib/utils";
+import { cn, money, formatDate, formatTime } from "@/lib/utils";
 import { useProperty, hotelName } from "@/lib/use-property";
 
 const STATUS_TONE: Record<GroupStatus, "neutral" | "info" | "success" | "brand" | "warning" | "danger"> = {
@@ -574,7 +574,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>Rooming List</CardTitle>
-                <p className="text-xs text-muted-foreground mt-1">{rooming.length} guests in {group.totalRooms} rooms · {rooming.filter(r => !r.roomNo).length} pending allocation</p>
+                <p className="text-xs text-muted-foreground mt-1">{rooming.length} guests in {group.totalRooms} rooms · {rooming.filter(r => !r.roomNo).length} pending allocation · {rooming.filter(r => r.checkedIn && !r.checkedOut).length} checked in</p>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={() => flash("CSV import — coming soon")}><Upload className="h-3.5 w-3.5" />Import CSV</Button>
@@ -622,7 +622,16 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                     )}
                   </td>
                   <td className="px-5 py-3"><Badge tone="neutral">{g.roomType}</Badge></td>
-                  <td className="px-5 py-3">{g.lead}{g.checkedOut && <Badge tone="success" className="ml-2"><LogOut className="h-3 w-3" />Checked out</Badge>}</td>
+                  <td className="px-5 py-3">
+                    {g.lead}
+                    {g.checkedOut ? (
+                      <Badge tone="success" className="ml-2"><LogOut className="h-3 w-3" />Checked out{g.checkedOutAt ? ` · ${formatTime(g.checkedOutAt)}` : ""}</Badge>
+                    ) : g.checkedIn ? (
+                      <Badge tone="success" className="ml-2"><LogIn className="h-3 w-3" />In-house{g.checkedInAt ? ` · ${formatTime(g.checkedInAt)}` : ""}</Badge>
+                    ) : g.roomNo ? (
+                      <Badge tone="neutral" className="ml-2">Arriving</Badge>
+                    ) : null}
+                  </td>
                   <td className="px-5 py-3 text-right tabular">{g.pax}</td>
                   <td className="px-5 py-3 text-xs text-muted-foreground tabular">{g.phone ?? "—"}</td>
                   <td className="px-5 py-3 text-xs text-muted-foreground">{g.remarks ?? "—"}</td>
