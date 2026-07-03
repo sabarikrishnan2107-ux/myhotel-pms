@@ -229,8 +229,14 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     const skipped = rooming.filter(r => !r.roomNo && !r.checkedIn).length;
     toCheckIn.forEach(r => apiPut(`/group-rooming/${r.id}`, { checkedIn: true, checkedInAt: at }).catch(() => {}));
     setRooming(prev => prev.map(r => toCheckIn.some(c => c.id === r.id) ? { ...r, checkedIn: true, checkedInAt: at } : r));
-    setGroup(g => g ? { ...g, status: "in-house" } : g);
-    apiPut(`/group-bookings/${group.id}`, { status: "in-house" }).catch(() => flash("⚠ Save failed — backend offline"));
+    // Only move the group to in-house when we actually checked someone in —
+    // otherwise a group whose guests all still lack rooms would flip to in-house
+    // (hiding this very button, since it only renders for confirmed/tentative)
+    // while checking in nobody.
+    if (toCheckIn.length) {
+      setGroup(g => g ? { ...g, status: "in-house" } : g);
+      apiPut(`/group-bookings/${group.id}`, { status: "in-house" }).catch(() => flash("⚠ Save failed — backend offline"));
+    }
     flash(
       toCheckIn.length
         ? `${toCheckIn.length} guest${toCheckIn.length === 1 ? "" : "s"} checked in${skipped ? ` · ${skipped} still need${skipped === 1 ? "s" : ""} a room` : ""}`
@@ -280,13 +286,14 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
       balance = Math.max(0, group.balance - finalAmt);
       apiPost("/folio-payments", { bookingNo: group.code, date: today, mode: finalMode, amount: finalAmt, reference: `Group ${group.code} · checkout` }).catch(() => {});
     }
+    const at = new Date().toISOString();
     const remaining = rooming.filter(r => !r.checkedOut);
     remaining.forEach(r => {
-      apiPut(`/group-rooming/${r.id}`, { checkedOut: true }).catch(() => {});
+      apiPut(`/group-rooming/${r.id}`, { checkedOut: true, checkedOutAt: at }).catch(() => {});
       releaseRoom(r.roomNo);
     });
     const released = remaining.filter(r => r.roomNo).length;
-    setRooming(prev => prev.map(r => ({ ...r, checkedOut: true })));
+    setRooming(prev => prev.map(r => r.checkedOut ? r : { ...r, checkedOut: true, checkedOutAt: at }));
     setGroup(g => g ? { ...g, status: "completed", advance, balance } : g);
     apiPut(`/group-bookings/${group.id}`, { status: "completed", advance, balance }).catch(() => flash("⚠ Checkout not fully saved — backend offline"));
     flash(`${group.name} checked out · ${released} room${released === 1 ? "" : "s"} released to housekeeping`);
