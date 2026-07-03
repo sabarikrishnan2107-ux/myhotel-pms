@@ -381,7 +381,150 @@
             ]
         };
 
-        // Render function will be added in Task 3
+        function renderReport() {
+            const app = document.getElementById('app');
+            const report = attendanceReport;
+
+            // Clear existing content
+            app.innerHTML = '';
+
+            // Create container
+            const container = document.createElement('div');
+            container.className = 'container';
+
+            // ===== HEADER =====
+            const header = document.createElement('header');
+
+            const headerTitle = document.createElement('div');
+            headerTitle.className = 'header-title';
+            headerTitle.textContent = report.metadata.title;
+
+            const headerMeta = document.createElement('div');
+            headerMeta.className = 'header-meta';
+            headerMeta.innerHTML = `
+                <span>Date Range: ${report.metadata.dateRange}</span>
+                <span>All Branches</span>
+                <span>All Devices</span>
+                <span>Generated: ${report.metadata.generatedAt}</span>
+                <span style="margin-left: auto; color: #8b5cf6; font-weight: 600;">${report.metadata.property}</span>
+            `;
+
+            header.appendChild(headerTitle);
+            header.appendChild(headerMeta);
+            container.appendChild(header);
+
+            // ===== SUMMARY CARDS =====
+            const summaryGrid = document.createElement('div');
+            summaryGrid.className = 'summary-grid';
+
+            // Total Events Card
+            const eventsCard = document.createElement('div');
+            eventsCard.className = 'summary-card events';
+            eventsCard.innerHTML = `
+                <div class="summary-label">Total Events</div>
+                <div class="summary-value">${report.summary.totalEvents}</div>
+            `;
+            summaryGrid.appendChild(eventsCard);
+
+            // Total Employees Card
+            const employeesCard = document.createElement('div');
+            employeesCard.className = 'summary-card employees';
+            employeesCard.innerHTML = `
+                <div class="summary-label">Total Employees</div>
+                <div class="summary-value">${report.summary.totalEmployees}</div>
+            `;
+            summaryGrid.appendChild(employeesCard);
+
+            // Total Branches Card
+            const branchesCard = document.createElement('div');
+            branchesCard.className = 'summary-card branches';
+            branchesCard.innerHTML = `
+                <div class="summary-label">Total Branches</div>
+                <div class="summary-value">${report.summary.totalBranches}</div>
+            `;
+            summaryGrid.appendChild(branchesCard);
+
+            container.appendChild(summaryGrid);
+
+            // ===== BRANCH SECTIONS =====
+            report.branches.forEach(branch => {
+                const branchSection = document.createElement('div');
+                branchSection.className = 'branch-section';
+
+                // Branch Header
+                const branchHeader = document.createElement('div');
+                branchHeader.className = 'branch-header';
+                branchHeader.innerHTML = `
+                    <div>
+                        <div class="branch-title">${branch.name}</div>
+                        <div class="branch-meta">${branch.department}</div>
+                    </div>
+                    <div>
+                        <div class="branch-meta-label">Employees</div>
+                        <div class="branch-meta">${branch.employeeCount}</div>
+                    </div>
+                    <div>
+                        <div class="branch-meta-label">First Log</div>
+                        <div class="branch-meta">${branch.firstLogTime}</div>
+                    </div>
+                    <div>
+                        <div class="branch-meta-label">Last Log</div>
+                        <div class="branch-meta">${branch.lastLogTime}</div>
+                    </div>
+                `;
+                branchSection.appendChild(branchHeader);
+
+                // Employee Table
+                const table = document.createElement('table');
+                table.className = 'employee-table';
+
+                // Table Head
+                const thead = document.createElement('thead');
+                thead.innerHTML = `
+                    <tr>
+                        <th>EMPLOYEE NAME</th>
+                        <th>ID</th>
+                        <th>FIRST LOGIN</th>
+                        <th>LAST LOGIN</th>
+                        <th>EVENTS</th>
+                    </tr>
+                `;
+                table.appendChild(thead);
+
+                // Table Body
+                const tbody = document.createElement('tbody');
+                branch.employees.forEach(employee => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>
+                            <div class="employee-name">${employee.name}</div>
+                            <div class="employee-id">${employee.id}</div>
+                        </td>
+                        <td>${employee.id}</td>
+                        <td><span class="time-badge">${employee.firstLogin}</span></td>
+                        <td><span class="time-badge">${employee.lastLogin}</span></td>
+                        <td><span class="event-count">${employee.eventCount}</span></td>
+                    `;
+                    tbody.appendChild(row);
+                });
+                table.appendChild(tbody);
+
+                branchSection.appendChild(table);
+                container.appendChild(branchSection);
+            });
+
+            // ===== FOOTER =====
+            const footer = document.createElement('footer');
+            footer.innerHTML = `
+                Total Events Recorded: <strong>${report.summary.totalEvents}</strong> | Generated: ${report.metadata.generatedAt}
+            `;
+            container.appendChild(footer);
+
+            app.appendChild(container);
+        }
+
+        // Render report on page load
+        document.addEventListener('DOMContentLoaded', renderReport);
     </script>
 </body>
 </html>
