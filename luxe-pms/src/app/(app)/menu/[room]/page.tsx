@@ -47,7 +47,7 @@ export default function MenuRoomPage({ params }: { params: Promise<{ room: strin
   const { room } = use(params);
 
   const [menu, setMenu] = React.useState<MenuRow[]>([]);
-  const [bookingNo, setBookingNo] = React.useState<string | null>(null);
+  const [chargeTo, setChargeTo] = React.useState<string | null>(null);
 
   const [cat, setCat] = React.useState<string>("All");
   const [cart, setCart] = React.useState<Record<string, number>>({});
@@ -85,7 +85,7 @@ export default function MenuRoomPage({ params }: { params: Promise<{ room: strin
       .then(rows => {
         if (cancelled) return;
         const match = rows.find(r => r.number === room);
-        setBookingNo(match && match.status === "occupied" && match.bookingNo ? match.bookingNo : null);
+        setChargeTo(match && match.status === "occupied" ? (match.chargeTo ?? null) : null);
       })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -134,7 +134,7 @@ export default function MenuRoomPage({ params }: { params: Promise<{ room: strin
   };
 
   const placeOrder = async () => {
-    if (!bookingNo) {
+    if (!chargeTo) {
       showToast("This room has no current guest — orders can't be placed");
       return;
     }
@@ -142,9 +142,10 @@ export default function MenuRoomPage({ params }: { params: Promise<{ room: strin
     const today = new Date().toISOString().slice(0, 10);
     try {
       const created = await apiPost<{ id: number | string }>("/folio-charges", {
-        bookingNo, date: today,
+        bookingNo: chargeTo, date: today,
         description: `F&B order (self-service) · ${cartCount} item${cartCount === 1 ? "" : "s"}`,
-        type: "F&B", qty: cartCount, rate: cartTotal, tax: gst, amount: grandTotal, paidBy: "Room",
+        type: "F&B", qty: cartCount, rate: cartTotal, tax: gst, amount: grandTotal,
+        paidBy: chargeTo.startsWith("GRPG-") ? "Guest" : "Room",
       });
       const orderNo = `RSV-${Math.floor(1000 + Math.random() * 9000)}`;
       setSuccess({ orderNo, eta: Number(eta) || 30, chargeId: created.id });
@@ -525,7 +526,7 @@ export default function MenuRoomPage({ params }: { params: Promise<{ room: strin
             </div>
 
             <div className="p-4 space-y-4">
-              {!bookingNo && (
+              {!chargeTo && (
                 <div className="rounded-lg bg-danger-soft border border-danger/20 p-3 text-xs text-danger flex items-center gap-2">
                   <AlertCircle className="h-4 w-4 shrink-0" />
                   This room has no current guest — orders can&apos;t be placed.
@@ -624,7 +625,7 @@ export default function MenuRoomPage({ params }: { params: Promise<{ room: strin
             </div>
 
             <div className="sticky bottom-0 bg-surface border-t border-border p-4">
-              <Button className="w-full h-12" disabled={placing || !bookingNo} onClick={placeOrder}>
+              <Button className="w-full h-12" disabled={placing || !chargeTo} onClick={placeOrder}>
                 <Send className="h-4 w-4" />
                 {placing ? "Sending…" : "Send to kitchen"}
               </Button>

@@ -49,6 +49,9 @@ export interface Room {
   // can act on the real folio/booking instead of mock lookups.
   bookingNo?: string;
   bookingId?: number;
+  // Folio a charge for this physical room posts to (individual bookingNo,
+  // group master code, or a GRPG-<roomingId> self-pay key). Present on /room-board.
+  chargeTo?: string | null;
   nights?: number;
   total?: number;
   balance?: number;

@@ -14,7 +14,6 @@ import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
 // NOTE: pos-tables and loyalty-members are read-only hydration here; no apiPut/apiDelete needed.
-import type { Reservation } from "@/lib/types";
 import { type MenuItemPayload } from "@/lib/menu-item";
 import { MenuItemDialog } from "@/components/menu-item-dialog";
 import { computePosKpis, openOrderForTable } from "@/lib/pos-data";
@@ -273,11 +272,12 @@ export default function RestaurantPOSPage() {
   const chargeToRoom = async (roomNumber: string) => {
     setChargeRoomOpen(false);
     try {
-      const list = await apiGet<Reservation[]>("/bookings");
-      const bk = list.find(b => b.roomNumber === roomNumber && (b as { status?: string }).status !== "cancelled");
-      if (!bk) { showToast(`No active booking in room ${roomNumber}`); return; }
+      const board = await apiGet<{ number: string; status: string; chargeTo?: string | null }[]>("/room-board");
+      const match = board.find(r => r.number === roomNumber && r.status === "occupied");
+      const chargeTo = match?.chargeTo ?? null;
+      if (!chargeTo) { showToast(`No active guest in room ${roomNumber}`); return; }
       await apiPost("/folio-charges", {
-        bookingNo: bk.bookingNo,
+        bookingNo: chargeTo,
         date: new Date().toISOString().slice(0, 10),
         description: `F&B — ${selectedTable} (${lines.length} items)`,
         type: "F&B",
@@ -285,14 +285,14 @@ export default function RestaurantPOSPage() {
         rate: Math.round(grandTotal),
         tax: 0,
         amount: Math.round(grandTotal),
-        paidBy: "Guest",
+        paidBy: chargeTo.startsWith("GRPG-") ? "Guest" : "Room",
       });
       const orderNo = `KOT-${nextKot()}`;
       apiPost("/fb-orders", { orderNo, tableNo: selectedTable, server: table.server ?? "", items: lines.map(l => ({ name: l.name, qty: l.qty, price: l.price })), total: Math.round(grandTotal), status: "paid", paymentMethod: "Room charge", room: roomNumber }).catch(() => {});
       setOrders(o => ({ ...o, [selectedTable]: [] }));
       setDiscountPct(0);
       setLoyaltyApplied(0);
-      showToast(`${money(grandTotal)} charged to Room ${roomNumber} · ${bk.guestName}`);
+      showToast(`${money(grandTotal)} charged to Room ${roomNumber}`);
     } catch {
       showToast("⚠ Charge failed — backend offline");
     }

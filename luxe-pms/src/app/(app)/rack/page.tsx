@@ -775,11 +775,12 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
       } else if (kind === "order") {
         const dept = orderTab === "laundry" ? "laundry" : orderTab === "other" ? "concierge" : "kitchen";
         const chargeType = orderTab === "laundry" ? "Laundry" : orderTab === "other" ? "Service" : "F&B";
-        if (room.bookingNo) {
+        if (room.chargeTo) {
           await apiPost("/folio-charges", {
-            bookingNo: room.bookingNo, date: today,
+            bookingNo: room.chargeTo, date: today,
             description: `${dept.charAt(0).toUpperCase() + dept.slice(1)} order · ${orderItemCount} item${orderItemCount === 1 ? "" : "s"}`,
-            type: chargeType, qty: orderItemCount, rate: orderSubtotal, tax: orderTax, amount: orderTotal, paidBy: "Room",
+            type: chargeType, qty: orderItemCount, rate: orderSubtotal, tax: orderTax, amount: orderTotal,
+            paidBy: room.chargeTo.startsWith("GRPG-") ? "Guest" : "Room",
           });
         }
         onDone(`Order sent to ${dept} · Room ${room.number} · ${orderItemCount} item${orderItemCount === 1 ? "" : "s"} · ${money(orderTotal)} added to folio`);
