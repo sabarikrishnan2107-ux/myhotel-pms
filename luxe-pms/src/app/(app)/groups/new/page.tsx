@@ -289,7 +289,7 @@ export default function NewGroupPage() {
 
   const advance = customAdvance !== null
     ? Math.min(Math.max(0, Math.round(customAdvance)), total)
-    : Math.round((total * paymentTerm) / 100);
+    : typeof paymentTerm === "number" ? Math.round((total * paymentTerm) / 100) : 0;
 
   const updateBlock = (id: string, key: keyof BlockRow, value: number | string) => {
     setBlock(b => b.map(r => {
@@ -712,10 +712,10 @@ export default function NewGroupPage() {
                 <button
                   key={p}
                   type="button"
-                  onClick={() => setPaymentTerm(p)}
+                  onClick={() => { setPaymentTerm(p); setCustomAdvance(null); }}
                   className={cn(
                     "h-9 px-3 rounded-md border text-xs font-medium transition-colors",
-                    paymentTerm === p ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
+                    customAdvance === null && paymentTerm === p ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
                   )}
                 >
                   {p === 100 ? "Full" : `${p}%`}
@@ -731,8 +731,36 @@ export default function NewGroupPage() {
               >
                 Instalments
               </button>
+              <button
+                type="button"
+                onClick={() => { setCustomAdvance(advance > 0 ? advance : 0); }}
+                className={cn(
+                  "h-9 px-3 rounded-md border text-xs font-medium transition-colors",
+                  customAdvance !== null ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
+                )}
+              >
+                Custom
+              </button>
             </div>
-            {paymentTerm !== "custom" && (
+            {customAdvance !== null && (
+              <div className="mt-3 space-y-2 text-sm">
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    min="0"
+                    max={total}
+                    value={customAdvance || ""}
+                    onChange={e => setCustomAdvance(Number(e.target.value) || 0)}
+                    placeholder="0"
+                    className="flex-1"
+                  />
+                  <div className="flex-1 text-right text-muted-foreground">
+                    of {money(total)} · {total > 0 ? Math.round((advance / total) * 100) : 0}% advance
+                  </div>
+                </div>
+              </div>
+            )}
+            {customAdvance === null && paymentTerm !== "custom" && (
               <div className="mt-3 space-y-1.5 text-sm">
                 <Row k={`Advance (${paymentTerm}%)`} v={<span className="text-brand font-semibold">{money(advance)}</span>} />
                 <Row k="Balance" v={money(total - advance)} muted />
