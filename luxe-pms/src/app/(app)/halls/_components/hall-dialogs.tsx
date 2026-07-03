@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { createPortal } from "react-dom";
 import {
   Building2, Users, Clock, Calendar, X, CheckCircle2, AlertTriangle,
   Edit, Printer, Ban, Wallet, Sparkles, Mail, MessageCircle, Phone,
@@ -12,6 +13,23 @@ import { HALLS, HALL_BOOKINGS } from "@/lib/mock-data-ext";
 import { money, cn, formatDate } from "@/lib/utils";
 import { apiGet } from "@/lib/api";
 import { computeHallTotals, hoursBetween, crossesMidnight, dayMultiplier } from "@/lib/hall-pricing";
+import { useProperty, hotelName } from "@/lib/use-property";
+
+// Open a captured ID scan / photo / signature full-size in a new tab.
+function openCapture(dataUrl: string) {
+  const m = /^data:([^;]+);base64,([\s\S]*)$/.exec(dataUrl);
+  if (!m) { window.open(dataUrl, "_blank", "noopener,noreferrer"); return; }
+  try {
+    const bin = atob(m[2]);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([bytes], { type: m[1] }));
+    window.open(url, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch {
+    window.open(dataUrl, "_blank", "noopener,noreferrer");
+  }
+}
 
 // Hour-only slots — must match the new-booking form so re-pricing on modify
 // keys off the same whole-hour slot tiers (≥5h half-day, ≥9h full-day).
@@ -23,6 +41,7 @@ export type Hall = typeof HALLS[number];
 export type HallStatus = "confirmed" | "pending" | "in-progress" | "completed" | "cancelled";
 export type HallBooking = Omit<typeof HALL_BOOKINGS[number], "status"> & {
   status: HallStatus; notes?: string; email?: string; endDate?: string; eventName?: string;
+  contactName?: string; bookedBy?: string;
   idType?: string; idNumber?: string; guestPhoto?: string | null; idFront?: string | null; idBack?: string | null; signature?: string | null;
 };
 
@@ -38,6 +57,7 @@ export type HallOverride = {
   date?: string; endDate?: string; start?: string; end?: string;
   guests?: number; package?: string; status?: HallBooking["status"];
   notes?: string; advance?: number; total?: number; eventName?: string;
+  contactName?: string; bookedBy?: string;
 };
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -60,9 +80,86 @@ export function HallDetailDrawer({ booking, notes, onClose, onModify, onCancel, 
 
   const balance = booking.total - booking.advance;
   const hall = halls.find(h => h.name === booking.hall);
+  const propertyName = hotelName(useProperty());
+  // Printed once per mount — the drawer only ever mounts client-side (in response
+  // to a row click), so there's no SSR hydration mismatch to guard against.
+  const [printedAt] = React.useState(() => new Date().toLocaleString(undefined, {
+    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  }));
+
+  // Print-only BEO (Banquet Event Order) sheet. Portaled to <body> so it sits
+  // OUTSIDE the app shell — the @media print rules in globals.css then drop
+  // everything else, so "BEO sheet" emits one clean page instead of the whole
+  // (hidden) dashboard as blanks.
+  const printDoc = (
+    <div className="print-doc">
+      <div className="p-8 text-black">
+        <div className="text-center border-b-2 border-double border-gray-400 pb-4 mb-5">
+          <p className="text-2xl font-semibold">{propertyName}</p>
+          <p className="text-xs text-gray-600 mt-1">Main Tower · MG Road, Bandra West, Mumbai 400050</p>
+          <p className="text-xs text-gray-600">GSTIN 27AAACR5055K1Z5 · PAN AAACR5055K</p>
+          <div className="mt-3 inline-block px-4 py-1 rounded-full border border-gray-400 text-[11px] uppercase tracking-[0.18em] font-bold">
+            Banquet Event Order
+          </div>
+        </div>
+
+        <div className="flex justify-between text-sm mb-5">
+          <span>Booking Ref: <span className="font-semibold">HALL-{booking.id.toUpperCase()}</span></span>
+          <span className="text-gray-600">{printedAt}</span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-8 mb-5">
+          <div>
+            <p className="text-[11px] uppercase tracking-wider font-bold border-b border-gray-300 pb-1 mb-2">Event</p>
+            <PrintRow k="Event name" v={booking.eventName || booking.customer} />
+            <PrintRow k="Contact" v={booking.contactName || booking.customer} />
+            <PrintRow k="Phone" v={booking.phone || "—"} />
+            <PrintRow k="Booked by" v={booking.bookedBy || "Direct"} />
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wider font-bold border-b border-gray-300 pb-1 mb-2">Venue</p>
+            <PrintRow k="Hall" v={hall ? `${booking.hall} (up to ${hall.capacity})` : booking.hall} />
+            <PrintRow k="Date" v={booking.endDate && booking.endDate !== booking.date ? `${formatDate(booking.date)} → ${formatDate(booking.endDate)}` : formatDate(booking.date)} />
+            <PrintRow k="Time" v={`${booking.start} → ${booking.end}${crossesMidnight(booking.start, booking.end) ? " (+1 day)" : ""}`} />
+            <PrintRow k="Guests" v={String(booking.guests)} />
+          </div>
+        </div>
+
+        <div className="border border-gray-300 rounded-md p-4 mb-5 text-sm space-y-1.5">
+          <p className="text-[11px] uppercase tracking-wider font-bold mb-1">Package</p>
+          <div className="flex justify-between"><span className="text-gray-600">Selected</span><span className="font-medium">{booking.package}</span></div>
+          <div className="flex justify-between"><span className="text-gray-600">Per guest</span><span className="font-medium">{money(Math.round(booking.total / booking.guests))}</span></div>
+        </div>
+
+        <div className="border border-gray-300 rounded-md p-4 mb-5 text-sm">
+          <p className="text-[11px] uppercase tracking-wider font-bold mb-2">Special instructions / setup notes</p>
+          <p className="whitespace-pre-wrap">{notes || "None on file."}</p>
+        </div>
+
+        <div className="border border-gray-300 rounded-md p-4 mb-8 text-sm space-y-1.5">
+          <div className="flex justify-between"><span className="text-gray-600">Total</span><span className="font-medium">{money(booking.total)}</span></div>
+          <div className="flex justify-between"><span className="text-gray-600">Advance received</span><span>- {money(booking.advance)}</span></div>
+          <div className="flex justify-between border-t border-gray-300 pt-1.5 mt-1.5">
+            <span className="font-semibold">Balance due</span>
+            <span className="font-bold">{balance > 0 ? money(balance) : money(0)}</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-10 pt-10">
+          <div className="border-t border-gray-400 pt-1 text-xs text-gray-600">Banquet coordinator</div>
+          <div className="border-t border-gray-400 pt-1 text-xs text-gray-600 text-right">For {propertyName}</div>
+        </div>
+
+        <p className="text-[10px] text-gray-500 text-center mt-6">
+          Computer-generated BEO sheet · HALL-{booking.id.toUpperCase()}
+        </p>
+      </div>
+    </div>
+  );
 
   return (
     <>
+      {typeof document !== "undefined" && createPortal(printDoc, document.body)}
       <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" onClick={onClose} aria-hidden />
       <aside className="fixed top-0 right-0 z-50 h-svh w-full sm:w-[520px] lg:w-[600px] bg-surface border-l border-border shadow-2xl flex flex-col animate-in slide-in-from-right-2">
         <div className="px-5 py-4 border-b border-border bg-linear-to-br from-brand-soft/40 via-surface to-accent-soft/20 flex items-start gap-3">
@@ -85,6 +182,8 @@ export function HallDetailDrawer({ booking, notes, onClose, onModify, onCancel, 
               <DetailRow icon={Users} label="Guests" value={`${booking.guests}`} sub={`Package: ${booking.package}`} />
               <DetailRow icon={Calendar} label="Date" value={booking.endDate && booking.endDate !== booking.date ? `${formatDate(booking.date)} → ${formatDate(booking.endDate)}` : formatDate(booking.date)} />
               <DetailRow icon={Clock} label="Time" value={`${booking.start} → ${booking.end}${crossesMidnight(booking.start, booking.end) ? " (+1 day)" : ""}`} sub={`${getHours(booking.start, booking.end)} h`} />
+              <DetailRow icon={Phone} label="Contact" value={booking.contactName || booking.customer} sub={booking.phone} />
+              <DetailRow icon={Building2} label="Booked by" value={booking.bookedBy || "Direct"} />
             </div>
           </div>
 
@@ -118,10 +217,26 @@ export function HallDetailDrawer({ booking, notes, onClose, onModify, onCancel, 
               <div className="rounded-md border border-border p-3 space-y-2 text-sm">
                 {booking.idNumber && <Row label={booking.idType || "ID"} value={booking.idNumber} />}
                 <div className="flex flex-wrap gap-1.5 pt-0.5">
-                  {booking.guestPhoto && <Badge tone="success">Photo ✓</Badge>}
-                  {booking.idFront && <Badge tone="success">ID Front ✓</Badge>}
-                  {booking.idBack && <Badge tone="success">ID Back ✓</Badge>}
-                  {booking.signature && <Badge tone="success">Signed ✓</Badge>}
+                  {booking.guestPhoto && (
+                    <button type="button" onClick={() => openCapture(booking.guestPhoto!)} className="hover:opacity-80 transition">
+                      <Badge tone="success">Photo ✓</Badge>
+                    </button>
+                  )}
+                  {booking.idFront && (
+                    <button type="button" onClick={() => openCapture(booking.idFront!)} className="hover:opacity-80 transition">
+                      <Badge tone="success">ID Front ✓</Badge>
+                    </button>
+                  )}
+                  {booking.idBack && (
+                    <button type="button" onClick={() => openCapture(booking.idBack!)} className="hover:opacity-80 transition">
+                      <Badge tone="success">ID Back ✓</Badge>
+                    </button>
+                  )}
+                  {booking.signature && (
+                    <button type="button" onClick={() => openCapture(booking.signature!)} className="hover:opacity-80 transition">
+                      <Badge tone="success">Signed ✓</Badge>
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
@@ -202,6 +317,16 @@ function DetailRow({ icon: Icon, label, value, sub }: { icon: typeof Building2; 
 
 function getHours(start: string, end: string) {
   return hoursBetween(start, end);
+}
+
+// One label/value line in the print-only BEO sheet.
+function PrintRow({ k, v }: { k: string; v: React.ReactNode }) {
+  return (
+    <div className="flex justify-between gap-3 py-1 text-sm border-b border-gray-100">
+      <span className="text-gray-500">{k}</span>
+      <span className="font-medium text-right">{v}</span>
+    </div>
+  );
 }
 
 // ===================== MODIFY DIALOG =====================
