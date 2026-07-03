@@ -277,8 +277,8 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     );
   }
 
-  const allocated = group.block.reduce((s, b) => s + b.assigned, 0);
-  const allocPct = Math.round((allocated / group.totalRooms) * 100);
+  const allocated = rooming.filter(r => r.roomNo && String(r.roomNo).trim()).length;
+  const allocPct = group.totalRooms > 0 ? Math.round((allocated / group.totalRooms) * 100) : 0;
 
   // Recompute the folio from the stored block + rate plan so the displayed total
   // matches what was quoted at creation (replaces the old hardcoded 5%/10% math).
@@ -519,7 +519,8 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {group.block.map((b, i) => {
-              const pct = Math.round((b.assigned / b.qty) * 100);
+              const assignedForType = rooming.filter(r => r.roomNo && r.roomType.toLowerCase() === b.type.toLowerCase()).length;
+              const pct = b.qty > 0 ? Math.round((assignedForType / b.qty) * 100) : 0;
               return (
                 <Card key={i} className="p-4">
                   <div className="flex items-start justify-between">
@@ -528,7 +529,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                       <p className="text-xs text-muted-foreground mt-0.5 tabular">{money(b.rate)} per night · group rate{b.extraBeds ? ` · +${b.extraBeds} extra bed${b.extraBeds > 1 ? "s" : ""}` : ""}</p>
                     </div>
                     <Badge tone={pct === 100 ? "success" : pct > 0 ? "warning" : "neutral"}>
-                      {b.assigned}/{b.qty}
+                      {assignedForType}/{b.qty}
                     </Badge>
                   </div>
                   <div className="mt-4">
