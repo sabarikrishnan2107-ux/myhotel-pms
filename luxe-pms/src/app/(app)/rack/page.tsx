@@ -529,8 +529,8 @@ function RoomCard({ room, onOpenGuest, onAction }: { room: Room; onOpenGuest: (r
               <div className="space-y-2.5">
                 <ActionGroup label="Front desk">
                   <ActionBtn icon={LogIn} label="Check-in" href={isReserved && bookingNo ? `/checkin?book=${bookingNo}` : undefined} emphasized={isReserved} disabled={!isReserved} />
-                  <ActionBtn icon={LogOut} label="Checkout" href={isOccupied && bookingNo ? `/checkout/${bookingNo}` : undefined} emphasized={isOccupied} disabled={!isOccupied} />
-                  <ActionBtn icon={Receipt} label="Folio" href={bookingNo ? `/folio/${bookingNo}?from=rack` : undefined} />
+                  <ActionBtn icon={LogOut} label="Checkout" href={isOccupied && bookingNo ? `/checkout/${bookingNo}` : undefined} emphasized={isOccupied && !!bookingNo} disabled={!isOccupied || !bookingNo} />
+                  <ActionBtn icon={Receipt} label="Folio" href={bookingNo ? `/folio/${bookingNo}?from=rack` : undefined} disabled={!bookingNo} />
                 </ActionGroup>
                 <ActionGroup label="Stay">
                   <ActionBtn icon={CalendarPlus} label="Extend" onClick={() => onAction("extend", room)} />
