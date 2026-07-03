@@ -20,7 +20,7 @@ import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { computeGroupTotals, type GstSlab } from "@/lib/group-pricing";
 import { mealPerNightPerGuest } from "@/lib/booking-pricing";
 
-type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string; checkedIn?: boolean; checkedInAt?: string | null; checkedOut?: boolean; checkedOutAt?: string | null };
+type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string; checkedIn?: boolean; checkedInAt?: string | null; checkedOut?: boolean; checkedOutAt?: string | null; billTo?: "group" | "self" };
 type AuditRow = { id: string; action: string; entity: string; module: string; user: string; date: string; time: string };
 type RoomBoardRow = { id?: string | number; number: string; status: string; type?: string; floor?: number };
 import { cn, money, formatDate, formatTime } from "@/lib/utils";
@@ -137,7 +137,8 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     return ofType.length ? ofType : freeRooms.filter(r => !taken.has(r.number));
   }, [freeRooms, rooming]);
   const addGuest = (g: { lead: string; roomType: string; pax: number; phone?: string; remarks?: string }) => {
-    apiPost<RoomingEntry>("/group-rooming", { ...g, groupCode: id, roomNo: null })
+    const billTo: "group" | "self" = (group?.billingMode ?? "master") === "master" ? "group" : "self";
+    apiPost<RoomingEntry>("/group-rooming", { ...g, groupCode: id, roomNo: null, billTo })
       .then(row => setRooming(prev => [...prev, { ...row, id: String(row.id) }]))
       .catch(() => flash("⚠ Save failed — backend offline"));
     setAddGuestOpen(false);

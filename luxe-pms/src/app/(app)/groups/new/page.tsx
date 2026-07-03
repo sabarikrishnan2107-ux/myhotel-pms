@@ -318,7 +318,7 @@ export default function NewGroupPage() {
       code, name, type, contactName, contactPhone, contactEmail,
       bookedBy, arrival, departure, nights,
       block: block.map(b => ({ type: b.type, qty: b.qty, rate: b.rate, assigned: 0, extraBeds: b.extraBeds, extraBedRate: extraBedRateFor(b.type) })),
-      totalRooms, totalPax: paxNum, ratePlan,
+      totalRooms, totalPax: paxNum, ratePlan, billingMode,
       services: services.map(id => svcCatalog.find(s => String(s.id) === id)?.name ?? id),
       total: Math.round(total), advance: Math.round(advance), balance: Math.round(total - advance),
       status, notes, createdAt: new Date().toISOString().slice(0, 10),

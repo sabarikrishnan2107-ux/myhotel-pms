@@ -300,6 +300,7 @@ export interface GroupBooking {
   status: GroupStatus;
   notes?: string;
   createdAt: string;
+  billingMode?: "master" | "per-room" | "split";
 }
 
 export const GROUP_BOOKINGS: GroupBooking[] = [
