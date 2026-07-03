@@ -240,12 +240,28 @@ class StatsController extends Controller
             ->get()
             ->keyBy('roomNumber');
 
-        $rooms = Room::orderBy('floor')->orderBy('number')->get()->map(function ($r) use ($inHouse) {
+        // Group guests actually checked into their room also occupy it — gated on
+        // checkedIn (not just assigned) so an arriving-but-not-yet-checked-in guest
+        // doesn't show the room as occupied. Mirrors the join roomAvailability()
+        // already uses to cross-check group commitments.
+        $groupOccupied = DB::table('group_rooming')
+            ->join('group_bookings', 'group_rooming.groupCode', '=', 'group_bookings.code')
+            ->whereNotIn('group_bookings.status', ['cancelled'])
+            ->where('group_rooming.checkedIn', true)
+            ->where('group_rooming.checkedOut', false)
+            ->whereNotNull('group_rooming.roomNo')
+            ->where('group_rooming.roomNo', '!=', '')
+            ->select('group_rooming.roomNo', 'group_rooming.lead', 'group_bookings.arrival', 'group_bookings.departure')
+            ->get()
+            ->keyBy('roomNo');
+
+        $rooms = Room::orderBy('floor')->orderBy('number')->get()->map(function ($r) use ($inHouse, $groupOccupied) {
             $bk = $inHouse->get($r->number);
+            $grp = $bk ? null : $groupOccupied->get($r->number);
             $hk = $r->hkStatus ?: 'clean';
             // Vacant rooms can be explicitly blocked or out-of-order; otherwise
             // housekeeping state decides whether they are sellable.
-            $status = $bk
+            $status = ($bk || $grp)
                 ? 'occupied'
                 : ($r->status === 'blocked' ? 'blocked'
                     : ($hk === 'dirty' ? 'dirty' : ($hk === 'cleaning' ? 'cleaning' : ($r->status === 'out-of-order' ? 'maintenance' : 'available'))));
@@ -259,15 +275,18 @@ class StatsController extends Controller
                 'hkStatus'      => $hk,
                 'hkAssignee'    => $r->hkAssignee ?? null,
                 'hkStartedAt'   => $r->hkStartedAt ?? null,
-                'guestName'     => $bk->guestName ?? null,
-                'source'        => $bk->source ?? null,
-                'checkIn'       => $bk->checkIn ?? null,
-                'checkOut'      => $bk->checkOut ?? null,
+                'guestName'     => $bk->guestName ?? ($grp->lead ?? null),
+                'source'        => $bk->source ?? ($grp ? 'Group' : null),
+                'checkIn'       => $bk->checkIn ?? ($grp->arrival ?? null),
+                'checkOut'      => $bk->checkOut ?? ($grp->departure ?? null),
                 'paymentStatus' => $bk->paymentStatus ?? null,
                 'vip'           => (bool) ($bk->vip ?? false),
                 'rate'          => (int) $r->baseTariff,
                 // Real booking identifiers so the Room Rack can act on the live
-                // folio/booking (extend, reduce, change, payment, order).
+                // folio/booking (extend, reduce, change, payment, order). Group
+                // rooms have neither — the Room Rack's `isOccupied && bookingNo`
+                // guards keep it from offering Checkout/Folio for a booking that
+                // doesn't exist.
                 'bookingNo'     => $bk->bookingNo ?? null,
                 'bookingId'     => $bk->id ?? null,
                 'nights'        => $bk ? (int) $bk->nights : null,
