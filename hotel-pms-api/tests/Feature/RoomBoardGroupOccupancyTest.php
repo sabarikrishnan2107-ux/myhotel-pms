@@ -39,6 +39,8 @@ class RoomBoardGroupOccupancyTest extends TestCase
         $this->assertSame('occupied', $row['status']);
         $this->assertSame('Asha', $row['guestName']);
         $this->assertSame('Group', $row['source']);
+        $this->assertSame('Test Wedding', $row['groupName']);
+        $this->assertSame('GRP1', $row['groupCode']);
         $this->assertNull($row['bookingNo']);
     }
 

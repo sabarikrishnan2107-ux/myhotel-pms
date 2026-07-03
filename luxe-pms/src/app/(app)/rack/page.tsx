@@ -70,6 +70,11 @@ function lookupGuest(room: Room): { guest: Guest; reservation: Reservation } | n
   return { guest, reservation };
 }
 
+/** Render a group's name as a compact handle, e.g. "Hanifa" → "group_hanifa". */
+function groupLabel(name: string): string {
+  return `group_${name.trim().toLowerCase().replace(/\s+/g, "_")}`;
+}
+
 type ActionKind = "extend" | "reduce" | "change" | "payment" | "block" | "unblock" | "order";
 
 export default function RackPage() {
@@ -391,12 +396,24 @@ function RoomListView({ rooms, onOpenGuest, onAction }: { rooms: Room[]; onOpenG
                   <td className="px-4 py-3"><StatusBadge status={room.status} /></td>
                   <td className="px-4 py-3">
                     {room.guestName ? (
-                      <p className="font-medium truncate max-w-[180px]">{room.guestName}</p>
+                      <div className="max-w-[180px]">
+                        <p className="font-medium truncate">{room.guestName}</p>
+                        {room.source === "Group" && room.groupName && (
+                          <p className="text-[11px] font-medium text-accent inline-flex items-center gap-1 truncate max-w-full">
+                            <Users className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{groupLabel(room.groupName)}</span>
+                          </p>
+                        )}
+                      </div>
                     ) : (
                       <span className="text-xs text-subtle-foreground italic">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">{room.source ?? "—"}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                    {room.source === "Group" ? (
+                      <span className="inline-flex items-center gap-1 text-accent font-medium"><Users className="h-3 w-3" />Group</span>
+                    ) : (room.source ?? "—")}
+                  </td>
                   <td className="px-4 py-3">{room.paymentStatus ? <PaymentBadge status={room.paymentStatus} /> : <span className="text-xs text-subtle-foreground">—</span>}</td>
                   <td className="px-4 py-3 text-xs text-muted-foreground tabular whitespace-nowrap">
                     {room.checkIn ? (
@@ -457,6 +474,7 @@ function RoomCard({ room, onOpenGuest, onAction }: { room: Room; onOpenGuest: (r
   const isOccupied = room.status === "occupied" || room.status === "checkout-pending";
   const isReserved = room.status === "reserved";
   const hasGuest = !!room.guestName;
+  const isGroup = room.source === "Group";
   const lookup = lookupGuest(room);
   const bookingNo = room.bookingNo ?? lookup?.reservation.bookingNo;
 
@@ -473,8 +491,13 @@ function RoomCard({ room, onOpenGuest, onAction }: { room: Room; onOpenGuest: (r
       <div className="p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2.5">
-            <span className="h-9 w-9 rounded-md bg-surface-sunken flex items-center justify-center">
-              <BedDouble className="h-4.5 w-4.5 text-muted-foreground" />
+            <span className={cn(
+              "h-9 w-9 rounded-md flex items-center justify-center",
+              isGroup ? "bg-accent-soft text-accent" : "bg-surface-sunken text-muted-foreground"
+            )}>
+              {isGroup
+                ? <Users className="h-4.5 w-4.5" />
+                : <BedDouble className="h-4.5 w-4.5" />}
             </span>
             <div>
               <div className="flex items-center gap-1.5">
@@ -504,6 +527,12 @@ function RoomCard({ room, onOpenGuest, onAction }: { room: Room; onOpenGuest: (r
         {room.guestName ? (
           <div className="mt-3 pt-3 border-t border-border space-y-1.5">
             <p className="text-sm font-medium truncate">{room.guestName}</p>
+            {isGroup && room.groupName && (
+              <p className="text-[11px] font-medium text-accent inline-flex items-center gap-1 truncate max-w-full">
+                <Users className="h-3 w-3 shrink-0" />
+                <span className="truncate">{groupLabel(room.groupName)}</span>
+              </p>
+            )}
             <div className="flex items-center justify-between text-[11px] text-muted-foreground">
               <span className="truncate">{room.source}</span>
               {room.paymentStatus && <PaymentBadge status={room.paymentStatus} />}
@@ -529,8 +558,8 @@ function RoomCard({ room, onOpenGuest, onAction }: { room: Room; onOpenGuest: (r
               <div className="space-y-2.5">
                 <ActionGroup label="Front desk">
                   <ActionBtn icon={LogIn} label="Check-in" href={isReserved && bookingNo ? `/checkin?book=${bookingNo}` : undefined} emphasized={isReserved} disabled={!isReserved} />
-                  <ActionBtn icon={LogOut} label="Checkout" href={isOccupied && bookingNo ? `/checkout/${bookingNo}` : undefined} emphasized={isOccupied && !!bookingNo} disabled={!isOccupied || !bookingNo} />
-                  <ActionBtn icon={Receipt} label="Folio" href={bookingNo ? `/folio/${bookingNo}?from=rack` : undefined} disabled={!bookingNo} />
+                  <ActionBtn icon={LogOut} label="Checkout" href={isGroup && room.groupCode ? `/groups/${room.groupCode}` : (isOccupied && bookingNo ? `/checkout/${bookingNo}` : undefined)} emphasized={isOccupied} disabled={!isOccupied || (!bookingNo && !room.groupCode)} />
+                  <ActionBtn icon={Receipt} label="Folio" href={isGroup && room.groupCode ? `/groups/${room.groupCode}` : (bookingNo ? `/folio/${bookingNo}?from=rack` : undefined)} disabled={!bookingNo && !room.groupCode} />
                 </ActionGroup>
                 <ActionGroup label="Stay">
                   <ActionBtn icon={CalendarPlus} label="Extend" onClick={() => onAction("extend", room)} />

@@ -39,7 +39,13 @@ export interface Room {
   hkAssignee?: string | null;
   hkStartedAt?: string | null;
   guestName?: string;
-  source?: BookingSource;
+  // "Group" when the room is held by a checked-in group guest (from /room-board),
+  // otherwise the individual booking's source.
+  source?: BookingSource | "Group";
+  // Group's name when this room is occupied by a group guest (source === "Group").
+  groupName?: string;
+  // Group's code — lets the Room Rack deep-link Folio/Checkout to /groups/<code>.
+  groupCode?: string;
   checkIn?: string;
   checkOut?: string;
   paymentStatus?: PaymentStatus;

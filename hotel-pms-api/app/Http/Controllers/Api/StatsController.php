@@ -251,7 +251,7 @@ class StatsController extends Controller
             ->where('group_rooming.checkedOut', false)
             ->whereNotNull('group_rooming.roomNo')
             ->where('group_rooming.roomNo', '!=', '')
-            ->select('group_rooming.id', 'group_rooming.groupCode', 'group_rooming.roomNo', 'group_rooming.lead', 'group_rooming.billTo', 'group_bookings.arrival', 'group_bookings.departure')
+            ->select('group_rooming.id', 'group_rooming.groupCode', 'group_rooming.roomNo', 'group_rooming.lead', 'group_rooming.billTo', 'group_bookings.name as groupName', 'group_bookings.arrival', 'group_bookings.departure')
             ->get()
             ->keyBy('roomNo');
 
@@ -287,6 +287,12 @@ class StatsController extends Controller
                 'hkStartedAt'   => $r->hkStartedAt ?? null,
                 'guestName'     => $bk->guestName ?? ($grp->lead ?? null),
                 'source'        => $bk->source ?? ($grp ? 'Group' : null),
+                // Group's own name (e.g. "Sharma Wedding") so the Room Rack can
+                // label a group-occupied room with its group, not just the lead guest.
+                'groupName'     => $grp->groupName ?? null,
+                // Group code so the Room Rack's Folio/Checkout can deep-link to the
+                // group booking page (group rooms have no individual folio/booking).
+                'groupCode'     => $grp->groupCode ?? null,
                 'checkIn'       => $bk->checkIn ?? ($grp->arrival ?? null),
                 'checkOut'      => $bk->checkOut ?? ($grp->departure ?? null),
                 'paymentStatus' => $bk->paymentStatus ?? null,
