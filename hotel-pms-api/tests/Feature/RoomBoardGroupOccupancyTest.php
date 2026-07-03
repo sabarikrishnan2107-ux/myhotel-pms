@@ -89,4 +89,48 @@ class RoomBoardGroupOccupancyTest extends TestCase
         $this->assertSame('Chitra', $row['guestName']);
         $this->assertSame('BK1', $row['bookingNo']);
     }
+
+    public function test_checked_out_group_guest_frees_the_room(): void
+    {
+        $this->auth();
+
+        Room::create(['number' => '204', 'floor' => 2, 'category' => 'Deluxe', 'baseTariff' => 6500]);
+        GroupBooking::create([
+            'code' => 'GRP4', 'name' => 'Test Wedding', 'arrival' => '2026-07-10',
+            'departure' => '2026-07-12', 'status' => 'in-house',
+        ]);
+        // Guest checked in AND then checked out — the room should no longer be occupied.
+        GroupRooming::create([
+            'groupCode' => 'GRP4', 'roomNo' => '204', 'roomType' => 'Deluxe',
+            'lead' => 'Esha', 'pax' => 1, 'checkedIn' => true, 'checkedOut' => true,
+        ]);
+
+        $row = collect($this->getJson('/api/room-board')->assertOk()->json())
+            ->firstWhere('number', '204');
+
+        $this->assertSame('available', $row['status']);
+        $this->assertNull($row['guestName']);
+    }
+
+    public function test_cancelled_group_does_not_occupy_the_room(): void
+    {
+        $this->auth();
+
+        Room::create(['number' => '205', 'floor' => 2, 'category' => 'Deluxe', 'baseTariff' => 6500]);
+        GroupBooking::create([
+            'code' => 'GRP5', 'name' => 'Cancelled Group', 'arrival' => '2026-07-10',
+            'departure' => '2026-07-12', 'status' => 'cancelled',
+        ]);
+        // Even a checked-in guest can't occupy a room for a cancelled group.
+        GroupRooming::create([
+            'groupCode' => 'GRP5', 'roomNo' => '205', 'roomType' => 'Deluxe',
+            'lead' => 'Farah', 'pax' => 1, 'checkedIn' => true, 'checkedOut' => false,
+        ]);
+
+        $row = collect($this->getJson('/api/room-board')->assertOk()->json())
+            ->firstWhere('number', '205');
+
+        $this->assertSame('available', $row['status']);
+        $this->assertNull($row['guestName']);
+    }
 }
