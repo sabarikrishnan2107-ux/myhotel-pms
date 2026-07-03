@@ -6,5 +6,6 @@ class GroupRooming extends Model {
     use BelongsToCompany;
     protected $table = 'group_rooming';
     protected $guarded = ['id'];
-    protected $casts = ['pax'=>'integer','checkedOut'=>'boolean'];
+    protected $casts = ['pax'=>'integer','checkedIn'=>'boolean','checkedOut'=>'boolean'];
+    protected $attributes = ['checkedIn' => false, 'checkedOut' => false];
 }
