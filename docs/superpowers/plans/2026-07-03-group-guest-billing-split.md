@@ -1059,16 +1059,38 @@ Then, where `checkOutGroup` ends with its status update + toast, append a note w
 
 (Keep the existing status update + completion toast after it; the `owing` note is an additional flash. If leaving guests checked-in means the group shouldn't move to `completed`, gate the existing `status: "completed"` update on `owing.length === 0` — set it to `completed` only when nobody was left owing; otherwise leave the group `in-house`.)
 
-- [ ] **Step 3: Typecheck**
+- [ ] **Step 3: Block group checkout while the group's own (master) balance is unpaid**
+
+The group's master-folio balance must be fully settled before the group can complete checkout — not just a warning. In `CheckOutGroupDialog` (bottom of `luxe-pms/src/app/(app)/groups/[id]/page.tsx`), the confirm button currently is:
+
+```tsx
+            <Button variant="success" onClick={() => onConfirm(Math.min(amount, balance), mode)}><CheckCircle2 className="h-4 w-4" />Check out &amp; complete</Button>
+```
+
+Change it to disable completion while the amount being collected doesn't clear the balance:
+
+```tsx
+            <Button variant="success" disabled={amount < balance} onClick={() => onConfirm(Math.min(amount, balance), mode)}><CheckCircle2 className="h-4 w-4" />Check out &amp; complete</Button>
+```
+
+And update the outstanding-balance warning just above it (currently `{amount < balance && <p className="text-[11px] text-warning">Checking out with {money(balance - amount)} still outstanding.</p>}`) to make clear it's now a block, not a soft warning:
+
+```tsx
+                {amount < balance && <p className="text-[11px] text-warning">Collect the full {money(balance)} balance to complete checkout — {money(balance - amount)} still due.</p>}
+```
+
+(When `balance <= 0` the whole payment block is already hidden by the existing `{balance > 0 && (...)}` guard, so a fully-paid group's confirm button stays enabled.)
+
+- [ ] **Step 4: Typecheck**
 
 Run: `cd luxe-pms && npx tsc --noEmit`
 Expected: exit 0.
 
-- [ ] **Step 4: Manual verification**
+- [ ] **Step 5: Manual verification**
 
-With the dev server running: give a self-pay guest an unpaid charge. Try to check that guest out via the row "⋮" menu → confirm it does NOT check out; instead the mini-folio drawer opens and a toast says to clear the balance. Collect the payment, then check out → confirm it now succeeds. Separately, with one self-pay guest still owing, run the bulk "Check-out Group" → confirm the owing guest stays checked-in, others check out, and a toast reports the owing guest. Record what you observed.
+With the dev server running: give a self-pay guest an unpaid charge. Try to check that guest out via the row "⋮" menu → confirm it does NOT check out; instead the mini-folio drawer opens and a toast says to clear the balance. Collect the payment, then check out → confirm it now succeeds. Separately, with one self-pay guest still owing, run the bulk "Check-out Group" → confirm the owing guest stays checked-in, others check out, and a toast reports the owing guest. Finally, on a group whose master balance is > 0, open "Check-out Group" and confirm the "Check out & complete" button is **disabled** until you enter an amount covering the full balance. Record what you observed.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add "luxe-pms/src/app/(app)/groups/[id]/page.tsx"
