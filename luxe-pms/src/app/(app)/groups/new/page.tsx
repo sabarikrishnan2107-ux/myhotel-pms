@@ -289,7 +289,7 @@ export default function NewGroupPage() {
 
   const advance = customAdvance !== null
     ? Math.min(Math.max(0, Math.round(customAdvance)), total)
-    : paymentTerm === "custom" ? 0 : Math.round((total * paymentTerm) / 100);
+    : Math.round((total * paymentTerm) / 100);
 
   const updateBlock = (id: string, key: keyof BlockRow, value: number | string) => {
     setBlock(b => b.map(r => {
