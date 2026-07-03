@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   UsersRound, Calendar, BedDouble, Plus, Minus, Trash2, Sparkles,
   ChevronLeft, Send, Upload, CheckCircle2, ArrowRight, Building2, Briefcase,
+  IdCard, Camera, Pen,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,9 @@ import { isValidPhone } from "@/lib/phone";
 import { EmailInput } from "@/components/ui/email-input";
 import { isValidEmail } from "@/lib/email";
 import { Badge } from "@/components/ui/badge";
+import { PhotoCapture } from "@/components/guests/photo-capture";
+import { DocumentUpload } from "@/components/guests/document-upload";
+import { SignaturePad } from "@/components/guests/signature-pad";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api";
 import { computeGroupTotals, type GstSlab } from "@/lib/group-pricing";
@@ -93,6 +97,14 @@ export default function NewGroupPage() {
   const [contactName, setContactName] = React.useState("");
   const [contactPhone, setContactPhone] = React.useState("");
   const [contactEmail, setContactEmail] = React.useState("");
+  // Booker identification — the ID of the person who books the group (the primary
+  // contact). Optional; filled inline (no tablet hand-off), mirroring hall bookings.
+  const [idType, setIdType] = React.useState("Aadhaar");
+  const [idNumber, setIdNumber] = React.useState("");
+  const [guestPhoto, setGuestPhoto] = React.useState<string | null>(null);
+  const [idFront, setIdFront] = React.useState<string | null>(null);
+  const [idBack, setIdBack] = React.useState<string | null>(null);
+  const [signature, setSignature] = React.useState<string | null>(null);
   const [bookedBy, setBookedBy] = React.useState("Direct");
   const [arrival, setArrival] = React.useState("");
   const [departure, setDeparture] = React.useState("");
@@ -314,8 +326,13 @@ export default function NewGroupPage() {
     if (saving || !requiredOk) return;
     setSaving(true);
     const code = `GRP${Date.now().toString().slice(-7)}`;
+    // Whatever billing mode is chosen here decides who each rooming guest pays:
+    // Master folio → group pays; Per-room / Split (extras → guest) → self-pay.
+    // Mirrors the same mapping used when adding a guest on the group detail page.
+    const billTo: "group" | "self" = billingMode === "master" ? "group" : "self";
     apiPost("/group-bookings", {
       code, name, type, contactName, contactPhone, contactEmail,
+      idType, idNumber, guestPhoto, idFront, idBack, signature,
       bookedBy, arrival, departure, nights,
       block: block.map(b => ({ type: b.type, qty: b.qty, rate: b.rate, assigned: 0, extraBeds: b.extraBeds, extraBedRate: extraBedRateFor(b.type) })),
       totalRooms, totalPax: paxNum, ratePlan, billingMode,
@@ -328,7 +345,7 @@ export default function NewGroupPage() {
         ? Promise.all(rooming.map(g => apiPost("/group-rooming", {
             groupCode: code, roomNo: null,
             lead: g.lead, roomType: g.roomType, pax: g.pax,
-            phone: g.phone ?? "", remarks: g.remarks ?? "",
+            phone: g.phone ?? "", remarks: g.remarks ?? "", billTo,
           }).catch(() => null)))
         : null)
       .then(() => router.push("/groups"))
@@ -413,6 +430,47 @@ export default function NewGroupPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Field label="Phone *"><PhoneInput value={contactPhone} onChange={v => setContactPhone(v)} size="md" invalid={contactPhone !== "" && !isValidPhone(contactPhone)} /></Field>
               <Field label="Email"><EmailInput value={contactEmail} onChange={setContactEmail} /></Field>
+            </div>
+          </Card>
+
+          {/* Booker identification + captures */}
+          <Card className="p-6 space-y-4">
+            <SectionHead icon={IdCard} title="Identification & Captures" hint="Optional — the ID of the person booking this group" />
+            <div className="grid grid-cols-2 gap-3 max-w-md">
+              <Field label="ID type">
+                <Select value={idType} onChange={e => setIdType(e.target.value)}>
+                  <option>Aadhaar</option>
+                  <option>PAN</option>
+                  <option>Driving License</option>
+                  <option>Voter ID</option>
+                  <option>Passport</option>
+                </Select>
+              </Field>
+              <Field label="ID number">
+                <Input value={idNumber} onChange={e => setIdNumber(e.target.value)} placeholder="A12345678" />
+              </Field>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 items-start">
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Camera className="h-4 w-4 text-muted-foreground" />
+                  <Label>Booker face photo</Label>
+                </div>
+                <PhotoCapture value={guestPhoto} onChange={setGuestPhoto} aspect="landscape" />
+              </div>
+              <Field label={`${idType} — front`}>
+                <DocumentUpload label="ID Front" value={idFront} onChange={setIdFront} />
+              </Field>
+              <Field label={`${idType} — back`}>
+                <DocumentUpload label="ID Back" value={idBack} onChange={setIdBack} />
+              </Field>
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Pen className="h-4 w-4 text-muted-foreground" />
+                  <Label>Digital signature</Label>
+                </div>
+                <SignaturePad value={signature} onChange={setSignature} className="aspect-[3/2]" />
+              </div>
             </div>
           </Card>
 

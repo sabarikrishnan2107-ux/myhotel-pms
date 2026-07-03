@@ -442,6 +442,11 @@ function RoomListView({ rooms, onOpenGuest, onAction }: { rooms: Room[]; onOpenG
                           <LogOut className="h-3 w-3" />Checkout
                         </Link>
                       )}
+                      {isOccupied && !bookingNo && room.source === "Group" && room.groupCode && (
+                        <Link href={`/groups/${room.groupCode}`} onClick={(e) => e.stopPropagation()} className="h-7 px-2 rounded-md text-[11px] font-medium bg-brand text-brand-foreground hover:bg-brand/90 inline-flex items-center gap-1">
+                          <LogOut className="h-3 w-3" />Checkout
+                        </Link>
+                      )}
                       {isReserved && bookingNo && (
                         <Link href={`/checkin?book=${bookingNo}`} onClick={(e) => e.stopPropagation()} className="h-7 px-2 rounded-md text-[11px] font-medium bg-brand text-brand-foreground hover:bg-brand/90 inline-flex items-center gap-1">
                           <LogIn className="h-3 w-3" />Check-in
@@ -454,6 +459,10 @@ function RoomListView({ rooms, onOpenGuest, onAction }: { rooms: Room[]; onOpenG
                       )}
                       {bookingNo ? (
                         <Link href={`/folio/${bookingNo}?from=rack`} onClick={(e) => e.stopPropagation()} className="h-7 px-2 rounded-md text-[11px] font-medium border border-border hover:bg-surface-sunken inline-flex items-center gap-1">
+                          <Receipt className="h-3 w-3" />Folio
+                        </Link>
+                      ) : room.source === "Group" && room.groupCode ? (
+                        <Link href={`/groups/${room.groupCode}`} onClick={(e) => e.stopPropagation()} className="h-7 px-2 rounded-md text-[11px] font-medium border border-border hover:bg-surface-sunken inline-flex items-center gap-1">
                           <Receipt className="h-3 w-3" />Folio
                         </Link>
                       ) : null}

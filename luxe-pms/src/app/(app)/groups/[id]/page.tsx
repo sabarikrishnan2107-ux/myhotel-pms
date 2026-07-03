@@ -94,18 +94,26 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     return () => { document.removeEventListener("click", onClick); window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
   }, [rowMenuFor]);
 
+  // Have all self-pay guests' folio lines finished loading? The checkout guards
+  // rely on selfPayBalance, which reads this fetched data — so we must not let a
+  // checkout fire before it resolves (else an owing guest's balance reads as 0).
+  const [selfFoliosLoaded, setSelfFoliosLoaded] = React.useState(false);
+
   // Load self-pay guest folio lines whenever rooming list changes
   React.useEffect(() => {
     const selfGuests = rooming.filter(r => (r.billTo ?? "group") === "self");
-    selfGuests.forEach(r => {
+    if (!selfGuests.length) { setSelfFoliosLoaded(true); return; }
+    setSelfFoliosLoaded(false);
+    const jobs = selfGuests.flatMap(r => {
       const key = `GRPG-${r.id}`;
-      apiGet<{ id: string | number; description: string; amount: number; date: string }[]>(`/folio-charges?bookingNo=${encodeURIComponent(key)}`)
-        .then(rows => setSelfCharges(prev => ({ ...prev, [r.id]: rows })))
-        .catch(() => {});
-      apiGet<{ id: string | number; amount: number; mode: string; date: string }[]>(`/folio-payments?bookingNo=${encodeURIComponent(key)}`)
-        .then(rows => setSelfPayments(prev => ({ ...prev, [r.id]: rows })))
-        .catch(() => {});
+      return [
+        apiGet<{ id: string | number; description: string; amount: number; date: string }[]>(`/folio-charges?bookingNo=${encodeURIComponent(key)}`)
+          .then(rows => setSelfCharges(prev => ({ ...prev, [r.id]: rows }))),
+        apiGet<{ id: string | number; amount: number; mode: string; date: string }[]>(`/folio-payments?bookingNo=${encodeURIComponent(key)}`)
+          .then(rows => setSelfPayments(prev => ({ ...prev, [r.id]: rows }))),
+      ];
     });
+    Promise.allSettled(jobs).then(() => setSelfFoliosLoaded(true));
   }, [rooming]);
 
   // Room inventory (for room details / type filtering) + availability for this group's
@@ -309,6 +317,12 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
 
   // ONE-BY-ONE check-out: mark this guest departed + release their room. Persists.
   const checkOutGuest = (entry: RoomingEntry) => {
+    // Don't act on a stale (still-loading) self-pay balance — it would read 0.
+    if ((entry.billTo ?? "group") === "self" && !selfFoliosLoaded) {
+      flash("Loading extras balance — try again in a moment");
+      setRowMenuFor(null);
+      return;
+    }
     if ((entry.billTo ?? "group") === "self" && selfPayBalance(entry) > 0) {
       setFolioFor(entry); setCollectAmt(selfPayBalance(entry));
       flash(`Clear ${money(selfPayBalance(entry))} in extras before checking out ${entry.lead}`);
@@ -340,6 +354,12 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   // remaining guest + release their room, then move the group to "completed".
   const checkOutGroup = (finalAmt: number, finalMode: string) => {
     if (!group) return;
+    // Guard against acting on still-loading self-pay balances (would read 0 and
+    // wrongly check out an owing guest).
+    if (rooming.some(r => (r.billTo ?? "group") === "self" && !r.checkedOut) && !selfFoliosLoaded) {
+      flash("Loading guests' extras balances — try again in a moment");
+      return;
+    }
     setCheckoutOpen(false);
     const today = new Date().toISOString().slice(0, 10);
     let advance = group.advance, balance = group.balance;
@@ -403,6 +423,14 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     group.block.map(b => ({ rate: b.rate, qty: b.qty, extraBeds: b.extraBeds ?? 0, extraBedRate: extraBedRateOf(b) })),
     group.nights, [], group.totalPax || 0, gstSlabs, planMeals,
   );
+
+  // True master-folio balance = full folio (rooms/meals/services + ad-hoc extras
+  // posted to the group code) minus everything paid so far (group.advance already
+  // reflects recorded master payments). group.balance alone EXCLUDES the extras, so
+  // it must NOT be used for the checkout guard — otherwise a group could complete
+  // checkout with unpaid room-service on the master folio.
+  const masterExtrasTotal = masterExtras.reduce((s, c) => s + (c.amount || 0), 0);
+  const masterBalance = Math.max(0, Math.round(folio.grandTotal + masterExtrasTotal - group.advance));
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
@@ -514,7 +542,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
           <div className="grid grid-cols-3 gap-3 lg:gap-4 lg:min-w-[440px]">
             <Stat label="Rooms" value={group.totalRooms.toString()} hint={`${allocated} assigned`} />
             <Stat label="Total" value={money(group.total)} />
-            <Stat label="Balance" value={money(group.balance)} tone={group.balance > 0 ? "warning" : "success"} />
+            <Stat label="Balance" value={money(masterBalance)} tone={masterBalance > 0 ? "warning" : "success"} />
           </div>
         </div>
 
@@ -820,7 +848,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <KPICard label="Total Charges" value={money(group.total)} icon={Receipt} accent="brand" />
             <KPICard label="Paid" value={money(group.advance)} icon={CreditCard} accent="success" />
-            <KPICard label="Balance" value={money(group.balance)} icon={CreditCard} accent={group.balance > 0 ? "warning" : "success"} />
+            <KPICard label="Balance" value={money(masterBalance)} icon={CreditCard} accent={masterBalance > 0 ? "warning" : "success"} />
           </div>
 
           <Card className="p-0 overflow-hidden">
@@ -952,6 +980,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
       {checkoutOpen && (
         <CheckOutGroupDialog
           group={group}
+          masterBalance={masterBalance}
           remainingGuests={rooming.filter(r => !r.checkedOut).length}
           roomsToRelease={rooming.filter(r => !r.checkedOut && r.roomNo).length}
           onClose={() => setCheckoutOpen(false)}
@@ -1074,11 +1103,12 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
 }
 
 // ===================== CHECK-OUT GROUP DIALOG =====================
-function CheckOutGroupDialog({ group, remainingGuests, roomsToRelease, onClose, onConfirm }: {
-  group: GroupBooking; remainingGuests: number; roomsToRelease: number;
+function CheckOutGroupDialog({ group, masterBalance, remainingGuests, roomsToRelease, onClose, onConfirm }: {
+  group: GroupBooking; masterBalance: number; remainingGuests: number; roomsToRelease: number;
   onClose: () => void; onConfirm: (amount: number, mode: string) => void;
 }) {
-  const balance = Math.max(0, group.balance);
+  // Includes ad-hoc master-folio extras — NOT group.balance (which excludes them).
+  const balance = Math.max(0, masterBalance);
   const [amount, setAmount] = React.useState(balance);
   const [mode, setMode] = React.useState("Cash");
   React.useEffect(() => {
