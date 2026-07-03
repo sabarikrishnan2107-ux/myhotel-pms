@@ -159,6 +159,15 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     flash(`Room cleared for ${entry.lead}`);
   };
 
+  // Flip who pays a guest's extras. Affects only FUTURE charges — already-posted
+  // charges keep whichever folio they landed on.
+  const setBillTo = (entry: RoomingEntry, billTo: "group" | "self") => {
+    setRooming(prev => prev.map(r => r.id === entry.id ? { ...r, billTo } : r));
+    setRowMenuFor(null);
+    apiPut(`/group-rooming/${entry.id}`, { billTo }).catch(() => flash("⚠ Save failed — backend offline"));
+    flash(`${entry.lead}: extras now billed to ${billTo === "self" ? "guest" : "group"}`);
+  };
+
   // Activity timeline — real audit-log entries scoped to this group.
   const [auditRows, setAuditRows] = React.useState<AuditRow[] | null>(null);
   React.useEffect(() => {
@@ -640,7 +649,19 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                       <button className="text-xs text-brand hover:underline" onClick={() => setAssignId(g.id)}>Assign</button>
                     )}
                   </td>
-                  <td className="px-5 py-3"><Badge tone="neutral">{g.roomType}</Badge></td>
+                  <td className="px-5 py-3">
+                    <Badge tone="neutral">{g.roomType}</Badge>
+                    <button
+                      type="button"
+                      onClick={() => setBillTo(g, (g.billTo ?? "group") === "group" ? "self" : "group")}
+                      title="Click to change who pays this guest's extras (future charges only)"
+                      className="ml-2 align-middle"
+                    >
+                      <Badge tone={(g.billTo ?? "group") === "self" ? "accent" : "neutral"}>
+                        {(g.billTo ?? "group") === "self" ? "Self-pay" : "Group pays"}
+                      </Badge>
+                    </button>
+                  </td>
                   <td className="px-5 py-3">
                     {g.lead}
                     {g.checkedOut ? (
@@ -873,6 +894,9 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                 <X className="h-3.5 w-3.5 text-muted-foreground" />Clear room
               </button>
             )}
+            <button type="button" onClick={() => setBillTo(entry, (entry.billTo ?? "group") === "group" ? "self" : "group")} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+              <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />Bill extras to {(entry.billTo ?? "group") === "group" ? "guest" : "group"}
+            </button>
             {entry.roomNo && !entry.checkedIn && (
               <button type="button" onClick={() => { checkInGuest(entry); setRowMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
                 <LogIn className="h-3.5 w-3.5 text-success" />Check in guest
