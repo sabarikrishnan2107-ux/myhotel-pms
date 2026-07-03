@@ -6,7 +6,7 @@ import { use } from "react";
 import {
   ChevronLeft, UsersRound, BedDouble, Receipt, Calendar, MessageSquare, Activity,
   Printer, Send, CreditCard, Sparkles, Phone, Mail, Briefcase, UserPlus, Upload,
-  CheckCircle2, ArrowRight, Plus, Building2, MoreVertical, X, LogOut,
+  CheckCircle2, ArrowRight, Plus, Building2, MoreVertical, X, LogOut, LogIn,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { computeGroupTotals, type GstSlab } from "@/lib/group-pricing";
 import { mealPerNightPerGuest } from "@/lib/booking-pricing";
 
-type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string; checkedOut?: boolean };
+type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string; checkedIn?: boolean; checkedOut?: boolean };
 type AuditRow = { id: string; action: string; entity: string; module: string; user: string; date: string; time: string };
 type RoomBoardRow = { id?: string | number; number: string; status: string; type?: string; floor?: number };
 import { cn, money, formatDate } from "@/lib/utils";
@@ -240,6 +240,19 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     apiPut(`/group-rooming/${entry.id}`, { checkedOut: true }).catch(() => flash("⚠ Save failed — backend offline"));
     releaseRoom(entry.roomNo);
     flash(`${entry.lead} checked out${entry.roomNo ? ` · Room ${entry.roomNo} → housekeeping` : ""}`);
+  };
+
+  // ONE-BY-ONE check-in: mark this guest arrived. The first guest checked into
+  // an otherwise-not-yet-arrived group also flips the group's own status to
+  // in-house, since the group has begun arriving.
+  const checkInGuest = (entry: RoomingEntry) => {
+    setRooming(prev => prev.map(r => r.id === entry.id ? { ...r, checkedIn: true } : r));
+    apiPut(`/group-rooming/${entry.id}`, { checkedIn: true }).catch(() => flash("⚠ Save failed — backend offline"));
+    if (group && (group.status === "confirmed" || group.status === "tentative")) {
+      setGroup(g => g ? { ...g, status: "in-house" } : g);
+      apiPut(`/group-bookings/${group.id}`, { status: "in-house" }).catch(() => {});
+    }
+    flash(`${entry.lead} checked in${entry.roomNo ? ` · Room ${entry.roomNo}` : ""}`);
   };
 
   // QUICK check-out: collect any final payment (→ master folio), check out every
@@ -830,7 +843,12 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                 <X className="h-3.5 w-3.5 text-muted-foreground" />Clear room
               </button>
             )}
-            {entry.roomNo && !entry.checkedOut && (
+            {entry.roomNo && !entry.checkedIn && (
+              <button type="button" onClick={() => { checkInGuest(entry); setRowMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                <LogIn className="h-3.5 w-3.5 text-success" />Check in guest
+              </button>
+            )}
+            {entry.checkedIn && !entry.checkedOut && (
               <button type="button" onClick={() => { checkOutGuest(entry); setRowMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
                 <LogOut className="h-3.5 w-3.5 text-success" />Check out guest
               </button>
