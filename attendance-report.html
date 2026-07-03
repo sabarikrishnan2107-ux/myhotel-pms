@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance Report</title>
+    <style>
+        /* Will be added in Task 2 */
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+
+    <script>
+        const attendanceReport = {
+            metadata: {
+                title: "ATTENDANCE LOG REPORT",
+                dateRange: "01 July 2026 - 31 July 2026",
+                property: "HYDERS+PARK",
+                generatedAt: new Date().toLocaleString()
+            },
+            summary: {
+                totalEvents: 156,
+                totalEmployees: 28,
+                totalBranches: 3
+            },
+            branches: [
+                {
+                    name: "TANJORE",
+                    department: "Housekeeping",
+                    employeeCount: 12,
+                    firstLogTime: "07:02:00",
+                    lastLogTime: "18:45:00",
+                    employees: [
+                        { name: "PUNITHA K", id: "3041", firstLogin: "07:02:00", lastLogin: "18:30:00", eventCount: 5 },
+                        { name: "SABARI SELVAN", id: "3029", firstLogin: "08:07:00", lastLogin: "17:45:00", eventCount: 4 },
+                        { name: "SUKANYA SUKANYA", id: "3027", firstLogin: "08:25:00", lastLogin: "18:15:00", eventCount: 6 },
+                        { name: "THAMIMUL ANSARI", id: "3001", firstLogin: "08:39:00", lastLogin: "18:00:00", eventCount: 5 },
+                        { name: "KALAI ARASAN", id: "3034", firstLogin: "08:46:00", lastLogin: "17:30:00", eventCount: 4 },
+                        { name: "ARI KUMARAN", id: "3021", firstLogin: "08:51:00", lastLogin: "18:20:00", eventCount: 5 },
+                        { name: "Saleem Ahmed", id: "33100", firstLogin: "08:54:00", lastLogin: "17:45:00", eventCount: 4 },
+                        { name: "MOHAN KUMAR", id: "3045", firstLogin: "07:15:00", lastLogin: "18:35:00", eventCount: 6 },
+                        { name: "RAJA KRISHNAN", id: "3050", firstLogin: "08:10:00", lastLogin: "18:10:00", eventCount: 5 },
+                        { name: "PRIYA SHARMA", id: "3061", firstLogin: "07:45:00", lastLogin: "18:45:00", eventCount: 7 },
+                        { name: "ASHA PATEL", id: "3072", firstLogin: "08:20:00", lastLogin: "18:25:00", eventCount: 5 },
+                        { name: "VIJAY NAIR", id: "3083", firstLogin: "08:55:00", lastLogin: "17:50:00", eventCount: 4 }
+                    ]
+                },
+                {
+                    name: "KODAI",
+                    department: "Front Office",
+                    employeeCount: 9,
+                    firstLogTime: "07:30:00",
+                    lastLogTime: "17:20:00",
+                    employees: [
+                        { name: "Udayan Sivasakthivel", id: "3200", firstLogin: "08:24:00", lastLogin: "17:15:00", eventCount: 4 },
+                        { name: "Selva Kaviyan", id: "3025", firstLogin: "08:34:00", lastLogin: "17:45:00", eventCount: 5 },
+                        { name: "RAMESH KUMAR", id: "3094", firstLogin: "07:30:00", lastLogin: "17:20:00", eventCount: 6 },
+                        { name: "DEEPAK SINGH", id: "3105", firstLogin: "08:15:00", lastLogin: "17:30:00", eventCount: 5 },
+                        { name: "ANJALI GUPTA", id: "3116", firstLogin: "08:45:00", lastLogin: "17:50:00", eventCount: 4 },
+                        { name: "VIKRAM PATEL", id: "3127", firstLogin: "07:50:00", lastLogin: "17:35:00", eventCount: 5 },
+                        { name: "NEHA VERMA", id: "3138", firstLogin: "08:30:00", lastLogin: "17:25:00", eventCount: 4 },
+                        { name: "ARUN REDDY", id: "3149", firstLogin: "08:00:00", lastLogin: "17:40:00", eventCount: 5 },
+                        { name: "POOJA MISHRA", id: "3150", firstLogin: "08:35:00", lastLogin: "17:55:00", eventCount: 6 }
+                    ]
+                },
+                {
+                    name: "MAIN BUILDING",
+                    department: "Management",
+                    employeeCount: 7,
+                    firstLogTime: "08:00:00",
+                    lastLogTime: "18:30:00",
+                    employees: [
+                        { name: "RAJESH KUMAR", id: "1001", firstLogin: "08:00:00", lastLogin: "18:30:00", eventCount: 8 },
+                        { name: "KAVYA REDDY", id: "1012", firstLogin: "08:15:00", lastLogin: "18:20:00", eventCount: 7 },
+                        { name: "SURESH NAIR", id: "1023", firstLogin: "08:10:00", lastLogin: "18:25:00", eventCount: 7 },
+                        { name: "MEENA SHARMA", id: "1034", firstLogin: "08:30:00", lastLogin: "18:15:00", eventCount: 6 },
+                        { name: "ARJUN SINGH", id: "1045", firstLogin: "08:05:00", lastLogin: "18:35:00", eventCount: 8 },
+                        { name: "DIVYA PATEL", id: "1056", firstLogin: "08:20:00", lastLogin: "18:10:00", eventCount: 6 },
+                        { name: "SANDEEP KUMAR", id: "1067", firstLogin: "08:25:00", lastLogin: "18:40:00", eventCount: 7 }
+                    ]
+                }
+            ]
+        };
+
+        // Render function will be added in Task 3
+    </script>
+</body>
+</html>
