@@ -70,6 +70,12 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   // Per-row "..." actions menu, portalled to <body> (the table card clips overflow).
   const [rowMenuFor, setRowMenuFor] = React.useState<string | null>(null);
   const [rowMenuRect, setRowMenuRect] = React.useState<DOMRect | null>(null);
+
+  // Self-pay guests' folio lines, keyed by rooming id. Fetched per self-pay guest
+  // by their GRPG-<id> key so each call returns only that guest's rows.
+  const [selfCharges, setSelfCharges] = React.useState<Record<string, { id: string | number; description: string; amount: number; date: string }[]>>({});
+  const [selfPayments, setSelfPayments] = React.useState<Record<string, { id: string | number; amount: number; mode: string; date: string }[]>>({});
+
   React.useEffect(() => {
     if (!rowMenuFor) return;
     const close = () => setRowMenuFor(null);
@@ -79,6 +85,20 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     window.addEventListener("resize", close);
     return () => { document.removeEventListener("click", onClick); window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
   }, [rowMenuFor]);
+
+  // Load self-pay guest folio lines whenever rooming list changes
+  React.useEffect(() => {
+    const selfGuests = rooming.filter(r => (r.billTo ?? "group") === "self");
+    selfGuests.forEach(r => {
+      const key = `GRPG-${r.id}`;
+      apiGet<{ id: string | number; description: string; amount: number; date: string }[]>(`/folio-charges?bookingNo=${encodeURIComponent(key)}`)
+        .then(rows => setSelfCharges(prev => ({ ...prev, [r.id]: rows })))
+        .catch(() => {});
+      apiGet<{ id: string | number; amount: number; mode: string; date: string }[]>(`/folio-payments?bookingNo=${encodeURIComponent(key)}`)
+        .then(rows => setSelfPayments(prev => ({ ...prev, [r.id]: rows })))
+        .catch(() => {});
+    });
+  }, [rooming]);
 
   // Room inventory (for room details / type filtering) + availability for this group's
   // stay window. The backend cross-checks individual bookings AND group_rooming so
@@ -107,6 +127,11 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   }, []);
   const [toast, setToast] = React.useState<string | null>(null);
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
+
+  // Self-pay guest mini-folio drawer
+  const [folioFor, setFolioFor] = React.useState<RoomingEntry | null>(null);
+  const [collectAmt, setCollectAmt] = React.useState(0);
+  const [collectMode, setCollectMode] = React.useState("Cash");
 
   React.useEffect(() => {
     apiGet<RoomingEntry[]>(`/group-rooming?groupCode=${encodeURIComponent(id)}`)
@@ -196,6 +221,19 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     setPayAmount(balance);
     apiPut(`/group-bookings/${group.id}`, { advance, balance }).catch(() => {});
     flash(`Payment of ${money(amt)} recorded via ${payMode}`);
+  };
+
+  // Collect self-pay guest extras payment
+  const collectSelfPay = (entry: RoomingEntry) => {
+    const amt = Math.round(Number(collectAmt) || 0);
+    if (amt <= 0) { flash("Enter a valid amount"); return; }
+    const key = `GRPG-${entry.id}`;
+    const today = new Date().toISOString().slice(0, 10);
+    apiPost<{ id: string | number; amount: number; mode: string; date: string }>("/folio-payments", { bookingNo: key, date: today, mode: collectMode, amount: amt, reference: `${entry.lead} · self-pay extras` })
+      .then(row => setSelfPayments(prev => ({ ...prev, [entry.id]: [...(prev[entry.id] ?? []), row] })))
+      .catch(() => flash("⚠ Payment not saved — backend offline"));
+    setCollectAmt(0);
+    flash(`${money(amt)} collected from ${entry.lead}`);
   };
 
   // Add a service — persists onto the group record.
@@ -319,6 +357,13 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
       </div>
     );
   }
+
+  // Compute the balance due for a self-pay guest
+  const selfPayBalance = (entry: RoomingEntry): number => {
+    const charges = (selfCharges[entry.id] ?? []).reduce((s, c) => s + (c.amount || 0), 0);
+    const paid = (selfPayments[entry.id] ?? []).reduce((s, p) => s + (p.amount || 0), 0);
+    return Math.max(0, charges - paid);
+  };
 
   const allocated = rooming.filter(r => r.roomNo && String(r.roomNo).trim()).length;
   const allocPct = group.totalRooms > 0 ? Math.round((allocated / group.totalRooms) * 100) : 0;
@@ -671,6 +716,18 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                     ) : g.roomNo ? (
                       <Badge tone="neutral" className="ml-2">Arriving</Badge>
                     ) : null}
+                    {(g.billTo ?? "group") === "self" && (
+                      <button
+                        type="button"
+                        onClick={() => { setFolioFor(g); setCollectAmt(selfPayBalance(g)); }}
+                        className="ml-2 align-middle"
+                        title="View this guest's extras folio"
+                      >
+                        <Badge tone={selfPayBalance(g) > 0 ? "warning" : "success"}>
+                          {selfPayBalance(g) > 0 ? `${money(selfPayBalance(g))} due` : "Settled"}
+                        </Badge>
+                      </button>
+                    )}
                   </td>
                   <td className="px-5 py-3 text-right tabular">{g.pax}</td>
                   <td className="px-5 py-3 text-xs text-muted-foreground tabular">{g.phone ?? "—"}</td>
@@ -915,6 +972,69 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
           document.body,
         );
       })()}
+
+      {folioFor && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" onClick={() => setFolioFor(null)} aria-hidden />
+          <aside className="fixed top-0 right-0 z-50 h-svh w-full sm:w-[440px] bg-surface border-l border-border shadow-2xl flex flex-col animate-in slide-in-from-right-2">
+            <div className="px-5 py-4 border-b border-border flex items-start gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Self-pay extras</p>
+                <h2 className="text-lg font-semibold truncate">{folioFor.lead}</h2>
+                <p className="text-xs text-muted-foreground truncate">Room {folioFor.roomNo ?? "—"} · GRPG-{folioFor.id}</p>
+              </div>
+              <button type="button" onClick={() => setFolioFor(null)} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-semibold mb-2">Charges</p>
+                {(selfCharges[folioFor.id] ?? []).length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">No extras charged yet.</p>
+                ) : (
+                  <ul className="space-y-1.5 text-sm">
+                    {(selfCharges[folioFor.id] ?? []).map(c => (
+                      <li key={c.id} className="flex items-center justify-between gap-3">
+                        <span className="text-muted-foreground truncate">{c.description}</span>
+                        <span className="tabular font-medium shrink-0">{money(c.amount)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              {(selfPayments[folioFor.id] ?? []).length > 0 && (
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-semibold mb-2">Payments</p>
+                  <ul className="space-y-1.5 text-sm">
+                    {(selfPayments[folioFor.id] ?? []).map(p => (
+                      <li key={p.id} className="flex items-center justify-between gap-3">
+                        <span className="text-muted-foreground">{p.mode} · {p.date}</span>
+                        <span className="tabular text-success shrink-0">− {money(p.amount)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <div className="border-t border-border pt-3 flex items-center justify-between">
+                <span className={cn("font-semibold", selfPayBalance(folioFor) > 0 ? "text-warning" : "text-success")}>
+                  {selfPayBalance(folioFor) > 0 ? "Balance due" : "Settled"}
+                </span>
+                <span className={cn("text-base font-semibold tabular", selfPayBalance(folioFor) > 0 ? "text-warning" : "text-success")}>
+                  {money(selfPayBalance(folioFor))}
+                </span>
+              </div>
+            </div>
+            <div className="border-t border-border p-3 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <Input type="number" min={0} value={collectAmt || ""} onChange={e => setCollectAmt(Math.max(0, Number(e.target.value)))} placeholder="Amount" className="h-9 tabular" />
+                <Select value={collectMode} onChange={e => setCollectMode(e.target.value)} className="h-9"><option>Cash</option><option>Card</option><option>UPI</option><option>Bank</option></Select>
+              </div>
+              <Button variant="success" size="sm" className="w-full" onClick={() => collectSelfPay(folioFor)} disabled={selfPayBalance(folioFor) <= 0}>
+                <CreditCard className="h-3.5 w-3.5" />Collect payment
+              </Button>
+            </div>
+          </aside>
+        </>
+      )}
 
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-md bg-foreground text-background px-4 py-2.5 text-sm font-medium shadow-lg">
