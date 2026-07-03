@@ -251,13 +251,23 @@ class StatsController extends Controller
             ->where('group_rooming.checkedOut', false)
             ->whereNotNull('group_rooming.roomNo')
             ->where('group_rooming.roomNo', '!=', '')
-            ->select('group_rooming.roomNo', 'group_rooming.lead', 'group_bookings.arrival', 'group_bookings.departure')
+            ->select('group_rooming.id', 'group_rooming.groupCode', 'group_rooming.roomNo', 'group_rooming.lead', 'group_rooming.billTo', 'group_bookings.arrival', 'group_bookings.departure')
             ->get()
             ->keyBy('roomNo');
 
         $rooms = Room::orderBy('floor')->orderBy('number')->get()->map(function ($r) use ($inHouse, $groupOccupied) {
             $bk = $inHouse->get($r->number);
             $grp = $bk ? null : $groupOccupied->get($r->number);
+            // Where a charge for this physical room posts: the individual booking,
+            // or the group master folio (group-pays), or the guest's own synthetic
+            // folio (self-pay). Separate from bookingNo, which stays null for group
+            // rooms so the Room Rack's nav-button guards keep hiding them.
+            $chargeTo = null;
+            if ($bk) {
+                $chargeTo = $bk->bookingNo;
+            } elseif ($grp) {
+                $chargeTo = $grp->billTo === 'self' ? "GRPG-{$grp->id}" : $grp->groupCode;
+            }
             $hk = $r->hkStatus ?: 'clean';
             // Vacant rooms can be explicitly blocked or out-of-order; otherwise
             // housekeeping state decides whether they are sellable.
@@ -287,6 +297,7 @@ class StatsController extends Controller
                 // rooms have neither — the Room Rack's `isOccupied && bookingNo`
                 // guards keep it from offering Checkout/Folio for a booking that
                 // doesn't exist.
+                'chargeTo'      => $chargeTo,
                 'bookingNo'     => $bk->bookingNo ?? null,
                 'bookingId'     => $bk->id ?? null,
                 'nights'        => $bk ? (int) $bk->nights : null,
