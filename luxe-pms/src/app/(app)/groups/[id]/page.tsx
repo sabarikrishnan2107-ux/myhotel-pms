@@ -309,6 +309,12 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
 
   // ONE-BY-ONE check-out: mark this guest departed + release their room. Persists.
   const checkOutGuest = (entry: RoomingEntry) => {
+    if ((entry.billTo ?? "group") === "self" && selfPayBalance(entry) > 0) {
+      setFolioFor(entry); setCollectAmt(selfPayBalance(entry));
+      flash(`Clear ${money(selfPayBalance(entry))} in extras before checking out ${entry.lead}`);
+      setRowMenuFor(null);
+      return;
+    }
     const at = new Date().toISOString();
     setRooming(prev => prev.map(r => r.id === entry.id ? { ...r, checkedOut: true, checkedOutAt: at } : r));
     apiPut(`/group-rooming/${entry.id}`, { checkedOut: true, checkedOutAt: at }).catch(() => flash("⚠ Save failed — backend offline"));
@@ -344,14 +350,20 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     }
     const at = new Date().toISOString();
     const remaining = rooming.filter(r => !r.checkedOut);
-    remaining.forEach(r => {
+    const owing = remaining.filter(r => (r.billTo ?? "group") === "self" && selfPayBalance(r) > 0);
+    const toCheckOut = remaining.filter(r => !owing.some(o => o.id === r.id));
+    toCheckOut.forEach(r => {
       apiPut(`/group-rooming/${r.id}`, { checkedOut: true, checkedOutAt: at }).catch(() => {});
       releaseRoom(r.roomNo);
     });
-    const released = remaining.filter(r => r.roomNo).length;
-    setRooming(prev => prev.map(r => r.checkedOut ? r : { ...r, checkedOut: true, checkedOutAt: at }));
-    setGroup(g => g ? { ...g, status: "completed", advance, balance } : g);
-    apiPut(`/group-bookings/${group.id}`, { status: "completed", advance, balance }).catch(() => flash("⚠ Checkout not fully saved — backend offline"));
+    const released = toCheckOut.filter(r => r.roomNo).length;
+    const toCheckOutIds = new Set(toCheckOut.map(r => r.id));
+    setRooming(prev => prev.map(r => toCheckOutIds.has(r.id) ? { ...r, checkedOut: true, checkedOutAt: at } : r));
+    if (owing.length) {
+      flash(`${owing.length} guest${owing.length === 1 ? "" : "s"} still owe for extras — settle in their folio`);
+    }
+    setGroup(g => g ? { ...g, status: owing.length === 0 ? "completed" : "in-house", advance, balance } : g);
+    apiPut(`/group-bookings/${group.id}`, { status: owing.length === 0 ? "completed" : "in-house", advance, balance }).catch(() => flash("⚠ Checkout not fully saved — backend offline"));
     flash(`${group.name} checked out · ${released} room${released === 1 ? "" : "s"} released to housekeeping`);
   };
 
@@ -1105,13 +1117,13 @@ function CheckOutGroupDialog({ group, remainingGuests, roomsToRelease, onClose, 
                   <div className="space-y-1.5"><Label className="text-xs">Collect now (₹)</Label><Input type="number" min={0} value={amount} onChange={e => setAmount(Math.max(0, Number(e.target.value)))} className="h-9 tabular" /></div>
                   <div className="space-y-1.5"><Label className="text-xs">Mode</Label><Select value={mode} onChange={e => setMode(e.target.value)} className="h-9"><option>Cash</option><option>Card</option><option>UPI</option><option>Bank</option><option>Online</option></Select></div>
                 </div>
-                {amount < balance && <p className="text-[11px] text-warning">Checking out with {money(balance - amount)} still outstanding.</p>}
+                {amount < balance && <p className="text-[11px] text-warning">Collect the full {money(balance)} balance to complete checkout — {money(balance - amount)} still due.</p>}
               </>
             )}
           </div>
           <div className="px-5 py-3 border-t border-border bg-surface-elevated flex items-center justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-            <Button variant="success" onClick={() => onConfirm(Math.min(amount, balance), mode)}><CheckCircle2 className="h-4 w-4" />Check out &amp; complete</Button>
+            <Button variant="success" disabled={amount < balance} onClick={() => onConfirm(Math.min(amount, balance), mode)}><CheckCircle2 className="h-4 w-4" />Check out &amp; complete</Button>
           </div>
         </Card>
       </div>
