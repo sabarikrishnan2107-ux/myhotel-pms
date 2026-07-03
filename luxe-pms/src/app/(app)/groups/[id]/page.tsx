@@ -20,7 +20,7 @@ import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { computeGroupTotals, type GstSlab } from "@/lib/group-pricing";
 import { mealPerNightPerGuest } from "@/lib/booking-pricing";
 
-type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string; checkedIn?: boolean; checkedOut?: boolean };
+type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string; checkedIn?: boolean; checkedInAt?: string | null; checkedOut?: boolean; checkedOutAt?: string | null };
 type AuditRow = { id: string; action: string; entity: string; module: string; user: string; date: string; time: string };
 type RoomBoardRow = { id?: string | number; number: string; status: string; type?: string; floor?: number };
 import { cn, money, formatDate } from "@/lib/utils";
@@ -236,8 +236,9 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
 
   // ONE-BY-ONE check-out: mark this guest departed + release their room. Persists.
   const checkOutGuest = (entry: RoomingEntry) => {
-    setRooming(prev => prev.map(r => r.id === entry.id ? { ...r, checkedOut: true } : r));
-    apiPut(`/group-rooming/${entry.id}`, { checkedOut: true }).catch(() => flash("⚠ Save failed — backend offline"));
+    const at = new Date().toISOString();
+    setRooming(prev => prev.map(r => r.id === entry.id ? { ...r, checkedOut: true, checkedOutAt: at } : r));
+    apiPut(`/group-rooming/${entry.id}`, { checkedOut: true, checkedOutAt: at }).catch(() => flash("⚠ Save failed — backend offline"));
     releaseRoom(entry.roomNo);
     flash(`${entry.lead} checked out${entry.roomNo ? ` · Room ${entry.roomNo} → housekeeping` : ""}`);
   };
@@ -246,8 +247,9 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   // an otherwise-not-yet-arrived group also flips the group's own status to
   // in-house, since the group has begun arriving.
   const checkInGuest = (entry: RoomingEntry) => {
-    setRooming(prev => prev.map(r => r.id === entry.id ? { ...r, checkedIn: true } : r));
-    apiPut(`/group-rooming/${entry.id}`, { checkedIn: true }).catch(() => flash("⚠ Save failed — backend offline"));
+    const at = new Date().toISOString();
+    setRooming(prev => prev.map(r => r.id === entry.id ? { ...r, checkedIn: true, checkedInAt: at } : r));
+    apiPut(`/group-rooming/${entry.id}`, { checkedIn: true, checkedInAt: at }).catch(() => flash("⚠ Save failed — backend offline"));
     if (group && (group.status === "confirmed" || group.status === "tentative")) {
       setGroup(g => g ? { ...g, status: "in-house" } : g);
       apiPut(`/group-bookings/${group.id}`, { status: "in-house" }).catch(() => {});
