@@ -1011,6 +1011,12 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
             <button type="button" onClick={() => setBillTo(entry, (entry.billTo ?? "group") === "group" ? "self" : "group")} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
               <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />Bill extras to {(entry.billTo ?? "group") === "group" ? "guest" : "group"}
             </button>
+            {(entry.billTo ?? "group") === "self" && (
+              <button type="button" onClick={() => { setFolioFor(entry); setCollectAmt(selfPayBalance(entry)); setRowMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                <Receipt className="h-3.5 w-3.5 text-success" />
+                {selfPayBalance(entry) > 0 ? `Collect payment · ${money(selfPayBalance(entry))}` : "View extras folio"}
+              </button>
+            )}
             {entry.roomNo && !entry.checkedIn && (
               <button type="button" onClick={() => { checkInGuest(entry); setRowMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
                 <LogIn className="h-3.5 w-3.5 text-success" />Check in guest
