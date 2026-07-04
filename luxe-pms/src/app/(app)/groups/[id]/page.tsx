@@ -433,6 +433,19 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     return Math.max(0, charges - paid);
   };
 
+  // Open a guest's mini-folio AND refetch it live — the drawer must show charges
+  // added since page load (e.g. a room order placed while this page was open),
+  // not just whatever the initial rooming-effect fetched.
+  const openFolio = (entry: RoomingEntry) => {
+    setFolioFor(entry);
+    setCollectAmt(selfPayBalance(entry));
+    const key = `GRPG-${entry.id}`;
+    apiGet<{ id: string | number; description: string; amount: number; date: string }[]>(`/folio-charges?bookingNo=${encodeURIComponent(key)}`)
+      .then(rows => setSelfCharges(prev => ({ ...prev, [entry.id]: rows }))).catch(() => {});
+    apiGet<{ id: string | number; amount: number; mode: string; date: string }[]>(`/folio-payments?bookingNo=${encodeURIComponent(key)}`)
+      .then(rows => setSelfPayments(prev => ({ ...prev, [entry.id]: rows }))).catch(() => {});
+  };
+
   const allocated = rooming.filter(r => r.roomNo && String(r.roomNo).trim()).length;
   const allocPct = group.totalRooms > 0 ? Math.round((allocated / group.totalRooms) * 100) : 0;
 
@@ -795,7 +808,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                     {(g.billTo ?? "group") === "self" && (
                       <button
                         type="button"
-                        onClick={() => { setFolioFor(g); setCollectAmt(selfPayBalance(g)); }}
+                        onClick={() => openFolio(g)}
                         className="ml-2 align-middle"
                         title="View this guest's extras folio"
                       >
@@ -1050,7 +1063,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
               <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />Bill extras to {(entry.billTo ?? "group") === "group" ? "guest" : "group"}
             </button>
             {(entry.billTo ?? "group") === "self" && (
-              <button type="button" onClick={() => { setFolioFor(entry); setCollectAmt(selfPayBalance(entry)); setRowMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+              <button type="button" onClick={() => { openFolio(entry); setRowMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
                 <Receipt className="h-3.5 w-3.5 text-success" />
                 {selfPayBalance(entry) > 0 ? `Collect payment · ${money(selfPayBalance(entry))}` : "View extras folio"}
               </button>
