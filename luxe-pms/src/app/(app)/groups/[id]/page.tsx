@@ -799,8 +799,8 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                         className="ml-2 align-middle"
                         title="View this guest's extras folio"
                       >
-                        <Badge tone={selfPayBalance(g) > 0 ? "warning" : "success"}>
-                          {selfPayBalance(g) > 0 ? `${money(selfPayBalance(g))} due` : "Settled"}
+                        <Badge tone={selfPayBalance(g) > 0 ? "warning" : (selfCharges[g.id] ?? []).length ? "success" : "neutral"}>
+                          {selfPayBalance(g) > 0 ? `${money(selfPayBalance(g))} due` : (selfCharges[g.id] ?? []).length ? "Settled" : "No extras"}
                         </Badge>
                       </button>
                     )}
@@ -1116,10 +1116,10 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                 </div>
               )}
               <div className="border-t border-border pt-3 flex items-center justify-between">
-                <span className={cn("font-semibold", selfPayBalance(folioFor) > 0 ? "text-warning" : "text-success")}>
-                  {selfPayBalance(folioFor) > 0 ? "Balance due" : "Settled"}
+                <span className={cn("font-semibold", selfPayBalance(folioFor) > 0 ? "text-warning" : (selfCharges[folioFor.id] ?? []).length ? "text-success" : "text-muted-foreground")}>
+                  {selfPayBalance(folioFor) > 0 ? "Balance due" : (selfCharges[folioFor.id] ?? []).length ? "Settled" : "Nothing to pay"}
                 </span>
-                <span className={cn("text-base font-semibold tabular", selfPayBalance(folioFor) > 0 ? "text-warning" : "text-success")}>
+                <span className={cn("text-base font-semibold tabular", selfPayBalance(folioFor) > 0 ? "text-warning" : (selfCharges[folioFor.id] ?? []).length ? "text-success" : "text-muted-foreground")}>
                   {money(selfPayBalance(folioFor))}
                 </span>
               </div>
