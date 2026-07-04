@@ -77,7 +77,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const [selfPayments, setSelfPayments] = React.useState<Record<string, { id: string | number; amount: number; mode: string; date: string }[]>>({});
 
   // Master-folio extras (ad-hoc charges posted to group.code via Task 3's group-pays path).
-  const [masterExtras, setMasterExtras] = React.useState<{ id: string | number; description: string; amount: number; date: string }[]>([]);
+  const [masterExtras, setMasterExtras] = React.useState<{ id: string | number; description: string; amount: number; date: string; room?: string | null }[]>([]);
   React.useEffect(() => {
     if (!group) return;
     apiGet<{ id: string | number; description: string; amount: number; date: string }[]>(`/folio-charges?bookingNo=${encodeURIComponent(group.code)}`)
@@ -925,14 +925,24 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                     <td className="px-5 py-3 text-right tabular text-muted-foreground">—</td>
                   </tr>
                 ))}
-                {masterExtras.map(c => (
-                  <tr key={`x${c.id}`}>
-                    <td className="px-5 py-3">{c.description}</td>
-                    <td className="px-5 py-3 text-right tabular">1</td>
-                    <td className="px-5 py-3 text-right tabular text-muted-foreground">—</td>
-                    <td className="px-5 py-3 text-right tabular font-medium">{money(c.amount)}</td>
-                  </tr>
-                ))}
+                {masterExtras.map(c => {
+                  const orderedBy = c.room ? rooming.find(r => r.roomNo === c.room)?.lead : undefined;
+                  return (
+                    <tr key={`x${c.id}`}>
+                      <td className="px-5 py-3">
+                        {c.description}
+                        {c.room && (
+                          <span className="block text-[11px] text-muted-foreground mt-0.5">
+                            Room {c.room}{orderedBy ? ` · ${orderedBy}` : ""}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-right tabular">1</td>
+                      <td className="px-5 py-3 text-right tabular text-muted-foreground">—</td>
+                      <td className="px-5 py-3 text-right tabular font-medium">{money(c.amount)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot className="bg-surface-elevated border-t border-border">
                 <tr>
