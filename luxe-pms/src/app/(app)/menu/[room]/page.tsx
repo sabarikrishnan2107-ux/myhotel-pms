@@ -142,7 +142,7 @@ export default function MenuRoomPage({ params }: { params: Promise<{ room: strin
     const today = new Date().toISOString().slice(0, 10);
     try {
       const created = await apiPost<{ id: number | string }>("/folio-charges", {
-        bookingNo: chargeTo, date: today,
+        bookingNo: chargeTo, room, date: today,
         description: `F&B order (self-service) · ${cartCount} item${cartCount === 1 ? "" : "s"}`,
         type: "F&B", qty: cartCount, rate: cartTotal, tax: gst, amount: grandTotal,
         paidBy: chargeTo.startsWith("GRPG-") ? "Guest" : "Room",

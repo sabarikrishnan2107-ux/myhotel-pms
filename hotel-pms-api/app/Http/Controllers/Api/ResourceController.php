@@ -319,6 +319,7 @@ class ResourceController extends Controller
             'bookingNo' => 'string|max:50', 'date' => 'string|max:50', 'description' => 'string|max:500',
             'type' => 'string|max:50', 'qty' => 'integer', 'rate' => 'integer', 'tax' => 'integer',
             'amount' => 'integer', 'paidBy' => 'string|max:50', 'postedBy' => 'string|max:255|nullable',
+            'room' => 'string|max:50|nullable',
         ],
         'folio-payments' => [
             'bookingNo' => 'string|max:50', 'date' => 'string|max:50', 'mode' => 'string|max:100',

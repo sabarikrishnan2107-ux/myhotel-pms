@@ -200,13 +200,41 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     flash(`Room cleared for ${entry.lead}`);
   };
 
-  // Flip who pays a guest's extras. Affects only FUTURE charges — already-posted
-  // charges keep whichever folio they landed on.
-  const setBillTo = (entry: RoomingEntry, billTo: "group" | "self") => {
-    setRooming(prev => prev.map(r => r.id === entry.id ? { ...r, billTo } : r));
+  // Flip who pays a guest's extras — AND move their already-posted extras to
+  // follow. Self: pull this room's charges off the group master folio into the
+  // guest's own folio (GRPG-<id>). Group: push the guest's folio charges back
+  // onto the master. Only room-tagged charges can be moved (older untagged ones
+  // stay put — they predate room tagging).
+  type ChargeRow = { id: string | number; description: string; amount: number; date: string; room?: string | null };
+  const setBillTo = async (entry: RoomingEntry, billTo: "group" | "self") => {
     setRowMenuFor(null);
+    setRooming(prev => prev.map(r => r.id === entry.id ? { ...r, billTo } : r));
     apiPut(`/group-rooming/${entry.id}`, { billTo }).catch(() => flash("⚠ Save failed — backend offline"));
-    flash(`${entry.lead}: extras now billed to ${billTo === "self" ? "guest" : "group"}`);
+    const grpKey = `GRPG-${entry.id}`;
+    const groupKey = group?.code ?? id;
+    try {
+      if (billTo === "self") {
+        const rows = await apiGet<ChargeRow[]>(`/folio-charges?bookingNo=${encodeURIComponent(groupKey)}`);
+        const mine = rows.filter(c => String(c.room ?? "") === String(entry.roomNo ?? "") && entry.roomNo);
+        await Promise.all(mine.map(c => apiPut(`/folio-charges/${c.id}`, { bookingNo: grpKey, paidBy: "Guest" })));
+        if (mine.length) flash(`Moved ${money(mine.reduce((s, c) => s + (c.amount || 0), 0))} of extras to ${entry.lead}'s own bill`);
+      } else {
+        const rows = await apiGet<ChargeRow[]>(`/folio-charges?bookingNo=${encodeURIComponent(grpKey)}`);
+        await Promise.all(rows.map(c => apiPut(`/folio-charges/${c.id}`, { bookingNo: groupKey, paidBy: "Room" })));
+        if (rows.length) flash(`Moved ${entry.lead}'s extras back to the group bill`);
+      }
+      // Refresh the affected folios (this guest's + the master extras).
+      const [ch, pm, ex] = await Promise.all([
+        apiGet<ChargeRow[]>(`/folio-charges?bookingNo=${encodeURIComponent(grpKey)}`),
+        apiGet<{ id: string | number; amount: number; mode: string; date: string }[]>(`/folio-payments?bookingNo=${encodeURIComponent(grpKey)}`),
+        apiGet<{ id: string | number; description: string; amount: number; date: string }[]>(`/folio-charges?bookingNo=${encodeURIComponent(groupKey)}`),
+      ]);
+      setSelfCharges(prev => ({ ...prev, [entry.id]: ch }));
+      setSelfPayments(prev => ({ ...prev, [entry.id]: pm }));
+      setMasterExtras(ex);
+    } catch {
+      flash("⚠ Couldn't move existing extras — backend offline");
+    }
   };
 
   // Activity timeline — real audit-log entries scoped to this group.

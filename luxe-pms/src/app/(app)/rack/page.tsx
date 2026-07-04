@@ -815,7 +815,7 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
         const chargeType = orderTab === "laundry" ? "Laundry" : orderTab === "other" ? "Service" : "F&B";
         if (room.chargeTo) {
           await apiPost("/folio-charges", {
-            bookingNo: room.chargeTo, date: today,
+            bookingNo: room.chargeTo, room: room.number, date: today,
             description: `${dept.charAt(0).toUpperCase() + dept.slice(1)} order · ${orderItemCount} item${orderItemCount === 1 ? "" : "s"}`,
             type: chargeType, qty: orderItemCount, rate: orderSubtotal, tax: orderTax, amount: orderTotal,
             paidBy: room.chargeTo.startsWith("GRPG-") ? "Guest" : "Room",

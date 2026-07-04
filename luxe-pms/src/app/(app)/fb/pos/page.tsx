@@ -278,6 +278,7 @@ export default function RestaurantPOSPage() {
       if (!chargeTo) { showToast(`No active guest in room ${roomNumber}`); return; }
       await apiPost("/folio-charges", {
         bookingNo: chargeTo,
+        room: roomNumber,
         date: new Date().toISOString().slice(0, 10),
         description: `F&B — ${selectedTable} (${lines.length} items)`,
         type: "F&B",
