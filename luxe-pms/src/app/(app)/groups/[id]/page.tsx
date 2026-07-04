@@ -7,6 +7,7 @@ import {
   ChevronLeft, UsersRound, BedDouble, Receipt, Calendar, MessageSquare, Activity,
   Printer, Send, CreditCard, Sparkles, Phone, Mail, Briefcase, UserPlus, Upload,
   CheckCircle2, ArrowRight, Plus, Building2, MoreVertical, X, LogOut, LogIn,
+  IdCard, Camera, Pen, FileText,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -56,6 +57,8 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const [printMounted, setPrintMounted] = React.useState(false);
   React.useEffect(() => setPrintMounted(true), []);
   const [group, setGroup] = React.useState<GroupBooking | null>(null);
+  // Full-size viewer for a booker capture (photo / ID scan / signature).
+  const [viewerSrc, setViewerSrc] = React.useState<string | null>(null);
   const [payAmount, setPayAmount] = React.useState(0);
   const [payMode, setPayMode] = React.useState("Cash");
   const [checkoutOpen, setCheckoutOpen] = React.useState(false);
@@ -186,9 +189,9 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     // If none of the exact type are free, fall back to any free room so the desk isn't stuck.
     return ofType.length ? ofType : freeRooms.filter(r => !taken.has(r.number));
   }, [freeRooms, rooming]);
-  const addGuest = (g: { lead: string; roomType: string; pax: number; phone?: string; remarks?: string }) => {
+  const addGuest = (g: { lead: string; roomType: string; pax: number; phone?: string; remarks?: string; roomNo?: string | null }) => {
     const billTo: BillMode = group?.billingMode === "per-room" ? "room" : group?.billingMode === "split" ? "split" : "group";
-    apiPost<RoomingEntry>("/group-rooming", { ...g, groupCode: id, roomNo: null, billTo })
+    apiPost<RoomingEntry>("/group-rooming", { ...g, groupCode: id, roomNo: g.roomNo ?? null, billTo })
       .then(row => setRooming(prev => [...prev, { ...row, id: String(row.id) }]))
       .catch(() => flash("⚠ Save failed — backend offline"));
     setAddGuestOpen(false);
@@ -703,6 +706,44 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
               </div>
             </Card>
           </div>
+
+          {/* Booker Identification & Captures — what was filled in at booking time */}
+          {(() => {
+            const hasImages = !!(group.guestPhoto || group.idFront || group.idBack || group.signature);
+            const hasAny = hasImages || !!group.idNumber || !!group.idType;
+            const idLabel = group.idType || "ID";
+            return (
+              <Card className="p-5 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle className="inline-flex items-center gap-2"><IdCard className="h-4 w-4 text-muted-foreground" />Booker Identification &amp; Captures</CardTitle>
+                  {group.idNumber ? (
+                    <Badge tone="success"><CheckCircle2 className="h-3 w-3" />ID on file</Badge>
+                  ) : hasImages ? (
+                    <Badge tone="info">Captures on file</Badge>
+                  ) : (
+                    <Badge tone="neutral">Not captured</Badge>
+                  )}
+                </div>
+
+                {!hasAny ? (
+                  <p className="text-sm text-muted-foreground">No identification was captured for the person who booked this group.</p>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm max-w-md">
+                      <Detail k="ID type" v={group.idType || "—"} />
+                      <Detail k="ID number" v={group.idNumber || "—"} />
+                    </div>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      <CaptureTile label="Booker photo" icon={Camera} src={group.guestPhoto} onOpen={setViewerSrc} />
+                      <CaptureTile label={`${idLabel} — front`} icon={FileText} src={group.idFront} onOpen={setViewerSrc} />
+                      <CaptureTile label={`${idLabel} — back`} icon={FileText} src={group.idBack} onOpen={setViewerSrc} />
+                      <CaptureTile label="Signature" icon={Pen} src={group.signature} onOpen={setViewerSrc} whiteBg />
+                    </div>
+                  </>
+                )}
+              </Card>
+            );
+          })()}
         </div>
       )}
 
@@ -1056,7 +1097,12 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
         </Card>
       )}
 
-      {addGuestOpen && <AddGuestModal onClose={() => setAddGuestOpen(false)} onSave={addGuest} />}
+      {addGuestOpen && (() => {
+        const taken = new Set(rooming.filter(r => r.roomNo).map(r => r.roomNo as string));
+        const availableRooms = freeRooms.filter(r => !taken.has(r.number)).map(r => ({ number: r.number, type: r.type ?? "" }));
+        const types = [...new Set(group.block.map(b => b.type))];
+        return <AddGuestModal onClose={() => setAddGuestOpen(false)} onSave={addGuest} availableRooms={availableRooms} types={types} />;
+      })()}
       {checkoutOpen && (
         <CheckOutGroupDialog
           group={group}
@@ -1187,9 +1233,50 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
         </>
       )}
 
+      {/* Full-size capture viewer */}
+      {viewerSrc && printMounted && createPortal(
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setViewerSrc(null)}>
+          <button type="button" onClick={() => setViewerSrc(null)} className="absolute top-4 right-4 h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white inline-flex items-center justify-center" aria-label="Close">
+            <X className="h-5 w-5" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={viewerSrc} alt="Capture" className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl bg-white" onClick={e => e.stopPropagation()} />
+        </div>,
+        document.body,
+      )}
+
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-md bg-foreground text-background px-4 py-2.5 text-sm font-medium shadow-lg">
           {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A read-only capture tile — thumbnail that opens full-size, or a "not captured"
+// placeholder. Used for the booker's photo / ID scans / signature.
+function CaptureTile({ label, icon: Icon, src, onOpen, whiteBg }: {
+  label: string;
+  icon: typeof Camera;
+  src?: string | null;
+  onOpen: (s: string) => void;
+  whiteBg?: boolean;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
+        <Icon className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">{label}</span>
+      </div>
+      {src ? (
+        <button type="button" onClick={() => onOpen(src)} title="Open full size" className="block w-full group">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={src} alt={label} className={cn("w-full aspect-[4/3] object-contain rounded-md border border-border group-hover:ring-2 group-hover:ring-brand transition", whiteBg ? "bg-white" : "bg-surface-sunken")} />
+        </button>
+      ) : (
+        <div className="w-full aspect-[4/3] rounded-md border border-dashed border-border bg-surface-sunken/40 flex items-center justify-center text-[11px] text-subtle-foreground">
+          Not captured
         </div>
       )}
     </div>
@@ -1255,12 +1342,20 @@ function CheckOutGroupDialog({ group, masterBalance, remainingGuests, roomsToRel
   );
 }
 
-function AddGuestModal({ onClose, onSave }: { onClose: () => void; onSave: (g: { lead: string; roomType: string; pax: number; phone?: string; remarks?: string }) => void }) {
+function AddGuestModal({ onClose, onSave, availableRooms, types }: { onClose: () => void; onSave: (g: { lead: string; roomType: string; pax: number; phone?: string; remarks?: string; roomNo?: string | null }) => void; availableRooms: { number: string; type: string }[]; types: string[] }) {
+  const typeList = types.length ? types : ["Deluxe", "King", "Queen", "Suite", "Family", "Executive"];
   const [lead, setLead] = React.useState("");
-  const [roomType, setRoomType] = React.useState("Deluxe");
+  const [roomType, setRoomType] = React.useState(typeList[0] ?? "Deluxe");
+  const [roomNo, setRoomNo] = React.useState("");
   const [pax, setPax] = React.useState(2);
   const [phone, setPhone] = React.useState("");
   const [remarks, setRemarks] = React.useState("");
+
+  // Rooms free for the picked type (fall back to all free rooms if none match).
+  const roomsForType = availableRooms.filter(r => r.type.toLowerCase() === roomType.toLowerCase());
+  const roomOptions = roomsForType.length ? roomsForType : availableRooms;
+  // If the chosen room no longer matches the type, clear it.
+  React.useEffect(() => { if (roomNo && !roomOptions.some(r => r.number === roomNo)) setRoomNo(""); }, [roomType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -1272,15 +1367,23 @@ function AddGuestModal({ onClose, onSave }: { onClose: () => void; onSave: (g: {
         <div className="space-y-3">
           <div className="space-y-1.5"><Label>Lead guest *</Label><Input value={lead} onChange={e => setLead(e.target.value)} placeholder="e.g. Mr. Karim Bishara" /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5"><Label>Room type</Label><Select value={roomType} onChange={e => setRoomType(e.target.value)}>{["Deluxe", "King", "Queen", "Suite", "Family", "Executive"].map(t => <option key={t}>{t}</option>)}</Select></div>
+            <div className="space-y-1.5"><Label>Room type</Label><Select value={roomType} onChange={e => setRoomType(e.target.value)}>{typeList.map(t => <option key={t}>{t}</option>)}</Select></div>
             <div className="space-y-1.5"><Label>Pax</Label><Input type="number" value={pax} onChange={e => setPax(Math.max(1, Number(e.target.value) || 1))} /></div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Room {roomOptions.length ? `(${roomOptions.length} free)` : ""}</Label>
+            <Select value={roomNo} onChange={e => setRoomNo(e.target.value)}>
+              <option value="">Assign later</option>
+              {roomOptions.map(r => <option key={r.number} value={r.number}>Room {r.number}{r.type ? ` · ${r.type}` : ""}</option>)}
+              {roomOptions.length === 0 && <option value="" disabled>No rooms free for these dates</option>}
+            </Select>
           </div>
           <div className="space-y-1.5"><Label>Phone</Label><PhoneInput value={phone} onChange={v => setPhone(v)} size="md" invalid={phone !== "" && !isValidPhone(phone)} /></div>
           <div className="space-y-1.5"><Label>Remarks</Label><Input value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="Preferences, notes…" /></div>
         </div>
         <div className="flex justify-end gap-2 pt-1">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button disabled={!lead.trim() || !(phone === "" || isValidPhone(phone))} onClick={() => onSave({ lead: lead.trim(), roomType, pax, phone: phone || undefined, remarks: remarks || undefined })}>
+          <Button disabled={!lead.trim() || !(phone === "" || isValidPhone(phone))} onClick={() => onSave({ lead: lead.trim(), roomType, pax, phone: phone || undefined, remarks: remarks || undefined, roomNo: roomNo || null })}>
             <Plus className="h-3.5 w-3.5" />Add Guest
           </Button>
         </div>
