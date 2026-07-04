@@ -109,7 +109,7 @@ export const RESERVATIONS: Reservation[] = ROOMS
       guestName: r.guestName!,
       roomNumber: r.number,
       roomType: r.type,
-      source: r.source!,
+      source: r.source as BookingSource,
       checkIn: r.checkIn!,
       checkOut: r.checkOut!,
       nights,

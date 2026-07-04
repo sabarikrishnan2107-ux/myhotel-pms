@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\ServiceItem;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Room-service catalogs for the Room Rack "Order for Room" dialog — Snacks/
@@ -49,10 +50,14 @@ class ServiceItemSeeder extends Seeder
             ['kind' => 'other', 'name' => 'Extra towels / amenities', 'price' => 0, 'hint' => 'Free'],
         ];
 
+        // Seeders run with no authenticated tenant, so BelongsToCompany can't
+        // stamp company_id — set it to the DEFAULT-HOTEL company explicitly, or
+        // the rows are NULL and invisible to any company-scoped login.
+        $companyId = DB::table('master_companies')->where('code', 'DEFAULT-HOTEL')->value('id');
         foreach ($rows as $r) {
             ServiceItem::firstOrCreate(
                 ['kind' => $r['kind'], 'name' => $r['name']],
-                $r + ['hint' => null, 'active' => true]
+                $r + ['hint' => null, 'active' => true, 'company_id' => $companyId]
             );
         }
     }

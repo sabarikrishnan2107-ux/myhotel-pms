@@ -44,7 +44,7 @@ export function PhoneInput({
   size = "md",
   onBlur,
 }: PhoneInputProps) {
-  const [country, setCountry] = React.useState<CountryCode | undefined>(undefined);
+  const [country, setCountry] = React.useState<CountryCode | undefined>("IN");
   const [national, setNational] = React.useState("");
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");

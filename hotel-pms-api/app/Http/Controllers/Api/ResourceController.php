@@ -457,7 +457,8 @@ class ResourceController extends Controller
             'billingMode' => 'string|max:20',
         ],
         'hall-bookings' => [
-            'customer' => 'string|max:255', 'phone' => 'string|max:50|nullable', 'email' => 'email|max:255|nullable', 'hall' => 'string|max:255',
+            'customer' => 'string|max:255', 'contactName' => 'string|max:255|nullable', 'bookedBy' => 'string|max:255|nullable',
+            'phone' => 'string|max:50|nullable', 'email' => 'email|max:255|nullable', 'hall' => 'string|max:255',
             'eventName' => 'string|max:255', 'date' => 'string|max:50', 'endDate' => 'string|max:50|nullable', 'start' => 'string|max:50', 'end' => 'string|max:50',
             'guests' => 'integer|min:0', 'package' => 'string|max:255|nullable', 'advance' => 'integer|min:0',
             'total' => 'integer|min:0', 'status' => 'string|max:50', 'notes' => 'string|max:2000|nullable',

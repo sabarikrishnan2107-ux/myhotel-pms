@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Building2, Calendar, Users, UtensilsCrossed, Sparkles,
   ChevronLeft, Send, Plus, Minus, CheckCircle2, User, Mail,
-  ArrowRight, AlertCircle, IdCard, Camera, Pen,
+  ArrowRight, AlertCircle, IdCard, Camera, Pen, UsersRound, Briefcase,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ const EVENT_TYPES = ["Wedding", "Engagement", "Conference", "Corporate Meeting",
 // Configuration → Food & Hall Packages (/banquet-packages, /extra-services).
 type BanquetPkg = { id: string; name: string; desc?: string; pricePerPax: number; veg: boolean };
 type ExtraService = { id: string; label: string; price: number };
+type AgentRow = { name: string; type?: string };
 
 const TIME_SLOTS = ["01:00", "02:00", "03:00", "04:00", "05:00", "06:00", "07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00"];
 
@@ -40,6 +41,15 @@ export default function NewHallBookingPage() {
   const qpDate = searchParams.get("date");
   const qpPax = Number(searchParams.get("pax"));
   const [customer, setCustomer] = React.useState(searchParams.get("customer") ?? "");
+  // "Booked by" — how the booking came in; Agent/Corporate pick a specific account.
+  const [bookedBy, setBookedBy] = React.useState<"Direct" | "Agent" | "Corporate">("Direct");
+  const [bookedByAccount, setBookedByAccount] = React.useState("");
+  const [agents, setAgents] = React.useState<AgentRow[]>([]);
+  React.useEffect(() => {
+    apiGet<AgentRow[]>("/agents").then(r => Array.isArray(r) && setAgents(r)).catch(() => {});
+  }, []);
+  // Primary contact — who we coordinate with (may differ from the customer/org name above).
+  const [contactName, setContactName] = React.useState(searchParams.get("customer") ?? "");
   const [phone, setPhone] = React.useState(searchParams.get("phone") ?? "");
   const [email, setEmail] = React.useState(searchParams.get("email") ?? "");
   const [eventType, setEventType] = React.useState("Wedding");
@@ -71,6 +81,8 @@ export default function NewHallBookingPage() {
     if (banquetPkgs.length && !banquetPkgs.some(p => p.id === packageId)) setPackageId(banquetPkgs[0].id);
   }, [banquetPkgs, packageId]);
   const [advancePct, setAdvancePct] = React.useState(30);
+  // When set (not null), the advance is a fixed money amount instead of a percentage.
+  const [customAdvance, setCustomAdvance] = React.useState<number | null>(null);
   const [notes, setNotes] = React.useState("");
 
   // Optional guest ID + captures — mirrors the check-in capture widgets, filled
@@ -104,9 +116,12 @@ export default function NewHallBookingPage() {
   const { subtotal, tax, total } = computeHallTotals({
     hallCost, setupFee, foodCost, extrasCost, extraPax, extraPaxFee: hall?.extraPaxFee ?? 0, gstPct,
   });
-  const advance = Math.round((total * advancePct) / 100);
+  const advance = customAdvance !== null
+    ? Math.min(Math.max(0, Math.round(customAdvance)), Math.round(total))
+    : Math.round((total * advancePct) / 100);
 
-  const requiredOk = !!(customer && eventName && isValidPhone(phone) && isValidEmail(email) && eventDate && startTime && endTime && pax > 0 && pkg && hall);
+  const requiredOk = !!(customer && contactName && eventName && isValidPhone(phone) && isValidEmail(email) && eventDate && startTime && endTime && pax > 0 && pkg && hall);
+  const bookedByValue = bookedBy === "Direct" ? "Direct" : (bookedByAccount ? `${bookedByAccount} (${bookedBy})` : bookedBy);
 
   const router = useRouter();
   const [saving, setSaving] = React.useState(false);
@@ -115,7 +130,7 @@ export default function NewHallBookingPage() {
     if (saving || !requiredOk) return;
     setSaving(true);
     apiPost("/hall-bookings", {
-      customer, phone, email, hall: hall?.name ?? "", eventName, date: eventDate, endDate: eventEndDate,
+      customer, contactName, bookedBy: bookedByValue, phone, email, hall: hall?.name ?? "", eventName, date: eventDate, endDate: eventEndDate,
       start: startTime, end: endTime, guests: pax,
       package: pkg?.name ?? eventType,
       advance: Math.round(advance), total: Math.round(total),
@@ -153,6 +168,51 @@ export default function NewHallBookingPage() {
             <SectionHead icon={User} title="Customer Details" required />
             <Field label="Customer / Organisation name *">
               <Input value={customer} onChange={e => setCustomer(e.target.value)} placeholder="e.g. Al-Mansoori Wedding" autoFocus />
+            </Field>
+
+            <Field label="Booked by">
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    { v: "Direct" as const, icon: UsersRound, label: "Direct guest" },
+                    { v: "Agent" as const, icon: Briefcase, label: "Travel Agent" },
+                    { v: "Corporate" as const, icon: Building2, label: "Corporate" },
+                  ]
+                ).map(o => {
+                  const Icon = o.icon;
+                  return (
+                    <button
+                      key={o.v}
+                      type="button"
+                      onClick={() => { setBookedBy(o.v); setBookedByAccount(""); }}
+                      className={cn(
+                        "p-3 rounded-md border text-sm transition-colors flex items-center gap-2",
+                        bookedBy === o.v ? "border-brand bg-brand-soft text-brand-soft-foreground" : "border-border hover:bg-surface-sunken"
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+
+            {bookedBy !== "Direct" && (
+              <Field label={bookedBy === "Agent" ? "Choose travel agent" : "Choose corporate account"}>
+                <Select value={bookedByAccount} onChange={e => setBookedByAccount(e.target.value)}>
+                  <option value="">Select…</option>
+                  {agents.filter(a => (a.type ?? "Agent") === bookedBy).map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
+                </Select>
+              </Field>
+            )}
+          </Card>
+
+          {/* Primary contact */}
+          <Card className="p-6 space-y-4">
+            <SectionHead icon={UsersRound} title="Primary Contact" hint="Who do we coordinate with for this event?" required />
+            <Field label="Contact name *">
+              <Input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Mr. John Doe" />
             </Field>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Field label="Phone *">
@@ -383,6 +443,8 @@ export default function NewHallBookingPage() {
           </div>
 
           <dl className="space-y-2 text-sm border-t border-border pt-3">
+            <Row k="Booked by" v={bookedByValue} />
+            <Row k="Contact" v={contactName || "—"} />
             <Row k="Date" v={eventEndDate !== eventDate ? `${eventDate} → ${eventEndDate}` : eventDate} />
             <Row k="Time" v={`${startTime} → ${endTime}${eventCrossesMidnight ? " (+1 day)" : ""}`} />
             <Row k="Duration" v={`${hours} hours`} />
@@ -405,23 +467,52 @@ export default function NewHallBookingPage() {
 
           <div className="border-t border-border pt-3">
             <Label>Advance payment</Label>
-            <div className="flex gap-1.5 mt-1.5">
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
               {[30, 50, 100].map(p => (
                 <button
                   key={p}
                   type="button"
-                  onClick={() => setAdvancePct(p)}
+                  onClick={() => { setAdvancePct(p); setCustomAdvance(null); }}
                   className={cn(
                     "flex-1 h-9 rounded-md border text-xs font-medium transition-colors",
-                    advancePct === p ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
+                    customAdvance === null && advancePct === p ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
                   )}
                 >
                   {p === 100 ? "Full" : `${p}%`}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => setCustomAdvance(c => (c === null ? 0 : c))}
+                className={cn(
+                  "flex-1 h-9 rounded-md border text-xs font-medium transition-colors",
+                  customAdvance !== null ? "bg-brand text-brand-foreground border-brand" : "border-border hover:bg-surface-sunken"
+                )}
+              >
+                Custom
+              </button>
             </div>
+            {customAdvance !== null && (
+              <div className="mt-2.5 flex items-center gap-2 animate-in">
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={Math.round(total)}
+                    value={customAdvance || ""}
+                    onChange={e => setCustomAdvance(Math.max(0, Math.min(Math.round(total), Math.round(Number(e.target.value)))))}
+                    placeholder="0"
+                    className="h-9 w-36 pl-7 tabular"
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  of {money(total)} · {total > 0 ? Math.round((advance / total) * 100) : 0}%
+                </span>
+              </div>
+            )}
             <div className="mt-3 space-y-1.5 text-sm">
-              <Row k={`Advance (${advancePct}%)`} v={<span className="text-brand font-semibold">{money(advance)}</span>} />
+              <Row k={`Advance (${customAdvance !== null ? "custom" : `${advancePct}%`})`} v={<span className="text-brand font-semibold">{money(advance)}</span>} />
               <Row k="Balance on event day" v={money(total - advance)} muted />
             </div>
           </div>
@@ -434,7 +525,7 @@ export default function NewHallBookingPage() {
               Save as Tentative<ArrowRight className="h-4 w-4" />
             </Button>
             {!requiredOk && (
-              <p className="text-[11px] text-muted-foreground text-center mt-2">Fill customer name, phone, dates, hall and package to enable.</p>
+              <p className="text-[11px] text-muted-foreground text-center mt-2">Fill customer name, contact name, phone, dates, hall and package to enable.</p>
             )}
           </div>
         </Card>
@@ -443,15 +534,18 @@ export default function NewHallBookingPage() {
   );
 }
 
-function SectionHead({ icon: Icon, title, required, optional }: { icon: typeof Building2; title: string; required?: boolean; optional?: boolean }) {
+function SectionHead({ icon: Icon, title, hint, required, optional }: { icon: typeof Building2; title: string; hint?: string; required?: boolean; optional?: boolean }) {
   return (
     <div className="flex items-center gap-2.5 pb-2 border-b border-border">
-      <span className="h-7 w-7 rounded-md bg-brand-soft text-brand-soft-foreground flex items-center justify-center">
+      <span className="h-7 w-7 rounded-md bg-brand-soft text-brand-soft-foreground flex items-center justify-center shrink-0">
         <Icon className="h-3.5 w-3.5" />
       </span>
-      <h3 className="text-sm font-semibold">{title}</h3>
-      {required && <span className="text-[10px] uppercase tracking-wider font-semibold text-danger">Required</span>}
-      {optional && <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Optional</span>}
+      <div className="flex-1 min-w-0">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      </div>
+      {required && <span className="text-[10px] uppercase tracking-wider font-semibold text-danger shrink-0">Required</span>}
+      {optional && <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground shrink-0">Optional</span>}
     </div>
   );
 }

@@ -12,6 +12,10 @@ class GroupServiceSeeder extends Seeder
         if (DB::table('group_services')->count() > 0) {
             return;
         }
+        // Seeders run with no authenticated tenant, so BelongsToCompany can't
+        // stamp company_id — set it to the DEFAULT-HOTEL company explicitly, or
+        // the rows are NULL and invisible to any company-scoped login.
+        $companyId = DB::table('master_companies')->where('code', 'DEFAULT-HOTEL')->value('id');
         $now = now();
         $rows = [
             ['Grand Ballroom (banquet)', 'Hall', 10000, false],
@@ -25,7 +29,8 @@ class GroupServiceSeeder extends Seeder
         ];
         DB::table('group_services')->insert(array_map(fn ($r) => [
             'name' => $r[0], 'category' => $r[1], 'price' => $r[2], 'perPax' => $r[3],
-            'gst' => 18, 'active' => true, 'created_at' => $now, 'updated_at' => $now,
+            'gst' => 18, 'active' => true, 'company_id' => $companyId,
+            'created_at' => $now, 'updated_at' => $now,
         ], $rows));
     }
 }

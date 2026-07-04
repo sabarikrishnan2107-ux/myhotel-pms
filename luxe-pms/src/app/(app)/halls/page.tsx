@@ -505,38 +505,108 @@ export default function HallsPage() {
           right: Math.max(8, window.innerWidth - menuRect.right),
           ...(dropUp ? { bottom: window.innerHeight - menuRect.top + 4 } : { top: menuRect.bottom + 4 }),
         };
+        const isPending = b.status === "pending";
+        const isConfirmed = b.status === "confirmed";
+        const isInProgress = b.status === "in-progress";
+        const isCompleted = b.status === "completed";
+        const balance = b.total - b.advance;
+        const canModify = !isCancelled && !isCompleted;
+        const canCancel = !isCancelled && !isCompleted;
+        const canReceivePayment = !isCancelled && !isCompleted && balance > 0;
+        const canMarkComplete = (isConfirmed || isInProgress) && balance <= 0;
+
         return createPortal(
           <div data-action-menu style={style} className="z-50 w-56 rounded-md border border-border bg-surface shadow-lg py-1 animate-in slide-in-from-top-1">
+            {/* Always available */}
             <button type="button" onClick={() => { setSelected(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
               <Eye className="h-3.5 w-3.5 text-muted-foreground" />View detail
             </button>
             <button type="button" onClick={() => { showToast(`Itinerary printed for ${b.customer}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
               <Printer className="h-3.5 w-3.5 text-muted-foreground" />Print BEO sheet
             </button>
-            <button type="button" onClick={() => handleEmail(b)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
-              <Mail className="h-3.5 w-3.5 text-brand" />Email customer
-            </button>
-            <button type="button" onClick={() => { showToast(`WhatsApp sent to ${b.customer}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
-              <MessageCircle className="h-3.5 w-3.5 text-success" />WhatsApp customer
-            </button>
+
             <div className="my-1 h-px bg-border" />
-            {b.status !== "cancelled" && b.status !== "completed" && (b.total - b.advance) > 0 && (
-              <button type="button" onClick={() => { setPayTarget(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
-                <Wallet className="h-3.5 w-3.5 text-success" />Receive payment
-              </button>
+
+            {/* Pending: Send confirmations & modify */}
+            {isPending && (
+              <>
+                <button type="button" onClick={() => handleEmail(b)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                  <Mail className="h-3.5 w-3.5 text-brand" />Email quote
+                </button>
+                <button type="button" onClick={() => { showToast(`WhatsApp sent to ${b.customer}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                  <MessageCircle className="h-3.5 w-3.5 text-success" />Send via WhatsApp
+                </button>
+                <div className="my-1 h-px bg-border" />
+                <button type="button" onClick={() => { setModifyTarget(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                  <Edit className="h-3.5 w-3.5 text-muted-foreground" />Modify booking
+                </button>
+                <button type="button" onClick={() => { setCancelTarget(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-danger-soft text-danger inline-flex items-center gap-2.5 text-left">
+                  <Ban className="h-3.5 w-3.5" />Cancel booking
+                </button>
+              </>
             )}
-            {(b.status === "confirmed" || b.status === "in-progress") && (
-              <button type="button" onClick={() => handleComplete(b)} disabled={b.total - b.advance > 0} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left disabled:opacity-40 disabled:cursor-not-allowed">
-                <CheckCircle2 className="h-3.5 w-3.5 text-success" />Mark completed
-                {b.total - b.advance > 0 && <span className="ml-auto text-[10px] text-danger">balance due</span>}
-              </button>
+
+            {/* Confirmed: Payment & modifications */}
+            {isConfirmed && (
+              <>
+                <button type="button" onClick={() => handleEmail(b)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                  <Mail className="h-3.5 w-3.5 text-brand" />Email customer
+                </button>
+                <button type="button" onClick={() => { showToast(`WhatsApp sent to ${b.customer}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                  <MessageCircle className="h-3.5 w-3.5 text-success" />WhatsApp customer
+                </button>
+                {canReceivePayment && (
+                  <>
+                    <div className="my-1 h-px bg-border" />
+                    <button type="button" onClick={() => { setPayTarget(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                      <Wallet className="h-3.5 w-3.5 text-success" />Receive payment
+                    </button>
+                  </>
+                )}
+                <div className="my-1 h-px bg-border" />
+                <button type="button" onClick={() => { setModifyTarget(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                  <Edit className="h-3.5 w-3.5 text-muted-foreground" />Modify booking
+                </button>
+                <button type="button" onClick={() => { setCancelTarget(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-danger-soft text-danger inline-flex items-center gap-2.5 text-left">
+                  <Ban className="h-3.5 w-3.5" />Cancel booking
+                </button>
+              </>
             )}
-            <button type="button" disabled={isCancelled} onClick={() => { setModifyTarget(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left disabled:opacity-40 disabled:cursor-not-allowed">
-              <Edit className="h-3.5 w-3.5 text-muted-foreground" />Modify booking
-            </button>
-            <button type="button" disabled={isCancelled} onClick={() => { setCancelTarget(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-danger-soft text-danger inline-flex items-center gap-2.5 text-left disabled:opacity-40 disabled:cursor-not-allowed">
-              <Ban className="h-3.5 w-3.5" />Cancel booking
-            </button>
+
+            {/* In progress: Payment & completion */}
+            {isInProgress && (
+              <>
+                <button type="button" onClick={() => handleEmail(b)} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                  <Mail className="h-3.5 w-3.5 text-brand" />Email customer
+                </button>
+                <button type="button" onClick={() => { showToast(`WhatsApp sent to ${b.customer}`); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                  <MessageCircle className="h-3.5 w-3.5 text-success" />WhatsApp customer
+                </button>
+                {canReceivePayment && (
+                  <>
+                    <div className="my-1 h-px bg-border" />
+                    <button type="button" onClick={() => { setPayTarget(b); setActionMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+                      <Wallet className="h-3.5 w-3.5 text-success" />Receive payment
+                    </button>
+                  </>
+                )}
+                <div className="my-1 h-px bg-border" />
+                <button type="button" onClick={() => handleComplete(b)} disabled={!canMarkComplete} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left disabled:opacity-40 disabled:cursor-not-allowed">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-success" />Mark completed
+                  {balance > 0 && <span className="ml-auto text-[10px] text-danger">balance due</span>}
+                </button>
+              </>
+            )}
+
+            {/* Completed: View only */}
+            {isCompleted && (
+              <p className="px-3 py-2 text-xs text-muted-foreground italic">Event completed · no further actions</p>
+            )}
+
+            {/* Cancelled: View only */}
+            {isCancelled && (
+              <p className="px-3 py-2 text-xs text-danger italic">Booking cancelled</p>
+            )}
           </div>,
           document.body,
         );

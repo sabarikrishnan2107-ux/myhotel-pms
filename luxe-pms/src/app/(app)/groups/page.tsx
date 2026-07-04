@@ -60,9 +60,19 @@ export default function GroupsPage() {
   // Groups load from the database; cancel/modify layer over them and persist.
   const [groups, setGroups] = React.useState<GroupBooking[]>([]);
   const [policies, setPolicies] = React.useState<GroupPolicies>(DEFAULT_POLICIES);
+  // Actual room assignments (across all groups) — used to compute live allocation
+  // % per group instead of the stale block.assigned snapshot from creation time.
+  const [allocatedByGroup, setAllocatedByGroup] = React.useState<Record<string, number>>({});
   React.useEffect(() => {
     apiGet<GroupBooking[]>("/group-bookings")
       .then(rows => setGroups(rows.map(g => ({ ...g, id: String(g.id), block: g.block ?? [], services: g.services ?? [] }))))
+      .catch(() => {});
+    apiGet<{ groupCode?: string; roomNo?: string | null }[]>("/group-rooming")
+      .then(rows => {
+        const counts: Record<string, number> = {};
+        rows.forEach(r => { if (r.groupCode && r.roomNo) counts[r.groupCode] = (counts[r.groupCode] ?? 0) + 1; });
+        setAllocatedByGroup(counts);
+      })
       .catch(() => {});
     apiGet<Partial<GroupPolicies>>("/settings/group_policies")
       .then(d => {
@@ -280,7 +290,7 @@ export default function GroupsPage() {
                 const isCancelled = g.status === "cancelled";
                 const isOpen = actionMenuFor === g.id;
                 const isModified = !!overrides[g.id];
-                const allocPct = Math.round((g.block.reduce((s, b) => s + b.assigned, 0) / Math.max(1, g.totalRooms)) * 100);
+                const allocPct = Math.round(((allocatedByGroup[g.code] ?? 0) / Math.max(1, g.totalRooms)) * 100);
                 return (
                   <tr
                     key={g.id}

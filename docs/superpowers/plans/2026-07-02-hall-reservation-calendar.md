@@ -275,7 +275,10 @@ type VenueRates = { name: string; capacity: number; hourly: number; halfDay: num
 
 export type Hall = typeof HALLS[number];
 export type HallStatus = "confirmed" | "pending" | "in-progress" | "completed" | "cancelled";
-export type HallBooking = Omit<typeof HALL_BOOKINGS[number], "status"> & { status: HallStatus; notes?: string; email?: string; endDate?: string; eventName?: string };
+export type HallBooking = Omit<typeof HALL_BOOKINGS[number], "status"> & {
+  status: HallStatus; notes?: string; email?: string; endDate?: string; eventName?: string;
+  idType?: string; idNumber?: string; guestPhoto?: string | null; idFront?: string | null; idBack?: string | null; signature?: string | null;
+};
 
 export const STATUS_TONE: Record<HallBooking["status"] | "cancelled" | "completed", "success" | "warning" | "info" | "danger" | "neutral"> = {
   confirmed: "success",
@@ -361,6 +364,23 @@ export function HallDetailDrawer({ booking, notes, onClose, onModify, onCancel, 
                 </span>
               </div>
             </div>
+          </Section>
+
+          {/* Identification & captures */}
+          <Section title="Identification & captures">
+            {booking.idNumber || booking.guestPhoto || booking.idFront || booking.idBack || booking.signature ? (
+              <div className="rounded-md border border-border p-3 space-y-2 text-sm">
+                {booking.idNumber && <Row label={booking.idType || "ID"} value={booking.idNumber} />}
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {booking.guestPhoto && <Badge tone="success">Photo ✓</Badge>}
+                  {booking.idFront && <Badge tone="success">ID Front ✓</Badge>}
+                  {booking.idBack && <Badge tone="success">ID Back ✓</Badge>}
+                  {booking.signature && <Badge tone="success">Signed ✓</Badge>}
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">No ID or captures on file. Click <span className="text-foreground font-medium">Modify</span> to add.</p>
+            )}
           </Section>
 
           {/* Special notes */}

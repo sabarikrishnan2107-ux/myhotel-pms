@@ -166,6 +166,13 @@ const CATEGORY_ICON: Record<Category, React.ComponentType<{ className?: string }
   Miscellaneous: Box,
 };
 
+// Resolve a category to its icon, falling back to a generic box for any
+// category the backend sends that isn't in the map above (otherwise a bare
+// lookup returns undefined and React throws "Element type is invalid").
+function iconFor(category: string): React.ComponentType<{ className?: string }> {
+  return CATEGORY_ICON[category as Category] ?? Box;
+}
+
 const STATUS_TONE: Record<Status, "neutral" | "brand" | "success" | "warning" | "danger" | "info" | "accent"> = {
   Waiting: "warning",
   Notified: "info",
@@ -379,7 +386,7 @@ export default function FoundItemsTab({ onToast }: { onToast: (m: string) => voi
       ) : view === "grid" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {filtered.map((it) => {
-            const Icon = CATEGORY_ICON[it.category];
+            const Icon = iconFor(it.category);
             return (
               <Card
                 key={it.id}
@@ -461,7 +468,7 @@ export default function FoundItemsTab({ onToast }: { onToast: (m: string) => voi
               </thead>
               <tbody>
                 {filtered.map((it) => {
-                  const Icon = CATEGORY_ICON[it.category];
+                  const Icon = iconFor(it.category);
                   return (
                     <tr
                       key={it.id}
@@ -581,7 +588,7 @@ function DetailDrawer({
   onClose: () => void;
   onAction: (label: string) => void;
 }) {
-  const Icon = CATEGORY_ICON[item.category];
+  const Icon = iconFor(item.category);
   return (
     <div
       className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-stretch justify-end"
