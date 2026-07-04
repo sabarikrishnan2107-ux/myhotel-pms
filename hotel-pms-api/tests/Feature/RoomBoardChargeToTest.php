@@ -59,6 +59,22 @@ class RoomBoardChargeToTest extends TestCase
         $this->assertSame("GRPG-{$r->id}", $this->board('303')['chargeTo']);
     }
 
+    public function test_split_and_per_room_guests_charge_to_own_folio(): void
+    {
+        $this->auth();
+        GroupBooking::create(['code' => 'GRPC', 'name' => 'G', 'arrival' => '2026-07-10', 'departure' => '2026-07-12', 'status' => 'in-house']);
+        foreach ([['306', 'split'], ['307', 'room']] as [$no, $mode]) {
+            Room::create(['number' => $no, 'floor' => 3, 'category' => 'Deluxe', 'baseTariff' => 6500]);
+            $r = GroupRooming::create([
+                'groupCode' => 'GRPC', 'roomNo' => $no, 'roomType' => 'Deluxe', 'lead' => 'X', 'pax' => 1,
+                'checkedIn' => true, 'checkedOut' => false, 'billTo' => $mode,
+            ]);
+            // split (extras) and per-room (room + extras) both route the guest's
+            // own charges to their personal folio, not the group master.
+            $this->assertSame("GRPG-{$r->id}", $this->board($no)['chargeTo'], "billTo=$mode should route to GRPG");
+        }
+    }
+
     public function test_vacant_room_charge_to_is_null(): void
     {
         $this->auth();

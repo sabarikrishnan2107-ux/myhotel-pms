@@ -266,7 +266,9 @@ class StatsController extends Controller
             if ($bk) {
                 $chargeTo = $bk->bookingNo;
             } elseif ($grp) {
-                $chargeTo = $grp->billTo === 'self' ? "GRPG-{$grp->id}" : $grp->groupCode;
+                // Any non-"group" mode (split / per-room / legacy "self") routes the
+                // guest's own charges to their personal folio; "group"/blank → master.
+                $chargeTo = ($grp->billTo && $grp->billTo !== 'group') ? "GRPG-{$grp->id}" : $grp->groupCode;
             }
             $hk = $r->hkStatus ?: 'clean';
             // Vacant rooms can be explicitly blocked or out-of-order; otherwise
