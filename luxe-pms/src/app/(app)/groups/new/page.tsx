@@ -329,7 +329,7 @@ export default function NewGroupPage() {
     // Whatever billing mode is chosen here decides who each rooming guest pays:
     // Master folio → group pays; Per-room / Split (extras → guest) → self-pay.
     // Mirrors the same mapping used when adding a guest on the group detail page.
-    const billTo: "group" | "self" = billingMode === "master" ? "group" : "self";
+    const billTo: "group" | "split" | "room" = billingMode === "per-room" ? "room" : billingMode === "split" ? "split" : "group";
     apiPost("/group-bookings", {
       code, name, type, contactName, contactPhone, contactEmail,
       idType, idNumber, guestPhoto, idFront, idBack, signature,

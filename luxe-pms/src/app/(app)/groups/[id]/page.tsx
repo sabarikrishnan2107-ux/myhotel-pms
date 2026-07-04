@@ -20,7 +20,16 @@ import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { computeGroupTotals, type GstSlab } from "@/lib/group-pricing";
 import { mealPerNightPerGuest } from "@/lib/booking-pricing";
 
-type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string; checkedIn?: boolean; checkedInAt?: string | null; checkedOut?: boolean; checkedOutAt?: string | null; billTo?: "group" | "self" };
+// Per-guest billing: "group" = room+extras on master; "split" = room on master,
+// extras on the guest; "room" (per-room) = room+extras on the guest. Legacy rows
+// may carry "self" — treat it as "split" (see billMode()).
+type BillMode = "group" | "split" | "room";
+// Normalize a guest's billing mode (legacy "self" is the old name for "split").
+const billMode = (e: { billTo?: BillMode | "self" }): BillMode => e.billTo === "self" ? "split" : (e.billTo ?? "group");
+// The three modes in cycle order, for the click-to-change control.
+const BILL_CYCLE: BillMode[] = ["group", "split", "room"];
+const BILL_LABEL: Record<BillMode, string> = { group: "Group pays", split: "Split", room: "Per-room" };
+type RoomingEntry = { id: string; groupCode?: string; roomNo?: string | null; roomType: string; lead: string; pax: number; phone?: string; remarks?: string; checkedIn?: boolean; checkedInAt?: string | null; checkedOut?: boolean; checkedOutAt?: string | null; billTo?: BillMode | "self" };
 type AuditRow = { id: string; action: string; entity: string; module: string; user: string; date: string; time: string };
 type RoomBoardRow = { id?: string | number; number: string; status: string; type?: string; floor?: number };
 import { cn, money, formatDate, formatTime } from "@/lib/utils";
@@ -101,7 +110,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
 
   // Load self-pay guest folio lines whenever rooming list changes
   React.useEffect(() => {
-    const selfGuests = rooming.filter(r => (r.billTo ?? "group") === "self");
+    const selfGuests = rooming.filter(r => billMode(r) !== "group");
     if (!selfGuests.length) { setSelfFoliosLoaded(true); return; }
     setSelfFoliosLoaded(false);
     const jobs = selfGuests.flatMap(r => {
@@ -178,7 +187,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     return ofType.length ? ofType : freeRooms.filter(r => !taken.has(r.number));
   }, [freeRooms, rooming]);
   const addGuest = (g: { lead: string; roomType: string; pax: number; phone?: string; remarks?: string }) => {
-    const billTo: "group" | "self" = (group?.billingMode ?? "master") === "master" ? "group" : "self";
+    const billTo: BillMode = group?.billingMode === "per-room" ? "room" : group?.billingMode === "split" ? "split" : "group";
     apiPost<RoomingEntry>("/group-rooming", { ...g, groupCode: id, roomNo: null, billTo })
       .then(row => setRooming(prev => [...prev, { ...row, id: String(row.id) }]))
       .catch(() => flash("⚠ Save failed — backend offline"));
@@ -206,14 +215,16 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   // onto the master. Only room-tagged charges can be moved (older untagged ones
   // stay put — they predate room tagging).
   type ChargeRow = { id: string | number; description: string; amount: number; date: string; room?: string | null };
-  const setBillTo = async (entry: RoomingEntry, billTo: "group" | "self") => {
+  const setBillTo = async (entry: RoomingEntry, billTo: BillMode) => {
     setRowMenuFor(null);
     setRooming(prev => prev.map(r => r.id === entry.id ? { ...r, billTo } : r));
     apiPut(`/group-rooming/${entry.id}`, { billTo }).catch(() => flash("⚠ Save failed — backend offline"));
     const grpKey = `GRPG-${entry.id}`;
     const groupKey = group?.code ?? id;
     try {
-      if (billTo === "self") {
+      // Extras follow the payer: any non-group mode → guest's folio; group → master.
+      // (Room rent for per-room is computed, not a posted charge, so nothing to move.)
+      if (billTo !== "group") {
         const rows = await apiGet<ChargeRow[]>(`/folio-charges?bookingNo=${encodeURIComponent(groupKey)}`);
         const mine = rows.filter(c => String(c.room ?? "") === String(entry.roomNo ?? "") && entry.roomNo);
         await Promise.all(mine.map(c => apiPut(`/folio-charges/${c.id}`, { bookingNo: grpKey, paidBy: "Guest" })));
@@ -345,15 +356,15 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
 
   // ONE-BY-ONE check-out: mark this guest departed + release their room. Persists.
   const checkOutGuest = (entry: RoomingEntry) => {
-    // Don't act on a stale (still-loading) self-pay balance — it would read 0.
-    if ((entry.billTo ?? "group") === "self" && !selfFoliosLoaded) {
-      flash("Loading extras balance — try again in a moment");
+    // Don't act on a stale (still-loading) balance — it would read 0.
+    if (billMode(entry) !== "group" && !selfFoliosLoaded) {
+      flash("Loading balance — try again in a moment");
       setRowMenuFor(null);
       return;
     }
-    if ((entry.billTo ?? "group") === "self" && selfPayBalance(entry) > 0) {
-      setFolioFor(entry); setCollectAmt(selfPayBalance(entry));
-      flash(`Clear ${money(selfPayBalance(entry))} in extras before checking out ${entry.lead}`);
+    if (billMode(entry) !== "group" && selfPayBalance(entry) > 0) {
+      openFolio(entry);
+      flash(`Clear ${money(selfPayBalance(entry))} on ${entry.lead}'s folio before checking out`);
       setRowMenuFor(null);
       return;
     }
@@ -384,8 +395,8 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     if (!group) return;
     // Guard against acting on still-loading self-pay balances (would read 0 and
     // wrongly check out an owing guest).
-    if (rooming.some(r => (r.billTo ?? "group") === "self" && !r.checkedOut) && !selfFoliosLoaded) {
-      flash("Loading guests' extras balances — try again in a moment");
+    if (rooming.some(r => billMode(r) !== "group" && !r.checkedOut) && !selfFoliosLoaded) {
+      flash("Loading guests' balances — try again in a moment");
       return;
     }
     setCheckoutOpen(false);
@@ -398,7 +409,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     }
     const at = new Date().toISOString();
     const remaining = rooming.filter(r => !r.checkedOut);
-    const owing = remaining.filter(r => (r.billTo ?? "group") === "self" && selfPayBalance(r) > 0);
+    const owing = remaining.filter(r => billMode(r) !== "group" && selfPayBalance(r) > 0);
     const toCheckOut = remaining.filter(r => !owing.some(o => o.id === r.id));
     toCheckOut.forEach(r => {
       apiPut(`/group-rooming/${r.id}`, { checkedOut: true, checkedOutAt: at }).catch(() => {});
@@ -427,10 +438,19 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   }
 
   // Compute the balance due for a self-pay guest
+  // A per-room guest's own room rent = their room type's nightly rate × nights.
+  const guestRoomRent = (e: RoomingEntry): number => {
+    const b = group.block.find(bl => bl.type.toLowerCase() === e.roomType.toLowerCase());
+    return b ? Math.round(b.rate * group.nights) : 0;
+  };
+  // What a guest owes on their OWN folio: their extras always; PLUS their room
+  // rent when they're per-room. (Split guests owe extras only; group guests owe
+  // nothing personally.) Room rent is computed, not a posted charge.
   const selfPayBalance = (entry: RoomingEntry): number => {
+    const room = billMode(entry) === "room" ? guestRoomRent(entry) : 0;
     const charges = (selfCharges[entry.id] ?? []).reduce((s, c) => s + (c.amount || 0), 0);
     const paid = (selfPayments[entry.id] ?? []).reduce((s, p) => s + (p.amount || 0), 0);
-    return Math.max(0, charges - paid);
+    return Math.max(0, room + charges - paid);
   };
 
   // Open a guest's mini-folio AND refetch it live — the drawer must show charges
@@ -460,8 +480,14 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   // Prefer the extra-bed rate frozen onto the block at creation (like room rate);
   // fall back to live Setup for legacy groups saved before it was persisted.
   const extraBedRateOf = (b: { type: string; extraBedRate?: number }) => b.extraBedRate ?? extraBedRateFor(b.type);
+  // Per-room guests carry their own room rent on their personal folio, so the
+  // MASTER folio must not also bill those rooms — reduce each block type's qty by
+  // the number of per-room guests in it. (Meals stay on the master for now.)
+  const perRoomByType: Record<string, number> = {};
+  rooming.forEach(r => { if (billMode(r) === "room") perRoomByType[r.roomType.toLowerCase()] = (perRoomByType[r.roomType.toLowerCase()] ?? 0) + 1; });
+  const masterBlock = group.block.map(b => ({ ...b, qty: Math.max(0, b.qty - (perRoomByType[b.type.toLowerCase()] ?? 0)) }));
   const folio = computeGroupTotals(
-    group.block.map(b => ({ rate: b.rate, qty: b.qty, extraBeds: b.extraBeds ?? 0, extraBedRate: extraBedRateOf(b) })),
+    masterBlock.map(b => ({ rate: b.rate, qty: b.qty, extraBeds: b.extraBeds ?? 0, extraBedRate: extraBedRateOf(b) })),
     group.nights, [], group.totalPax || 0, gstSlabs, planMeals,
   );
 
@@ -787,12 +813,12 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                     <Badge tone="neutral">{g.roomType}</Badge>
                     <button
                       type="button"
-                      onClick={() => setBillTo(g, (g.billTo ?? "group") === "group" ? "self" : "group")}
-                      title="Click to change who pays this guest's extras (future charges only)"
+                      onClick={() => setBillTo(g, BILL_CYCLE[(BILL_CYCLE.indexOf(billMode(g)) + 1) % BILL_CYCLE.length])}
+                      title="Click to change billing: Group pays → Split (extras to guest) → Per-room (room + extras to guest)"
                       className="ml-2 align-middle"
                     >
-                      <Badge tone={(g.billTo ?? "group") === "self" ? "accent" : "neutral"}>
-                        {(g.billTo ?? "group") === "self" ? "Self-pay" : "Group pays"}
+                      <Badge tone={billMode(g) === "group" ? "neutral" : billMode(g) === "split" ? "accent" : "info"}>
+                        {BILL_LABEL[billMode(g)]}
                       </Badge>
                     </button>
                   </td>
@@ -805,18 +831,21 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                     ) : g.roomNo ? (
                       <Badge tone="neutral" className="ml-2">Arriving</Badge>
                     ) : null}
-                    {(g.billTo ?? "group") === "self" && (
+                    {billMode(g) !== "group" && (() => {
+                      const hasDues = billMode(g) === "room" || (selfCharges[g.id] ?? []).length > 0;
+                      return (
                       <button
                         type="button"
                         onClick={() => openFolio(g)}
                         className="ml-2 align-middle"
-                        title="View this guest's extras folio"
+                        title="View this guest's folio"
                       >
-                        <Badge tone={selfPayBalance(g) > 0 ? "warning" : (selfCharges[g.id] ?? []).length ? "success" : "neutral"}>
-                          {selfPayBalance(g) > 0 ? `${money(selfPayBalance(g))} due` : (selfCharges[g.id] ?? []).length ? "Settled" : "No extras"}
+                        <Badge tone={selfPayBalance(g) > 0 ? "warning" : hasDues ? "success" : "neutral"}>
+                          {selfPayBalance(g) > 0 ? `${money(selfPayBalance(g))} due` : hasDues ? "Settled" : "No dues"}
                         </Badge>
                       </button>
-                    )}
+                      );
+                    })()}
                   </td>
                   <td className="px-5 py-3 text-right tabular">{g.pax}</td>
                   <td className="px-5 py-3 text-xs text-muted-foreground tabular">{g.phone ?? "—"}</td>
@@ -906,7 +935,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {group.block.map((b, i) => (
+                {masterBlock.filter(b => b.qty > 0).map((b, i) => (
                   <tr key={i}>
                     <td className="px-5 py-3">{b.type} room · {group.nights} nights</td>
                     <td className="px-5 py-3 text-right tabular">{b.qty}</td>
@@ -1059,13 +1088,13 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                 <X className="h-3.5 w-3.5 text-muted-foreground" />Clear room
               </button>
             )}
-            <button type="button" onClick={() => setBillTo(entry, (entry.billTo ?? "group") === "group" ? "self" : "group")} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
-              <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />Bill extras to {(entry.billTo ?? "group") === "group" ? "guest" : "group"}
+            <button type="button" onClick={() => setBillTo(entry, BILL_CYCLE[(BILL_CYCLE.indexOf(billMode(entry)) + 1) % BILL_CYCLE.length])} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
+              <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />Billing: {BILL_LABEL[billMode(entry)]} <span className="ml-auto text-[10px] text-muted-foreground">tap to change</span>
             </button>
-            {(entry.billTo ?? "group") === "self" && (
+            {billMode(entry) !== "group" && (
               <button type="button" onClick={() => { openFolio(entry); setRowMenuFor(null); }} className="w-full px-3 py-2 text-sm hover:bg-surface-sunken inline-flex items-center gap-2.5 text-left">
                 <Receipt className="h-3.5 w-3.5 text-success" />
-                {selfPayBalance(entry) > 0 ? `Collect payment · ${money(selfPayBalance(entry))}` : "View extras folio"}
+                {selfPayBalance(entry) > 0 ? `Collect payment · ${money(selfPayBalance(entry))}` : "View folio"}
               </button>
             )}
             {entry.roomNo && !entry.checkedIn && (
@@ -1102,10 +1131,14 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
               <div>
                 <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-semibold mb-2">Charges</p>
-                {(selfCharges[folioFor.id] ?? []).length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic">No extras charged yet.</p>
-                ) : (
+                {billMode(folioFor) === "room" || (selfCharges[folioFor.id] ?? []).length ? (
                   <ul className="space-y-1.5 text-sm">
+                    {billMode(folioFor) === "room" && guestRoomRent(folioFor) > 0 && (
+                      <li className="flex items-center justify-between gap-3">
+                        <span className="text-muted-foreground truncate">{folioFor.roomType} room · {group.nights} night{group.nights === 1 ? "" : "s"} (per-room)</span>
+                        <span className="tabular font-medium shrink-0">{money(guestRoomRent(folioFor))}</span>
+                      </li>
+                    )}
                     {(selfCharges[folioFor.id] ?? []).map(c => (
                       <li key={c.id} className="flex items-center justify-between gap-3">
                         <span className="text-muted-foreground truncate">{c.description}</span>
@@ -1113,6 +1146,8 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                       </li>
                     ))}
                   </ul>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">No extras charged yet.</p>
                 )}
               </div>
               {(selfPayments[folioFor.id] ?? []).length > 0 && (
@@ -1128,14 +1163,16 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                   </ul>
                 </div>
               )}
+              {(() => { const hasDues = billMode(folioFor) === "room" || (selfCharges[folioFor.id] ?? []).length > 0; return (
               <div className="border-t border-border pt-3 flex items-center justify-between">
-                <span className={cn("font-semibold", selfPayBalance(folioFor) > 0 ? "text-warning" : (selfCharges[folioFor.id] ?? []).length ? "text-success" : "text-muted-foreground")}>
-                  {selfPayBalance(folioFor) > 0 ? "Balance due" : (selfCharges[folioFor.id] ?? []).length ? "Settled" : "Nothing to pay"}
+                <span className={cn("font-semibold", selfPayBalance(folioFor) > 0 ? "text-warning" : hasDues ? "text-success" : "text-muted-foreground")}>
+                  {selfPayBalance(folioFor) > 0 ? "Balance due" : hasDues ? "Settled" : "Nothing to pay"}
                 </span>
-                <span className={cn("text-base font-semibold tabular", selfPayBalance(folioFor) > 0 ? "text-warning" : (selfCharges[folioFor.id] ?? []).length ? "text-success" : "text-muted-foreground")}>
+                <span className={cn("text-base font-semibold tabular", selfPayBalance(folioFor) > 0 ? "text-warning" : hasDues ? "text-success" : "text-muted-foreground")}>
                   {money(selfPayBalance(folioFor))}
                 </span>
               </div>
+              ); })()}
             </div>
             <div className="border-t border-border p-3 space-y-2">
               <div className="grid grid-cols-2 gap-2">
