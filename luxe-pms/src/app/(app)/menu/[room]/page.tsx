@@ -146,6 +146,7 @@ export default function MenuRoomPage({ params }: { params: Promise<{ room: strin
         description: `F&B order (self-service) · ${cartCount} item${cartCount === 1 ? "" : "s"}`,
         type: "F&B", qty: cartCount, rate: cartTotal, tax: gst, amount: grandTotal,
         paidBy: chargeTo.startsWith("GRPG-") ? "Guest" : "Room",
+        items: cartItems.map(({ item, qty }) => ({ name: item.name, qty, price: item.price })),
       });
       const orderNo = `RSV-${Math.floor(1000 + Math.random() * 9000)}`;
       setSuccess({ orderNo, eta: Number(eta) || 30, chargeId: created.id });

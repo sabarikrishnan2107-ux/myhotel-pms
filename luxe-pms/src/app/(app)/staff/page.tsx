@@ -20,26 +20,45 @@ import { EmailInput } from "@/components/ui/email-input";
 import { isValidEmail } from "@/lib/email";
 
 type Staff = typeof STAFF[number];
+// Roster row + the housekeeping employee id (2000-series) stored on the record.
+type StaffRow = Staff & { empId?: string | null };
 
 export default function StaffPage() {
-  const [staff, setStaff] = React.useState<Staff[]>([]);
+  const [staff, setStaff] = React.useState<StaffRow[]>([]);
   const [search, setSearch] = React.useState("");
   const [deptFilter, setDeptFilter] = React.useState<"all" | string>("all");
   const [statusFilter, setStatusFilter] = React.useState<"all" | "active" | "inactive">("all");
   const [addOpen, setAddOpen] = React.useState(false);
-  const [editFor, setEditFor] = React.useState<Staff | null>(null);
-  const [detail, setDetail] = React.useState<Staff | null>(null);
+  const [editFor, setEditFor] = React.useState<StaffRow | null>(null);
+  const [detail, setDetail] = React.useState<StaffRow | null>(null);
   const [actionFor, setActionFor] = React.useState<string | null>(null);
   const [toast, setToast] = React.useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
   React.useEffect(() => {
     let cancelled = false;
-    apiGet<Staff[]>("/staff").then(r => { if (!cancelled) setStaff(r); }).catch(() => {});
+    apiGet<StaffRow[]>("/staff").then(r => { if (!cancelled) setStaff(r); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
   const depts = Array.from(new Set(staff.map(s => s.dept)));
+
+  // Suggested next housekeeping employee id (2000-series).
+  const nextHkCode = React.useMemo(() => {
+    const max = staff
+      .map(s => parseInt(String(s.empId ?? ""), 10))
+      .filter(n => Number.isFinite(n) && n >= 2000 && n < 3000)
+      .reduce((m, n) => Math.max(m, n), 2000);
+    return String(max + 1);
+  }, [staff]);
+  // Suggested next maintenance/engineering employee id (3000-series).
+  const nextMtCode = React.useMemo(() => {
+    const max = staff
+      .map(s => parseInt(String(s.empId ?? ""), 10))
+      .filter(n => Number.isFinite(n) && n >= 3000 && n < 4000)
+      .reduce((m, n) => Math.max(m, n), 3000);
+    return String(max + 1);
+  }, [staff]);
 
   const filtered = staff.filter(s => {
     if (search && !`${s.name} ${s.role} ${s.dept} ${s.email}`.toLowerCase().includes(search.toLowerCase())) return false;
@@ -162,7 +181,10 @@ export default function StaffPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2.5">
                       <Avatar name={s.name} size={36} />
-                      <p className="font-medium">{s.name}</p>
+                      <div>
+                        <p className="font-medium">{s.name}</p>
+                        {s.empId && <p className="text-[11px] font-semibold text-brand tabular">ID {s.empId}</p>}
+                      </div>
                     </div>
                   </td>
                   <td className="px-4 py-3">{s.role}</td>
@@ -202,19 +224,19 @@ export default function StaffPage() {
         )}
       </Card>
 
-      {addOpen && <AddStaffModal onClose={() => setAddOpen(false)} onSave={(s) => {
+      {addOpen && <AddStaffModal suggestedCode={nextHkCode} suggestedMtCode={nextMtCode} onClose={() => setAddOpen(false)} onSave={(s) => {
         const payload = { ...s, joined: new Date().toISOString().slice(0, 10), active: true };
         setAddOpen(false);
-        showToast(`${s.name} added to ${s.dept}`);
-        apiPost<Staff>("/staff", payload)
+        showToast(s.empId ? `${s.name} added · app login ${s.empId}` : `${s.name} added to ${s.dept}`);
+        apiPost<StaffRow>("/staff", payload)
           .then(created => setStaff(prev => [created, ...prev]))
           .catch(() => showToast("⚠ Save failed — backend offline"));
       }} departments={depts} />}
       {detail && <StaffDetailDrawer staff={detail} onClose={() => setDetail(null)} onToggleActive={() => { toggleActive(detail.id); setDetail(null); }} onToast={showToast} />}
-      {editFor && <EditStaffModal staff={editFor} departments={depts} onClose={() => setEditFor(null)} onSave={(patch) => {
+      {editFor && <EditStaffModal staff={editFor} departments={depts} suggestedHkCode={nextHkCode} suggestedMtCode={nextMtCode} onClose={() => setEditFor(null)} onSave={(patch) => {
         setEditFor(null);
         showToast(`${patch.name} updated`);
-        apiPut<Staff>(`/staff/${editFor.id}`, patch)
+        apiPut<StaffRow>(`/staff/${editFor.id}`, patch)
           .then(updated => setStaff(prev => prev.map(x => x.id === editFor.id ? updated : x)))
           .catch(() => showToast("⚠ Save failed — backend offline"));
       }} />}
@@ -231,10 +253,12 @@ export default function StaffPage() {
 // ============================================================
 // ADD STAFF MODAL
 // ============================================================
-function AddStaffModal({ onClose, onSave, departments }: {
+function AddStaffModal({ onClose, onSave, departments, suggestedCode, suggestedMtCode }: {
   onClose: () => void;
-  onSave: (s: Omit<Staff, "id" | "joined" | "active">) => void;
+  onSave: (s: Omit<StaffRow, "id" | "joined" | "active">) => void;
   departments: string[];
+  suggestedCode: string;
+  suggestedMtCode: string;
 }) {
   const [name, setName] = React.useState("");
   const [role, setRole] = React.useState("Reception");
@@ -242,6 +266,15 @@ function AddStaffModal({ onClose, onSave, departments }: {
   const [phone, setPhone] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [salary, setSalary] = React.useState(45000);
+  const [empId, setEmpId] = React.useState("");
+
+  const isHK = /housekeep/i.test(dept) || /housekeep/i.test(role);
+  const isMaint = /maintenance|engineer/i.test(dept) || /maintenance|engineer/i.test(role);
+  const appStaff = isHK || isMaint;
+  const appKind = isMaint ? "maintenance" : "housekeeping";
+  const suggested = isMaint ? suggestedMtCode : suggestedCode;
+  // Pre-fill the suggested id (2000s housekeeping / 3000s maintenance) once an app dept is selected.
+  React.useEffect(() => { if (appStaff && !empId) setEmpId(suggested); }, [appStaff, suggested, empId]);
 
   React.useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -250,7 +283,7 @@ function AddStaffModal({ onClose, onSave, departments }: {
     return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
-  const valid = name.trim().length > 1 && email.trim() !== "" && isValidEmail(email) && salary > 0 && isValidPhone(phone);
+  const valid = name.trim().length > 1 && email.trim() !== "" && isValidEmail(email) && salary > 0 && isValidPhone(phone) && (!appStaff || empId.trim() !== "");
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -269,17 +302,24 @@ function AddStaffModal({ onClose, onSave, departments }: {
             <div className="space-y-1.5"><Label className="text-xs">Department *</Label>
               <Select value={dept} onChange={e => setDept(e.target.value)} className="h-9">
                 {departments.map(d => <option key={d}>{d}</option>)}
-                <option>Front Office</option><option>Housekeeping</option><option>F&B</option><option>Engineering</option><option>Finance</option><option>Sales</option><option>HR</option>
+                <option>Front Office</option><option>Housekeeping</option><option>F&B</option><option>Maintenance</option><option>Engineering</option><option>Finance</option><option>Sales</option><option>HR</option>
               </Select>
             </div>
           </div>
           <div className="space-y-1.5"><Label className="text-xs">Phone *</Label><PhoneInput value={phone} onChange={v => setPhone(v)} size="sm" invalid={phone !== "" && !isValidPhone(phone)} /></div>
           <div className="space-y-1.5"><Label className="text-xs">Email *</Label><EmailInput value={email} onChange={setEmail} placeholder="staff@pearlmarina.com" className="h-9" /></div>
           <div className="space-y-1.5"><Label className="text-xs">Monthly salary (₹) *</Label><Input type="number" min={0} value={salary} onChange={e => setSalary(Math.max(0, Number(e.target.value) || 0))} className="h-9 tabular text-lg font-semibold" /></div>
+          {appStaff && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Employee ID * <span className="text-muted-foreground font-normal">({appKind} — mobile app login)</span></Label>
+              <Input value={empId} onChange={e => setEmpId(e.target.value)} placeholder={isMaint ? "e.g. 3001" : "e.g. 2001"} className="h-9 tabular text-lg font-semibold" />
+              <p className="text-[11px] text-muted-foreground">Creates an app login (email + default password <span className="font-medium">123456</span>). Suggested: <button type="button" className="text-brand font-medium" onClick={() => setEmpId(suggested)}>{suggested}</button>.</p>
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-border bg-surface-sunken/30">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onSave({ name, role, dept, phone, email, salary })} disabled={!valid}>
+          <Button onClick={() => onSave({ name, role, dept, phone, email, salary, empId: appStaff ? empId.trim() : null })} disabled={!valid}>
             <CheckCircle2 className="h-3.5 w-3.5" />Add to payroll
           </Button>
         </div>
@@ -291,11 +331,13 @@ function AddStaffModal({ onClose, onSave, departments }: {
 // ============================================================
 // EDIT STAFF MODAL
 // ============================================================
-function EditStaffModal({ staff, departments, onClose, onSave }: {
-  staff: Staff;
+function EditStaffModal({ staff, departments, onClose, onSave, suggestedHkCode, suggestedMtCode }: {
+  staff: StaffRow;
   departments: string[];
   onClose: () => void;
-  onSave: (patch: Partial<Staff>) => void;
+  onSave: (patch: Partial<StaffRow>) => void;
+  suggestedHkCode: string;
+  suggestedMtCode: string;
 }) {
   const [name, setName] = React.useState(staff.name);
   const [role, setRole] = React.useState(staff.role);
@@ -303,6 +345,15 @@ function EditStaffModal({ staff, departments, onClose, onSave }: {
   const [phone, setPhone] = React.useState(staff.phone);
   const [email, setEmail] = React.useState(staff.email);
   const [salary, setSalary] = React.useState(staff.salary);
+  const [empId, setEmpId] = React.useState(staff.empId ?? "");
+
+  const isHK = /housekeep/i.test(dept) || /housekeep/i.test(role);
+  const isMaint = /maintenance|engineer/i.test(dept) || /maintenance|engineer/i.test(role);
+  const appStaff = isHK || isMaint;
+  const appKind = isMaint ? "maintenance" : "housekeeping";
+  const suggested = isMaint ? suggestedMtCode : suggestedHkCode;
+  // If a non-app account is switched to an app dept and has no id yet, suggest one.
+  React.useEffect(() => { if (appStaff && !empId) setEmpId(suggested); }, [appStaff, suggested, empId]);
 
   React.useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -311,7 +362,7 @@ function EditStaffModal({ staff, departments, onClose, onSave }: {
     return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
-  const valid = name.trim().length > 1 && email.trim() !== "" && isValidEmail(email) && salary > 0 && isValidPhone(phone);
+  const valid = name.trim().length > 1 && email.trim() !== "" && isValidEmail(email) && salary > 0 && isValidPhone(phone) && (!appStaff || empId.trim() !== "");
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -330,17 +381,23 @@ function EditStaffModal({ staff, departments, onClose, onSave }: {
             <div className="space-y-1.5"><Label className="text-xs">Department *</Label>
               <Select value={dept} onChange={e => setDept(e.target.value)} className="h-9">
                 {departments.map(d => <option key={d}>{d}</option>)}
-                <option>Front Office</option><option>Housekeeping</option><option>F&amp;B</option><option>Engineering</option><option>Finance</option><option>Sales</option><option>HR</option>
+                <option>Front Office</option><option>Housekeeping</option><option>F&amp;B</option><option>Maintenance</option><option>Engineering</option><option>Finance</option><option>Sales</option><option>HR</option>
               </Select>
             </div>
           </div>
           <div className="space-y-1.5"><Label className="text-xs">Phone *</Label><PhoneInput value={phone} onChange={v => setPhone(v)} size="sm" invalid={phone !== "" && !isValidPhone(phone)} /></div>
           <div className="space-y-1.5"><Label className="text-xs">Email *</Label><EmailInput value={email} onChange={setEmail} className="h-9" /></div>
           <div className="space-y-1.5"><Label className="text-xs">Monthly salary (₹) *</Label><Input type="number" min={0} value={salary} onChange={e => setSalary(Math.max(0, Number(e.target.value) || 0))} className="h-9 tabular text-lg font-semibold" /></div>
+          {appStaff && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Employee ID * <span className="text-muted-foreground font-normal">({appKind} — mobile app login)</span></Label>
+              <Input value={empId} onChange={e => setEmpId(e.target.value)} placeholder={isMaint ? "e.g. 3001" : "e.g. 2001"} className="h-9 tabular text-lg font-semibold" />
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-border bg-surface-sunken/30">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onSave({ name, role, dept, phone, email, salary })} disabled={!valid}>
+          <Button onClick={() => onSave({ name, role, dept, phone, email, salary, empId: appStaff ? empId.trim() : null })} disabled={!valid}>
             <CheckCircle2 className="h-3.5 w-3.5" />Save changes
           </Button>
         </div>
@@ -353,7 +410,7 @@ function EditStaffModal({ staff, departments, onClose, onSave }: {
 // STAFF DETAIL DRAWER
 // ============================================================
 function StaffDetailDrawer({ staff, onClose, onToggleActive, onToast }: {
-  staff: Staff;
+  staff: StaffRow;
   onClose: () => void;
   onToggleActive: () => void;
   onToast: (m: string) => void;
@@ -402,6 +459,7 @@ function StaffDetailDrawer({ staff, onClose, onToggleActive, onToast }: {
           </div>
 
           <Card className="p-4 space-y-2 text-sm">
+            {staff.empId && <div className="flex items-center gap-2"><ShieldCheck className="h-3.5 w-3.5 text-muted-foreground shrink-0" />Employee ID <span className="tabular font-semibold text-brand">{staff.empId}</span></div>}
             <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="tabular">{staff.phone}</span></div>
             <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="truncate">{staff.email}</span></div>
             <div className="flex items-center gap-2"><Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />Joined <span className="tabular font-medium">{staff.joined}</span></div>

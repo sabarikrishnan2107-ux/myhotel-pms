@@ -97,7 +97,13 @@ export default function RackPage() {
     () => apiGet<Room[]>("/room-board").then(setRooms).catch(() => {}),
     [],
   );
-  React.useEffect(() => { refreshBoard(); }, [refreshBoard]);
+  // Poll every 10s so a room cleaned/completed from the housekeeping mobile app
+  // flips to Available here automatically (no manual refresh needed).
+  React.useEffect(() => {
+    refreshBoard();
+    const id = setInterval(refreshBoard, 10000);
+    return () => clearInterval(id);
+  }, [refreshBoard]);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2600); };
 
@@ -462,7 +468,7 @@ function RoomListView({ rooms, onOpenGuest, onAction }: { rooms: Room[]; onOpenG
                           <Receipt className="h-3 w-3" />Folio
                         </Link>
                       ) : room.source === "Group" && room.groupCode ? (
-                        <Link href={`/groups/${room.groupCode}`} onClick={(e) => e.stopPropagation()} className="h-7 px-2 rounded-md text-[11px] font-medium border border-border hover:bg-surface-sunken inline-flex items-center gap-1">
+                        <Link href={`/groups/${room.groupCode}?tab=billing&room=${encodeURIComponent(room.number)}`} onClick={(e) => e.stopPropagation()} className="h-7 px-2 rounded-md text-[11px] font-medium border border-border hover:bg-surface-sunken inline-flex items-center gap-1">
                           <Receipt className="h-3 w-3" />Folio
                         </Link>
                       ) : null}
@@ -568,7 +574,7 @@ function RoomCard({ room, onOpenGuest, onAction }: { room: Room; onOpenGuest: (r
                 <ActionGroup label="Front desk">
                   <ActionBtn icon={LogIn} label="Check-in" href={isReserved && bookingNo ? `/checkin?book=${bookingNo}` : undefined} emphasized={isReserved} disabled={!isReserved} />
                   <ActionBtn icon={LogOut} label="Checkout" href={isGroup && room.groupCode ? `/groups/${room.groupCode}` : (isOccupied && bookingNo ? `/checkout/${bookingNo}` : undefined)} emphasized={isOccupied} disabled={!isOccupied || (!bookingNo && !room.groupCode)} />
-                  <ActionBtn icon={Receipt} label="Folio" href={isGroup && room.groupCode ? `/groups/${room.groupCode}` : (bookingNo ? `/folio/${bookingNo}?from=rack` : undefined)} disabled={!bookingNo && !room.groupCode} />
+                  <ActionBtn icon={Receipt} label="Folio" href={isGroup && room.groupCode ? `/groups/${room.groupCode}?tab=billing&room=${encodeURIComponent(room.number)}` : (bookingNo ? `/folio/${bookingNo}?from=rack` : undefined)} disabled={!bookingNo && !room.groupCode} />
                 </ActionGroup>
                 <ActionGroup label="Stay">
                   <ActionBtn icon={CalendarPlus} label="Extend" onClick={() => onAction("extend", room)} />
@@ -576,7 +582,11 @@ function RoomCard({ room, onOpenGuest, onAction }: { room: Room; onOpenGuest: (r
                   <ActionBtn icon={ArrowLeftRight} label="Change" onClick={() => onAction("change", room)} />
                 </ActionGroup>
                 <ActionGroup label="Money & service">
-                  <ActionBtn icon={CreditCard} label="Payment" onClick={() => onAction("payment", room)} />
+                  {/* Group guests bill on the group's per-guest folio — deep-link there
+                      so payment is collected against that guest, not an individual booking. */}
+                  <ActionBtn icon={CreditCard} label="Payment"
+                    href={isGroup && room.groupCode ? `/groups/${room.groupCode}?tab=billing&room=${encodeURIComponent(room.number)}&pay=1` : undefined}
+                    onClick={isGroup && room.groupCode ? undefined : () => onAction("payment", room)} />
                   <ActionBtn icon={UtensilsCrossed} label="Order" onClick={() => onAction("order", room)} />
                   <ActionBtn icon={Sparkles} label="Clean" href="/housekeeping" />
                 </ActionGroup>
@@ -814,11 +824,16 @@ function ActionDialog({ kind, room, allRooms, onClose, onDone, onError }: {
         const dept = orderTab === "laundry" ? "laundry" : orderTab === "other" ? "concierge" : "kitchen";
         const chargeType = orderTab === "laundry" ? "Laundry" : orderTab === "other" ? "Service" : "F&B";
         if (room.chargeTo) {
+          const orderLines = Object.entries(orderCart).map(([itemId, qty]) => {
+            const it = ALL_ITEMS.find(x => x.id === itemId);
+            return { name: it?.name ?? itemId, qty, price: it?.price ?? 0 };
+          });
           await apiPost("/folio-charges", {
             bookingNo: room.chargeTo, room: room.number, date: today,
             description: `${dept.charAt(0).toUpperCase() + dept.slice(1)} order · ${orderItemCount} item${orderItemCount === 1 ? "" : "s"}`,
             type: chargeType, qty: orderItemCount, rate: orderSubtotal, tax: orderTax, amount: orderTotal,
             paidBy: room.chargeTo.startsWith("GRPG-") ? "Guest" : "Room",
+            items: orderLines,
           });
         }
         onDone(`Order sent to ${dept} · Room ${room.number} · ${orderItemCount} item${orderItemCount === 1 ? "" : "s"} · ${money(orderTotal)} added to folio`);

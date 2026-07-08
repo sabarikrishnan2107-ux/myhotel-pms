@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select } from "@/components/ui/input";
+import { Input, Label, Select, NumberInput } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn, money } from "@/lib/utils";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
@@ -17,6 +17,12 @@ import { apiGet, apiPost, apiPut } from "@/lib/api";
 type BeoStatus = "draft" | "confirmed" | "in-progress" | "completed";
 type EventType = "Wedding" | "Conference" | "Birthday" | "Cocktail" | "Corporate Offsite" | "Anniversary";
 type Package = "Silver" | "Gold" | "Platinum" | "Custom";
+
+// A single course = a named group of dish strings (Menu section).
+type Course = { name: string; items: string[] };
+// Every other list section is a flat table of scalar cells, persisted verbatim
+// into its JSON column. A shared shape keeps the reusable EditableTable simple.
+type EditableRow = Record<string, string | number>;
 
 type Beo = {
   id: string;
@@ -50,6 +56,16 @@ type Beo = {
   florist?: string;
   photographer?: string;
   ancillary?: number;
+  // List sections — round-tripped to the banquet_orders JSON columns. Optional on
+  // the base row (a freshly-loaded BEO may have nulls); DraftBeo makes them required.
+  courses?: Course[];
+  timeline?: EditableRow[];
+  bars?: EditableRow[];
+  avEquipment?: EditableRow[];
+  decorVendors?: EditableRow[];
+  staffing?: EditableRow[];
+  vendors?: EditableRow[];
+  signage?: EditableRow[];
   // Backend carry-fields: the human BEO number lives in `beoNo`, the numeric PK
   // in `_pk`. `id` mirrors `beoNo` so existing JSX/comparisons stay byte-identical.
   beoNo?: string;
@@ -218,6 +234,83 @@ const SECTIONS: { key: SectionKey; label: string; icon: React.ElementType; sub: 
   { key: "billing",   label: "Billing",      icon: IndianRupee,     sub: "Rate & balance" },
 ];
 
+// Starter templates for the list sections. A BEO loaded from the backend uses its
+// own saved data; a new BEO (or a legacy row that predates these columns) starts
+// from these editable defaults so the run-sheet is never blank.
+const DEFAULT_COURSES: Course[] = [
+  { name: "Welcome / Canapes", items: ["Paneer Tikka Skewers", "Chicken Malai Tikka", "Dahi Puchka", "Mushroom Galouti"] },
+  { name: "Soup", items: ["Tomato Dhaniya Shorba", "Almond & Saffron Cream"] },
+  { name: "Main course (veg)", items: ["Paneer Lababdar", "Dal Makhani", "Subz Biryani", "Aloo Gobhi Mussallam", "Assorted Naan"] },
+  { name: "Main course (non-veg)", items: ["Murgh Awadhi Korma", "Lamb Rogan Josh", "Goan Fish Curry", "Hyderabadi Dum Biryani"] },
+  { name: "Live counters", items: ["Tandoor station", "Pasta station", "Chaat counter", "Dosa & uttapam"] },
+  { name: "Dessert", items: ["Rasmalai", "Gulab Jamun", "Kulfi Falooda", "Tiramisu"] },
+];
+
+const DEFAULT_TIMELINE: EditableRow[] = [
+  { time: "08:00", team: "AV", task: "Truss rigging + line array set-up", lead: "Sound Engineer · Imran" },
+  { time: "09:30", team: "Decor", task: "Floral install + LED backdrop", lead: "Bloom & Bouquet" },
+  { time: "11:00", team: "Kitchen", task: "Welcome lunch mise-en-place ready", lead: "Chef Vinod" },
+  { time: "12:30", team: "F&B", task: "Welcome lunch served (family-side guests)", lead: "Captain Anjali I." },
+  { time: "16:00", team: "HK", task: "Final venue scrub + linen turnover", lead: "Sparkle Cleaners" },
+  { time: "17:30", team: "Security", task: "Perimeter sweep + valet briefing", lead: "Duty Manager" },
+  { time: "18:00", team: "Front", task: "Gates open · Welcome aarti", lead: "Concierge desk" },
+  { time: "19:30", team: "F&B", task: "Cocktail hour starts (bar live)", lead: "Mixologist Karan M." },
+  { time: "20:30", team: "Kitchen", task: "Dinner buffet open — 8 live counters", lead: "Chef Vinod + brigade" },
+  { time: "22:30", team: "AV", task: "Slow tempo cue · last call announcement", lead: "DJ Reyansh" },
+  { time: "23:30", team: "All", task: "Tear-down begins · vendor coordination", lead: "Banquet Manager" },
+];
+
+const DEFAULT_BARS: EditableRow[] = [
+  { name: "Main bar (north)", staff: 3, focus: "Cocktails + scotch" },
+  { name: "Mezzanine bar", staff: 2, focus: "Wine + sparkling" },
+  { name: "Mocktail counter", staff: 2, focus: "Non-alcoholic specials" },
+];
+
+const DEFAULT_AV: EditableRow[] = [
+  { item: "Line array (L+R)", qty: 2, status: "Reserved" },
+  { item: "Subwoofers", qty: 4, status: "Reserved" },
+  { item: "Lapel mics (wireless)", qty: 4, status: "Tested" },
+  { item: "Handheld mics", qty: 6, status: "Reserved" },
+  { item: "DJ console + booth", qty: 1, status: "Reserved" },
+  { item: "Moving head lights", qty: 8, status: "Reserved" },
+  { item: "LED wash lights", qty: 12, status: "Tested" },
+  { item: "LED backdrop 12x8 ft", qty: 1, status: "Reserved" },
+  { item: "Smoke machine + hazer", qty: 2, status: "Reserved" },
+];
+
+const DEFAULT_DECOR_VENDORS: EditableRow[] = [
+  { vendor: "Bloom & Bouquet — Bandra", scope: "Floral install · centerpieces · mandap", loadIn: "09:30", contact: "+91 98XX 22 14 56" },
+  { vendor: "Drape & Design Co.", scope: "Ceiling drapes · entry arch", loadIn: "08:00", contact: "+91 99XX 17 88 22" },
+  { vendor: "Welspun Linen Hire", scope: "Table linen · chair covers · sashes", loadIn: "10:00", contact: "+91 96XX 04 71 39" },
+];
+
+const DEFAULT_STAFFING: EditableRow[] = [
+  { role: "Service stewards", count: 22, lead: "Captain Anjali I." },
+  { role: "Captains (floor)", count: 4, lead: "Senior Captain Karan M." },
+  { role: "Kitchen brigade", count: 14, lead: "Chef Vinod" },
+  { role: "Bar tenders", count: 7, lead: "Mixologist Reyansh" },
+  { role: "Bus boys", count: 6, lead: "Captain Anjali I." },
+  { role: "Front-of-house", count: 4, lead: "Duty Manager" },
+];
+
+const DEFAULT_VENDORS: EditableRow[] = [
+  { vendor: "Bloom & Bouquet", service: "Florals + mandap", arrival: "09:30", status: "Confirmed" },
+  { vendor: "ShaadiClicks Studios", service: "Photo + video", arrival: "17:00", status: "Confirmed" },
+  { vendor: "Reyansh Live Music", service: "DJ + emcee", arrival: "18:30", status: "Contract sent" },
+  { vendor: "Sparkle Cleaners", service: "Pre & post-event deep clean", arrival: "06:00 / 00:30", status: "Confirmed" },
+  { vendor: "Spar Valet", service: "Valet parking", arrival: "17:00", status: "Awaiting PO" },
+];
+
+const DEFAULT_SIGNAGE: EditableRow[] = [
+  { location: "Lobby entrance", signage: "Welcome standee + couple photo" },
+  { location: "Ballroom door", signage: "Floral arch + name plate" },
+  { location: "Mezzanine corridor", signage: "Directional way-finding" },
+];
+
+// A loaded row returns null for a column it never saved; `??` then falls back to
+// the template. An intentionally-emptied list is saved as `[]` and preserved.
+const listOr = <T,>(v: T[] | null | undefined, fallback: T[]): T[] => (v == null ? fallback : v);
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function BeoPage() {
@@ -286,6 +379,31 @@ export default function BeoPage() {
     void _pk;
   };
 
+  // Export the current BEO list to a real CSV file (client-side blob download).
+  const exportCsv = () => {
+    const headers = ["BEO #", "Event", "Type", "Date", "Venue", "Host", "Pax", "Package", "Revenue", "Advance", "Balance", "Status"];
+    const lines = beos.map(b => [b.id, b.eventName, b.type, b.date, b.venue, b.host, b.pax, b.pkg, b.revenue, b.advance, b.revenue - b.advance, STATUS_LABEL[b.status]]);
+    const csv = [headers, ...lines].map(r => r.map(csvCell).join(",")).join("\r\n");
+    downloadBlob(csv, "banquet-orders.csv", "text/csv;charset=utf-8;");
+    showToast(`Exported ${beos.length} BEOs to CSV`);
+  };
+
+  // Duplicate a BEO into a fresh draft (new number, its own section data) and
+  // persist it as a new row.
+  const duplicate = (b: Beo) => {
+    const copy: Beo = {
+      ...b,
+      id: `BEO-10${Math.floor(Math.random() * 90 + 51)}`,
+      beoNo: undefined,
+      _pk: undefined,
+      status: "draft",
+      eventName: `${b.eventName} (copy)`,
+    };
+    setBeos(prev => [copy, ...prev]);
+    persistBeo(null, copy);
+    showToast(`${b.id} duplicated to ${copy.id}`);
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
       {/* HEADER */}
@@ -305,7 +423,7 @@ export default function BeoPage() {
           <Button size="sm" variant="outline" onClick={() => showToast("Calendar view opened")}>
             <Calendar className="h-4 w-4" /> Calendar
           </Button>
-          <Button size="sm" variant="outline" onClick={() => showToast("Exported 9 BEOs to Excel")}>
+          <Button size="sm" variant="outline" onClick={exportCsv}>
             <Download className="h-4 w-4" /> Export
           </Button>
           <Button size="sm" onClick={openNew}>
@@ -446,10 +564,10 @@ export default function BeoPage() {
                         <Button size="sm" variant="ghost" onClick={() => openEdit(b)}>
                           <Eye className="h-3.5 w-3.5" />
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => showToast(`${b.id} duplicated to new draft`)}>
+                        <Button size="sm" variant="ghost" onClick={() => duplicate(b)}>
                           <Copy className="h-3.5 w-3.5" />
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => showToast(`PDF for ${b.id} downloaded`)}>
+                        <Button size="sm" variant="ghost" onClick={() => printBeo(b)}>
                           <Download className="h-3.5 w-3.5" />
                         </Button>
                       </div>
@@ -488,7 +606,7 @@ export default function BeoPage() {
             showToast(`${b.id} approved & locked`);
             setCreatorOpen(false);
           }}
-          onPdf={(b) => showToast(`PDF for ${b.id} downloaded`)}
+          onPdf={(b) => printBeo(b)}
           showToast={showToast}
         />
       )}
@@ -556,6 +674,15 @@ type DraftBeo = Beo & {
   florist: string;
   photographer: string;
   ancillary: number;
+  // List sections (always present in the editor; seeded from templates).
+  courses: Course[];
+  timeline: EditableRow[];
+  bars: EditableRow[];
+  avEquipment: EditableRow[];
+  decorVendors: EditableRow[];
+  staffing: EditableRow[];
+  vendors: EditableRow[];
+  signage: EditableRow[];
 };
 
 function makeDraft(initial: Beo | null): DraftBeo {
@@ -582,6 +709,14 @@ function makeDraft(initial: Beo | null): DraftBeo {
       florist: initial.florist ?? "Bloom & Bouquet — Bandra",
       photographer: initial.photographer ?? "ShaadiClicks Studios",
       ancillary: initial.ancillary ?? Math.round(initial.revenue * 0.12),
+      courses: listOr(initial.courses, DEFAULT_COURSES),
+      timeline: listOr(initial.timeline, DEFAULT_TIMELINE),
+      bars: listOr(initial.bars, DEFAULT_BARS),
+      avEquipment: listOr(initial.avEquipment, DEFAULT_AV),
+      decorVendors: listOr(initial.decorVendors, DEFAULT_DECOR_VENDORS),
+      staffing: listOr(initial.staffing, DEFAULT_STAFFING),
+      vendors: listOr(initial.vendors, DEFAULT_VENDORS),
+      signage: listOr(initial.signage, DEFAULT_SIGNAGE),
     };
   }
   return {
@@ -615,6 +750,14 @@ function makeDraft(initial: Beo | null): DraftBeo {
     florist: "",
     photographer: "",
     ancillary: 0,
+    courses: DEFAULT_COURSES,
+    timeline: DEFAULT_TIMELINE,
+    bars: DEFAULT_BARS,
+    avEquipment: DEFAULT_AV,
+    decorVendors: DEFAULT_DECOR_VENDORS,
+    staffing: DEFAULT_STAFFING,
+    vendors: DEFAULT_VENDORS,
+    signage: DEFAULT_SIGNAGE,
   };
 }
 
@@ -667,6 +810,15 @@ function BeoCreator({
     florist: d.florist,
     photographer: d.photographer,
     ancillary: d.ancillary,
+    // List sections → JSON columns.
+    courses: d.courses,
+    timeline: d.timeline,
+    bars: d.bars,
+    avEquipment: d.avEquipment,
+    decorVendors: d.decorVendors,
+    staffing: d.staffing,
+    vendors: d.vendors,
+    signage: d.signage,
   });
 
   const marginAmount = d.revenue * d.margin;
@@ -883,6 +1035,138 @@ function Field({ label, children, hint }: { label: string; children: React.React
   );
 }
 
+// ── Reusable editable list table ──────────────────────────────────────────────
+// Powers every non-menu list section (Timeline, Beverages, AV, Decor, Staffing,
+// Vendors, Signage). Each cell is a live input/select bound to a JSON-column row;
+// edits/adds/removes flow straight back through `onChange` into the draft, so
+// Save draft / Approve persist them to the backend.
+type ColDef = {
+  key: string;
+  label: string;
+  type?: "text" | "number";
+  width?: string;
+  options?: string[];
+  placeholder?: string;
+};
+
+function EditableTable({
+  title, rows, cols, onChange, newRow, addLabel = "Add row",
+}: {
+  title: string;
+  rows: EditableRow[];
+  cols: ColDef[];
+  onChange: (rows: EditableRow[]) => void;
+  newRow: () => EditableRow;
+  addLabel?: string;
+}) {
+  const update = (i: number, key: string, value: string | number) =>
+    onChange(rows.map((r, j) => (j === i ? { ...r, [key]: value } : r)));
+  const remove = (i: number) => onChange(rows.filter((_, j) => j !== i));
+  const add = () => onChange([...rows, newRow()]);
+
+  return (
+    <Card className="overflow-hidden mb-5">
+      <div className="px-4 py-2 border-b border-border bg-surface-sunken/40 flex items-center justify-between">
+        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</div>
+        <Button size="sm" variant="ghost" onClick={add}>
+          <Plus className="h-3.5 w-3.5" /> {addLabel}
+        </Button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-surface-sunken/20">
+            <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+              {cols.map(c => (
+                <th key={c.key} className="px-3 py-2 font-medium" style={c.width ? { width: c.width } : undefined}>{c.label}</th>
+              ))}
+              <th className="px-3 py-2 w-8"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {rows.map((r, i) => (
+              <tr key={i}>
+                {cols.map(c => (
+                  <td key={c.key} className="px-3 py-1.5 align-top">
+                    {c.options ? (
+                      <Select value={String(r[c.key] ?? "")} onChange={e => update(i, c.key, e.target.value)} className="h-8">
+                        {c.options.map(o => <option key={o} value={o}>{o}</option>)}
+                      </Select>
+                    ) : c.type === "number" ? (
+                      <NumberInput value={Number(r[c.key] ?? 0)} onChange={v => update(i, c.key, v)} className="h-8 tabular" />
+                    ) : (
+                      <Input value={String(r[c.key] ?? "")} placeholder={c.placeholder} onChange={e => update(i, c.key, e.target.value)} className="h-8" />
+                    )}
+                  </td>
+                ))}
+                <td className="px-3 py-1.5 text-right">
+                  <Button size="sm" variant="ghost" onClick={() => remove(i)}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={cols.length + 1} className="px-4 py-6 text-center text-xs text-muted-foreground">
+                  Nothing yet — use “{addLabel}”.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+// A single Menu course: editable name, removable dish chips, and an inline
+// "add a dish" input. Local state holds only the in-progress add text.
+function CourseCard({
+  course, onRename, onRemove, onAddItem, onRemoveItem,
+}: {
+  course: Course;
+  onRename: (name: string) => void;
+  onRemove: () => void;
+  onAddItem: (item: string) => void;
+  onRemoveItem: (index: number) => void;
+}) {
+  const [val, setVal] = React.useState("");
+  const commit = () => { const t = val.trim(); if (!t) return; onAddItem(t); setVal(""); };
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between mb-2 gap-2">
+        <Input value={course.name} onChange={e => onRename(e.target.value)} className="h-8 font-medium max-w-xs" placeholder="Course name" />
+        <Button size="sm" variant="ghost" onClick={onRemove} title="Remove course">
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-2 mb-2.5">
+        {course.items.map((it, j) => (
+          <Badge key={j} tone="neutral" className="gap-1">
+            {it}
+            <button type="button" onClick={() => onRemoveItem(j)} className="ml-1 opacity-50 hover:opacity-100" aria-label={`Remove ${it}`}>
+              <X className="h-3 w-3" />
+            </button>
+          </Badge>
+        ))}
+        {course.items.length === 0 && <span className="text-xs text-muted-foreground">No items yet.</span>}
+      </div>
+      <div className="flex items-center gap-2">
+        <Input
+          value={val}
+          onChange={e => setVal(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); commit(); } }}
+          placeholder="Add a dish…"
+          className="h-8"
+        />
+        <Button size="sm" variant="outline" onClick={commit}>
+          <Plus className="h-3.5 w-3.5" /> Add
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 // 1. BASICS
 function SectionBasics({ d, set }: SectionProps) {
   return (
@@ -944,20 +1228,8 @@ function SectionBasics({ d, set }: SectionProps) {
 }
 
 // 2. TIMELINE
-function SectionTimeline({ d, set, showToast }: SectionProps) {
-  const timeline = [
-    { time: "08:00", team: "AV", task: "Truss rigging + line array set-up", lead: "Sound Engineer · Imran" },
-    { time: "09:30", team: "Decor", task: "Floral install + LED backdrop", lead: "Bloom & Bouquet" },
-    { time: "11:00", team: "Kitchen", task: "Welcome lunch mise-en-place ready", lead: "Chef Vinod" },
-    { time: "12:30", team: "F&B", task: "Welcome lunch served (family-side guests)", lead: "Captain Anjali I." },
-    { time: "16:00", team: "HK", task: "Final venue scrub + linen turnover", lead: "Sparkle Cleaners" },
-    { time: "17:30", team: "Security", task: "Perimeter sweep + valet briefing", lead: "Duty Manager" },
-    { time: "18:00", team: "Front", task: "Gates open · Welcome aarti", lead: "Concierge desk" },
-    { time: "19:30", team: "F&B", task: "Cocktail hour starts (bar live)", lead: "Mixologist Karan M." },
-    { time: "20:30", team: "Kitchen", task: "Dinner buffet open — 8 live counters", lead: "Chef Vinod + brigade" },
-    { time: "22:30", team: "AV", task: "Slow tempo cue · last call announcement", lead: "DJ Reyansh" },
-    { time: "23:30", team: "All", task: "Tear-down begins · vendor coordination", lead: "Banquet Manager" },
-  ];
+const TIMELINE_TEAMS = ["AV", "Decor", "Kitchen", "F&B", "HK", "Security", "Front", "All"];
+function SectionTimeline({ d, set }: SectionProps) {
   return (
     <div>
       <SectionHeader title="Timeline" sub="Call sheet by hour. Every team gets the same single source of truth." />
@@ -970,87 +1242,35 @@ function SectionTimeline({ d, set, showToast }: SectionProps) {
         </Field>
       </div>
 
-      <Card className="overflow-hidden">
-        <div className="px-4 py-2 border-b border-border bg-surface-sunken/40 flex items-center justify-between">
-          <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Run sheet</div>
-          <Button size="sm" variant="ghost" onClick={() => showToast?.("Timeline row added")}>
-            <Plus className="h-3.5 w-3.5" /> Add row
-          </Button>
-        </div>
-        <table className="w-full text-sm">
-          <thead className="bg-surface-sunken/20">
-            <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
-              <th className="px-4 py-2 font-medium w-20">Time</th>
-              <th className="px-4 py-2 font-medium w-24">Team</th>
-              <th className="px-4 py-2 font-medium">Task</th>
-              <th className="px-4 py-2 font-medium">Lead</th>
-              <th className="px-4 py-2 w-8"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {timeline.map((row, i) => (
-              <tr key={i}>
-                <td className="px-4 py-2 font-mono text-xs tabular">{row.time}</td>
-                <td className="px-4 py-2">
-                  <Badge tone={teamTone(row.team)}>{row.team}</Badge>
-                </td>
-                <td className="px-4 py-2">{row.task}</td>
-                <td className="px-4 py-2 text-xs text-muted-foreground">{row.lead}</td>
-                <td className="px-4 py-2 text-right">
-                  <Button size="sm" variant="ghost" onClick={() => showToast?.(`Row at ${row.time} removed`)}>
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+      <EditableTable
+        title="Run sheet"
+        addLabel="Add row"
+        rows={d.timeline}
+        onChange={rows => set("timeline", rows)}
+        newRow={() => ({ time: "12:00", team: "F&B", task: "", lead: "" })}
+        cols={[
+          { key: "time", label: "Time", width: "96px" },
+          { key: "team", label: "Team", width: "130px", options: TIMELINE_TEAMS },
+          { key: "task", label: "Task" },
+          { key: "lead", label: "Lead" },
+        ]}
+      />
     </div>
   );
 }
 
-function teamTone(t: string): "info" | "brand" | "success" | "warning" | "danger" | "neutral" | "accent" {
-  switch (t) {
-    case "AV": return "info";
-    case "Decor": return "accent";
-    case "Kitchen": return "warning";
-    case "F&B": return "brand";
-    case "HK": return "success";
-    case "Security": return "danger";
-    case "Front": return "info";
-    default: return "neutral";
-  }
-}
-
 // 3. MENU
-function SectionMenu({ d, set, showToast }: SectionProps) {
-  const courses = [
-    {
-      name: "Welcome / Canapes",
-      items: ["Paneer Tikka Skewers", "Chicken Malai Tikka", "Dahi Puchka", "Mushroom Galouti"],
-    },
-    {
-      name: "Soup",
-      items: ["Tomato Dhaniya Shorba", "Almond & Saffron Cream"],
-    },
-    {
-      name: "Main course (veg)",
-      items: ["Paneer Lababdar", "Dal Makhani", "Subz Biryani", "Aloo Gobhi Mussallam", "Assorted Naan"],
-    },
-    {
-      name: "Main course (non-veg)",
-      items: ["Murgh Awadhi Korma", "Lamb Rogan Josh", "Goan Fish Curry", "Hyderabadi Dum Biryani"],
-    },
-    {
-      name: "Live counters",
-      items: ["Tandoor station", "Pasta station", "Chaat counter", "Dosa & uttapam"],
-    },
-    {
-      name: "Dessert",
-      items: ["Rasmalai", "Gulab Jamun", "Kulfi Falooda", "Tiramisu"],
-    },
-  ];
+function SectionMenu({ d, set }: SectionProps) {
+  const courses = d.courses;
+  const setCourses = (next: Course[]) => set("courses", next);
+  const mapCourse = (ci: number, fn: (c: Course) => Course) =>
+    setCourses(courses.map((c, i) => (i === ci ? fn(c) : c)));
+
+  const addItem = (ci: number, item: string) => mapCourse(ci, c => ({ ...c, items: [...c.items, item] }));
+  const removeItem = (ci: number, ii: number) => mapCourse(ci, c => ({ ...c, items: c.items.filter((_, j) => j !== ii) }));
+  const renameCourse = (ci: number, name: string) => mapCourse(ci, c => ({ ...c, name }));
+  const removeCourse = (ci: number) => setCourses(courses.filter((_, i) => i !== ci));
+  const addCourse = () => setCourses([...courses, { name: "New course", items: [] }]);
 
   return (
     <div>
@@ -1063,43 +1283,30 @@ function SectionMenu({ d, set, showToast }: SectionProps) {
         </Card>
         <Card className="p-3">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Veg pax</div>
-          <Input
-            type="number"
-            value={d.vegPax}
-            onChange={e => set("vegPax", Math.max(0, Number(e.target.value) || 0))}
-            className="tabular h-9 mt-1"
-          />
+          <NumberInput value={d.vegPax} onChange={v => set("vegPax", v)} className="tabular h-9 mt-1" />
         </Card>
         <Card className="p-3">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Non-veg pax</div>
-          <Input
-            type="number"
-            value={d.nonVegPax}
-            onChange={e => set("nonVegPax", Math.max(0, Number(e.target.value) || 0))}
-            className="tabular h-9 mt-1"
-          />
+          <NumberInput value={d.nonVegPax} onChange={v => set("nonVegPax", v)} className="tabular h-9 mt-1" />
         </Card>
       </div>
 
-      <div className="space-y-3 mb-5">
+      <div className="space-y-3 mb-3">
         {courses.map((c, i) => (
-          <Card key={i} className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="font-medium">{c.name}</div>
-              <Button size="sm" variant="ghost" onClick={() => showToast?.(`Added item to ${c.name}`)}>
-                <Plus className="h-3.5 w-3.5" /> Add item
-              </Button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {c.items.map((it, j) => (
-                <Badge key={j} tone="neutral" className="cursor-pointer hover:bg-surface-sunken/70">
-                  {it} <X className="h-3 w-3 ml-1 opacity-50" />
-                </Badge>
-              ))}
-            </div>
-          </Card>
+          <CourseCard
+            key={i}
+            course={c}
+            onRename={name => renameCourse(i, name)}
+            onRemove={() => removeCourse(i)}
+            onAddItem={item => addItem(i, item)}
+            onRemoveItem={j => removeItem(i, j)}
+          />
         ))}
       </div>
+
+      <Button size="sm" variant="outline" className="mb-5" onClick={addCourse}>
+        <Plus className="h-4 w-4" /> Add course
+      </Button>
 
       <Field label="Dietary requirements & allergies" hint="Communicate to kitchen and captains before service.">
         <textarea
@@ -1115,12 +1322,7 @@ function SectionMenu({ d, set, showToast }: SectionProps) {
 }
 
 // 4. BEVERAGES
-function SectionBeverages({ d, set, showToast }: SectionProps) {
-  const bars = [
-    { name: "Main bar (north)", staff: 3, focus: "Cocktails + scotch" },
-    { name: "Mezzanine bar", staff: 2, focus: "Wine + sparkling" },
-    { name: "Mocktail counter", staff: 2, focus: "Non-alcoholic specials" },
-  ];
+function SectionBeverages({ d, set }: SectionProps) {
   return (
     <div>
       <SectionHeader title="Beverages" sub="Bar set-ups, package tier and signature cocktails." />
@@ -1138,32 +1340,18 @@ function SectionBeverages({ d, set, showToast }: SectionProps) {
       </div>
 
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2">Bar set-ups</div>
-      <Card className="overflow-hidden mb-5">
-        <table className="w-full text-sm">
-          <thead className="bg-surface-sunken/40">
-            <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
-              <th className="px-4 py-2 font-medium">Bar</th>
-              <th className="px-4 py-2 font-medium text-right">Staff</th>
-              <th className="px-4 py-2 font-medium">Focus</th>
-              <th className="px-4 py-2 w-8"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {bars.map((b, i) => (
-              <tr key={i}>
-                <td className="px-4 py-2 font-medium">{b.name}</td>
-                <td className="px-4 py-2 text-right tabular">{b.staff}</td>
-                <td className="px-4 py-2 text-xs text-muted-foreground">{b.focus}</td>
-                <td className="px-4 py-2 text-right">
-                  <Button size="sm" variant="ghost" onClick={() => showToast?.(`${b.name} removed`)}>
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+      <EditableTable
+        title="Bars"
+        addLabel="Add bar"
+        rows={d.bars}
+        onChange={rows => set("bars", rows)}
+        newRow={() => ({ name: "", staff: 2, focus: "" })}
+        cols={[
+          { key: "name", label: "Bar" },
+          { key: "staff", label: "Staff", type: "number", width: "96px" },
+          { key: "focus", label: "Focus" },
+        ]}
+      />
 
       <Field label="Signature cocktails" hint="Listed on table tents and mixologist station">
         <textarea
@@ -1178,50 +1366,24 @@ function SectionBeverages({ d, set, showToast }: SectionProps) {
 }
 
 // 5. AV
-function SectionAV({ d, set, showToast }: SectionProps) {
-  const equipment = [
-    { item: "Line array (L+R)", qty: 2, status: "Reserved" },
-    { item: "Subwoofers", qty: 4, status: "Reserved" },
-    { item: "Lapel mics (wireless)", qty: 4, status: "Tested" },
-    { item: "Handheld mics", qty: 6, status: "Reserved" },
-    { item: "DJ console + booth", qty: 1, status: "Reserved" },
-    { item: "Moving head lights", qty: 8, status: "Reserved" },
-    { item: "LED wash lights", qty: 12, status: "Tested" },
-    { item: "LED backdrop 12x8 ft", qty: 1, status: "Reserved" },
-    { item: "Smoke machine + hazer", qty: 2, status: "Reserved" },
-  ];
+const AV_STATUSES = ["Reserved", "Tested", "Pending"];
+function SectionAV({ d, set }: SectionProps) {
   return (
     <div>
       <SectionHeader title="Audio-visual" sub="Sound, lighting, video — coordinate with vendor and in-house tech." />
 
-      <Card className="overflow-hidden mb-5">
-        <div className="px-4 py-2 border-b border-border bg-surface-sunken/40 flex items-center justify-between">
-          <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Equipment list</div>
-          <Button size="sm" variant="ghost" onClick={() => showToast?.("Equipment added")}>
-            <Plus className="h-3.5 w-3.5" /> Add item
-          </Button>
-        </div>
-        <table className="w-full text-sm">
-          <thead className="bg-surface-sunken/20">
-            <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
-              <th className="px-4 py-2 font-medium">Equipment</th>
-              <th className="px-4 py-2 font-medium text-right">Qty</th>
-              <th className="px-4 py-2 font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {equipment.map((e, i) => (
-              <tr key={i}>
-                <td className="px-4 py-2">{e.item}</td>
-                <td className="px-4 py-2 text-right tabular">{e.qty}</td>
-                <td className="px-4 py-2">
-                  <Badge tone={e.status === "Tested" ? "success" : "info"}>{e.status}</Badge>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+      <EditableTable
+        title="Equipment list"
+        addLabel="Add item"
+        rows={d.avEquipment}
+        onChange={rows => set("avEquipment", rows)}
+        newRow={() => ({ item: "", qty: 1, status: "Reserved" })}
+        cols={[
+          { key: "item", label: "Equipment" },
+          { key: "qty", label: "Qty", type: "number", width: "88px" },
+          { key: "status", label: "Status", width: "140px", options: AV_STATUSES },
+        ]}
+      />
 
       <Field label="AV technical brief" hint="Shared with sound engineer and lighting designer">
         <textarea
@@ -1250,38 +1412,19 @@ function SectionDecor({ d, set, showToast }: SectionProps) {
       </div>
 
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2">Vendor coordination</div>
-      <Card className="overflow-hidden mb-5">
-        <table className="w-full text-sm">
-          <thead className="bg-surface-sunken/40">
-            <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
-              <th className="px-4 py-2 font-medium">Vendor</th>
-              <th className="px-4 py-2 font-medium">Scope</th>
-              <th className="px-4 py-2 font-medium">Load-in</th>
-              <th className="px-4 py-2 font-medium">Contact</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            <tr>
-              <td className="px-4 py-2 font-medium">Bloom & Bouquet — Bandra</td>
-              <td className="px-4 py-2 text-xs">Floral install · centerpieces · mandap</td>
-              <td className="px-4 py-2 tabular">09:30</td>
-              <td className="px-4 py-2 text-xs text-muted-foreground">+91 98XX 22 14 56</td>
-            </tr>
-            <tr>
-              <td className="px-4 py-2 font-medium">Drape & Design Co.</td>
-              <td className="px-4 py-2 text-xs">Ceiling drapes · entry arch</td>
-              <td className="px-4 py-2 tabular">08:00</td>
-              <td className="px-4 py-2 text-xs text-muted-foreground">+91 99XX 17 88 22</td>
-            </tr>
-            <tr>
-              <td className="px-4 py-2 font-medium">Welspun Linen Hire</td>
-              <td className="px-4 py-2 text-xs">Table linen · chair covers · sashes</td>
-              <td className="px-4 py-2 tabular">10:00</td>
-              <td className="px-4 py-2 text-xs text-muted-foreground">+91 96XX 04 71 39</td>
-            </tr>
-          </tbody>
-        </table>
-      </Card>
+      <EditableTable
+        title="Vendors"
+        addLabel="Add vendor"
+        rows={d.decorVendors}
+        onChange={rows => set("decorVendors", rows)}
+        newRow={() => ({ vendor: "", scope: "", loadIn: "09:00", contact: "" })}
+        cols={[
+          { key: "vendor", label: "Vendor" },
+          { key: "scope", label: "Scope" },
+          { key: "loadIn", label: "Load-in", width: "96px" },
+          { key: "contact", label: "Contact" },
+        ]}
+      />
 
       <Button size="sm" variant="outline" onClick={() => showToast?.("Decor moodboard opened")}>
         <Palette className="h-4 w-4" /> Open moodboard
@@ -1292,14 +1435,6 @@ function SectionDecor({ d, set, showToast }: SectionProps) {
 
 // 7. STAFFING
 function SectionStaffing({ d, set }: SectionProps) {
-  const staffRows = [
-    { role: "Service stewards", count: d.staffService, lead: "Captain Anjali I." },
-    { role: "Captains (floor)", count: d.staffCaptains, lead: "Senior Captain Karan M." },
-    { role: "Kitchen brigade", count: d.staffKitchen, lead: "Chef Vinod" },
-    { role: "Bar tenders", count: 7, lead: "Mixologist Reyansh" },
-    { role: "Bus boys", count: 6, lead: "Captain Anjali I." },
-    { role: "Front-of-house", count: 4, lead: "Duty Manager" },
-  ];
   return (
     <div>
       <SectionHeader title="Staffing" sub="Service team, captains and kitchen brigade." />
@@ -1307,81 +1442,47 @@ function SectionStaffing({ d, set }: SectionProps) {
       <div className="grid grid-cols-3 gap-3 mb-5">
         <Card className="p-3">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Service stewards</div>
-          <Input
-            type="number"
-            value={d.staffService}
-            onChange={e => set("staffService", Math.max(0, Number(e.target.value) || 0))}
-            className="tabular h-9 mt-1"
-          />
+          <NumberInput value={d.staffService} onChange={v => set("staffService", v)} className="tabular h-9 mt-1" />
         </Card>
         <Card className="p-3">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Captains</div>
-          <Input
-            type="number"
-            value={d.staffCaptains}
-            onChange={e => set("staffCaptains", Math.max(0, Number(e.target.value) || 0))}
-            className="tabular h-9 mt-1"
-          />
+          <NumberInput value={d.staffCaptains} onChange={v => set("staffCaptains", v)} className="tabular h-9 mt-1" />
         </Card>
         <Card className="p-3">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Kitchen brigade</div>
-          <Input
-            type="number"
-            value={d.staffKitchen}
-            onChange={e => set("staffKitchen", Math.max(0, Number(e.target.value) || 0))}
-            className="tabular h-9 mt-1"
-          />
+          <NumberInput value={d.staffKitchen} onChange={v => set("staffKitchen", v)} className="tabular h-9 mt-1" />
         </Card>
       </div>
 
-      <Card className="overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-surface-sunken/40">
-            <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
-              <th className="px-4 py-2 font-medium">Role</th>
-              <th className="px-4 py-2 font-medium text-right">Count</th>
-              <th className="px-4 py-2 font-medium">Lead</th>
-              <th className="px-4 py-2 font-medium">Briefing</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {staffRows.map((r, i) => (
-              <tr key={i}>
-                <td className="px-4 py-2">{r.role}</td>
-                <td className="px-4 py-2 text-right font-semibold tabular">{r.count}</td>
-                <td className="px-4 py-2 text-xs text-muted-foreground">{r.lead}</td>
-                <td className="px-4 py-2"><Badge tone="success">Confirmed</Badge></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2">Service brigade roster</div>
+      <EditableTable
+        title="Roster"
+        addLabel="Add role"
+        rows={d.staffing}
+        onChange={rows => set("staffing", rows)}
+        newRow={() => ({ role: "", count: 1, lead: "" })}
+        cols={[
+          { key: "role", label: "Role" },
+          { key: "count", label: "Count", type: "number", width: "96px" },
+          { key: "lead", label: "Lead" },
+        ]}
+      />
     </div>
   );
 }
 
 // 8. LOGISTICS
-function SectionLogistics({ d, set, showToast }: SectionProps) {
+function SectionLogistics({ d, set }: SectionProps) {
   return (
     <div>
       <SectionHeader title="Logistics" sub="Parking, valet, security and signage." />
 
       <div className="grid grid-cols-2 gap-4 mb-5">
         <Field label="Parking slots reserved">
-          <Input
-            type="number"
-            value={d.parking}
-            onChange={e => set("parking", Math.max(0, Number(e.target.value) || 0))}
-            className="tabular"
-          />
+          <NumberInput value={d.parking} onChange={v => set("parking", v)} className="tabular" />
         </Field>
         <Field label="Security staff on-site">
-          <Input
-            type="number"
-            value={d.security}
-            onChange={e => set("security", Math.max(0, Number(e.target.value) || 0))}
-            className="tabular"
-          />
+          <NumberInput value={d.security} onChange={v => set("security", v)} className="tabular" />
         </Field>
       </div>
 
@@ -1405,40 +1506,24 @@ function SectionLogistics({ d, set, showToast }: SectionProps) {
       </div>
 
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2">Signage placement</div>
-      <Card className="overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-surface-sunken/40">
-            <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
-              <th className="px-4 py-2 font-medium">Location</th>
-              <th className="px-4 py-2 font-medium">Signage</th>
-              <th className="px-4 py-2 w-8"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            <tr>
-              <td className="px-4 py-2">Lobby entrance</td>
-              <td className="px-4 py-2 text-xs text-muted-foreground">Welcome standee + couple photo</td>
-              <td className="px-4 py-2 text-right"><Button size="sm" variant="ghost" onClick={() => showToast?.("Signage removed")}><Trash2 className="h-3 w-3" /></Button></td>
-            </tr>
-            <tr>
-              <td className="px-4 py-2">Ballroom door</td>
-              <td className="px-4 py-2 text-xs text-muted-foreground">Floral arch + name plate</td>
-              <td className="px-4 py-2 text-right"><Button size="sm" variant="ghost" onClick={() => showToast?.("Signage removed")}><Trash2 className="h-3 w-3" /></Button></td>
-            </tr>
-            <tr>
-              <td className="px-4 py-2">Mezzanine corridor</td>
-              <td className="px-4 py-2 text-xs text-muted-foreground">Directional way-finding</td>
-              <td className="px-4 py-2 text-right"><Button size="sm" variant="ghost" onClick={() => showToast?.("Signage removed")}><Trash2 className="h-3 w-3" /></Button></td>
-            </tr>
-          </tbody>
-        </table>
-      </Card>
+      <EditableTable
+        title="Signage"
+        addLabel="Add signage"
+        rows={d.signage}
+        onChange={rows => set("signage", rows)}
+        newRow={() => ({ location: "", signage: "" })}
+        cols={[
+          { key: "location", label: "Location", width: "220px" },
+          { key: "signage", label: "Signage" },
+        ]}
+      />
     </div>
   );
 }
 
 // 9. VENDORS
-function SectionVendors({ d, set, showToast }: SectionProps) {
+const VENDOR_STATUSES = ["Confirmed", "Contract sent", "Awaiting PO", "Cancelled"];
+function SectionVendors({ d, set }: SectionProps) {
   return (
     <div>
       <SectionHeader title="External vendors" sub="Third parties coordinated by the BEO owner." />
@@ -1452,56 +1537,19 @@ function SectionVendors({ d, set, showToast }: SectionProps) {
         </Field>
       </div>
 
-      <Card className="overflow-hidden mb-3">
-        <div className="px-4 py-2 border-b border-border bg-surface-sunken/40 flex items-center justify-between">
-          <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Vendor checklist</div>
-          <Button size="sm" variant="ghost" onClick={() => showToast?.("Vendor added")}>
-            <Plus className="h-3.5 w-3.5" /> Add vendor
-          </Button>
-        </div>
-        <table className="w-full text-sm">
-          <thead className="bg-surface-sunken/20">
-            <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
-              <th className="px-4 py-2 font-medium">Vendor</th>
-              <th className="px-4 py-2 font-medium">Service</th>
-              <th className="px-4 py-2 font-medium">Arrival</th>
-              <th className="px-4 py-2 font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            <tr>
-              <td className="px-4 py-2 font-medium">Bloom & Bouquet</td>
-              <td className="px-4 py-2 text-xs">Florals + mandap</td>
-              <td className="px-4 py-2 tabular">09:30</td>
-              <td className="px-4 py-2"><Badge tone="success">Confirmed</Badge></td>
-            </tr>
-            <tr>
-              <td className="px-4 py-2 font-medium">ShaadiClicks Studios</td>
-              <td className="px-4 py-2 text-xs">Photo + video</td>
-              <td className="px-4 py-2 tabular">17:00</td>
-              <td className="px-4 py-2"><Badge tone="success">Confirmed</Badge></td>
-            </tr>
-            <tr>
-              <td className="px-4 py-2 font-medium">Reyansh Live Music</td>
-              <td className="px-4 py-2 text-xs">DJ + emcee</td>
-              <td className="px-4 py-2 tabular">18:30</td>
-              <td className="px-4 py-2"><Badge tone="info">Contract sent</Badge></td>
-            </tr>
-            <tr>
-              <td className="px-4 py-2 font-medium">Sparkle Cleaners</td>
-              <td className="px-4 py-2 text-xs">Pre &amp; post-event deep clean</td>
-              <td className="px-4 py-2 tabular">06:00 / 00:30</td>
-              <td className="px-4 py-2"><Badge tone="success">Confirmed</Badge></td>
-            </tr>
-            <tr>
-              <td className="px-4 py-2 font-medium">Spar Valet</td>
-              <td className="px-4 py-2 text-xs">Valet parking</td>
-              <td className="px-4 py-2 tabular">17:00</td>
-              <td className="px-4 py-2"><Badge tone="warning">Awaiting PO</Badge></td>
-            </tr>
-          </tbody>
-        </table>
-      </Card>
+      <EditableTable
+        title="Vendor checklist"
+        addLabel="Add vendor"
+        rows={d.vendors}
+        onChange={rows => set("vendors", rows)}
+        newRow={() => ({ vendor: "", service: "", arrival: "12:00", status: "Contract sent" })}
+        cols={[
+          { key: "vendor", label: "Vendor" },
+          { key: "service", label: "Service" },
+          { key: "arrival", label: "Arrival", width: "110px" },
+          { key: "status", label: "Status", width: "160px", options: VENDOR_STATUSES },
+        ]}
+      />
     </div>
   );
 }
@@ -1621,4 +1669,74 @@ function formatBeoDate(iso: string) {
   } catch {
     return iso;
   }
+}
+
+// Escape a value for a CSV cell (quote if it contains a comma/quote/newline).
+function csvCell(v: unknown): string {
+  const s = String(v ?? "");
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+// Trigger a browser download of an in-memory string as a file.
+function downloadBlob(content: string, filename: string, mime: string) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Open a printable BEO sheet in a new window and invoke the browser's print
+// dialog (users can "Save as PDF"). Uses whatever section data the row carries.
+function printBeo(b: Beo) {
+  const esc = (s: unknown) =>
+    String(s ?? "").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string));
+  const balance = b.revenue - b.advance;
+  const courses = b.courses ?? [];
+  const timeline = b.timeline ?? [];
+  const block = (title: string, body: string) => (body ? `<h2>${esc(title)}</h2>${body}` : "");
+  const coursesHtml = courses.length
+    ? `<ul>${courses.map(c => `<li><b>${esc(c.name)}:</b> ${esc(c.items.join(", "))}</li>`).join("")}</ul>`
+    : "";
+  const timelineHtml = timeline.length
+    ? `<table><thead><tr><th>Time</th><th>Team</th><th>Task</th><th>Lead</th></tr></thead><tbody>${timeline
+        .map(r => `<tr><td>${esc(r.time)}</td><td>${esc(r.team)}</td><td>${esc(r.task)}</td><td>${esc(r.lead)}</td></tr>`)
+        .join("")}</tbody></table>`
+    : "";
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(b.id)} — ${esc(b.eventName)}</title>
+    <style>
+      body{font-family:system-ui,'Segoe UI',Arial,sans-serif;color:#111;margin:32px}
+      h1{margin:0 0 4px;font-size:22px}
+      .muted{color:#666;font-size:13px}
+      h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#444;border-bottom:1px solid #ddd;padding-bottom:4px;margin:22px 0 10px}
+      table{border-collapse:collapse;width:100%;font-size:13px}
+      th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}
+      .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 24px;font-size:13px;margin-top:8px}
+      .grid span{color:#666}
+      ul{font-size:13px;padding-left:18px}
+    </style></head><body>
+    <h1>${esc(b.eventName)}</h1>
+    <div class="muted">${esc(b.id)} · ${esc(b.type)} · ${esc(formatBeoDate(b.date))} · ${esc(b.venue)}</div>
+    <div class="grid">
+      <div><span>Host:</span> ${esc(b.host)}</div>
+      <div><span>Pax:</span> ${esc(b.pax)}</div>
+      <div><span>Package:</span> ${esc(b.pkg)}</div>
+      <div><span>Status:</span> ${esc(STATUS_LABEL[b.status])}</div>
+      <div><span>Revenue:</span> ₹${esc(b.revenue.toLocaleString("en-IN"))}</div>
+      <div><span>Advance:</span> ₹${esc(b.advance.toLocaleString("en-IN"))}</div>
+      <div><span>Balance:</span> ${balance > 0 ? "₹" + balance.toLocaleString("en-IN") : "Settled"}</div>
+    </div>
+    ${block("Menu", coursesHtml)}
+    ${block("Run sheet", timelineHtml)}
+  </body></html>`;
+  const w = window.open("", "_blank");
+  if (!w) return; // popup blocked — nothing to print
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  w.print();
 }

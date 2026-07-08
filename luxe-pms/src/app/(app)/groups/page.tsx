@@ -19,6 +19,13 @@ import { GROUP_BOOKINGS, type GroupStatus, type GroupType, type GroupBooking } f
 import { money, cn, formatDate } from "@/lib/utils";
 import { apiGet, apiPut, sendEmail } from "@/lib/api";
 import { type GroupPolicies, DEFAULT_POLICIES } from "@/app/(app)/setup/group-policies-manager";
+import { computeGroupTotals, type GstSlab } from "@/lib/group-pricing";
+import { mealPerNightPerGuest } from "@/lib/booking-pricing";
+
+// Pricing config needed to re-price a group when its dates / pax change in Modify.
+type RatePlanCfg = { code: string; name: string; inclBreakfast?: boolean; inclLunch?: boolean; inclDinner?: boolean; breakfastPrice?: number; lunchPrice?: number; dinnerPrice?: number };
+type RoomTypeCfg = { name: string; extraAdultRate?: number };
+type GroupSvcCfg = { name: string; price: number; perPax: boolean; gst: number };
 
 const STATUS_TONE: Record<GroupStatus, "neutral" | "info" | "success" | "brand" | "warning" | "danger"> = {
   draft: "neutral",
@@ -45,10 +52,14 @@ type GroupOverride = {
   totalRooms?: number; totalPax?: number;
   contactName?: string; contactPhone?: string; contactEmail?: string;
   type?: GroupType; status?: GroupStatus;
+  total?: number; balance?: number;
 };
 
 export default function GroupsPage() {
   const [search, setSearch] = React.useState("");
+  // Top-level split: ongoing + upcoming groups ("active") vs finished ones
+  // ("history" = completed / cancelled). The status chips below scope to it.
+  const [view, setView] = React.useState<"active" | "history">("active");
   const [statusFilter, setStatusFilter] = React.useState<"all" | GroupStatus>("all");
   const [typeFilter, setTypeFilter] = React.useState<"all" | GroupType>("all");
   const [dateWindow, setDateWindow] = React.useState<DateWindow>("all");
@@ -84,6 +95,19 @@ export default function GroupsPage() {
       }).catch(() => {});
   }, []);
 
+  // Pricing config — used by the Modify dialog to re-price a group when its
+  // stay length / pax change (same math as the New Group flow & detail folio).
+  const [ratePlans, setRatePlans] = React.useState<RatePlanCfg[]>([]);
+  const [gstSlabs, setGstSlabs] = React.useState<GstSlab[]>([]);
+  const [roomTypes, setRoomTypes] = React.useState<RoomTypeCfg[]>([]);
+  const [svcCatalog, setSvcCatalog] = React.useState<GroupSvcCfg[]>([]);
+  React.useEffect(() => {
+    apiGet<RatePlanCfg[]>("/rate-plans").then(r => Array.isArray(r) && setRatePlans(r)).catch(() => {});
+    apiGet<GstSlab[]>("/gst-slabs").then(r => Array.isArray(r) && setGstSlabs(r)).catch(() => {});
+    apiGet<RoomTypeCfg[]>("/room-types").then(r => Array.isArray(r) && setRoomTypes(r)).catch(() => {});
+    apiGet<GroupSvcCfg[]>("/group-services").then(r => Array.isArray(r) && setSvcCatalog(r)).catch(() => {});
+  }, []);
+
   // Local mutations
   const [cancelledIds, setCancelledIds] = React.useState<Set<string>>(new Set());
   const [overrides, setOverrides] = React.useState<Record<string, GroupOverride>>({});
@@ -104,6 +128,31 @@ export default function GroupsPage() {
     });
   }, [groups, overrides, cancelledIds]);
 
+  // Today at midnight — the cutoff for archiving a stay that has already ended.
+  const todayStart = React.useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
+  const isPastDeparture = (dep?: string) => {
+    if (!dep) return false;
+    const d = new Date(dep);
+    if (isNaN(d.getTime())) return false;
+    d.setHours(0, 0, 0, 0);
+    return d.getTime() < todayStart.getTime();
+  };
+  // A group is "history" once it's completed, cancelled, or its departure date
+  // has already passed (a finished stay). Everything else is ongoing/upcoming.
+  const isHistory = (g: { status: GroupStatus; departure: string }) =>
+    g.status === "completed" || g.status === "cancelled" || isPastDeparture(g.departure);
+  const viewGroups = React.useMemo(
+    () => effective.filter(g => isHistory(g) === (view === "history")),
+    [effective, view],
+  );
+  const activeGroups = effective.filter(g => !isHistory(g));
+  const activeCount = activeGroups.length;
+  const historyCount = effective.length - activeCount;
+
+  // Switching the top-level view clears any status chip so a stale filter (e.g.
+  // "completed" while on Active) doesn't blank the table.
+  const switchView = (v: "active" | "history") => { setView(v); setStatusFilter("all"); };
+
   const inWindow = (iso: string) => {
     if (dateWindow === "all") return true;
     const today = new Date();
@@ -115,7 +164,7 @@ export default function GroupsPage() {
     return true;
   };
 
-  const list = effective.filter(g => {
+  const list = viewGroups.filter(g => {
     if (statusFilter !== "all" && g.status !== statusFilter) return false;
     if (typeFilter !== "all" && g.type !== typeFilter) return false;
     if (search && !`${g.name} ${g.code} ${g.contactName}`.toLowerCase().includes(search.toLowerCase())) return false;
@@ -123,10 +172,12 @@ export default function GroupsPage() {
     return true;
   });
 
-  const totalRooms = effective.reduce((s, g) => s + g.totalRooms, 0);
-  const totalPax = effective.reduce((s, g) => s + g.totalPax, 0);
-  const totalRev = effective.filter(g => g.status !== "cancelled").reduce((s, g) => s + g.total, 0);
-  const totalOutstanding = effective.filter(g => g.status !== "cancelled").reduce((s, g) => s + g.balance, 0);
+  // KPI bar reflects only the live set (ongoing + upcoming) so finished stays
+  // and cancellations don't inflate rooms / pax / outstanding on the dashboard.
+  const totalRooms = activeGroups.reduce((s, g) => s + g.totalRooms, 0);
+  const totalPax = activeGroups.reduce((s, g) => s + g.totalPax, 0);
+  const totalRev = activeGroups.reduce((s, g) => s + g.total, 0);
+  const totalOutstanding = activeGroups.reduce((s, g) => s + g.balance, 0);
 
   const handleModify = (g: typeof GROUP_BOOKINGS[number], patch: GroupOverride) => {
     setOverrides(o => ({ ...o, [g.id]: { ...(o[g.id] ?? {}), ...patch } }));
@@ -179,7 +230,9 @@ export default function GroupsPage() {
     };
   }, [actionMenuFor]);
 
-  const STATUS_CHIPS: ("all" | GroupStatus)[] = ["all", "tentative", "confirmed", "in-house", "completed", "cancelled"];
+  const STATUS_CHIPS: ("all" | GroupStatus)[] = view === "history"
+    ? ["all", "completed", "cancelled"]
+    : ["all", "tentative", "confirmed", "in-house"];
   const activeFilters = (statusFilter !== "all" ? 1 : 0) + (typeFilter !== "all" ? 1 : 0) + (dateWindow !== "all" ? 1 : 0) + (search ? 1 : 0);
 
   return (
@@ -200,16 +253,41 @@ export default function GroupsPage() {
 
       {/* KPI bar */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPICard label="Active Groups" value={effective.filter(g => g.status !== "completed" && g.status !== "cancelled").length} icon={UsersRound} accent="brand" />
+        <KPICard label="Active Groups" value={activeCount} icon={UsersRound} accent="brand" />
         <KPICard label="Rooms Blocked" value={totalRooms} icon={BedDouble} accent="info" />
         <KPICard label="Pax Expected" value={totalPax} icon={UsersRound} accent="accent" />
         <KPICard label="Outstanding" value={money(totalOutstanding)} icon={Wallet} accent="warning" hint={`of ${money(totalRev)} total`} />
       </div>
 
+      {/* Active vs History toggle */}
+      <div className="inline-flex items-center gap-1 p-1 rounded-lg bg-surface-sunken border border-border w-fit">
+        {([
+          { v: "active", label: "Ongoing & Upcoming", count: activeCount },
+          { v: "history", label: "History", count: historyCount },
+        ] as const).map(t => (
+          <button
+            key={t.v}
+            onClick={() => switchView(t.v)}
+            className={cn(
+              "h-8 px-4 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2",
+              view === t.v ? "bg-surface text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {t.label}
+            <span className={cn(
+              "tabular text-[10px] rounded-full px-1.5 h-4 inline-flex items-center font-semibold",
+              view === t.v ? "bg-brand-soft text-brand-soft-foreground" : "bg-surface-sunken text-muted-foreground"
+            )}>
+              {t.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* Status chips */}
       <div className="flex flex-wrap items-center gap-1.5">
         {STATUS_CHIPS.map(s => {
-          const count = s === "all" ? effective.length : effective.filter(g => g.status === s).length;
+          const count = s === "all" ? viewGroups.length : viewGroups.filter(g => g.status === s).length;
           const dot = s === "tentative" ? "bg-warning" : s === "confirmed" ? "bg-info" : s === "in-house" ? "bg-brand" : s === "completed" ? "bg-success" : s === "cancelled" ? "bg-danger" : null;
           return (
             <button
@@ -263,7 +341,7 @@ export default function GroupsPage() {
             </Button>
           )}
           <div className="flex-1" />
-          <p className="text-xs text-muted-foreground tabular">{list.length} of {effective.length} groups</p>
+          <p className="text-xs text-muted-foreground tabular">{list.length} of {viewGroups.length} groups</p>
         </div>
       </Card>
 
@@ -393,8 +471,16 @@ export default function GroupsPage() {
               {list.length === 0 && (
                 <tr><td colSpan={10} className="px-4 py-12 text-center text-sm text-muted-foreground">
                   <Search className="h-8 w-8 mx-auto text-subtle-foreground mb-2" />
-                  <p className="font-medium">No groups match your filters</p>
-                  <p className="text-xs mt-1">Adjust filters above or create a new group booking.</p>
+                  <p className="font-medium">
+                    {viewGroups.length === 0
+                      ? (view === "history" ? "No past groups yet" : "No ongoing or upcoming groups")
+                      : "No groups match your filters"}
+                  </p>
+                  <p className="text-xs mt-1">
+                    {view === "history"
+                      ? "Groups move here once they're completed, cancelled, or their stay has ended."
+                      : "Adjust filters above or create a new group booking."}
+                  </p>
                 </td></tr>
               )}
             </tbody>
@@ -452,6 +538,10 @@ export default function GroupsPage() {
       {modifyTarget && (
         <ModifyGroupDialog
           group={modifyTarget}
+          ratePlans={ratePlans}
+          gstSlabs={gstSlabs}
+          roomTypes={roomTypes}
+          svcCatalog={svcCatalog}
           onClose={() => setModifyTarget(null)}
           onSave={(patch) => handleModify(modifyTarget, patch)}
         />
@@ -479,15 +569,19 @@ export default function GroupsPage() {
 }
 
 // ===================== MODIFY GROUP DIALOG =====================
-function ModifyGroupDialog({ group, onClose, onSave }: {
+function ModifyGroupDialog({ group, ratePlans, gstSlabs, roomTypes, svcCatalog, onClose, onSave }: {
   group: typeof GROUP_BOOKINGS[number];
+  ratePlans: RatePlanCfg[];
+  gstSlabs: GstSlab[];
+  roomTypes: RoomTypeCfg[];
+  svcCatalog: GroupSvcCfg[];
   onClose: () => void;
   onSave: (patch: GroupOverride) => void;
 }) {
   const arrivalISO = new Date(group.arrival).toISOString().slice(0, 10);
   const departureISO = new Date(group.departure).toISOString().slice(0, 10);
 
-  const [draft, setDraft] = React.useState<Required<GroupOverride>>({
+  const [draft, setDraft] = React.useState<Required<Omit<GroupOverride, "total" | "balance">>>({
     arrival: arrivalISO,
     departure: departureISO,
     nights: group.nights,
@@ -516,6 +610,37 @@ function ModifyGroupDialog({ group, onClose, onSave }: {
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft(d => ({ ...d, [k]: v }));
   const todayISO = new Date().toLocaleDateString("en-CA"); // blocks past dates on arrival/departure
 
+  // Re-price from the stored room block (same math as New Group & the detail
+  // folio). We apply only the DELTA vs the original nights/pax so the quoted
+  // total is preserved when nothing pricing-relevant changed.
+  const planCfg = ratePlans.find(p => p.code === group.ratePlan || p.name === group.ratePlan);
+  const mealPerGuestNight = mealPerNightPerGuest({
+    inclB: !!planCfg?.inclBreakfast, inclL: !!planCfg?.inclLunch, inclD: !!planCfg?.inclDinner,
+    breakfastPrice: planCfg?.breakfastPrice ?? 0, lunchPrice: planCfg?.lunchPrice ?? 0, dinnerPrice: planCfg?.dinnerPrice ?? 0,
+  });
+  const extraBedRateOf = (b: { type: string; extraBedRate?: number }) =>
+    b.extraBedRate ?? (roomTypes.find(t => t.name === b.type)?.extraAdultRate ?? 0);
+  const blockRows = (group.block ?? []).map(b => ({ rate: b.rate, qty: b.qty, extraBeds: b.extraBeds ?? 0, extraBedRate: extraBedRateOf(b) }));
+  const svcLines = (group.services ?? [])
+    .map(name => svcCatalog.find(s => s.name === name))
+    .filter((s): s is GroupSvcCfg => !!s)
+    .map(s => ({ price: s.price, perPax: s.perPax, gst: s.gst }));
+  const priceAt = (nights: number, pax: number) =>
+    computeGroupTotals(blockRows, nights, svcLines, pax, gstSlabs, mealPerGuestNight * pax * nights).grandTotal;
+  // Baseline nights come from the ORIGINAL dates (the same source draft.nights is
+  // derived from), not the stored `nights` field — they can disagree on legacy
+  // rows, and the baseline must match the draft so an unchanged stay nets zero.
+  const origAd = new Date(group.arrival).getTime();
+  const origDd = new Date(group.departure).getTime();
+  const origNights = (!isNaN(origAd) && !isNaN(origDd) && origDd > origAd)
+    ? Math.max(1, Math.round((origDd - origAd) / (24 * 60 * 60 * 1000)))
+    : (group.nights || 1);
+  const canReprice = blockRows.length > 0;
+  const projectedTotal = canReprice
+    ? Math.max(0, Math.round(group.total + (priceAt(draft.nights, draft.totalPax) - priceAt(origNights, group.totalPax))))
+    : group.total;
+  const projectedBalance = Math.max(0, projectedTotal - group.advance);
+
   const valid = draft.nights >= 1 && draft.totalRooms >= 1 && draft.totalPax >= 1 && draft.contactName.trim() !== "";
 
   const save = () => onSave({
@@ -528,6 +653,8 @@ function ModifyGroupDialog({ group, onClose, onSave }: {
     contactPhone: draft.contactPhone,
     type: draft.type,
     status: draft.status,
+    total: projectedTotal,
+    balance: projectedBalance,
   });
 
   return (
@@ -562,6 +689,27 @@ function ModifyGroupDialog({ group, onClose, onSave }: {
               <span className="text-muted-foreground">Stay duration</span>
               <span className="font-semibold tabular">{draft.nights} night{draft.nights === 1 ? "" : "s"}</span>
             </div>
+
+            {/* Live re-priced total / balance — updates as dates or pax change */}
+            {canReprice && (
+              <div className="rounded-md border border-border p-3 text-sm space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground text-xs">Revised total</span>
+                  <span className="font-semibold tabular">
+                    {money(projectedTotal)}
+                    {projectedTotal !== group.total && (
+                      <span className="text-[11px] text-muted-foreground ml-1.5 line-through">{money(group.total)}</span>
+                    )}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground text-xs">Balance due <span className="opacity-70">· after {money(group.advance)} advance</span></span>
+                  <span className={cn("font-semibold tabular", projectedBalance > 0 ? "text-warning" : "text-success")}>
+                    {projectedBalance > 0 ? money(projectedBalance) : "Paid"}
+                  </span>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

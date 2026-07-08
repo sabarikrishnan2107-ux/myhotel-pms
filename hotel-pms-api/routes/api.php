@@ -6,7 +6,9 @@ use App\Http\Controllers\Api\BackupController;
 use App\Http\Controllers\Api\EInvoiceController;
 use App\Http\Controllers\Api\EmailController;
 use App\Http\Controllers\Api\HallBookingMailController;
+use App\Http\Controllers\Api\HousekeepingController;
 use App\Http\Controllers\Api\InvoiceMailController;
+use App\Http\Controllers\Api\MaintenanceController;
 use App\Http\Controllers\Api\NightAuditController;
 use App\Http\Controllers\Api\OwnerFlashController;
 use App\Http\Controllers\Api\PropertyController;
@@ -22,6 +24,12 @@ use Illuminate\Support\Facades\Route;
 
 // ---- Public: authentication ----
 Route::post('/login', [AuthController::class, 'login']);
+
+// Housekeeping mobile app — employee login (public; caller has no token yet).
+Route::post('/housekeeping/login', [HousekeepingController::class, 'login']);
+
+// Maintenance technician mobile app — employee login (public; no token yet).
+Route::post('/maintenance/login', [MaintenanceController::class, 'login']);
 
 // ---- Protected: everything else requires a valid Sanctum token ----
 Route::middleware(['auth:sanctum', 'company.active'])->group(function () {
@@ -97,6 +105,36 @@ Route::middleware(['auth:sanctum', 'company.active'])->group(function () {
     Route::get('/bookings/mobile', [VerificationController::class, 'mobile']);
     Route::get('/bookings/{id}', [VerificationController::class, 'show'])->whereNumber('id');
     Route::post('/bookings/{id}/verification', [VerificationController::class, 'store'])->whereNumber('id');
+
+    // Housekeeping mobile app — employee task lifecycle (acknowledge → before
+    // photos → start/timer → after photos → complete). Declared before the
+    // generic /{resource} routes so they take precedence.
+    Route::get('/housekeeping/tasks', [HousekeepingController::class, 'tasks']);
+    Route::get('/housekeeping/history', [HousekeepingController::class, 'history']);
+    Route::get('/housekeeping/report', [HousekeepingController::class, 'report']); // admin report (all tasks)
+    Route::get('/housekeeping/cleaned-today', [HousekeepingController::class, 'cleanedToday']);
+    Route::post('/housekeeping/self-assign', [HousekeepingController::class, 'selfAssign']);
+    Route::post('/housekeeping/tasks/{id}/acknowledge', [HousekeepingController::class, 'acknowledge'])->whereNumber('id');
+    Route::post('/housekeeping/tasks/{id}/before-photos', [HousekeepingController::class, 'beforePhotos'])->whereNumber('id');
+    Route::post('/housekeeping/tasks/{id}/start', [HousekeepingController::class, 'start'])->whereNumber('id');
+    Route::post('/housekeeping/tasks/{id}/after-photos', [HousekeepingController::class, 'afterPhotos'])->whereNumber('id');
+    Route::post('/housekeeping/tasks/{id}/report-found', [HousekeepingController::class, 'reportFound'])->whereNumber('id');
+    Route::post('/housekeeping/tasks/{id}/report-damage', [HousekeepingController::class, 'reportDamage'])->whereNumber('id');
+    Route::post('/housekeeping/tasks/{id}/complete', [HousekeepingController::class, 'complete'])->whereNumber('id');
+
+    // Maintenance technician mobile app — ticket lifecycle (claim → start →
+    // before/after photos → notes → resolve/escalate). Declared before the
+    // generic /{resource} routes so they take precedence.
+    Route::get('/maintenance/tickets', [MaintenanceController::class, 'tickets']);
+    Route::get('/maintenance/queue', [MaintenanceController::class, 'queue']);
+    Route::get('/maintenance/history', [MaintenanceController::class, 'history']);
+    Route::post('/maintenance/tickets/{id}/claim', [MaintenanceController::class, 'claim'])->whereNumber('id');
+    Route::post('/maintenance/tickets/{id}/start', [MaintenanceController::class, 'start'])->whereNumber('id');
+    Route::post('/maintenance/tickets/{id}/before-photos', [MaintenanceController::class, 'beforePhotos'])->whereNumber('id');
+    Route::post('/maintenance/tickets/{id}/after-photos', [MaintenanceController::class, 'afterPhotos'])->whereNumber('id');
+    Route::post('/maintenance/tickets/{id}/notes', [MaintenanceController::class, 'notes'])->whereNumber('id');
+    Route::post('/maintenance/tickets/{id}/resolve', [MaintenanceController::class, 'resolve'])->whereNumber('id');
+    Route::post('/maintenance/self-ticket', [MaintenanceController::class, 'selfTicket']); // emergency: raise + self-assign a ticket for a room
 
     // SMTP settings — dedicated controller so the password is encrypted at rest
     // and never returned. Registered before the generic /settings/{key} routes.

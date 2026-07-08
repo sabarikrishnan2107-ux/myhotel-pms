@@ -20,7 +20,9 @@ import { apiGet, apiPut, apiPost, apiDelete } from "@/lib/api";
 import type { Room } from "@/lib/types";
 
 // ---- Backend row shapes ----
-type StaffRow = { id: number; name: string; role: string; dept: string; active: boolean };
+// Login users (GET /staff-accounts). Assignable housekeepers must be real login
+// users so their `id` is the user id the mobile app authenticates as.
+type StaffAccountRow = { id: number; name: string; role: string; department?: string | null; status?: string; employeeCode?: string | null };
 type FoundItemRow = {
   id: number; name: string; category?: string; status?: string;
   foundLocation?: string | null; foundDate?: string; foundBy?: string | null;
@@ -28,7 +30,7 @@ type FoundItemRow = {
 };
 type LinenRow = { id: number; name: string; issued: number; returned: number; wastage: number; inUse: number };
 
-type Housekeeper = { id: string; name: string; role: string; active: boolean };
+type Housekeeper = { id: string; userId: number; name: string; role: string; active: boolean; code?: string | null };
 
 // Current clock time as HH:MM for stamping cleaning start.
 const nowHHMM = () => new Date().toTimeString().slice(0, 5);
@@ -114,8 +116,13 @@ export default function HousekeepingPage() {
 
   // Build the housekeeping board from the real room board (live hk status + assignment).
   const [tasks, setTasks] = React.useState(TASKS);
+  // Board context (customer + occupied/dirty state) for the assign → task payload.
+  const boardInfo = React.useRef<Record<string, { guestName: string | null; roomState: string }>>({});
   const refreshBoard = React.useCallback(
     () => apiGet<Room[]>("/room-board").then(board => {
+      const info: Record<string, { guestName: string | null; roomState: string }> = {};
+      board.forEach(r => { info[`tk-${r.id}`] = { guestName: r.guestName ?? null, roomState: r.status }; });
+      boardInfo.current = info;
       setTasks(board.map(r => ({
         id: `tk-${r.id}`,
         room: r.number,
@@ -131,15 +138,24 @@ export default function HousekeepingPage() {
     }).catch(() => {}),
     [],
   );
-  React.useEffect(() => { refreshBoard(); }, [refreshBoard]);
+  // Poll every 10s so rooms cleaned/completed from the mobile app update live.
+  React.useEffect(() => {
+    refreshBoard();
+    const id = setInterval(refreshBoard, 10000);
+    return () => clearInterval(id);
+  }, [refreshBoard]);
 
-  // Real housekeeping staff (dept = Housekeeping).
+  // Real housekeeping employees who can log into the mobile app (login users
+  // whose role/department is Housekeeping). `userId` is the id the app assigns to.
   const [housekeepers, setHousekeepers] = React.useState<Housekeeper[]>([]);
   React.useEffect(() => {
-    apiGet<StaffRow[]>("/staff").then(staff => {
-      setHousekeepers(staff.filter(s => s.dept === "Housekeeping").map(s => ({
-        id: String(s.id), name: s.name, role: s.role, active: s.active,
-      })));
+    apiGet<StaffAccountRow[]>("/staff-accounts").then(users => {
+      setHousekeepers(users
+        .filter(u => /housekeep/i.test(u.role) || /housekeep/i.test(u.department ?? ""))
+        .map(u => ({
+          id: String(u.id), userId: u.id, name: u.name, role: u.role,
+          active: (u.status ?? "active") !== "inactive", code: u.employeeCode,
+        })));
     }).catch(() => {});
   }, []);
 
@@ -163,13 +179,35 @@ export default function HousekeepingPage() {
     if (roomId) apiPut(`/rooms/${roomId}`, { hkStatus: "clean", hkAssignee: null }).then(refreshBoard).catch(() => showToast("⚠ Save failed — backend offline"));
   };
 
-  // Assign a housekeeper → room goes into Cleaning, stamped with start time.
-  const assignRoom = (taskId: string, room: string, name: string) => {
+  // Assign a housekeeper → creates a task the employee sees on their phone AND
+  // stamps the room board so the office view reflects the assignment.
+  const assignRoom = (taskId: string, room: string, hk: Housekeeper) => {
     const roomId = roomIdOf(taskId);
     const startedAt = nowHHMM();
-    setTasks(prev => prev.map(x => x.id === taskId ? { ...x, assignee: name, status: "cleaning" as HKStatus, startedAt } : x));
-    showToast(`Room ${room} assigned to ${name}`);
-    if (roomId) apiPut(`/rooms/${roomId}`, { hkStatus: "cleaning", hkAssignee: name, hkStartedAt: startedAt }).then(refreshBoard).catch(() => showToast("⚠ Save failed — backend offline"));
+    const task = tasks.find(t => t.id === taskId);
+    setTasks(prev => prev.map(x => x.id === taskId ? { ...x, assignee: hk.name, status: "cleaning" as HKStatus, startedAt } : x));
+    showToast(`Room ${room} assigned to ${hk.name}`);
+
+    // 1) Create the housekeeping task targeting this employee (mobile app fetches it).
+    const info = boardInfo.current[taskId];
+    apiPost("/housekeeping-tasks", {
+      room,
+      roomId: roomId ? Number(roomId) : null,
+      floor: task?.floor ?? null,
+      roomType: task?.type ?? "",
+      type: "Cleaning",
+      priority: task?.priority === "high" ? "urgent" : "normal",
+      status: "assigned",
+      assignee: hk.name,
+      assignedToUserId: hk.userId,
+      assignedBy: "Front Office",
+      assignedAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+      guestName: info?.guestName ?? null,
+      roomState: info?.roomState ?? null,
+    }).catch(() => {});
+
+    // 2) Stamp the room board (existing behaviour).
+    if (roomId) apiPut(`/rooms/${roomId}`, { hkStatus: "cleaning", hkAssignee: hk.name, hkStartedAt: startedAt }).then(refreshBoard).catch(() => showToast("⚠ Save failed — backend offline"));
   };
 
   // Mark a specific room Inspected → Ready (clean), clearing the housekeeper.
@@ -828,7 +866,7 @@ export default function HousekeepingPage() {
           room={assignModal.room}
           housekeepers={housekeepers}
           onClose={() => setAssignModal(null)}
-          onAssign={(name) => { assignRoom(assignModal.taskId, assignModal.room, name); setAssignModal(null); }}
+          onAssign={(hk) => { assignRoom(assignModal.taskId, assignModal.room, hk); setAssignModal(null); }}
         />
       )}
 
@@ -1220,9 +1258,10 @@ function BoardTh({
   );
 }
 
-function AssignModal({ taskId, room, housekeepers, onClose, onAssign }: { taskId: string; room: string; housekeepers: Housekeeper[]; onClose: () => void; onAssign: (name: string) => void }) {
+function AssignModal({ taskId, room, housekeepers, onClose, onAssign }: { taskId: string; room: string; housekeepers: Housekeeper[]; onClose: () => void; onAssign: (hk: Housekeeper) => void }) {
   void taskId;
   const active = housekeepers.filter(h => h.active);
+  const suggested = active[0]?.name;
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
@@ -1248,24 +1287,28 @@ function AssignModal({ taskId, room, housekeepers, onClose, onAssign }: { taskId
                 <button
                   key={h.id}
                   type="button"
-                  onClick={() => onAssign(h.name)}
+                  onClick={() => onAssign(h)}
                   className="w-full flex items-center gap-3 p-3 rounded-md border border-border hover:bg-surface-sunken hover:border-brand transition-colors text-left"
                 >
                   <Avatar name={h.name} size={36} />
                   <div className="flex-1">
                     <p className="font-medium text-sm">{h.name}</p>
-                    <p className="text-[11px] text-muted-foreground">{h.role}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {h.role}{h.code ? ` · ID ${h.code}` : ""}
+                    </p>
                   </div>
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 </button>
               ))}
             </div>
           </div>
-          <AIInsight
-            text={
-              <>AI suggests <span className="font-semibold">Maria Lopez</span> — closest to floor &amp; matches room type preference.</>
-            }
-          />
+          {suggested && (
+            <AIInsight
+              text={
+                <>AI suggests <span className="font-semibold">{suggested}</span> — closest to floor &amp; matches room type preference.</>
+              }
+            />
+          )}
         </Card>
       </div>
     </>

@@ -301,6 +301,14 @@ export interface GroupBooking {
   notes?: string;
   createdAt: string;
   billingMode?: "master" | "per-room" | "split";
+  // Booker identification captured at booking time (optional). Images are
+  // stored as data-URIs / URLs, mirroring hall bookings.
+  idType?: string;
+  idNumber?: string;
+  guestPhoto?: string | null;
+  idFront?: string | null;
+  idBack?: string | null;
+  signature?: string | null;
 }
 
 export const GROUP_BOOKINGS: GroupBooking[] = [

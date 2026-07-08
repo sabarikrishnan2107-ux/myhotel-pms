@@ -110,6 +110,7 @@ type FoundItem = {
   email?: string;
   remarks?: string;
   photos?: string[];
+  voiceUrl?: string | null;
   timeline: { date: string; text: string }[];
 };
 
@@ -655,6 +656,14 @@ function DetailDrawer({
               </>
             )}
           </div>
+
+          {/* voice message (recorded by housekeeping when reporting the item) */}
+          {item.voiceUrl ? (
+            <div className="rounded-md border border-border p-3">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">🎙 Voice message</p>
+              <audio controls src={item.voiceUrl} className="w-full" />
+            </div>
+          ) : null}
 
           {/* fields */}
           <FieldGroup title="Item details">

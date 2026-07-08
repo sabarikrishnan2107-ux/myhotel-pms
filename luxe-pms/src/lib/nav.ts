@@ -51,8 +51,10 @@ export const NAV: NavItem[] = [
 
   // ---- Housekeeping ----
   { href: "/housekeeping", label: "Housekeeping", icon: Sparkles, group: "operations", module: "hk" },
-  { href: "/hk-report", label: "HK Productivity", icon: ClipboardCheck, group: "operations", module: "hk" },
+  { href: "/hk-report", label: "HK Progress", icon: ClipboardCheck, group: "operations", module: "hk" },
+  { href: "/hk-tasks", label: "Cleaning Reports", icon: FileBarChart, group: "operations", module: "hk" },
   { href: "/maintenance", label: "Maintenance", icon: Wrench, group: "operations" },
+  { href: "/maintenance-report", label: "Maintenance Reports", icon: FileBarChart, group: "operations" },
   { href: "/lost-found", label: "Lost & Found", icon: Search, group: "operations" },
 
   { href: "/agents", label: "Agents & Corporate", icon: Briefcase, group: "people", roles: MANAGER },

@@ -23,6 +23,8 @@ import { apiGet, apiPost, apiPut } from "@/lib/api";
 import { useProperty, hotelName } from "@/lib/use-property";
 
 type Ticket = typeof MAINTENANCE_TICKETS[number];
+// Ticket + the media a housekeeper can attach when reporting damage from the app.
+type MTicket = Ticket & { description?: string | null; photos?: string[] | null; voiceUrl?: string | null };
 let __mtkt = 2402;
 const nextTicketCode = () => `M-${++__mtkt}`;
 
@@ -147,7 +149,8 @@ export default function MaintenancePage() {
   const [newTicketOpen, setNewTicketOpen] = React.useState(false);
   const [scheduleDetail, setScheduleDetail] = React.useState<ScheduleItem | null>(null);
   const [amcDetail, setAmcDetail] = React.useState<AMCVendor | null>(null);
-  const [assignFor, setAssignFor] = React.useState<typeof MAINTENANCE_TICKETS[number] | null>(null);
+  const [assignFor, setAssignFor] = React.useState<MTicket | null>(null);
+  const [detailTicket, setDetailTicket] = React.useState<MTicket | null>(null);
   const [toast, setToast] = React.useState<string | null>(null);
 
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
@@ -172,12 +175,19 @@ export default function MaintenancePage() {
     return d >= 0 && d <= 90;
   }).length;
 
-  const [tickets, setTickets] = React.useState<Ticket[]>([]);
+  const [tickets, setTickets] = React.useState<MTicket[]>([]);
+  const refreshTickets = React.useCallback(
+    () => apiGet<MTicket[]>("/maintenance-tickets").then(setTickets).catch(() => {}),
+    [],
+  );
+  // Poll every 10s so a ticket resolved/started/claimed from the maintenance
+  // mobile app changes status here automatically (no manual refresh needed) —
+  // the same live behaviour as the housekeeping room rack.
   React.useEffect(() => {
-    let cancelled = false;
-    apiGet<Ticket[]>("/maintenance-tickets").then(r => { if (!cancelled) setTickets(r); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
+    refreshTickets();
+    const id = setInterval(refreshTickets, 10000);
+    return () => clearInterval(id);
+  }, [refreshTickets]);
 
   // Mark a preventive task done: optimistically advance lastDone -> today,
   // recompute nextDue by frequency, then PUT (offline-safe).
@@ -414,9 +424,9 @@ export default function MaintenancePage() {
       )}
 
       {/* Body */}
-      {sorted.length > 0 && view === "cards" && <BoardView tickets={sorted} onAssignFor={setAssignFor} onAdvance={advanceTicket} />}
+      {sorted.length > 0 && view === "cards" && <BoardView tickets={sorted} onAssignFor={setAssignFor} onAdvance={advanceTicket} onDetail={setDetailTicket} />}
       {sorted.length > 0 && view === "list" && (
-        <ListView tickets={sorted} sortKey={sortKey} sortDir={sortDir} onSort={onSort} onAssignFor={setAssignFor} onAdvance={advanceTicket} />
+        <ListView tickets={sorted} sortKey={sortKey} sortDir={sortDir} onSort={onSort} onAssignFor={setAssignFor} onAdvance={advanceTicket} onDetail={setDetailTicket} />
       )}
         </div>
       )}
@@ -467,6 +477,11 @@ export default function MaintenancePage() {
         />
       )}
 
+      {/* Ticket detail — shows the housekeeping damage report photo / voice / note */}
+      {detailTicket && (
+        <TicketDetailModal ticket={detailTicket} onClose={() => setDetailTicket(null)} />
+      )}
+
       {/* Schedule detail modal */}
       {scheduleDetail && (
         <ScheduleDetailModal
@@ -498,8 +513,74 @@ export default function MaintenancePage() {
   );
 }
 
+// ============ TICKET DETAIL MODAL (housekeeping damage report) ============
+function TicketDetailModal({ ticket, onClose }: { ticket: MTicket; onClose: () => void }) {
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [onClose]);
+  const photos = ticket.photos ?? [];
+  const location = ticket.room === "Lobby" || ticket.room === "Pool" || ticket.room === "Kitchen" ? ticket.room : `Room ${ticket.room}`;
+  const hasExtras = !!ticket.description || photos.length > 0 || !!ticket.voiceUrl;
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <Card className="pointer-events-auto w-full max-w-lg p-0 animate-in shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
+          <div className="px-5 py-4 bg-surface-elevated border-b border-border flex items-center gap-3">
+            <span className="h-10 w-10 rounded-md bg-warning-soft text-warning inline-flex items-center justify-center shrink-0"><Wrench className="h-5 w-5" /></span>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold truncate">{ticket.title}</h3>
+              <p className="text-xs text-muted-foreground tabular">{ticket.code} · {location} · {ticket.category}</p>
+            </div>
+            <button type="button" onClick={onClose} className="h-8 w-8 rounded-md hover:bg-surface-sunken inline-flex items-center justify-center"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="px-5 py-4 space-y-4 overflow-y-auto">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge tone={PRIORITY_TONE[ticket.priority]}>{ticket.priority}</Badge>
+              <Badge tone={STATUS_TONE[ticket.status]}>{STATUS_LABEL[ticket.status]}</Badge>
+              <span className="text-xs text-muted-foreground"><Clock className="inline h-3 w-3" /> {ticket.reported}</span>
+              {ticket.assignee && <span className="text-xs text-muted-foreground inline-flex items-center gap-1"><User className="h-3 w-3" />{ticket.assignee}</span>}
+            </div>
+
+            {ticket.description ? (
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Note</p>
+                <p className="text-sm whitespace-pre-wrap">{ticket.description}</p>
+              </div>
+            ) : null}
+
+            {photos.length > 0 && (
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-1.5">Photos ({photos.length})</p>
+                <div className="flex flex-wrap gap-2">
+                  {photos.map((u, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <a key={i} href={u} target="_blank" rel="noreferrer"><img src={u} alt={`photo ${i + 1}`} className="h-24 w-24 rounded-md object-cover border border-border" /></a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {ticket.voiceUrl ? (
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-1.5">🎙 Voice message</p>
+                <audio controls src={ticket.voiceUrl} className="w-full" />
+              </div>
+            ) : null}
+
+            {!hasExtras && <p className="text-sm text-muted-foreground">No additional details attached.</p>}
+          </div>
+        </Card>
+      </div>
+    </>
+  );
+}
+
 // ============ KANBAN BOARD VIEW ============
-function BoardView({ tickets, onAssignFor, onAdvance }: { tickets: typeof MAINTENANCE_TICKETS; onAssignFor: (t: typeof MAINTENANCE_TICKETS[number]) => void; onAdvance: (t: typeof MAINTENANCE_TICKETS[number]) => void }) {
+function BoardView({ tickets, onAssignFor, onAdvance, onDetail }: { tickets: MTicket[]; onAssignFor: (t: MTicket) => void; onAdvance: (t: MTicket) => void; onDetail: (t: MTicket) => void }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
       {LANES.map(lane => {
@@ -517,7 +598,15 @@ function BoardView({ tickets, onAssignFor, onAdvance }: { tickets: typeof MAINTE
                     <span className="text-xs text-muted-foreground tabular">{t.code}</span>
                     <Badge tone={PRIORITY_TONE[t.priority]}>{t.priority}</Badge>
                   </div>
-                  <p className="text-sm font-medium mt-2 leading-snug">{t.title}</p>
+                  <button type="button" onClick={() => onDetail(t)} className="text-left w-full">
+                    <p className="text-sm font-medium mt-2 leading-snug hover:text-brand">{t.title}</p>
+                  </button>
+                  {((t.photos?.length ?? 0) > 0 || t.voiceUrl) && (
+                    <button type="button" onClick={() => onDetail(t)} className="mt-1 flex items-center gap-2 text-[11px] text-brand font-medium">
+                      {(t.photos?.length ?? 0) > 0 && <span>📷 {t.photos!.length}</span>}
+                      {t.voiceUrl && <span>🎙 voice</span>}
+                    </button>
+                  )}
                   <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
                     <span>{t.room === "Lobby" || t.room === "Pool" || t.room === "Kitchen" ? t.room : `Room ${t.room}`}</span>
                     <span><Clock className="inline h-3 w-3" /> {t.reported}</span>
@@ -553,14 +642,15 @@ function BoardView({ tickets, onAssignFor, onAdvance }: { tickets: typeof MAINTE
 
 // ============ LIST VIEW ============
 function ListView({
-  tickets, sortKey, sortDir, onSort, onAssignFor, onAdvance,
+  tickets, sortKey, sortDir, onSort, onAssignFor, onAdvance, onDetail,
 }: {
-  tickets: typeof MAINTENANCE_TICKETS;
+  tickets: MTicket[];
   sortKey: SortKey;
   sortDir: SortDir;
   onSort: (k: SortKey) => void;
-  onAssignFor: (t: typeof MAINTENANCE_TICKETS[number]) => void;
-  onAdvance: (t: typeof MAINTENANCE_TICKETS[number]) => void;
+  onAssignFor: (t: MTicket) => void;
+  onAdvance: (t: MTicket) => void;
+  onDetail: (t: MTicket) => void;
 }) {
   return (
     <Card className="p-0 overflow-hidden">
@@ -635,10 +725,12 @@ function ListView({
                       )}
                       <button
                         type="button"
+                        onClick={() => onDetail(t)}
                         className="h-8 px-2 rounded-md border border-border hover:bg-brand hover:text-brand-foreground hover:border-brand inline-flex items-center justify-center text-muted-foreground text-xs gap-1 transition-colors"
                         title="View ticket"
                       >
                         Details
+                        {((t.photos?.length ?? 0) > 0 || t.voiceUrl) && <span className="text-brand">· 📷🎙</span>}
                         <ChevronRight className="h-3 w-3" />
                       </button>
                     </div>

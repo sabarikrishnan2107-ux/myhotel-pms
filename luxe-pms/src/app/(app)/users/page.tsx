@@ -41,6 +41,7 @@ type SeededUser = typeof USERS[number];
 type Status = "active" | "disabled";
 type UserExt = Omit<SeededUser, "status"> & {
   status: Status;
+  employeeCode?: string | null; // 2000-series id for housekeeping staff
   phone?: string;
   joinedAt?: string;
   lastLoginAt?: string;
@@ -51,7 +52,7 @@ type UserExt = Omit<SeededUser, "status"> & {
 };
 
 /** Enrich a core account row (from DB or mock) with display-only session/activity data. */
-function enrich(u: SeededUser & { phone?: string; joinedAt?: string }, i: number): UserExt {
+function enrich(u: SeededUser & { phone?: string; joinedAt?: string; employeeCode?: string | null }, i: number): UserExt {
   return {
     ...u,
     phone: u.phone || `+91 9${(98765 + i * 137).toString().slice(-4)} ${(43210 + i * 79).toString().slice(-5)}`,
@@ -78,7 +79,7 @@ export default function UsersPage() {
   const [roles, setRoles] = React.useState<{ id: string; name: string }[]>([]);
   const roleNames = roles.map(r => r.name);
   React.useEffect(() => {
-    apiGet<(SeededUser & { phone?: string; joinedAt?: string })[]>("/staff-accounts")
+    apiGet<(SeededUser & { phone?: string; joinedAt?: string; employeeCode?: string | null })[]>("/staff-accounts")
       .then(rows => setUsers(rows.map((r, i) => enrich({ ...r, id: String(r.id) }, i))))
       .catch(() => {});
     apiGet<{ id: number | string; name: string }[]>("/roles")
@@ -154,10 +155,28 @@ export default function UsersPage() {
   };
   const handleReset = (u: UserExt) => setResetUser(u);
 
-  const handleInvite = (data: { name: string; email: string; password: string; role: Role; department: string; phone: string; sendEmail: boolean; sendWhatsApp: boolean }) => {
+  // Suggested next housekeeping employee id (2000-series) from the loaded users.
+  const nextHkCode = React.useMemo(() => {
+    const max = users
+      .map(u => parseInt(String(u.employeeCode ?? ""), 10))
+      .filter(n => Number.isFinite(n) && n >= 2000 && n < 3000)
+      .reduce((m, n) => Math.max(m, n), 2000);
+    return String(max + 1);
+  }, [users]);
+  // Suggested next maintenance/engineering employee id (3000-series).
+  const nextMtCode = React.useMemo(() => {
+    const max = users
+      .map(u => parseInt(String(u.employeeCode ?? ""), 10))
+      .filter(n => Number.isFinite(n) && n >= 3000 && n < 4000)
+      .reduce((m, n) => Math.max(m, n), 3000);
+    return String(max + 1);
+  }, [users]);
+
+  const handleInvite = (data: { name: string; email: string; password: string; role: Role; department: string; phone: string; employeeCode: string; sendEmail: boolean; sendWhatsApp: boolean }) => {
     const draft = {
       name: data.name, email: data.email, password: data.password, role: data.role,
       department: data.department || null, status: "active", phone: data.phone,
+      employee_code: data.employeeCode.trim() || undefined,
     };
     apiPost<SeededUser>("/staff-accounts", draft)
       .then(row => setUsers(prev => [enrich({ ...row, id: String(row.id) }, prev.length), ...prev]))
@@ -179,7 +198,7 @@ export default function UsersPage() {
 
   const handleEditSave = (u: UserExt) => {
     setUsers(prev => prev.map(x => x.id === u.id ? u : x));
-    const dbPatch = Object.fromEntries(Object.entries(u).filter(([k]) => DB_FIELDS.includes(k)));
+    const dbPatch = { ...Object.fromEntries(Object.entries(u).filter(([k]) => DB_FIELDS.includes(k))), employee_code: u.employeeCode ?? null };
     apiPut(`/staff-accounts/${u.id}`, dbPatch).catch(() => showToast("Could not save changes"));
     setEditUser(null);
     showToast(`${u.name} updated`);
@@ -333,6 +352,7 @@ export default function UsersPage() {
                         <div className="min-w-0">
                           <p className="font-medium truncate">{u.name}</p>
                           <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                          {u.employeeCode && <p className="text-[11px] font-semibold text-brand tabular">ID {u.employeeCode}</p>}
                         </div>
                       </div>
                     </td>
@@ -396,7 +416,7 @@ export default function UsersPage() {
       </Card>
 
       {/* Modals */}
-      {inviteOpen && <InviteModal roles={roleNames} onClose={() => setInviteOpen(false)} onSave={handleInvite} />}
+      {inviteOpen && <InviteModal roles={roleNames} suggestedCode={nextHkCode} suggestedMtCode={nextMtCode} onClose={() => setInviteOpen(false)} onSave={handleInvite} />}
       {editUser && <EditUserModal user={editUser} roles={roleNames} onClose={() => setEditUser(null)} onSave={handleEditSave} />}
       {newRoleOpen && <NewRoleModal existing={roleNames} onClose={() => setNewRoleOpen(false)} onSave={createRole} />}
       {orgOpen && <OrgChartModal roles={roleNames} users={users} onClose={() => setOrgOpen(false)} />}
@@ -421,10 +441,12 @@ export default function UsersPage() {
 }
 
 // ============== INVITE MODAL ==============
-function InviteModal({ onClose, onSave, roles }: {
+function InviteModal({ onClose, onSave, roles, suggestedCode, suggestedMtCode }: {
   onClose: () => void;
-  onSave: (data: { name: string; email: string; password: string; role: Role; department: string; phone: string; sendEmail: boolean; sendWhatsApp: boolean }) => void;
+  onSave: (data: { name: string; email: string; password: string; role: Role; department: string; phone: string; employeeCode: string; sendEmail: boolean; sendWhatsApp: boolean }) => void;
   roles: string[];
+  suggestedCode: string;
+  suggestedMtCode: string;
 }) {
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
@@ -432,8 +454,19 @@ function InviteModal({ onClose, onSave, roles }: {
   const [department, setDepartment] = React.useState("");
   const [phone, setPhone] = React.useState("");
   const [role, setRole] = React.useState<Role>(roles[0] ?? "");
+  const [employeeCode, setEmployeeCode] = React.useState("");
   const [sendEmail, setSendEmail] = React.useState(true);
   const [sendWhatsApp, setSendWhatsApp] = React.useState(true);
+
+  const isHousekeeping = /housekeep/i.test(role) || /housekeep/i.test(department);
+  const isMaint = /maintenance|engineer/i.test(role) || /maintenance|engineer/i.test(department);
+  const appStaff = isHousekeeping || isMaint;
+  const appKind = isMaint ? "maintenance" : "housekeeping";
+  const suggested = isMaint ? suggestedMtCode : suggestedCode;
+  // Pre-fill the suggested id (2000s housekeeping / 3000s maintenance) once an app dept is chosen.
+  React.useEffect(() => {
+    if (appStaff && !employeeCode) setEmployeeCode(suggested);
+  }, [appStaff, suggested, employeeCode]);
 
   React.useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -442,7 +475,7 @@ function InviteModal({ onClose, onSave, roles }: {
     return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKey); };
   }, [onClose]);
 
-  const valid = name.trim().length > 1 && email.trim() !== "" && isValidEmail(email) && password.length >= 8 && !!role && isValidPhone(phone);
+  const valid = name.trim().length > 1 && email.trim() !== "" && isValidEmail(email) && password.length >= 8 && !!role && isValidPhone(phone) && (!appStaff || employeeCode.trim() !== "");
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -492,6 +525,13 @@ function InviteModal({ onClose, onSave, roles }: {
               ))}
             </div>
           </div>
+          {appStaff && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Employee ID * <span className="text-muted-foreground font-normal">({appKind} — used to log into the mobile app)</span></Label>
+              <Input value={employeeCode} onChange={e => setEmployeeCode(e.target.value)} placeholder={isMaint ? "e.g. 3001" : "e.g. 2001"} className="h-9 tabular text-lg font-semibold" />
+              <p className="text-[11px] text-muted-foreground">Next available id: <button type="button" className="text-brand font-medium" onClick={() => setEmployeeCode(suggested)}>{suggested}</button>. Must be unique.</p>
+            </div>
+          )}
           <div className="space-y-1.5 pt-2 border-t border-border">
             <Label className="text-xs">Send invite via</Label>
             <div className="grid grid-cols-2 gap-2">
@@ -512,7 +552,7 @@ function InviteModal({ onClose, onSave, roles }: {
 
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-border bg-surface-sunken/30">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onSave({ name, email, password, role, department, phone, sendEmail, sendWhatsApp })} disabled={!valid}>
+          <Button onClick={() => onSave({ name, email, password, role, department, phone, employeeCode, sendEmail, sendWhatsApp })} disabled={!valid}>
             <UserPlus className="h-3.5 w-3.5" />Create account
           </Button>
         </div>
@@ -572,6 +612,12 @@ function EditUserModal({ user, onClose, onSave, roles }: {
               {roles.map(r => <option key={r}>{r}</option>)}
             </Select>
           </div>
+          {(/housekeep/i.test(form.role) || /maintenance|engineer/i.test(form.role)) && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Employee ID <span className="text-muted-foreground font-normal">(mobile app login)</span></Label>
+              <Input value={form.employeeCode ?? ""} onChange={e => update("employeeCode", e.target.value)} placeholder={/maintenance|engineer/i.test(form.role) ? "e.g. 3001" : "e.g. 2001"} className="h-9 tabular" />
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-border bg-surface-sunken/30">
@@ -810,6 +856,7 @@ function UserDetailDrawer({ user, onClose, onEdit, onSuspend, onKillSessions, on
             <div className="space-y-4">
               <Card className="p-4 space-y-2.5 text-sm">
                 <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="truncate">{user.email}</span></div>
+                {user.employeeCode && <div className="flex items-center gap-2"><KeySquare className="h-3.5 w-3.5 text-muted-foreground shrink-0" />Employee ID <span className="tabular font-semibold text-brand">{user.employeeCode}</span></div>}
                 {user.phone && <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="tabular">{user.phone}</span></div>}
                 {user.joinedAt && <div className="flex items-center gap-2"><Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />Joined <span className="tabular">{user.joinedAt}</span></div>}
                 {user.lastLoginAt && <div className="flex items-center gap-2"><Activity className="h-3.5 w-3.5 text-muted-foreground shrink-0" />Last login <span className="tabular">{user.lastLoginAt}</span></div>}

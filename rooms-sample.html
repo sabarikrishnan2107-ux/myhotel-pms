@@ -1,0 +1,234 @@
+<style>
+  :root{
+    --bg: hsl(218 78% 7%);
+    --surface: hsl(218 60% 11%);
+    --surface-2: hsl(218 50% 14%);
+    --sunken: hsl(218 78% 5%);
+    --border: hsl(218 35% 22%);
+    --fg: hsl(40 27% 94%);
+    --muted: hsl(218 12% 65%);
+    --subtle: hsl(218 10% 48%);
+    --brand: hsl(40 74% 55%);
+    --brand-ink: hsl(218 78% 10%);
+    --available: hsl(142 60% 45%);
+    --occupied: hsl(40 80% 55%);
+    --dirty: hsl(262 60% 62%);
+    --cleaning: hsl(200 80% 58%);
+    --ooo: hsl(347 75% 58%);
+    --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  *{ box-sizing: border-box; }
+  .wrap{
+    font-family: var(--font);
+    background:
+      radial-gradient(1200px 600px at 50% -10%, hsl(218 60% 14%), transparent 60%),
+      var(--sunken);
+    min-height: 100%;
+    padding: 28px 16px 40px;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    color: var(--fg);
+  }
+  .lead{ color: var(--muted); font-size: 13px; text-align:center; max-width: 380px; line-height:1.5; }
+  .lead b{ color: var(--fg); }
+
+  /* Phone frame */
+  .phone{
+    width: 390px; max-width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 30px;
+    box-shadow: 0 40px 90px -30px rgba(0,0,0,.8), 0 0 0 8px hsl(218 40% 9%);
+    overflow: hidden;
+  }
+  .status-bar{ height: 34px; display:flex; align-items:center; justify-content:center; }
+  .notch{ width: 120px; height: 22px; background: hsl(218 40% 9%); border-radius: 0 0 14px 14px; }
+
+  .app-head{ padding: 6px 18px 12px; display:flex; align-items:flex-end; justify-content:space-between; }
+  .app-head h1{ font-size: 24px; font-weight: 800; margin: 0; letter-spacing: -0.02em; }
+  .app-head p{ margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+  .floor-dd{
+    display:inline-flex; align-items:center; gap:6px;
+    background: var(--surface); border:1px solid var(--border);
+    padding: 7px 12px; border-radius: 999px; font-size: 12.5px; font-weight:600; color: var(--fg);
+  }
+  .floor-dd .car{ color: var(--muted); font-size: 10px; }
+
+  /* Filter chips */
+  .chips{ display:flex; gap:8px; padding: 4px 18px 14px; overflow-x:auto; }
+  .chips::-webkit-scrollbar{ display:none; }
+  .chip{
+    flex: 0 0 auto; display:inline-flex; align-items:center; gap:6px;
+    background: var(--surface); border:1px solid var(--border);
+    border-radius: 999px; padding: 7px 12px; font-size: 12.5px; font-weight:600; color: var(--muted);
+    white-space:nowrap;
+  }
+  .chip .dot{ width:8px; height:8px; border-radius:999px; }
+  .chip .n{ font-variant-numeric: tabular-nums; opacity:.9; }
+  .chip.active{ background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+  .chip.active .n{ opacity:1; }
+
+  /* Board card */
+  .board{
+    margin: 0 14px; background: var(--surface); border:1px solid var(--border);
+    border-radius: 18px; padding: 16px 14px 14px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.25), 0 10px 30px -14px rgba(0,0,0,.5);
+  }
+  .board-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom: 14px; }
+  .eyebrow{ font-size: 11px; letter-spacing: .16em; text-transform:uppercase; color: var(--subtle); font-weight:800; display:flex; align-items:center; gap:7px; }
+  .live{ display:inline-flex; align-items:center; gap:6px; font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color: var(--available);
+         background: hsl(142 40% 16%); padding: 4px 8px; border-radius:999px; }
+  .live .pulse{ width:7px; height:7px; border-radius:999px; background: var(--available); animation: pulse 1.8s infinite; }
+  @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.35} }
+
+  .row{ display:grid; grid-template-columns: 26px repeat(5, 1fr); gap: 8px; align-items:center; margin-bottom: 8px; }
+  .floor-lbl{ font-size: 12px; font-weight:800; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .tile{
+    height: 42px; border-radius: 11px; display:flex; align-items:center; justify-content:center;
+    font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+    position: relative; user-select:none;
+  }
+  .tile.available{ background: var(--available); color: hsl(150 60% 10%); }
+  .tile.occupied{ background: var(--occupied); color: hsl(40 80% 12%); }
+  .tile.dirty{ background: var(--dirty); color: #fff; }
+  .tile.cleaning{ background: var(--cleaning); color: hsl(205 80% 12%); }
+  .tile.ooo{ background: var(--ooo); color: #fff; }
+  .tile.empty{ background: hsl(218 30% 16%); color: var(--subtle); font-weight:600; }
+  .tile.sel{ outline: 3px solid var(--brand); outline-offset: 2px; box-shadow: 0 8px 20px -6px hsl(40 74% 55% / .5); }
+
+  /* Legend */
+  .legend{ display:flex; flex-wrap:wrap; gap: 8px; margin-top: 12px; padding-top: 12px; border-top:1px solid var(--border); }
+  .leg{ display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; color: var(--muted); }
+  .leg .dot{ width:10px; height:10px; border-radius:3px; }
+
+  /* Action sheet */
+  .sheet{
+    margin: 12px 14px 0; background: var(--surface-2); border:1px solid var(--border);
+    border-radius: 16px; padding: 14px; display:flex; align-items:center; gap: 12px;
+  }
+  .sheet .rm{ width:52px; height:52px; border-radius:12px; background: var(--dirty); color: #fff;
+              display:flex; align-items:center; justify-content:center; font-weight:800; font-size:17px; }
+  .sheet .info h3{ margin:0; font-size:15px; font-weight:800; }
+  .sheet .info p{ margin:2px 0 0; font-size:12px; color: var(--muted); }
+  .sheet .info .st{ display:inline-flex; align-items:center; gap:5px; margin-top:6px; font-size:11px; font-weight:700; color: var(--dirty); }
+  .sheet .info .st .dot{ width:7px;height:7px;border-radius:999px;background:var(--dirty); }
+  .btn{
+    margin-left:auto; background: var(--available); color: hsl(150 60% 10%);
+    border:none; border-radius: 12px; padding: 12px 16px; font-weight:800; font-size:13.5px; font-family:var(--font);
+    white-space:nowrap;
+  }
+
+  /* Tab bar */
+  .tabs{ display:flex; margin-top: 16px; border-top:1px solid var(--border); background: var(--bg); }
+  .tab{ flex:1; padding: 10px 0 12px; display:flex; flex-direction:column; align-items:center; gap:3px; font-size:11px; font-weight:600; color: var(--subtle); }
+  .tab .ic{ font-size:19px; opacity:.55; }
+  .tab.active{ color: var(--brand); }
+  .tab.active .ic{ opacity:1; }
+</style>
+
+<div class="wrap">
+  <p class="lead"><b>Housekeeping app · Rooms tab</b> — a live floor grid of every room by status. Tap a <b>dirty</b> or <b>occupied</b> room to self-assign and start cleaning. This is a design mockup of the mobile screen.</p>
+
+  <div class="phone">
+    <div class="status-bar"><div class="notch"></div></div>
+
+    <div class="app-head">
+      <div>
+        <h1>Rooms</h1>
+        <p>30 rooms · live status</p>
+      </div>
+      <span class="floor-dd">All Floors <span class="car">▼</span></span>
+    </div>
+
+    <div class="chips">
+      <span class="chip active">All <span class="n">30</span></span>
+      <span class="chip"><span class="dot" style="background:var(--dirty)"></span>Dirty <span class="n">6</span></span>
+      <span class="chip"><span class="dot" style="background:var(--occupied)"></span>Occupied <span class="n">4</span></span>
+      <span class="chip"><span class="dot" style="background:var(--available)"></span>Available <span class="n">18</span></span>
+      <span class="chip"><span class="dot" style="background:var(--cleaning)"></span>Cleaning <span class="n">1</span></span>
+      <span class="chip"><span class="dot" style="background:var(--ooo)"></span>Maintenance <span class="n">1</span></span>
+    </div>
+
+    <div class="board">
+      <div class="board-top">
+        <span class="eyebrow">🛏 Live Room Status</span>
+        <span class="live"><span class="pulse"></span>Live</span>
+      </div>
+
+      <div class="row">
+        <span class="floor-lbl">F6</span>
+        <span class="tile available">601</span>
+        <span class="tile available">602</span>
+        <span class="tile occupied">603</span>
+        <span class="tile available">604</span>
+        <span class="tile empty">—</span>
+      </div>
+      <div class="row">
+        <span class="floor-lbl">F5</span>
+        <span class="tile available">501</span>
+        <span class="tile dirty">502</span>
+        <span class="tile available">503</span>
+        <span class="tile occupied">504</span>
+        <span class="tile available">505</span>
+      </div>
+      <div class="row">
+        <span class="floor-lbl">F4</span>
+        <span class="tile available">401</span>
+        <span class="tile cleaning">402</span>
+        <span class="tile available">403</span>
+        <span class="tile ooo">404</span>
+        <span class="tile available">405</span>
+      </div>
+      <div class="row">
+        <span class="floor-lbl">F3</span>
+        <span class="tile occupied">301</span>
+        <span class="tile available">302</span>
+        <span class="tile dirty">303</span>
+        <span class="tile available">304</span>
+        <span class="tile available">305</span>
+      </div>
+      <div class="row">
+        <span class="floor-lbl">F2</span>
+        <span class="tile dirty">201</span>
+        <span class="tile occupied">202</span>
+        <span class="tile available">203</span>
+        <span class="tile available">204</span>
+        <span class="tile dirty">205</span>
+      </div>
+      <div class="row">
+        <span class="floor-lbl">F1</span>
+        <span class="tile available">101</span>
+        <span class="tile dirty sel">102</span>
+        <span class="tile available">103</span>
+        <span class="tile available">104</span>
+        <span class="tile available">105</span>
+      </div>
+
+      <div class="legend">
+        <span class="leg"><span class="dot" style="background:var(--available)"></span>Available</span>
+        <span class="leg"><span class="dot" style="background:var(--occupied)"></span>Occupied</span>
+        <span class="leg"><span class="dot" style="background:var(--dirty)"></span>Dirty</span>
+        <span class="leg"><span class="dot" style="background:var(--cleaning)"></span>Cleaning</span>
+        <span class="leg"><span class="dot" style="background:var(--ooo)"></span>Out of order</span>
+      </div>
+    </div>
+
+    <div class="sheet">
+      <div class="rm">102</div>
+      <div class="info">
+        <h3>Room 102</h3>
+        <p>Floor 1 · Standard</p>
+        <span class="st"><span class="dot"></span>Dirty · needs cleaning</span>
+      </div>
+      <button class="btn">Clean this room →</button>
+    </div>
+
+    <div class="tabs">
+      <span class="tab"><span class="ic">🧹</span>Tasks</span>
+      <span class="tab active"><span class="ic">🚪</span>Rooms</span>
+      <span class="tab"><span class="ic">🗂️</span>History</span>
+      <span class="tab"><span class="ic">👤</span>Profile</span>
+    </div>
+  </div>
+
+  <p class="lead" style="margin-top:2px">Green = ready · Gold = occupied (daily clean) · Amber = dirty · Blue = being cleaned · Red = out of order. Occupied rooms show a <b>“Daily clean”</b> action instead of “Clean this room”.</p>
+</div>

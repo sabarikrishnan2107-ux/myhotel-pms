@@ -2,12 +2,13 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { use } from "react";
 import {
   ChevronLeft, UsersRound, BedDouble, Receipt, Calendar, MessageSquare, Activity,
   Printer, Send, CreditCard, Sparkles, Phone, Mail, Briefcase, UserPlus, Upload,
   CheckCircle2, ArrowRight, Plus, Building2, MoreVertical, X, LogOut, LogIn,
-  IdCard, Camera, Pen, FileText,
+  IdCard, Camera, Pen, FileText, AlertCircle,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,7 @@ import { GROUP_TIMELINE, type GroupStatus, type GroupBooking } from "@/lib/mock-
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { computeGroupTotals, type GstSlab } from "@/lib/group-pricing";
 import { mealPerNightPerGuest } from "@/lib/booking-pricing";
+import { PaymentReceipt, type PaymentReceiptData, type ReceiptSummaryLine, type ReceiptChargeLine } from "@/components/billing/payment-receipt";
 
 // Per-guest billing: "group" = room+extras on master; "split" = room on master,
 // extras on the guest; "room" (per-room) = room+extras on the guest. Legacy rows
@@ -53,6 +55,10 @@ const TABS = [
 export default function GroupDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const hotel = hotelName(useProperty());
+  // Deep-link from the Room Rack: ?tab=billing&room=<no> opens that guest's folio.
+  const searchParams = useSearchParams();
+  const deepLinkTab = searchParams.get("tab");
+  const deepLinkRoom = searchParams.get("room");
   // SSR-safe gate for the print-only summary portal (needs document.body).
   const [printMounted, setPrintMounted] = React.useState(false);
   React.useEffect(() => setPrintMounted(true), []);
@@ -61,7 +67,10 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const [viewerSrc, setViewerSrc] = React.useState<string | null>(null);
   const [payAmount, setPayAmount] = React.useState(0);
   const [payMode, setPayMode] = React.useState("Cash");
+  const [payBy, setPayBy] = React.useState("Group"); // who's settling: the group, or a specific guest
   const [checkoutOpen, setCheckoutOpen] = React.useState(false);
+  // The receipt to preview/print after a payment (null = none open).
+  const [receipt, setReceipt] = React.useState<PaymentReceiptData | null>(null);
   React.useEffect(() => {
     apiGet<GroupBooking[]>("/group-bookings")
       .then(rows => {
@@ -73,7 +82,9 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
       })
       .catch(() => {});
   }, [id]);
-  const [tab, setTab] = React.useState("overview");
+  const [tab, setTab] = React.useState(
+    deepLinkTab && TABS.some(t => t.id === deepLinkTab) ? deepLinkTab : "overview",
+  );
 
   // Rooming list — group-scoped, loaded from the API.
   const [rooming, setRooming] = React.useState<RoomingEntry[]>([]);
@@ -85,15 +96,20 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
 
   // Self-pay guests' folio lines, keyed by rooming id. Fetched per self-pay guest
   // by their GRPG-<id> key so each call returns only that guest's rows.
-  const [selfCharges, setSelfCharges] = React.useState<Record<string, { id: string | number; description: string; amount: number; date: string }[]>>({});
+  const [selfCharges, setSelfCharges] = React.useState<Record<string, { id: string | number; description: string; amount: number; date: string; created_at?: string; items?: { name: string; qty: number; price: number }[] }[]>>({});
   const [selfPayments, setSelfPayments] = React.useState<Record<string, { id: string | number; amount: number; mode: string; date: string }[]>>({});
 
   // Master-folio extras (ad-hoc charges posted to group.code via Task 3's group-pays path).
-  const [masterExtras, setMasterExtras] = React.useState<{ id: string | number; description: string; amount: number; date: string; room?: string | null }[]>([]);
+  const [masterExtras, setMasterExtras] = React.useState<{ id: string | number; description: string; amount: number; date: string; room?: string | null; created_at?: string; items?: { name: string; qty: number; price: number }[] }[]>([]);
+  // Payments recorded against the master folio — shown as settlements that reduce
+  // the bill to a balance due (each carries who settled it in `reference`).
+  const [masterPayments, setMasterPayments] = React.useState<{ id: string | number; amount: number; mode: string; date: string; reference?: string }[]>([]);
   React.useEffect(() => {
     if (!group) return;
     apiGet<{ id: string | number; description: string; amount: number; date: string }[]>(`/folio-charges?bookingNo=${encodeURIComponent(group.code)}`)
       .then(setMasterExtras).catch(() => {});
+    apiGet<{ id: string | number; amount: number; mode: string; date: string; reference?: string }[]>(`/folio-payments?bookingNo=${encodeURIComponent(group.code)}`)
+      .then(setMasterPayments).catch(() => {});
   }, [group?.code]);
 
   React.useEffect(() => {
@@ -145,13 +161,22 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   }, [group?.arrival, group?.departure]);
   type RoomTypeCfg = { name: string; extraAdultRate?: number };
   type RatePlanCfg = { code: string; name: string; inclBreakfast?: boolean; inclLunch?: boolean; inclDinner?: boolean; breakfastPrice?: number; lunchPrice?: number; dinnerPrice?: number };
+  type GroupSvcCfg = { name: string; price: number; perPax: boolean; gst: number };
   const [roomTypes, setRoomTypes] = React.useState<RoomTypeCfg[]>([]);
   const [ratePlans, setRatePlans] = React.useState<RatePlanCfg[]>([]);
   const [gstSlabs, setGstSlabs] = React.useState<GstSlab[]>([]);
+  const [svcCatalog, setSvcCatalog] = React.useState<GroupSvcCfg[]>([]);
+  // masterBalance is understated until these pricing inputs (taxes, meal-plan,
+  // service and extra-bed rates) load; block payment/checkout until they settle so
+  // a group can't be settled against a pre-tax figure. Mirrors the /pay page guard.
+  const [configReady, setConfigReady] = React.useState(false);
   React.useEffect(() => {
-    apiGet<RoomTypeCfg[]>("/room-types").then(r => Array.isArray(r) && setRoomTypes(r)).catch(() => {});
-    apiGet<RatePlanCfg[]>("/rate-plans").then(r => Array.isArray(r) && setRatePlans(r)).catch(() => {});
-    apiGet<GstSlab[]>("/gst-slabs").then(r => Array.isArray(r) && setGstSlabs(r)).catch(() => {});
+    Promise.allSettled([
+      apiGet<RoomTypeCfg[]>("/room-types").then(r => Array.isArray(r) && setRoomTypes(r)),
+      apiGet<RatePlanCfg[]>("/rate-plans").then(r => Array.isArray(r) && setRatePlans(r)),
+      apiGet<GstSlab[]>("/gst-slabs").then(r => Array.isArray(r) && setGstSlabs(r)),
+      apiGet<GroupSvcCfg[]>("/group-services").then(r => Array.isArray(r) && setSvcCatalog(r)),
+    ]).then(() => setConfigReady(true));
   }, []);
   const [toast, setToast] = React.useState<string | null>(null);
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
@@ -271,18 +296,35 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     const amt = Math.round(Number(payAmount) || 0);
     if (amt <= 0) { flash("Enter a valid amount"); return; }
     const today = new Date().toISOString().slice(0, 10);
-    apiPost("/folio-payments", { bookingNo: group.code, date: today, mode: payMode, amount: amt, reference: `Group ${group.code}` })
+    const reference = payBy === "Group" ? `Group ${group.code}` : `Settled by ${payBy}`;
+    apiPost<{ id: string | number; amount: number; mode: string; date: string; reference?: string }>("/folio-payments", { bookingNo: group.code, date: today, mode: payMode, amount: amt, reference })
+      .then(row => setMasterPayments(prev => [...prev, row]))
       .catch(() => flash("⚠ Payment not saved — backend offline"));
     const advance = group.advance + amt;
     const balance = Math.max(0, group.balance - amt);
     setGroup(g => g ? { ...g, advance, balance } : g);
     setPayAmount(balance);
     apiPut(`/group-bookings/${group.id}`, { advance, balance }).catch(() => {});
-    flash(`Payment of ${money(amt)} recorded via ${payMode}`);
+    flash(`Payment of ${money(amt)} recorded via ${payMode}${payBy === "Group" ? "" : ` · settled by ${payBy}`}`);
+    setReceipt({
+      receiptNo: `RCP-${group.code}-${Date.now().toString().slice(-6)}`,
+      title: "Payment Receipt",
+      towards: "Group booking — master folio payment",
+      payerName: payBy === "Group" ? group.name : payBy,
+      reference: group.code,
+      payment: { amount: amt, mode: payMode, reference: payBy === "Group" ? undefined : `Settled by ${payBy}`, date: new Date().toISOString() },
+      summary: [
+        { label: "Total charges", value: totalCharges },
+        { label: "Total received", value: advance, tone: "credit" },
+        { label: Math.max(0, masterBalance - amt) > 0 ? "Balance due" : "Fully settled", value: Math.max(0, masterBalance - amt), tone: "due" },
+      ],
+    });
   };
 
-  // Collect self-pay guest extras payment
-  const collectSelfPay = (entry: RoomingEntry) => {
+  // Collect self-pay guest extras payment. The caller passes the charged total and
+  // pre-payment balance (computed where the billing helpers are in scope) so we can
+  // print a receipt without depending on their declaration order.
+  const collectSelfPay = (entry: RoomingEntry, ctx?: { charged: number; balanceBefore: number; room?: string | null }) => {
     const amt = Math.round(Number(collectAmt) || 0);
     if (amt <= 0) { flash("Enter a valid amount"); return; }
     const key = `GRPG-${entry.id}`;
@@ -292,6 +334,51 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
       .catch(() => flash("⚠ Payment not saved — backend offline"));
     setCollectAmt(0);
     flash(`${money(amt)} collected from ${entry.lead}`);
+    if (ctx) {
+      const dueAfter = Math.max(0, ctx.balanceBefore - amt);
+      setReceipt({
+        receiptNo: `RCP-G${entry.id}-${Date.now().toString().slice(-6)}`,
+        title: "Guest Payment Receipt",
+        towards: "Self-pay extras",
+        payerName: entry.lead,
+        reference: group?.code ? `${group.code} · Guest folio` : "Guest folio",
+        room: ctx.room ?? undefined,
+        payment: { amount: amt, mode: collectMode, date: new Date().toISOString() },
+        summary: [
+          { label: "Extras charged", value: ctx.charged },
+          { label: "This payment", value: amt, tone: "credit" },
+          { label: dueAfter > 0 ? "Balance due" : "Settled in full", value: dueAfter, tone: "due" },
+        ],
+      });
+    }
+  };
+
+  // Re-route an incidental order to the guest who should pay it. If that guest is
+  // Split/Per-room, the charge MOVES onto their own folio (they pay). A Group-pays
+  // guest just tags the room (group still pays). Empty selection = back on the group.
+  type MasterCharge = { id: string | number; description: string; amount: number; date: string; room?: string | null };
+  const assignExtra = async (charge: MasterCharge, guestId: string) => {
+    const guest = rooming.find(r => r.id === guestId);
+    try {
+      if (!guest) {
+        await apiPut(`/folio-charges/${charge.id}`, { room: null, paidBy: "Group" });
+        setMasterExtras(prev => prev.map(c => c.id === charge.id ? { ...c, room: null } : c));
+        flash("Charge kept on the group bill");
+        return;
+      }
+      if (billMode(guest) !== "group") {
+        await apiPut(`/folio-charges/${charge.id}`, { bookingNo: `GRPG-${guest.id}`, room: guest.roomNo ?? null, paidBy: "Guest" });
+        setMasterExtras(prev => prev.filter(c => c.id !== charge.id));
+        setSelfCharges(prev => ({ ...prev, [guest.id]: [...(prev[guest.id] ?? []), { id: charge.id, description: charge.description, amount: charge.amount, date: charge.date }] }));
+        flash(`${money(charge.amount)} moved to ${guest.lead}'s bill — they now pay it`);
+      } else {
+        await apiPut(`/folio-charges/${charge.id}`, { room: guest.roomNo ?? null });
+        setMasterExtras(prev => prev.map(c => c.id === charge.id ? { ...c, room: guest.roomNo ?? null } : c));
+        flash(`Tagged to ${guest.lead} · Room ${guest.roomNo ?? "—"} — group still pays (guest is Group-pays)`);
+      }
+    } catch {
+      flash("⚠ Couldn't reassign — backend offline");
+    }
   };
 
   // Add a service — persists onto the group record.
@@ -404,30 +491,75 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     }
     setCheckoutOpen(false);
     const today = new Date().toISOString().slice(0, 10);
-    let advance = group.advance, balance = group.balance;
-    if (finalAmt > 0) {
-      advance = group.advance + finalAmt;
-      balance = Math.max(0, group.balance - finalAmt);
-      apiPost("/folio-payments", { bookingNo: group.code, date: today, mode: finalMode, amount: finalAmt, reference: `Group ${group.code} · checkout` }).catch(() => {});
-    }
     const at = new Date().toISOString();
     const remaining = rooming.filter(r => !r.checkedOut);
     const owing = remaining.filter(r => billMode(r) !== "group" && selfPayBalance(r) > 0);
-    const toCheckOut = remaining.filter(r => !owing.some(o => o.id === r.id));
-    toCheckOut.forEach(r => {
+    const guestDuesTotal = owing.reduce((s, r) => s + selfPayBalance(r), 0);
+
+    // 1. Settle the master-folio balance to the group's folio.
+    let advance = group.advance, balance = group.balance;
+    if (masterBalance > 0) {
+      advance = group.advance + masterBalance;
+      balance = Math.max(0, group.balance - masterBalance);
+      apiPost("/folio-payments", { bookingNo: group.code, date: today, mode: finalMode, amount: masterBalance, reference: `Group ${group.code} · checkout` }).catch(() => {});
+    }
+    // 2. Settle each owing guest's unpaid extras onto THEIR folio, so they clear too.
+    owing.forEach(r => {
+      const due = selfPayBalance(r);
+      if (due <= 0) return;
+      apiPost<{ id: string | number; amount: number; mode: string; date: string }>("/folio-payments", { bookingNo: `GRPG-${r.id}`, date: today, mode: finalMode, amount: due, reference: `${r.lead} · checkout settlement` })
+        .then(row => setSelfPayments(prev => ({ ...prev, [r.id]: [...(prev[r.id] ?? []), row] })))
+        .catch(() => {});
+    });
+    // 3. Everyone is now settled → check out all remaining guests + release rooms.
+    remaining.forEach(r => {
       apiPut(`/group-rooming/${r.id}`, { checkedOut: true, checkedOutAt: at }).catch(() => {});
       releaseRoom(r.roomNo);
     });
-    const released = toCheckOut.filter(r => r.roomNo).length;
-    const toCheckOutIds = new Set(toCheckOut.map(r => r.id));
-    setRooming(prev => prev.map(r => toCheckOutIds.has(r.id) ? { ...r, checkedOut: true, checkedOutAt: at } : r));
-    if (owing.length) {
-      flash(`${owing.length} guest${owing.length === 1 ? "" : "s"} still owe for extras — settle in their folio`);
+    const released = remaining.filter(r => r.roomNo).length;
+    const remIds = new Set(remaining.map(r => r.id));
+    setRooming(prev => prev.map(r => remIds.has(r.id) ? { ...r, checkedOut: true, checkedOutAt: at } : r));
+    // 4. Group completes.
+    setGroup(g => g ? { ...g, status: "completed", advance, balance } : g);
+    apiPut(`/group-bookings/${group.id}`, { status: "completed", advance, balance }).catch(() => flash("⚠ Checkout not fully saved — backend offline"));
+    flash(`${group.name} checked out · ${released} room${released === 1 ? "" : "s"} released${guestDuesTotal > 0 ? ` · ${money(guestDuesTotal)} guest dues collected` : ""}`);
+    const collected = masterBalance + guestDuesTotal;
+    if (collected > 0) {
+      const coSummary: ReceiptSummaryLine[] = [
+        { label: "Group charges", value: group.total },
+        { label: "Master balance settled", value: masterBalance, tone: "credit" },
+      ];
+      if (guestDuesTotal > 0) coSummary.push({ label: "Guest dues settled", value: guestDuesTotal, tone: "credit" });
+      coSummary.push({ label: "Balance due", value: 0, tone: "bold" });
+      setReceipt({
+        receiptNo: `RCP-${group.code}-CO${Date.now().toString().slice(-6)}`,
+        title: "Group Checkout Receipt",
+        towards: "Final settlement on checkout",
+        payerName: group.name,
+        reference: group.code,
+        payment: { amount: collected, mode: finalMode, date: new Date().toISOString() },
+        extraRows: owing.length
+          ? [{ k: "Guest dues settled", v: owing.map(r => `${r.lead}${r.roomNo ? ` · Rm ${r.roomNo}` : ""} — ${money(selfPayBalance(r))}`).join("; ") }]
+          : undefined,
+        summary: coSummary,
+      });
     }
-    setGroup(g => g ? { ...g, status: owing.length === 0 ? "completed" : "in-house", advance, balance } : g);
-    apiPut(`/group-bookings/${group.id}`, { status: owing.length === 0 ? "completed" : "in-house", advance, balance }).catch(() => flash("⚠ Checkout not fully saved — backend offline"));
-    flash(`${group.name} checked out · ${released} room${released === 1 ? "" : "s"} released to housekeeping`);
   };
+
+  // Deep-link from the Room Rack: once the group + rooming load, open the folio for
+  // the guest in the requested room. Declared BEFORE the early return so hook order
+  // stays stable; calls openFolio via a ref since that's defined after the return.
+  const openFolioRef = React.useRef<(entry: RoomingEntry) => void>(() => {});
+  const deepLinkedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (deepLinkedRef.current || !deepLinkRoom || !group || rooming.length === 0) return;
+    const entry = rooming.find(r => String(r.roomNo ?? "") === String(deepLinkRoom));
+    if (entry) {
+      deepLinkedRef.current = true;
+      setTab("billing");
+      openFolioRef.current(entry);
+    }
+  }, [deepLinkRoom, group, rooming]);
 
   if (!group) {
     return (
@@ -468,6 +600,9 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     apiGet<{ id: string | number; amount: number; mode: string; date: string }[]>(`/folio-payments?bookingNo=${encodeURIComponent(key)}`)
       .then(rows => setSelfPayments(prev => ({ ...prev, [entry.id]: rows }))).catch(() => {});
   };
+  // Keep the deep-link effect (declared above the early return, so hook order is
+  // stable) pointed at the current openFolio without listing it as a dependency.
+  openFolioRef.current = openFolio;
 
   const allocated = rooming.filter(r => r.roomNo && String(r.roomNo).trim()).length;
   const allocPct = group.totalRooms > 0 ? Math.round((allocated / group.totalRooms) * 100) : 0;
@@ -489,9 +624,20 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const perRoomByType: Record<string, number> = {};
   rooming.forEach(r => { if (billMode(r) === "room") perRoomByType[r.roomType.toLowerCase()] = (perRoomByType[r.roomType.toLowerCase()] ?? 0) + 1; });
   const masterBlock = group.block.map(b => ({ ...b, qty: Math.max(0, b.qty - (perRoomByType[b.type.toLowerCase()] ?? 0)) }));
+  // Resolve the group's booked services (stored as names) back to priced lines so
+  // the folio, subtotal, GST, and balance all include them (matching group.total).
+  const svcAmountFor = (name: string): number | null => {
+    const s = svcCatalog.find(x => x.name === name);
+    if (!s) return null;
+    return s.perPax ? Math.round(s.price * (group.totalPax || 0) * group.nights) : s.price;
+  };
+  const svcLines = (group.services ?? [])
+    .map(name => svcCatalog.find(s => s.name === name))
+    .filter((s): s is GroupSvcCfg => !!s)
+    .map(s => ({ price: s.price, perPax: s.perPax, gst: s.gst }));
   const folio = computeGroupTotals(
     masterBlock.map(b => ({ rate: b.rate, qty: b.qty, extraBeds: b.extraBeds ?? 0, extraBedRate: extraBedRateOf(b) })),
-    group.nights, [], group.totalPax || 0, gstSlabs, planMeals,
+    group.nights, svcLines, group.totalPax || 0, gstSlabs, planMeals,
   );
 
   // True master-folio balance = full folio (rooms/meals/services + ad-hoc extras
@@ -501,6 +647,21 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   // checkout with unpaid room-service on the master folio.
   const masterExtrasTotal = masterExtras.reduce((s, c) => s + (c.amount || 0), 0);
   const masterBalance = Math.max(0, Math.round(folio.grandTotal + masterExtrasTotal - group.advance));
+  // Folio settlement breakdown: total charges, everything received, and the residual
+  // opening advance/deposit that isn't itemised as a recorded payment.
+  const totalCharges = folio.grandTotal + masterExtrasTotal;
+  const listedPaid = masterPayments.reduce((s, p) => s + (p.amount || 0), 0);
+  const advanceDeposit = Math.max(0, group.advance - listedPaid);
+  // Pull "Settled by <name>" out of a payment's reference, else a generic label.
+  const settledByLabel = (ref?: string) => (ref && ref.startsWith("Settled by ") ? ref : "Payment received");
+  // When an order was placed — prefer the full created_at timestamp (date + time),
+  // falling back to the date-only field for legacy rows without one.
+  const orderStamp = (c: { created_at?: string; date?: string }) => {
+    const raw = c.created_at ? c.created_at.replace(" ", "T") : (c.date ?? "");
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return c.date ? formatDate(c.date) : "";
+    return c.created_at ? `${formatDate(d)} · ${formatTime(d)}` : formatDate(d);
+  };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5">
@@ -627,7 +788,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
             <Button variant="success" onClick={checkInGroup}><CheckCircle2 className="h-4 w-4" />Check-in Group<ArrowRight className="h-4 w-4" /></Button>
           )}
           {group.status === "in-house" && (
-            <Button variant="success" onClick={() => setCheckoutOpen(true)}><LogOut className="h-4 w-4" />Check-out Group<ArrowRight className="h-4 w-4" /></Button>
+            <Button variant="success" disabled={!configReady} title={!configReady ? "Loading rates & taxes…" : undefined} onClick={() => setCheckoutOpen(true)}><LogOut className="h-4 w-4" />Check-out Group<ArrowRight className="h-4 w-4" /></Button>
           )}
         </div>
       </Card>
@@ -820,6 +981,9 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                 <th className="px-5 py-2.5 font-semibold text-right">Pax</th>
                 <th className="px-5 py-2.5 font-semibold">Phone</th>
                 <th className="px-5 py-2.5 font-semibold">Remarks</th>
+                <th className="px-5 py-2.5 font-semibold text-right">Extras charged</th>
+                <th className="px-5 py-2.5 font-semibold text-right">Paid</th>
+                <th className="px-5 py-2.5 font-semibold text-right">Due</th>
                 <th></th>
               </tr>
             </thead>
@@ -872,25 +1036,34 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                     ) : g.roomNo ? (
                       <Badge tone="neutral" className="ml-2">Arriving</Badge>
                     ) : null}
-                    {billMode(g) !== "group" && (() => {
-                      const hasDues = billMode(g) === "room" || (selfCharges[g.id] ?? []).length > 0;
-                      return (
-                      <button
-                        type="button"
-                        onClick={() => openFolio(g)}
-                        className="ml-2 align-middle"
-                        title="View this guest's folio"
-                      >
-                        <Badge tone={selfPayBalance(g) > 0 ? "warning" : hasDues ? "success" : "neutral"}>
-                          {selfPayBalance(g) > 0 ? `${money(selfPayBalance(g))} due` : hasDues ? "Settled" : "No dues"}
-                        </Badge>
-                      </button>
-                      );
-                    })()}
                   </td>
                   <td className="px-5 py-3 text-right tabular">{g.pax}</td>
                   <td className="px-5 py-3 text-xs text-muted-foreground tabular">{g.phone ?? "—"}</td>
                   <td className="px-5 py-3 text-xs text-muted-foreground">{g.remarks ?? "—"}</td>
+                  {billMode(g) === "group" ? (
+                    <td className="px-5 py-3 text-right text-xs text-muted-foreground" colSpan={3} title="All charges are on the group's master folio">On group folio</td>
+                  ) : (() => {
+                    const charges = selfCharges[g.id] ?? [];
+                    const paid = (selfPayments[g.id] ?? []).reduce((s, p) => s + (p.amount || 0), 0);
+                    const roomRent = billMode(g) === "room" ? guestRoomRent(g) : 0;
+                    const charged = roomRent + charges.reduce((s, c) => s + (c.amount || 0), 0);
+                    const due = selfPayBalance(g);
+                    return (
+                      <>
+                        <td className="px-5 py-3 text-right tabular text-muted-foreground">{charged > 0 ? money(charged) : "—"}</td>
+                        <td className="px-5 py-3 text-right tabular text-success">{paid > 0 ? money(paid) : "—"}</td>
+                        <td className="px-5 py-3 text-right">
+                          {due > 0 ? (
+                            <button type="button" onClick={() => openFolio(g)} className="inline-flex items-center gap-1 tabular font-semibold text-warning hover:underline" title="Collect this guest's extras due">
+                              {money(due)}<CreditCard className="h-3 w-3" />
+                            </button>
+                          ) : (
+                            <span className="tabular text-xs text-muted-foreground">{charged > 0 ? "Settled" : "—"}</span>
+                          )}
+                        </td>
+                      </>
+                    );
+                  })()}
                   <td className="px-5 py-3 text-right">
                     <button
                       data-row-menu
@@ -1000,24 +1173,59 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                     <td className="px-5 py-3 text-right tabular font-medium">{money(folio.mealsSubtotal)}</td>
                   </tr>
                 )}
-                {group.services.map((s, i) => (
-                  <tr key={`s${i}`}>
-                    <td className="px-5 py-3">{s}</td>
-                    <td className="px-5 py-3 text-right tabular">1</td>
-                    <td className="px-5 py-3 text-right tabular text-muted-foreground">—</td>
-                    <td className="px-5 py-3 text-right tabular text-muted-foreground">—</td>
+                {group.services.map((s, i) => {
+                  const cat = svcCatalog.find(x => x.name === s);
+                  const amt = svcAmountFor(s);
+                  return (
+                    <tr key={`s${i}`}>
+                      <td className="px-5 py-3">{s}{cat?.perPax ? ` · ${group.totalPax} pax × ${group.nights} night${group.nights === 1 ? "" : "s"}` : ""}</td>
+                      <td className="px-5 py-3 text-right tabular">{cat?.perPax ? group.totalPax : 1}</td>
+                      <td className="px-5 py-3 text-right tabular text-muted-foreground">{cat ? money(cat.price) : "—"}</td>
+                      <td className="px-5 py-3 text-right tabular font-medium">{amt != null ? money(amt) : <span className="text-xs text-subtle-foreground">No charge</span>}</td>
+                    </tr>
+                  );
+                })}
+                {masterExtras.length > 0 && (
+                  <tr className="bg-surface-sunken/30">
+                    <td colSpan={4} className="px-5 py-1.5 text-[10px] uppercase tracking-wider font-semibold text-subtle-foreground">Incidental orders · room service · laundry · etc.</td>
                   </tr>
-                ))}
+                )}
                 {masterExtras.map(c => {
-                  const orderedBy = c.room ? rooming.find(r => r.roomNo === c.room)?.lead : undefined;
+                  const assignedGuest = c.room ? rooming.find(r => String(r.roomNo ?? "") === String(c.room)) : undefined;
                   return (
                     <tr key={`x${c.id}`}>
                       <td className="px-5 py-3">
                         {c.description}
+                        <span className="block text-[11px] text-subtle-foreground mt-0.5">{orderStamp(c)}</span>
+                        {c.items && c.items.length > 0 && (
+                          <ul className="mt-1 space-y-0.5 border-l border-border/60 pl-2.5 ml-0.5 max-w-md">
+                            {c.items.map((it, i) => (
+                              <li key={i} className="flex items-center justify-between gap-4 text-[11px] text-muted-foreground">
+                                <span>{it.name}{it.qty > 1 ? ` × ${it.qty}` : ""}</span>
+                                <span className="tabular shrink-0">{money(it.price * it.qty)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                         {c.room && (
                           <span className="block text-[11px] text-muted-foreground mt-0.5">
-                            Room {c.room}{orderedBy ? ` · ${orderedBy}` : ""}
+                            Room {c.room}{assignedGuest ? ` · ${assignedGuest.lead}` : ""}
                           </span>
+                        )}
+                        {rooming.length > 0 && (
+                          <select
+                            value={assignedGuest?.id ?? ""}
+                            onChange={e => assignExtra(c, e.target.value)}
+                            title="Charge this order to a guest (Split/Per-room guests pay their own) or leave on the group"
+                            className="mt-1.5 h-6 max-w-[240px] rounded border border-border bg-surface px-1.5 text-[11px] text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 outline-hidden"
+                          >
+                            <option value="">Charge to group</option>
+                            {rooming.map(r => (
+                              <option key={r.id} value={r.id}>
+                                → {r.lead}{r.roomNo ? ` · Rm ${r.roomNo}` : ""}{billMode(r) !== "group" ? " (guest pays)" : ""}
+                              </option>
+                            ))}
+                          </select>
                         )}
                       </td>
                       <td className="px-5 py-3 text-right tabular">1</td>
@@ -1029,27 +1237,216 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
               </tbody>
               <tfoot className="bg-surface-elevated border-t border-border">
                 <tr>
-                  <td colSpan={3} className="px-5 py-2 text-right text-xs uppercase tracking-wider font-semibold text-muted-foreground">Subtotal</td>
-                  <td className="px-5 py-2 text-right tabular">{money(folio.roomSubtotal + folio.extraBedSubtotal + folio.mealsSubtotal)}</td>
+                  <td colSpan={3} className="px-5 py-2 text-right text-xs uppercase tracking-wider font-semibold text-muted-foreground">Room &amp; service subtotal</td>
+                  <td className="px-5 py-2 text-right tabular">{money(folio.roomSubtotal + folio.extraBedSubtotal + folio.mealsSubtotal + folio.servicesSubtotal)}</td>
                 </tr>
                 <tr>
                   <td colSpan={3} className="px-5 py-2 text-right text-xs uppercase tracking-wider font-semibold text-muted-foreground">Tax (GST)</td>
                   <td className="px-5 py-2 text-right tabular text-muted-foreground">{money(folio.gst)}</td>
                 </tr>
-                <tr>
-                  <td colSpan={3} className="px-5 py-3 text-right text-xs uppercase tracking-wider font-semibold">Total</td>
-                  <td className="px-5 py-3 text-right tabular font-semibold text-base">{money(folio.grandTotal + masterExtras.reduce((s, c) => s + (c.amount || 0), 0))}</td>
+                {masterExtrasTotal > 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-5 py-2 text-right text-xs uppercase tracking-wider font-semibold text-muted-foreground">
+                      Incidentals &amp; orders <span className="normal-case font-normal text-[10px] text-subtle-foreground">(tax incl.)</span>
+                    </td>
+                    <td className="px-5 py-2 text-right tabular">{money(masterExtrasTotal)}</td>
+                  </tr>
+                )}
+                <tr className="border-t border-border">
+                  <td colSpan={3} className="px-5 py-2.5 text-right text-xs uppercase tracking-wider font-semibold">Total charges</td>
+                  <td className="px-5 py-2.5 text-right tabular font-semibold">{money(totalCharges)}</td>
+                </tr>
+                {advanceDeposit > 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-5 py-2 text-right text-xs uppercase tracking-wider font-semibold text-muted-foreground">
+                      Advance / deposit received
+                      <button
+                        type="button"
+                        onClick={() => setReceipt({
+                          receiptNo: `RCP-${group.code}-ADV`,
+                          title: "Advance Payment Receipt",
+                          towards: "Group booking — advance / deposit",
+                          payerName: group.name,
+                          reference: group.code,
+                          stay: `${formatDate(group.arrival)} → ${formatDate(group.departure)} · ${group.nights} night${group.nights === 1 ? "" : "s"}`,
+                          payment: { amount: advanceDeposit, mode: "Booking advance", date: group.createdAt },
+                          summary: [
+                            { label: "Total charges", value: totalCharges },
+                            { label: "Advance received", value: advanceDeposit, tone: "credit" },
+                            { label: masterBalance > 0 ? "Balance due" : "Fully settled", value: masterBalance, tone: "due" },
+                          ],
+                        })}
+                        className="ml-2 normal-case font-normal text-brand hover:underline inline-flex items-center gap-0.5"
+                        title="View / print advance receipt"
+                      >
+                        <Receipt className="h-3 w-3" />receipt
+                      </button>
+                    </td>
+                    <td className="px-5 py-2 text-right tabular text-success">− {money(advanceDeposit)}</td>
+                  </tr>
+                )}
+                {masterPayments.map(p => (
+                  <tr key={`pay${p.id}`}>
+                    <td colSpan={3} className="px-5 py-2 text-right text-xs">
+                      <span className="uppercase tracking-wider font-semibold text-muted-foreground">{settledByLabel(p.reference)}</span>
+                      <span className="normal-case font-normal text-subtle-foreground"> · {p.mode}{p.date ? ` · ${formatDate(p.date)}` : ""}</span>
+                      <button
+                        type="button"
+                        onClick={() => setReceipt({
+                          receiptNo: `RCP-${group.code}-${String(p.id)}`,
+                          title: "Payment Receipt",
+                          towards: "Group booking — master folio payment",
+                          payerName: p.reference?.startsWith("Settled by ") ? p.reference.replace("Settled by ", "") : group.name,
+                          reference: group.code,
+                          payment: { amount: p.amount, mode: p.mode, reference: p.reference, date: p.date },
+                          summary: [
+                            { label: "Total charges", value: totalCharges },
+                            { label: "Total received", value: group.advance, tone: "credit" },
+                            { label: masterBalance > 0 ? "Balance due" : "Fully settled", value: masterBalance, tone: "due" },
+                          ],
+                        })}
+                        className="ml-2 normal-case font-normal text-brand hover:underline inline-flex items-center gap-0.5"
+                        title="View / print receipt"
+                      >
+                        <Receipt className="h-3 w-3" />receipt
+                      </button>
+                    </td>
+                    <td className="px-5 py-2 text-right tabular text-success">− {money(p.amount)}</td>
+                  </tr>
+                ))}
+                <tr className="border-t border-border">
+                  <td colSpan={3} className="px-5 py-3 text-right text-xs uppercase tracking-wider font-semibold">{masterBalance > 0 ? "Balance due" : "Settled in full"}</td>
+                  <td className={cn("px-5 py-3 text-right tabular font-semibold text-base", masterBalance > 0 ? "text-warning" : "text-success")}>{money(masterBalance)}</td>
                 </tr>
               </tfoot>
             </table>
           </Card>
 
+          {/* Guest self-pay extras — per guest: room, items ordered, paid vs due */}
+          {(() => {
+            const selfGuests = rooming.filter(r => billMode(r) !== "group");
+            return (
+              <Card className="p-0 overflow-hidden">
+                <CardHeader className="bg-surface-elevated">
+                  <CardTitle>Guest Extras &amp; Self-Pay</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">Charges billed to a guest (Split / Per-room) — kept off the master folio above.</p>
+                </CardHeader>
+                {selfGuests.length === 0 ? (
+                  <p className="px-5 py-6 text-sm text-muted-foreground">Every guest is on <span className="font-medium text-foreground">Group pays</span> — all charges sit on the master folio above, nothing is self-paid.</p>
+                ) : (
+                  <div className="divide-y divide-border">
+                    {selfGuests.map(g => {
+                      const charges = selfCharges[g.id] ?? [];
+                      const paid = (selfPayments[g.id] ?? []).reduce((s, p) => s + (p.amount || 0), 0);
+                      const roomRent = billMode(g) === "room" ? guestRoomRent(g) : 0;
+                      const charged = roomRent + charges.reduce((s, c) => s + (c.amount || 0), 0);
+                      const balance = selfPayBalance(g);
+                      const status = balance > 0 ? (paid > 0 ? "Part-paid" : "Unpaid") : (charged > 0 ? "Paid" : "No dues");
+                      const tone: "warning" | "danger" | "success" | "neutral" =
+                        balance > 0 ? (paid > 0 ? "warning" : "danger") : (charged > 0 ? "success" : "neutral");
+                      return (
+                        <div key={g.id} className="p-4">
+                          <div className="flex items-center justify-between gap-3 mb-2.5">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{g.lead}</p>
+                              <p className="text-xs text-muted-foreground">Room {g.roomNo ?? "—"} · {BILL_LABEL[billMode(g)]}</p>
+                            </div>
+                            <Badge tone={tone}>{status}</Badge>
+                          </div>
+                          <table className="w-full text-sm">
+                            <tbody className="divide-y divide-border/60">
+                              {roomRent > 0 && (
+                                <tr>
+                                  <td className="py-1.5 text-muted-foreground">{g.roomType} room · {group.nights} night{group.nights === 1 ? "" : "s"} <span className="text-[10px] uppercase tracking-wider">(per-room)</span></td>
+                                  <td className="py-1.5 text-right tabular">{money(roomRent)}</td>
+                                </tr>
+                              )}
+                              {charges.map(c => (
+                                <tr key={c.id}>
+                                  <td className="py-1.5 align-top">
+                                    <div>{c.description}<span className="text-xs text-subtle-foreground"> · {orderStamp(c)}</span></div>
+                                    {c.items && c.items.length > 0 && (
+                                      <ul className="mt-1 space-y-0.5 border-l border-border/60 pl-2.5 ml-0.5">
+                                        {c.items.map((it, i) => (
+                                          <li key={i} className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
+                                            <span>{it.name}{it.qty > 1 ? <span className="text-subtle-foreground"> × {it.qty}</span> : ""}</span>
+                                            <span className="tabular shrink-0">{money(it.price * it.qty)}</span>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </td>
+                                  <td className="py-1.5 text-right tabular align-top">{money(c.amount)}</td>
+                                </tr>
+                              ))}
+                              {charged === 0 && <tr><td colSpan={2} className="py-1.5 text-xs text-muted-foreground italic">No extras ordered yet.</td></tr>}
+                            </tbody>
+                            {charged > 0 && (
+                              <tfoot>
+                                <tr className="border-t border-border">
+                                  <td className="py-1.5 text-right text-xs uppercase tracking-wider font-semibold text-muted-foreground">Charged</td>
+                                  <td className="py-1.5 text-right tabular font-medium">{money(charged)}</td>
+                                </tr>
+                                <tr>
+                                  <td className="py-1.5 text-right text-xs uppercase tracking-wider font-semibold text-muted-foreground">Paid</td>
+                                  <td className="py-1.5 text-right tabular text-success">{paid > 0 ? `− ${money(paid)}` : money(0)}</td>
+                                </tr>
+                                <tr className="border-t border-border">
+                                  <td className="py-2 text-right text-xs uppercase tracking-wider font-semibold">{balance > 0 ? "Balance due" : "Settled"}</td>
+                                  <td className={cn("py-2 text-right tabular font-semibold text-base", balance > 0 ? "text-warning" : "text-success")}>{money(balance)}</td>
+                                </tr>
+                              </tfoot>
+                            )}
+                          </table>
+                          {charged > 0 && (
+                            <div className="mt-2.5 flex items-center gap-2">
+                              {balance > 0 && (
+                                <Button size="sm" variant="outline" onClick={() => openFolio(g)}><CreditCard className="h-3.5 w-3.5" />Collect {money(balance)}</Button>
+                              )}
+                              <Button size="sm" variant="ghost" onClick={() => {
+                                const chargeLines: ReceiptChargeLine[] = charges.map(c => ({ description: c.description, date: orderStamp(c), items: c.items, amount: c.amount }));
+                                if (roomRent > 0) chargeLines.unshift({ description: `${g.roomType} room · ${group.nights} night${group.nights === 1 ? "" : "s"} (per-room)`, amount: roomRent });
+                                setReceipt({
+                                  receiptNo: `RCP-G${g.id}-STMT`,
+                                  title: balance > 0 ? "Guest Folio Statement" : "Guest Payment Receipt",
+                                  towards: "Self-pay extras",
+                                  payerName: g.lead,
+                                  reference: `${group.code} · Guest folio`,
+                                  room: g.roomNo ?? undefined,
+                                  charges: chargeLines,
+                                  payment: { amount: balance > 0 ? balance : paid, mode: "—", date: new Date().toISOString() },
+                                  amountLabel: balance > 0 ? "Balance Due" : "Amount Received",
+                                  summary: [
+                                    { label: "Charged", value: charged },
+                                    { label: "Paid", value: paid, tone: "credit" },
+                                    { label: balance > 0 ? "Balance due" : "Settled", value: balance, tone: balance > 0 ? "due" : "bold" },
+                                  ],
+                                });
+                              }}><Receipt className="h-3.5 w-3.5" />Receipt</Button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
+            );
+          })()}
+
           <Card className="p-5">
             <CardTitle>Receive Payment</CardTitle>
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
               <div className="space-y-1.5">
                 <p className="text-xs font-medium">Amount</p>
                 <Input type="number" value={payAmount} onChange={e => setPayAmount(Number(e.target.value))} className="text-lg tabular font-semibold h-11" />
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium">Settled by</p>
+                <Select value={payBy} onChange={e => setPayBy(e.target.value)} className="h-11">
+                  <option value="Group">Group / organizer</option>
+                  {rooming.map(r => <option key={r.id} value={r.lead}>{r.lead}{r.roomNo ? ` · Room ${r.roomNo}` : ""}</option>)}
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <p className="text-xs font-medium">Mode</p>
@@ -1062,7 +1459,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                   ))}
                 </div>
               </div>
-              <Button size="lg" variant="success" onClick={receivePayment}><CreditCard className="h-4 w-4" />Record Payment</Button>
+              <Button size="lg" variant="success" disabled={!configReady} title={!configReady ? "Loading rates & taxes…" : undefined} onClick={receivePayment}><CreditCard className="h-4 w-4" />Record Payment</Button>
             </div>
           </Card>
         </div>
@@ -1107,12 +1504,18 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
         <CheckOutGroupDialog
           group={group}
           masterBalance={masterBalance}
+          selfDues={rooming
+            .filter(r => !r.checkedOut && billMode(r) !== "group" && selfPayBalance(r) > 0)
+            .map(r => ({ id: r.id, lead: r.lead, roomNo: r.roomNo, amount: selfPayBalance(r) }))}
           remainingGuests={rooming.filter(r => !r.checkedOut).length}
           roomsToRelease={rooming.filter(r => !r.checkedOut && r.roomNo).length}
           onClose={() => setCheckoutOpen(false)}
           onConfirm={(amt, mode) => checkOutGroup(amt, mode)}
         />
       )}
+
+      {/* Printable payment receipt (opens after any payment; also for reprints) */}
+      {receipt && <PaymentReceipt data={receipt} onClose={() => setReceipt(null)} />}
 
       {/* Rooming row actions — portalled so the table card's overflow can't clip it. */}
       {rowMenuFor && rowMenuRect && typeof document !== "undefined" && (() => {
@@ -1202,7 +1605,25 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                   <ul className="space-y-1.5 text-sm">
                     {(selfPayments[folioFor.id] ?? []).map(p => (
                       <li key={p.id} className="flex items-center justify-between gap-3">
-                        <span className="text-muted-foreground">{p.mode} · {p.date}</span>
+                        <span className="text-muted-foreground inline-flex items-center gap-2">
+                          {p.mode} · {p.date}
+                          <button
+                            type="button"
+                            onClick={() => setReceipt({
+                              receiptNo: `RCP-G${folioFor.id}-${String(p.id)}`,
+                              title: "Guest Payment Receipt",
+                              towards: "Self-pay extras",
+                              payerName: folioFor.lead,
+                              reference: group?.code ? `${group.code} · Guest folio` : "Guest folio",
+                              room: folioFor.roomNo ?? undefined,
+                              payment: { amount: p.amount, mode: p.mode, date: p.date },
+                            })}
+                            className="text-brand hover:underline inline-flex items-center gap-0.5 text-[11px]"
+                            title="View / print receipt"
+                          >
+                            <Receipt className="h-3 w-3" />receipt
+                          </button>
+                        </span>
                         <span className="tabular text-success shrink-0">− {money(p.amount)}</span>
                       </li>
                     ))}
@@ -1225,7 +1646,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                 <Input type="number" min={0} value={collectAmt || ""} onChange={e => setCollectAmt(Math.max(0, Number(e.target.value)))} placeholder="Amount" className="h-9 tabular" />
                 <Select value={collectMode} onChange={e => setCollectMode(e.target.value)} className="h-9"><option>Cash</option><option>Card</option><option>UPI</option><option>Bank</option></Select>
               </div>
-              <Button variant="success" size="sm" className="w-full" onClick={() => collectSelfPay(folioFor)} disabled={selfPayBalance(folioFor) <= 0}>
+              <Button variant="success" size="sm" className="w-full" onClick={() => collectSelfPay(folioFor, { charged: (billMode(folioFor) === "room" ? guestRoomRent(folioFor) : 0) + (selfCharges[folioFor.id] ?? []).reduce((s, c) => s + (c.amount || 0), 0), balanceBefore: selfPayBalance(folioFor), room: folioFor.roomNo })} disabled={selfPayBalance(folioFor) <= 0}>
                 <CreditCard className="h-3.5 w-3.5" />Collect payment
               </Button>
             </div>
@@ -1284,14 +1705,17 @@ function CaptureTile({ label, icon: Icon, src, onOpen, whiteBg }: {
 }
 
 // ===================== CHECK-OUT GROUP DIALOG =====================
-function CheckOutGroupDialog({ group, masterBalance, remainingGuests, roomsToRelease, onClose, onConfirm }: {
-  group: GroupBooking; masterBalance: number; remainingGuests: number; roomsToRelease: number;
+function CheckOutGroupDialog({ group, masterBalance, selfDues, remainingGuests, roomsToRelease, onClose, onConfirm }: {
+  group: GroupBooking; masterBalance: number;
+  selfDues: { id: string; lead: string; roomNo?: string | null; amount: number }[];
+  remainingGuests: number; roomsToRelease: number;
   onClose: () => void; onConfirm: (amount: number, mode: string) => void;
 }) {
-  // Includes ad-hoc master-folio extras — NOT group.balance (which excludes them).
-  const balance = Math.max(0, masterBalance);
-  const [amount, setAmount] = React.useState(balance);
-  const [mode, setMode] = React.useState("Cash");
+  // Total to collect = master-folio balance (incl ad-hoc extras) PLUS every self-pay
+  // guest's unpaid extras — so nobody leaves owing and the group can complete.
+  const masterBal = Math.max(0, masterBalance);
+  const guestDuesTotal = selfDues.reduce((s, d) => s + d.amount, 0);
+  const balance = masterBal + guestDuesTotal;
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
@@ -1316,25 +1740,62 @@ function CheckOutGroupDialog({ group, masterBalance, remainingGuests, roomsToRel
               Checks out the <span className="font-medium text-foreground">{remainingGuests} remaining guest{remainingGuests === 1 ? "" : "s"}</span>, releases <span className="font-medium text-foreground">{roomsToRelease} room{roomsToRelease === 1 ? "" : "s"}</span> to housekeeping, and marks the group <span className="font-medium text-foreground">completed</span>.
             </div>
             <div className="rounded-md border border-border p-3 space-y-1.5 text-sm">
-              {row("Total", money(group.total))}
+              {row("Group charges", money(group.total))}
               {row("Received", money(group.advance))}
               <div className="border-t border-border pt-1.5 mt-1.5">
-                {row(balance > 0 ? "Balance due" : "Settled", money(balance), balance > 0 ? "text-warning" : "text-success")}
+                {row(masterBal > 0 ? "Master balance" : "Master settled", money(masterBal), masterBal > 0 ? "text-warning" : "text-success")}
               </div>
             </div>
-            {balance > 0 && (
-              <>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5"><Label className="text-xs">Collect now (₹)</Label><Input type="number" min={0} value={amount} onChange={e => setAmount(Math.max(0, Number(e.target.value)))} className="h-9 tabular" /></div>
-                  <div className="space-y-1.5"><Label className="text-xs">Mode</Label><Select value={mode} onChange={e => setMode(e.target.value)} className="h-9"><option>Cash</option><option>Card</option><option>UPI</option><option>Bank</option><option>Online</option></Select></div>
+
+            {/* Self-pay guests who still owe for their own extras — collected here too */}
+            {selfDues.length > 0 && (
+              <div className="rounded-md border border-warning/30 bg-warning-soft/20 p-3 space-y-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-warning">Guest self-pay dues · unpaid extras</p>
+                {selfDues.map(d => (
+                  <div key={d.id} className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">{d.lead}{d.roomNo ? ` · Room ${d.roomNo}` : ""}</span>
+                    <span className="tabular font-medium text-warning">{money(d.amount)}</span>
+                  </div>
+                ))}
+                <div className="border-t border-warning/20 pt-1.5 flex items-center justify-between">
+                  <span className="text-xs font-semibold">Guest dues total</span>
+                  <span className="tabular font-semibold text-warning">{money(guestDuesTotal)}</span>
                 </div>
-                {amount < balance && <p className="text-[11px] text-warning">Collect the full {money(balance)} balance to complete checkout — {money(balance - amount)} still due.</p>}
-              </>
+              </div>
+            )}
+
+            {(masterBal > 0 || guestDuesTotal > 0) && (
+              <div className="rounded-md border border-border bg-surface-sunken/40 p-3">
+                {row("Total to collect", money(balance), "text-warning")}
+              </div>
+            )}
+            {balance > 0 ? (
+              <div className="rounded-md border border-warning/40 bg-warning-soft/30 p-3">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-warning">Payment pending — complete payment first</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {money(balance)} is still outstanding. Settle it on the payment page before this group can be checked out.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-md border border-success/40 bg-success-soft/30 p-3 text-sm inline-flex items-center gap-2 w-full">
+                <CheckCircle2 className="h-4 w-4 text-success shrink-0" /><span className="font-medium">All settled — ready to check out.</span>
+              </div>
             )}
           </div>
           <div className="px-5 py-3 border-t border-border bg-surface-elevated flex items-center justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-            <Button variant="success" disabled={amount < balance} onClick={() => onConfirm(Math.min(amount, balance), mode)}><CheckCircle2 className="h-4 w-4" />Check out &amp; complete</Button>
+            {balance > 0 ? (
+              <Link href={`/groups/${group.code}/pay`} onClick={onClose}>
+                <Button><CreditCard className="h-4 w-4" />Complete Payment</Button>
+              </Link>
+            ) : (
+              <Button variant="success" onClick={() => onConfirm(0, "Cash")}><CheckCircle2 className="h-4 w-4" />Check out &amp; complete</Button>
+            )}
           </div>
         </Card>
       </div>

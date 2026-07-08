@@ -22,6 +22,7 @@ import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { groupChargesByDay } from "@/lib/folio-charges";
 import { useProperty, hotelName } from "@/lib/use-property";
 import { useBranding } from "@/lib/use-branding";
+import { PaymentReceipt, type PaymentReceiptData } from "@/components/billing/payment-receipt";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: FileBarChart },
@@ -122,6 +123,7 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
   const [showEmail, setShowEmail] = React.useState(false);
   const [showAddCharge, setShowAddCharge] = React.useState(false);
   const [showPay, setShowPay] = React.useState(false);
+  const [receipt, setReceipt] = React.useState<PaymentReceiptData | null>(null);
   const [showDiscount, setShowDiscount] = React.useState(false);
   const [showRefund, setShowRefund] = React.useState(false);
   const [showQR, setShowQR] = React.useState(false);
@@ -686,7 +688,25 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
                         <td className="px-5 py-3 text-right tabular font-medium text-success">{money(p.amount)}</td>
                         <td className="px-5 py-3 text-right tabular text-muted-foreground">{money(running)}</td>
                         <td className="px-5 py-3 text-right">
-                          <button type="button" className="text-muted-foreground hover:text-foreground" title="Receipt">
+                          <button
+                            type="button"
+                            className="text-muted-foreground hover:text-foreground"
+                            title="View / print receipt"
+                            onClick={() => setReceipt({
+                              receiptNo: `RCP-${reservation.bookingNo}-${String(p.id)}`,
+                              title: "Payment Receipt",
+                              towards: "Room folio payment",
+                              payerName: reservation.guestName,
+                              reference: reservation.bookingNo,
+                              room: `${reservation.roomNumber} · ${reservation.roomType}`,
+                              payment: { amount: p.amount, mode: p.mode, reference: p.reference, date: p.date },
+                              summary: [
+                                { label: "Grand total", value: grandTotal },
+                                { label: "This payment", value: p.amount, tone: "credit" },
+                                { label: running > 0 ? "Balance after payment" : "Fully settled", value: running, tone: "due" },
+                              ],
+                            })}
+                          >
                             <Printer className="h-3.5 w-3.5" />
                           </button>
                         </td>
@@ -860,7 +880,23 @@ export default function FolioDetailPage({ params }: { params: Promise<{ id: stri
         apiPost<typeof SAMPLE_PAYMENTS[number]>("/folio-payments", payload)
           .then(created => setPayments(prev => [...prev, created]))
           .catch(() => showToast("⚠ Save failed — backend offline"));
+        const balAfter = Math.max(0, balance - amt);
+        setReceipt({
+          receiptNo: `RCP-${reservation.bookingNo}-${Date.now().toString().slice(-6)}`,
+          title: "Payment Receipt",
+          towards: "Room folio payment",
+          payerName: reservation.guestName,
+          reference: reservation.bookingNo,
+          room: `${reservation.roomNumber} · ${reservation.roomType}`,
+          payment: { amount: amt, mode, reference: reference || undefined, date: new Date().toISOString() },
+          summary: [
+            { label: "Grand total", value: grandTotal },
+            { label: "This payment", value: amt, tone: "credit" },
+            { label: balAfter > 0 ? "Balance due" : "Fully settled", value: balAfter, tone: "due" },
+          ],
+        });
       }} balance={balance} />}
+      {receipt && <PaymentReceipt data={receipt} onClose={() => setReceipt(null)} />}
       {showDiscount && <DiscountModal onClose={() => setShowDiscount(false)} chargesTotal={chargesTotal} onSave={(reason, amount, approver) => {
         setShowDiscount(false);
         showToast(`Discount applied: ${money(amount)} off · ${reason}`);

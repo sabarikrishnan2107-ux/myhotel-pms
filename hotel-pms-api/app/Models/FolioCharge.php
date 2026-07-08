@@ -6,5 +6,5 @@ class FolioCharge extends Model {
     use BelongsToCompany;
     protected $table = 'folio_charges';
     protected $guarded = ['id'];
-    protected $casts = ['qty'=>'integer','rate'=>'integer','tax'=>'integer','amount'=>'integer'];
+    protected $casts = ['qty'=>'integer','rate'=>'integer','tax'=>'integer','amount'=>'integer','items'=>'array'];
 }

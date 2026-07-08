@@ -320,7 +320,7 @@ export default function NewGroupPage() {
 
   const router = useRouter();
   const [saving, setSaving] = React.useState(false);
-  const requiredOk = !!(name && contactName && isValidPhone(contactPhone) && isValidEmail(contactEmail) && arrival && departure && block.length);
+  const requiredOk = !!(name && contactName && isValidPhone(contactPhone) && isValidEmail(contactEmail) && arrival && departure && block.length && idNumber.trim());
 
   const save = (status: "confirmed" | "tentative") => {
     if (saving || !requiredOk) return;
@@ -435,7 +435,7 @@ export default function NewGroupPage() {
 
           {/* Booker identification + captures */}
           <Card className="p-6 space-y-4">
-            <SectionHead icon={IdCard} title="Identification & Captures" hint="Optional — the ID of the person booking this group" />
+            <SectionHead icon={IdCard} title="Identification & Captures" hint="ID number is required · photo & signature optional" />
             <div className="grid grid-cols-2 gap-3 max-w-md">
               <Field label="ID type">
                 <Select value={idType} onChange={e => setIdType(e.target.value)}>
@@ -446,8 +446,8 @@ export default function NewGroupPage() {
                   <option>Passport</option>
                 </Select>
               </Field>
-              <Field label="ID number">
-                <Input value={idNumber} onChange={e => setIdNumber(e.target.value)} placeholder="A12345678" />
+              <Field label="ID number *">
+                <Input value={idNumber} onChange={e => setIdNumber(e.target.value)} placeholder="A12345678" aria-invalid={!idNumber.trim()} />
               </Field>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 items-start">
@@ -509,7 +509,7 @@ export default function NewGroupPage() {
                 const maxQty = maxQtyForRow(block, i);
                 const atMax = datesChosen && row.qty >= maxQty;
                 return (
-                <div key={row.id} className="grid grid-cols-12 gap-2 items-end p-3 rounded-md border border-border bg-surface-sunken/30">
+                <div key={row.id} className="grid grid-cols-12 gap-2 items-start p-3 rounded-md border border-border bg-surface-sunken/30">
                   <div className="col-span-12 sm:col-span-4">
                     <Label>Room type</Label>
                     <Select value={row.type} onChange={e => updateBlock(row.id, "type", e.target.value)}>
@@ -537,7 +537,8 @@ export default function NewGroupPage() {
                     <Label>Group rate / night</Label>
                     <Input type="number" value={row.rate} onChange={e => updateBlock(row.id, "rate", Number(e.target.value))} />
                   </div>
-                  <div className="col-span-2 sm:col-span-2 flex items-end justify-end">
+                  <div className="col-span-2 sm:col-span-2 flex flex-col items-end">
+                    <Label className="invisible select-none" aria-hidden>Remove</Label>
                     <button onClick={() => removeBlock(row.id)} type="button" className="h-10 w-10 rounded-md inline-flex items-center justify-center text-subtle-foreground hover:text-danger hover:bg-danger-soft" aria-label="Remove row">
                       <Trash2 className="h-4 w-4" />
                     </button>

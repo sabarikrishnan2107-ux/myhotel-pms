@@ -92,6 +92,9 @@ export function formatTime(d: Date | string) {
 
 export function formatDate(d: Date | string) {
   const date = typeof d === "string" ? new Date(d) : d;
+  // Guard missing/unparseable dates so callers render an em-dash instead of
+  // "undefined/undefined/Invalid Date" (bad or empty arrival/departure values).
+  if (!date || isNaN(date.getTime())) return "—";
   const fmt = dtPrefs().dateFormat;
   const tz = ianaTz();
   if (!fmt) {
@@ -103,6 +106,7 @@ export function formatDate(d: Date | string) {
 
 export function formatDateLong(d: Date | string) {
   const date = typeof d === "string" ? new Date(d) : d;
+  if (!date || isNaN(date.getTime())) return "—";
   const fmt = dtPrefs().dateFormat;
   const tz = ianaTz();
   if (!fmt) {
@@ -125,4 +129,26 @@ function formatByPref(date: Date, fmt: string, tz: string | undefined): string {
   if (fmt === "MM/DD/YYYY") return `${m}/${d}/${y}`;
   if (fmt === "YYYY-MM-DD") return `${y}-${m}-${d}`;
   return `${d}/${m}/${y}`; // DD/MM/YYYY (default mapping)
+}
+
+// Indian-style number-to-words (Lakh / Crore) — used on printed receipts so the
+// amount is written out in words, e.g. "One Lakh Twenty Thousand".
+export function numberToWordsIN(n: number): string {
+  n = Math.round(n);
+  if (n === 0) return "Zero";
+  if (n < 0) return "Minus " + numberToWordsIN(-n);
+  const ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+    "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+  const two = (num: number): string => num < 20 ? ones[num] : tens[Math.floor(num / 10)] + (num % 10 ? " " + ones[num % 10] : "");
+  const three = (num: number): string => num >= 100 ? ones[Math.floor(num / 100)] + " Hundred" + (num % 100 ? " " + two(num % 100) : "") : two(num);
+  let out = "";
+  const crore = Math.floor(n / 10000000); n %= 10000000;
+  const lakh = Math.floor(n / 100000); n %= 100000;
+  const thousand = Math.floor(n / 1000); n %= 1000;
+  if (crore) out += three(crore) + " Crore ";
+  if (lakh) out += three(lakh) + " Lakh ";
+  if (thousand) out += three(thousand) + " Thousand ";
+  if (n) out += three(n);
+  return out.trim();
 }

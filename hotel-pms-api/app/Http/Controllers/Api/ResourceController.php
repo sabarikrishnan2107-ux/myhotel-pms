@@ -93,7 +93,9 @@ use App\Models\RoomAmenity;
 use App\Models\GroupService;
 use App\Models\CashierShift;
 use App\Models\ServiceItem;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 
 /**
  * Generic list CRUD for every Setup & Settings list section.
@@ -319,7 +321,7 @@ class ResourceController extends Controller
             'bookingNo' => 'string|max:50', 'date' => 'string|max:50', 'description' => 'string|max:500',
             'type' => 'string|max:50', 'qty' => 'integer', 'rate' => 'integer', 'tax' => 'integer',
             'amount' => 'integer', 'paidBy' => 'string|max:50', 'postedBy' => 'string|max:255|nullable',
-            'room' => 'string|max:50|nullable',
+            'room' => 'string|max:50|nullable', 'items' => 'array|nullable',
         ],
         'folio-payments' => [
             'bookingNo' => 'string|max:50', 'date' => 'string|max:50', 'mode' => 'string|max:100',
@@ -358,7 +360,7 @@ class ResourceController extends Controller
         'staff' => [
             'name' => 'string|max:255', 'role' => 'string|max:100', 'dept' => 'string|max:100',
             'phone' => 'string|max:50|nullable', 'email' => 'email|max:255|nullable', 'joined' => 'string|max:50',
-            'salary' => 'integer|min:0', 'active' => 'boolean',
+            'salary' => 'integer|min:0', 'active' => 'boolean', 'empId' => 'string|max:20|nullable',
         ],
         'vendors' => [
             'name' => 'string|max:255', 'contact' => 'string|max:255|nullable', 'phone' => 'string|max:50|nullable',
@@ -384,6 +386,8 @@ class ResourceController extends Controller
             'code' => 'string|max:50', 'room' => 'string|max:50|nullable', 'title' => 'string|max:255',
             'priority' => 'string|max:50', 'status' => 'string|max:50', 'assignee' => 'string|max:100|nullable',
             'reported' => 'string|max:50', 'category' => 'string|max:100',
+            'description' => 'string|max:2000|nullable', 'voiceUrl' => 'string|max:2000|nullable',
+            'photos' => 'array', 'photos.*' => 'string|max:2000',
         ],
         'guest-requests' => [
             'code' => 'string|max:50', 'room' => 'string|max:50|nullable', 'guestName' => 'string|max:255',
@@ -397,6 +401,12 @@ class ResourceController extends Controller
             'assignedAt' => 'string|max:50', 'startedAt' => 'string|max:50|nullable',
             'completedAt' => 'string|max:50|nullable', 'durationMin' => 'integer|min:0',
             'notes' => 'string|max:2000|nullable',
+            // Mobile-app lifecycle: link to a room + login employee (see HousekeepingController).
+            'roomId' => 'integer|nullable', 'floor' => 'integer|nullable',
+            'assignedToUserId' => 'integer|nullable', 'assignedByUserId' => 'integer|nullable',
+            'acknowledgedAt' => 'string|max:50|nullable',
+            'guestName' => 'string|max:255|nullable', 'roomState' => 'string|max:50|nullable',
+            'outcome' => 'string|max:50|nullable',
         ],
         'enquiries' => [
             'enqNo' => 'string|max:50', 'type' => 'string|max:50', 'name' => 'string|max:255',
@@ -456,6 +466,8 @@ class ResourceController extends Controller
             'advance' => 'integer|min:0', 'balance' => 'integer', 'status' => 'string|max:50',
             'notes' => 'string|max:2000|nullable', 'createdAt' => 'string|max:50|nullable',
             'billingMode' => 'string|max:20',
+            'idType' => 'string|max:100|nullable', 'idNumber' => 'string|max:100|nullable',
+            'guestPhoto' => 'string|nullable', 'idFront' => 'string|nullable', 'idBack' => 'string|nullable', 'signature' => 'string|nullable',
         ],
         'hall-bookings' => [
             'customer' => 'string|max:255', 'contactName' => 'string|max:255|nullable', 'bookedBy' => 'string|max:255|nullable',
@@ -565,6 +577,7 @@ class ResourceController extends Controller
             'decorVendors' => 'array',
             'staffing' => 'array',
             'vendors' => 'array',
+            'signage' => 'array',
         ],
         'table-reservations' => [
             'table' => 'string|max:50',
@@ -1060,6 +1073,12 @@ class ResourceController extends Controller
 
         $row = $this->model($resource)::create($data);
 
+        // Adding a housekeeping / maintenance staff member also provisions their
+        // mobile-app login (users row) so the employee code + email can sign in.
+        if ($resource === 'staff') {
+            $this->provisionAppLogin($row->toArray());
+        }
+
         // Every booking must correspond to a searchable guest profile. Bookings
         // reference a guest only by name (no FK), so a booking made through any
         // flow that didn't also create a profile would leave the guest invisible
@@ -1086,6 +1105,11 @@ class ResourceController extends Controller
         $changes = $this->validated($resource, $request, false);
         $row->update($changes);
 
+        // Keep the housekeeping / maintenance login (users row) in sync with roster edits.
+        if ($resource === 'staff') {
+            $this->provisionAppLogin($row->toArray());
+        }
+
         AuditLog::record([
             'module' => $this->moduleLabel($resource),
             'action' => isset($changes['status']) ? 'Status changed' : 'Updated',
@@ -1108,6 +1132,63 @@ class ResourceController extends Controller
         ], $request);
 
         return response()->noContent();
+    }
+
+    /**
+     * When a housekeeping OR maintenance/engineering staff member is created or
+     * edited with an email + employee code, upsert a matching users login so they
+     * can sign into their mobile app:
+     *   housekeeping → role/dept Housekeeping (2000-series code)
+     *   maintenance/engineering → role/dept Maintenance (3000-series code)
+     * New logins default to password "123456".
+     */
+    private function provisionAppLogin(array $data): void
+    {
+        $dept = (string) ($data['dept'] ?? '');
+        $role = (string) ($data['role'] ?? '');
+        $email = $data['email'] ?? null;
+        $code  = $data['empId'] ?? null;
+
+        $isHk = stripos($dept, 'housekeep') !== false || stripos($role, 'housekeep') !== false;
+        $isMt = stripos($dept, 'maintenance') !== false || stripos($role, 'maintenance') !== false
+             || stripos($dept, 'engineer') !== false || stripos($role, 'engineer') !== false;
+
+        if ((! $isHk && ! $isMt) || empty($email) || empty($code)) {
+            return;
+        }
+
+        // Housekeeping wins if a role somehow matched both.
+        $appDept = $isHk ? 'Housekeeping' : 'Maintenance';
+
+        // Guard: never stamp an employee code that another account already holds —
+        // duplicate codes make the mobile login resolve to the wrong person.
+        $clash = User::where('employee_code', (string) $code)
+            ->when($email, fn ($q) => $q->where('email', '!=', $email))
+            ->exists();
+        if ($clash) {
+            return; // leave the roster row as-is; the UI should pick a free id
+        }
+
+        $user = User::where('email', $email)->first();
+        if ($user) {
+            // Reflect the roster entry on the login so the app shows the right
+            // name / department (not a stale one from a reused email).
+            $user->employee_code = (string) $code;
+            $user->name = $data['name'] ?? $user->name;
+            $user->role = $appDept;
+            $user->department = $appDept;
+            $user->save();
+        } else {
+            User::create([
+                'name'          => $data['name'] ?? ($isHk ? 'Housekeeper' : 'Technician'),
+                'email'         => $email,
+                'password'      => Hash::make('123456'),
+                'role'          => $appDept,
+                'department'    => $appDept,
+                'status'        => 'active',
+                'employee_code' => (string) $code,
+            ]);
+        }
     }
 
     /** Slugs whose friendly module name differs from a plain title-case. */

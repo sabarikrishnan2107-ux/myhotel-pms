@@ -15,6 +15,7 @@ import type { Guest, Reservation } from "@/lib/types";
 import { cn, money, formatDate, formatTime } from "@/lib/utils";
 import { apiGet } from "@/lib/api";
 import { useProperty, hotelName } from "@/lib/use-property";
+import { PaymentReceipt, type PaymentReceiptData } from "@/components/billing/payment-receipt";
 
 // Raw backend row shapes for the live history tabs.
 type FolioPaymentRow = { id?: number | string; date?: string; mode?: string; reference?: string | null; amount?: number };
@@ -100,6 +101,7 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
   const [payRows, setPayRows] = React.useState<FolioPaymentRow[]>([]);
   const [fbRows, setFbRows] = React.useState<FbOrderRow[]>([]);
   const [stayRows, setStayRows] = React.useState<BookingRow[]>([]);
+  const [receipt, setReceipt] = React.useState<PaymentReceiptData | null>(null);
   const bookingNo = reservation?.bookingNo;
   const roomNumber = reservation?.roomNumber;
   const guestName = guest?.name;
@@ -147,6 +149,8 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
     amount: b.total,
   }));
   const payments = payRows.map(p => ({
+    id: p.id,
+    rawDate: p.date,
     date: p.date ? formatDate(p.date) : "—",
     desc: "Folio payment",
     mode: p.mode ?? "—",
@@ -558,6 +562,22 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
                       <p className="text-xs text-muted-foreground">{p.date} · {p.mode} · {p.ref}</p>
                     </div>
                     <span className="font-semibold tabular text-sm">{money(p.amount)}</span>
+                    <button
+                      type="button"
+                      onClick={() => setReceipt({
+                        receiptNo: `RCP-${bookingNo ?? "GUEST"}-${String(p.id ?? i)}`,
+                        title: "Payment Receipt",
+                        towards: "Room folio payment",
+                        payerName: guestName ?? "Guest",
+                        reference: bookingNo,
+                        room: roomNumber ? `${roomNumber}${reservation?.roomType ? ` · ${reservation.roomType}` : ""}` : undefined,
+                        payment: { amount: p.amount, mode: p.mode, reference: p.ref !== "—" ? p.ref : undefined, date: p.rawDate },
+                      })}
+                      className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface-sunken inline-flex items-center justify-center shrink-0"
+                      title="View / print receipt"
+                    >
+                      <Printer className="h-3.5 w-3.5" />
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -655,6 +675,7 @@ export function GuestDetailDrawer({ open, onClose, guest, reservation }: Props) 
           </div>
         )}
       </aside>
+      {receipt && <PaymentReceipt data={receipt} onClose={() => setReceipt(null)} />}
     </>
   );
 }
